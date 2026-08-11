@@ -4,32 +4,32 @@ import '../state/media_player_state.dart';
 import '../state/video_library_state.dart';
 import '../widgets/video_tile.dart';
 import 'player_screen.dart';
-
+ 
 class LibraryScreen extends StatefulWidget {
   final VideoLibraryState library;
   final MediaPlayerState player;
-
+ 
   const LibraryScreen({super.key, required this.library, required this.player});
-
+ 
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
-
+ 
 class _LibraryScreenState extends State<LibraryScreen> {
   @override
   void initState() {
     super.initState();
     widget.library.addListener(_onChange);
   }
-
+ 
   @override
   void dispose() {
     widget.library.removeListener(_onChange);
     super.dispose();
   }
-
+ 
   void _onChange() => setState(() {});
-
+ 
   void _playVideo(VideoTrack track) {
     final all = widget.library.videos;
     final idx = all.indexWhere((v) => v.id == track.id);
@@ -38,7 +38,62 @@ class _LibraryScreenState extends State<LibraryScreen> {
       MaterialPageRoute(builder: (_) => PlayerScreen(player: widget.player)),
     );
   }
-
+ 
+  Future<void> _showFolderDialog() async {
+    final controller = TextEditingController(
+      text: VideoLibraryState.suggestedFolders.first,
+    );
+    final path = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a24),
+        title: const Text('Scan a folder', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Folder path',
+                labelStyle: TextStyle(color: Colors.white54),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text('Quick picks:', style: TextStyle(color: Colors.white38, fontSize: 12)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: VideoLibraryState.suggestedFolders.map((folder) {
+                return ActionChip(
+                  label: Text(folder, style: const TextStyle(fontSize: 11)),
+                  onPressed: () => controller.text = folder,
+                  backgroundColor: Colors.white.withValues(alpha: 0.08),
+                  labelStyle: const TextStyle(color: Colors.white70),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Scan'),
+          ),
+        ],
+      ),
+    );
+    if (path != null && path.isNotEmpty) {
+      await widget.library.scanFolder(path);
+    }
+  }
+ 
   @override
   Widget build(BuildContext context) {
     final lib = widget.library;
@@ -56,14 +111,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Add files',
-            icon: const Icon(Icons.video_file_outlined),
-            onPressed: lib.addFiles,
-          ),
-          IconButton(
-            tooltip: 'Pick folder',
+            tooltip: 'Scan folder',
             icon: const Icon(Icons.folder_open),
-            onPressed: lib.pickFolderAndScan,
+            onPressed: _showFolderDialog,
           ),
           if (lib.folderName != null)
             IconButton(
@@ -93,6 +143,23 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
           ),
+          if (lib.permissionError != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  lib.permissionError!,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                ),
+              ),
+            ),
           if (lib.isScanning)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -116,7 +183,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
           Expanded(
             child: lib.videos.isEmpty
-                ? _EmptyState(onPickFolder: lib.pickFolderAndScan, onAddFiles: lib.addFiles)
+                ? _EmptyState(onPickFolder: _showFolderDialog)
                 : GridView.builder(
                     padding: const EdgeInsets.all(12),
                     gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -137,13 +204,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 }
-
+ 
 class _EmptyState extends StatelessWidget {
   final VoidCallback onPickFolder;
-  final VoidCallback onAddFiles;
-
-  const _EmptyState({required this.onPickFolder, required this.onAddFiles});
-
+ 
+  const _EmptyState({required this.onPickFolder});
+ 
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -157,13 +223,7 @@ class _EmptyState extends StatelessWidget {
           FilledButton.icon(
             onPressed: onPickFolder,
             icon: const Icon(Icons.folder_open),
-            label: const Text('Pick a folder'),
-          ),
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: onAddFiles,
-            icon: const Icon(Icons.video_file_outlined),
-            label: const Text('Or add files'),
+            label: const Text('Scan a folder'),
           ),
         ],
       ),

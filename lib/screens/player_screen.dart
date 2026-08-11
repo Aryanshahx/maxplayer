@@ -1,42 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
-
+ 
 import '../state/media_player_state.dart';
 import '../widgets/player_controls_overlay.dart';
 import '../widgets/playlist_panel.dart';
-
+ 
 class PlayerScreen extends StatefulWidget {
   final MediaPlayerState player;
-
+ 
   const PlayerScreen({super.key, required this.player});
-
+ 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
-
+ 
 class _PlayerScreenState extends State<PlayerScreen> {
   late final VideoController _controller;
   bool _controlsVisible = true;
   bool _isFullscreen = false;
   bool _showQueue = false;
-
+ 
   @override
   void initState() {
     super.initState();
     _controller = VideoController(widget.player.player);
     widget.player.addListener(_onChange);
   }
-
+ 
   @override
   void dispose() {
     widget.player.removeListener(_onChange);
     if (_isFullscreen) _exitFullscreen();
     super.dispose();
   }
-
+ 
   void _onChange() => setState(() {});
-
+ 
   void _toggleFullscreen() {
     setState(() => _isFullscreen = !_isFullscreen);
     if (_isFullscreen) {
@@ -49,16 +49,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _exitFullscreen();
     }
   }
-
+ 
   void _exitFullscreen() {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     final player = widget.player;
-
+ 
     return PopScope(
       canPop: !_isFullscreen,
       onPopInvokedWithResult: (didPop, _) {

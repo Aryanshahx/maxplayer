@@ -7,7 +7,7 @@ class VideoTrack {
   final Duration? duration;
   final int? sizeBytes;
   final int? lastModifiedMs;
-
+ 
   const VideoTrack({
     required this.id,
     required this.title,
@@ -17,7 +17,7 @@ class VideoTrack {
     this.sizeBytes,
     this.lastModifiedMs,
   });
-
+ 
   VideoTrack copyWith({
     String? thumbnailPath,
     Duration? duration,
@@ -33,7 +33,7 @@ class VideoTrack {
     );
   }
 }
-
+ 
 enum RepeatMode { none, one, all }
-
+ 
 enum SortMode { name, date, size }

@@ -7,7 +7,7 @@ String formatFileSize(int? bytes) {
   }
   return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
 }
-
+ 
 String formatDuration(Duration? d) {
   if (d == null) return '--:--';
   final totalSeconds = d.inSeconds;
@@ -19,12 +19,12 @@ String formatDuration(Duration? d) {
   }
   return '$m:${s.toString().padLeft(2, '0')}';
 }
-
+ 
 const List<String> videoExtensions = [
   '.mp4', '.webm', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.m4v',
   '.3gp', '.ogv', '.ts', '.mts', '.m2ts', '.vob',
 ];
-
+ 
 bool isVideoFile(String name) {
   final lower = name.toLowerCase();
   return videoExtensions.any((ext) => lower.endsWith(ext));

@@ -1,22 +1,33 @@
 <!--
   Add these INSIDE the <manifest> tag of android/app/src/main/AndroidManifest.xml,
-  above the <application> tag.
+  above the <application> tag. If your manifest's root <manifest> tag doesn't
+  already declare xmlns:tools="http://schemas.android.com/tools", add that
+  attribute too (needed for the tools:ignore line below).
 -->
-
+ 
 <!-- Android 13+ granular media permission -->
 <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-
+ 
 <!-- Android 12 and below -->
 <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
     android:maxSdkVersion="32" />
-
+ 
 <!--
-  NOTE: file_picker's getDirectoryPath()/pickFiles() use the Storage Access
-  Framework (SAF) via an Activity result, which works without these
-  permissions on Android 11+. The permissions above are a fallback for
-  older devices / if you later add MediaStore-based scanning.
-  No <application> label changes are required for the permissions above.
+  Required for scanning arbitrary user-entered folder paths (not just
+  MediaStore-indexed locations). This is the "All files access" permission -
+  the user grants it manually in Settings > Apps > Max Player > Permissions,
+  which permission_handler's request() call will deep-link to.
+  Fine for a personal sideloaded APK; would need Play Store justification
+  for a public release.
 -->
-
+<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+    tools:ignore="ScopedStorage" />
+ 
+<!--
+  NOTE: arbitrary folder scanning (outside MediaStore-indexed locations)
+  requires MANAGE_EXTERNAL_STORAGE below, since it's not going through a
+  media-store-aware picker.
+-->
+ 
 <!-- Also set the visible app name (inside <application ...>): -->
 <!-- android:label="Max Player" -->

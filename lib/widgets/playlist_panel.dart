@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../utils/formatters.dart';
-
+ 
 class PlaylistPanel extends StatelessWidget {
   final List<VideoTrack> playlist;
   final int currentIndex;
   final ValueChanged<int> onPlay;
   final ValueChanged<int> onRemove;
-
+ 
   const PlaylistPanel({
     super.key,
     required this.playlist,
@@ -15,7 +15,7 @@ class PlaylistPanel extends StatelessWidget {
     required this.onPlay,
     required this.onRemove,
   });
-
+ 
   @override
   Widget build(BuildContext context) {
     if (playlist.isEmpty) {
