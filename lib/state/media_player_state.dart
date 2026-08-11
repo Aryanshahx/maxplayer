@@ -5,6 +5,8 @@ import 'package:media_kit/media_kit.dart' hide VideoTrack;
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../models/video_track.dart';
+import '../services/native_bridge.dart';
+import '../utils/formatters.dart';
 
 /// Mirrors the web app's useMediaPlayer hook, backed by media_kit's Player.
 class MediaPlayerState extends ChangeNotifier {
@@ -34,6 +36,15 @@ class MediaPlayerState extends ChangeNotifier {
   List<SubtitleTrack> subtitleTracks = [];
   AudioTrack? currentAudioTrack;
   SubtitleTrack? currentSubtitleTrack;
+
+  /// Short user-facing notices ("Resumed 12:34" etc) - the player screen
+  /// shows these as a transient overlay indicator.
+  final _notices = StreamController<String>.broadcast();
+  Stream<String> get notices => _notices.stream;
+
+  /// Periodic bookmark saver ("resume from where you left off").
+  Timer? _bookmarkTimer;
+  static const String _resumePrefix = 'resume:';
 
   VideoTrack? get currentTrack =>
       playlist.isNotEmpty && currentIndex < playlist.length ? playlist[currentIndex] : null;
@@ -75,6 +86,11 @@ class MediaPlayerState extends ChangeNotifier {
       }),
     ];
     player.setVolume(volume * 100);
+    // Persist the resume point of the current video every few seconds.
+    _bookmarkTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _saveBookmark(),
+    );
   }
 
   List<int> _generateShuffledOrder(int length, int currentIdx) {
@@ -116,19 +132,71 @@ class MediaPlayerState extends ChangeNotifier {
     if (track == null) return;
     await player.open(Media(track.path), play: autoplay);
     await player.setRate(playbackRate);
+    await _restoreBookmark(track);
+  }
+
+  /// Jump to where the user left off last time this file was open.
+  Future<void> _restoreBookmark(VideoTrack track) async {
+    try {
+      final settings = await NativeBridge.loadSettings();
+      final secs = int.tryParse(settings['$_resumePrefix${track.path}'] ?? '');
+      if (secs == null || secs < 10) return; // ignore tiny offsets
+
+      var d = duration;
+      if (d == Duration.zero) {
+        // Wait briefly for the demuxer to report the length.
+        d = await player.stream.duration
+            .firstWhere((v) => v > Duration.zero)
+            .timeout(const Duration(seconds: 3),
+                onTimeout: () => Duration.zero);
+      }
+      if (d == Duration.zero) return;
+      // Almost-finished videos start from the beginning again.
+      if (secs >= d.inSeconds - 15) {
+        NativeBridge.saveSetting('$_resumePrefix${track.path}', '0');
+        return;
+      }
+      // User may have switched tracks while we waited.
+      if (currentTrack?.path != track.path) return;
+      await player.seek(Duration(seconds: secs));
+      _notices.add('Resumed ${formatDuration(Duration(seconds: secs))}');
+    } catch (_) {
+      // Resume is best-effort.
+    }
+  }
+
+  void _saveBookmark() {
+    final track = currentTrack;
+    if (track == null || !isPlaying) return;
+    final secs = position.inSeconds;
+    if (secs > 0) {
+      NativeBridge.saveSetting('$_resumePrefix${track.path}', '$secs');
+    }
   }
 
   Future<void> togglePlay() async {
     if (isPlaying) {
-      await player.pause();
+      await pause();
     } else {
       await player.play();
     }
   }
 
-  Future<void> pause() => player.pause();
+  Future<void> pause() async {
+    _saveBookmark();
+    await player.pause();
+  }
 
   Future<void> seek(Duration to) => player.seek(to);
+
+  /// Relative seek (e.g. ±10s), clamped to the media bounds.
+  Future<void> seekBy(int seconds) async {
+    if (currentTrack == null) return;
+    var target = position + Duration(seconds: seconds);
+    if (target < Duration.zero) target = Duration.zero;
+    if (duration > Duration.zero && target > duration) target = duration;
+    await player.seek(target);
+  }
 
   Future<void> setVolume(double v) async {
     volume = v.clamp(0.0, 1.0);
@@ -208,6 +276,11 @@ class MediaPlayerState extends ChangeNotifier {
   }
 
   Future<void> _handleEnded() async {
+    // Completed video: clear its bookmark so it replays from the start.
+    final track = currentTrack;
+    if (track != null) {
+      NativeBridge.saveSetting('$_resumePrefix${track.path}', '0');
+    }
     if (repeatMode == RepeatMode.one) {
       await player.seek(Duration.zero);
       await player.play();
@@ -218,6 +291,8 @@ class MediaPlayerState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _bookmarkTimer?.cancel();
+    _notices.close();
     for (final s in _subs) {
       s.cancel();
     }

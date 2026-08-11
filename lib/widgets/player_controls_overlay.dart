@@ -17,12 +17,21 @@ class PlayerControlsOverlay extends StatelessWidget {
   final VoidCallback onToggleFullscreen;
   final VoidCallback onToggleQueue;
 
+  /// Fired on every control interaction; the screen uses it to restart the
+  /// auto-hide countdown.
+  final VoidCallback onInteract;
+
+  /// Cycles the video fit (contain -> cover -> fill).
+  final VoidCallback onCycleFit;
+
   const PlayerControlsOverlay({
     super.key,
     required this.player,
     required this.isFullscreen,
     required this.onToggleFullscreen,
     required this.onToggleQueue,
+    required this.onInteract,
+    required this.onCycleFit,
   });
 
   @override
@@ -45,9 +54,12 @@ class PlayerControlsOverlay extends StatelessWidget {
               VideoProgressBar(
                 position: player.position,
                 duration: player.duration,
-                onSeek: player.seek,
+                onSeek: (d) {
+                  player.seek(d);
+                  onInteract();
+                },
               ),
-              // Row 1: transport (shuffle - prev - play - next - repeat)
+              // Row 1: playback (shuffle | -10s prev play next +10s | repeat)
               Row(
                 children: [
                   _iconBtn(
@@ -58,6 +70,10 @@ class PlayerControlsOverlay extends StatelessWidget {
                     onTap: player.toggleShuffle,
                   ),
                   const Spacer(),
+                  _iconBtn(
+                    icon: Icons.replay_10,
+                    onTap: () => player.seekBy(-10),
+                  ),
                   _iconBtn(icon: Icons.skip_previous, onTap: player.prevTrack),
                   _iconBtn(
                     icon: player.isPlaying
@@ -67,6 +83,10 @@ class PlayerControlsOverlay extends StatelessWidget {
                     onTap: player.togglePlay,
                   ),
                   _iconBtn(icon: Icons.skip_next, onTap: player.nextTrack),
+                  _iconBtn(
+                    icon: Icons.forward_10,
+                    onTap: () => player.seekBy(10),
+                  ),
                   const Spacer(),
                   _iconBtn(
                     icon: switch (player.repeatMode) {
@@ -79,7 +99,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                   ),
                 ],
               ),
-              // Row 2: options (mute - speed - audio - subtitles | queue - fullscreen)
+              // Row 2: options (mute speed audio subs fit | queue fullscreen)
               Row(
                 children: [
                   _iconBtn(
@@ -110,6 +130,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                       isSubtitle: true,
                     ),
                   ),
+                  _iconBtn(icon: Icons.aspect_ratio, onTap: onCycleFit),
                   const Spacer(),
                   _iconBtn(icon: Icons.queue_music, onTap: onToggleQueue),
                   _iconBtn(
@@ -131,7 +152,10 @@ class PlayerControlsOverlay extends StatelessWidget {
     return PopupMenuButton<double>(
       initialValue: player.playbackRate,
       color: const Color(0xFF1a1a24),
-      onSelected: player.setPlaybackRate,
+      onSelected: (r) {
+        player.setPlaybackRate(r);
+        onInteract();
+      },
       itemBuilder: (context) => [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
           .map((r) => PopupMenuItem(
                 value: r,
@@ -156,7 +180,11 @@ class PlayerControlsOverlay extends StatelessWidget {
     return IconButton(
       icon: Icon(icon,
           size: size, color: active ? const Color(0xFFA855F7) : Colors.white),
-      onPressed: onTap,
+      // Every press also restarts the screen's auto-hide countdown.
+      onPressed: () {
+        onTap();
+        onInteract();
+      },
     );
   }
 }
