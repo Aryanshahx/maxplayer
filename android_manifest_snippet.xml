@@ -1,0 +1,22 @@
+<!--
+  Add these INSIDE the <manifest> tag of android/app/src/main/AndroidManifest.xml,
+  above the <application> tag.
+-->
+
+<!-- Android 13+ granular media permission -->
+<uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+
+<!-- Android 12 and below -->
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+    android:maxSdkVersion="32" />
+
+<!--
+  NOTE: file_picker's getDirectoryPath()/pickFiles() use the Storage Access
+  Framework (SAF) via an Activity result, which works without these
+  permissions on Android 11+. The permissions above are a fallback for
+  older devices / if you later add MediaStore-based scanning.
+  No <application> label changes are required for the permissions above.
+-->
+
+<!-- Also set the visible app name (inside <application ...>): -->
+<!-- android:label="Max Player" -->
