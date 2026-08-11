@@ -1,8 +1,6 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
-import 'package:video_thumbnail/video_thumbnail.dart' as vt;
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/video_track.dart';
@@ -161,33 +159,20 @@ class VideoLibraryState extends ChangeNotifier {
     try {
       final file = File(path);
       final stat = await file.stat();
-      final thumb = await _generateThumbnail(path);
       return VideoTrack(
         id: '$path-${stat.modified.millisecondsSinceEpoch}',
         title: p.basenameWithoutExtension(path),
         path: path,
-        thumbnailPath: thumb,
+        // Thumbnail generation removed for now - the `video_thumbnail`
+        // plugin's Android build config is incompatible with current AGP
+        // (missing namespace declaration). VideoTile already falls back to
+        // a placeholder icon when thumbnailPath is null.
+        thumbnailPath: null,
         sizeBytes: stat.size,
         lastModifiedMs: stat.modified.millisecondsSinceEpoch,
       );
     } catch (e) {
       debugPrint('Failed to read $path: $e');
-      return null;
-    }
-  }
-
-  Future<String?> _generateThumbnail(String videoPath) async {
-    try {
-      final cacheDir = await getTemporaryDirectory();
-      final thumb = await vt.VideoThumbnail.thumbnailFile(
-        video: videoPath,
-        thumbnailPath: cacheDir.path,
-        imageFormat: vt.ImageFormat.JPEG,
-        maxWidth: 320,
-        quality: 60,
-      );
-      return thumb;
-    } catch (e) {
       return null;
     }
   }
