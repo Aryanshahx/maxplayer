@@ -2,12 +2,19 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' hide VideoTrack;
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../models/video_track.dart';
 
 /// Mirrors the web app's useMediaPlayer hook, backed by media_kit's Player.
 class MediaPlayerState extends ChangeNotifier {
   final Player player = Player();
+
+  /// ONE video controller for the app's lifetime, created lazily.
+  /// PlayerScreen used to construct a new VideoController on every visit and
+  /// (with media_kit_video 1.3.x having no public dispose) those stacked up
+  /// on the same player - one source of the fullscreen glitches.
+  late final VideoController videoController = VideoController(player);
 
   List<VideoTrack> playlist = [];
   int currentIndex = 0;
@@ -21,6 +28,12 @@ class MediaPlayerState extends ChangeNotifier {
   bool isShuffled = false;
   bool isLoading = false;
   List<int> _shuffledOrder = [];
+
+  // Available tracks of the currently loaded media (populated from streams).
+  List<AudioTrack> audioTracks = [];
+  List<SubtitleTrack> subtitleTracks = [];
+  AudioTrack? currentAudioTrack;
+  SubtitleTrack? currentSubtitleTrack;
 
   VideoTrack? get currentTrack =>
       playlist.isNotEmpty && currentIndex < playlist.length ? playlist[currentIndex] : null;
@@ -48,6 +61,17 @@ class MediaPlayerState extends ChangeNotifier {
       }),
       player.stream.completed.listen((completed) {
         if (completed) _handleEnded();
+      }),
+      // Repopulates whenever a new media is opened.
+      player.stream.tracks.listen((t) {
+        audioTracks = t.audio;
+        subtitleTracks = t.subtitle;
+        notifyListeners();
+      }),
+      player.stream.track.listen((t) {
+        currentAudioTrack = t.audio;
+        currentSubtitleTrack = t.subtitle;
+        notifyListeners();
       }),
     ];
     player.setVolume(volume * 100);
@@ -124,6 +148,18 @@ class MediaPlayerState extends ChangeNotifier {
     await player.setRate(rate);
     notifyListeners();
   }
+
+  /// Switch to a different audio track (e.g. Hindi / English in dual-audio
+  /// files). Pass an entry of [audioTracks].
+  void selectAudioTrack(AudioTrack track) => player.setAudioTrack(track);
+
+  /// Switch subtitle track; pass SubtitleTrack.no() to turn subtitles off.
+  void selectSubtitleTrack(SubtitleTrack track) =>
+      player.setSubtitleTrack(track);
+
+  /// True when a real subtitle track (not "no"/off) is currently active.
+  bool get subtitlesActive =>
+      currentSubtitleTrack != null && currentSubtitleTrack!.id != 'no';
 
   Future<void> nextTrack() async {
     if (playlist.length <= 1) return;

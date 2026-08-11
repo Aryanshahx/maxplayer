@@ -16,26 +16,24 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  late final VideoController _controller;
+  // Shared, app-lifetime controller owned by MediaPlayerState (this media_kit
+  // version has no VideoController.dispose, so per-visit controllers leaked
+  // and glitched the player).
+  late final VideoController _controller = widget.player.videoController;
   bool _controlsVisible = true;
   bool _isFullscreen = false;
   bool _showQueue = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoController(widget.player.player);
-    widget.player.addListener(_onChange);
-  }
+  // NOTE: no addListener/setState here. Rebuilding the whole screen on
+  // every position tick re-created the video surface each time and made
+  // fullscreen toggling flicker. Ticking parts (overlay, spinner, queue,
+  // title) listen to the player themselves via AnimatedBuilder.
 
   @override
   void dispose() {
-    widget.player.removeListener(_onChange);
     if (_isFullscreen) _exitFullscreen();
     super.dispose();
   }
-
-  void _onChange() => setState(() {});
 
   void _toggleFullscreen() {
     setState(() => _isFullscreen = !_isFullscreen);
@@ -70,28 +68,52 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ? null
             : AppBar(
                 backgroundColor: Colors.black,
-                title: Text(player.currentTrack?.title ?? 'Max Player',
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                title: AnimatedBuilder(
+                  animation: player,
+                  builder: (context, _) => Text(
+                    player.currentTrack?.title ?? 'Max Player',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ),
         body: SafeArea(
           top: !_isFullscreen,
-          bottom: false,
+          // Lift controls above the gesture/nav bar in landscape fullscreen.
+          bottom: true,
           child: Row(
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: () => setState(() => _controlsVisible = !_controlsVisible),
+                  onTap: () =>
+                      setState(() => _controlsVisible = !_controlsVisible),
                   onDoubleTap: _toggleFullscreen,
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
                       Center(
                         child: player.currentTrack != null
-                            ? Video(controller: _controller, controls: NoVideoControls)
-                            : const Text('No video loaded', style: TextStyle(color: Colors.white38)),
+                            ? RepaintBoundary(
+                                child: Video(
+                                  controller: _controller,
+                                  controls: NoVideoControls,
+                                ),
+                              )
+                            : const Text('No video loaded',
+                                style: TextStyle(color: Colors.white38)),
                       ),
-                      if (player.isLoading)
-                        const Center(child: CircularProgressIndicator(color: Color(0xFFA855F7))),
+                      // Buffering spinner - follows the player stream only.
+                      Positioned.fill(
+                        child: AnimatedBuilder(
+                          animation: player,
+                          builder: (context, _) => player.isLoading
+                              ? const Center(
+                                  child: CircularProgressIndicator(
+                                      color: Color(0xFFA855F7)),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                      ),
                       if (_controlsVisible)
                         Positioned(
                           left: 0,
@@ -101,7 +123,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             player: player,
                             isFullscreen: _isFullscreen,
                             onToggleFullscreen: _toggleFullscreen,
-                            onToggleQueue: () => setState(() => _showQueue = !_showQueue),
+                            onToggleQueue: () =>
+                                setState(() => _showQueue = !_showQueue),
                           ),
                         ),
                     ],
@@ -113,11 +136,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   width: 280,
                   child: Container(
                     color: const Color(0xFF12121a),
-                    child: PlaylistPanel(
-                      playlist: player.playlist,
-                      currentIndex: player.currentIndex,
-                      onPlay: player.playTrack,
-                      onRemove: player.removeFromPlaylist,
+                    child: AnimatedBuilder(
+                      animation: player,
+                      builder: (context, _) => PlaylistPanel(
+                        playlist: player.playlist,
+                        currentIndex: player.currentIndex,
+                        onPlay: player.playTrack,
+                        onRemove: player.removeFromPlaylist,
+                      ),
                     ),
                   ),
                 ),
