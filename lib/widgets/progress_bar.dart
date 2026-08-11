@@ -1,30 +1,30 @@
 import 'package:flutter/material.dart';
 import '../utils/formatters.dart';
- 
+
 class VideoProgressBar extends StatefulWidget {
   final Duration position;
   final Duration duration;
   final ValueChanged<Duration> onSeek;
- 
+
   const VideoProgressBar({
     super.key,
     required this.position,
     required this.duration,
     required this.onSeek,
   });
- 
+
   @override
   State<VideoProgressBar> createState() => _VideoProgressBarState();
 }
- 
+
 class _VideoProgressBarState extends State<VideoProgressBar> {
   double? _dragValue; // 0..1 while user is dragging
- 
+
   @override
   Widget build(BuildContext context) {
     final totalMs = widget.duration.inMilliseconds.clamp(1, 1 << 62);
     final value = _dragValue ?? (widget.position.inMilliseconds / totalMs).clamp(0.0, 1.0);
- 
+
     return Row(
       children: [
         Text(formatDuration(widget.position), style: _timeStyle),
@@ -52,6 +52,6 @@ class _VideoProgressBarState extends State<VideoProgressBar> {
       ],
     );
   }
- 
+
   static const _timeStyle = TextStyle(fontSize: 12, color: Colors.white70);
 }

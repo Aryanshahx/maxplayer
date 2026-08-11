@@ -1,34 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
- 
+
 import 'state/media_player_state.dart';
 import 'state/video_library_state.dart';
 import 'screens/library_screen.dart';
- 
+
 void main() {
   // Must be called before any media_kit Player is created.
   MediaKit.ensureInitialized();
   runApp(const MaxPlayerApp());
 }
- 
+
 class MaxPlayerApp extends StatefulWidget {
   const MaxPlayerApp({super.key});
- 
+
   @override
   State<MaxPlayerApp> createState() => _MaxPlayerAppState();
 }
- 
+
 class _MaxPlayerAppState extends State<MaxPlayerApp> {
   final library = VideoLibraryState();
   final player = MediaPlayerState();
- 
+
   @override
   void dispose() {
     player.dispose();
     library.dispose();
     super.dispose();
   }
- 
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(

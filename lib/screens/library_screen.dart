@@ -4,32 +4,39 @@ import '../state/media_player_state.dart';
 import '../state/video_library_state.dart';
 import '../widgets/video_tile.dart';
 import 'player_screen.dart';
- 
+
 class LibraryScreen extends StatefulWidget {
   final VideoLibraryState library;
   final MediaPlayerState player;
- 
+
   const LibraryScreen({super.key, required this.library, required this.player});
- 
+
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
- 
+
 class _LibraryScreenState extends State<LibraryScreen> {
   @override
   void initState() {
     super.initState();
     widget.library.addListener(_onChange);
+    // Automatically ask for storage permission and scan the whole device
+    // the first time this screen opens - no folder picker needed.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.library.folderName == null && !widget.library.isScanning) {
+        widget.library.scanAllStorage();
+      }
+    });
   }
- 
+
   @override
   void dispose() {
     widget.library.removeListener(_onChange);
     super.dispose();
   }
- 
+
   void _onChange() => setState(() {});
- 
+
   void _playVideo(VideoTrack track) {
     final all = widget.library.videos;
     final idx = all.indexWhere((v) => v.id == track.id);
@@ -38,7 +45,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       MaterialPageRoute(builder: (_) => PlayerScreen(player: widget.player)),
     );
   }
- 
+
   Future<void> _showFolderDialog() async {
     final controller = TextEditingController(
       text: VideoLibraryState.suggestedFolders.first,
@@ -93,7 +100,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       await widget.library.scanFolder(path);
     }
   }
- 
+
   @override
   Widget build(BuildContext context) {
     final lib = widget.library;
@@ -111,7 +118,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Scan folder',
+            tooltip: 'Scan a specific folder instead',
             icon: const Icon(Icons.folder_open),
             onPressed: _showFolderDialog,
           ),
@@ -183,7 +190,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
           Expanded(
             child: lib.videos.isEmpty
-                ? _EmptyState(onPickFolder: _showFolderDialog)
+                ? _EmptyState(
+                    isScanning: lib.isScanning,
+                    onGrantAccess: () => lib.scanAllStorage(),
+                    onPickFolder: _showFolderDialog,
+                  )
                 : GridView.builder(
                     padding: const EdgeInsets.all(12),
                     gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -204,14 +215,25 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 }
- 
+
 class _EmptyState extends StatelessWidget {
+  final bool isScanning;
+  final VoidCallback onGrantAccess;
   final VoidCallback onPickFolder;
- 
-  const _EmptyState({required this.onPickFolder});
- 
+
+  const _EmptyState({
+    required this.isScanning,
+    required this.onGrantAccess,
+    required this.onPickFolder,
+  });
+
   @override
   Widget build(BuildContext context) {
+    if (isScanning) {
+      // Auto-scan is already in progress (shown via the progress bar above) -
+      // no need for a duplicate empty-state message.
+      return const SizedBox.shrink();
+    }
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -221,9 +243,15 @@ class _EmptyState extends StatelessWidget {
           const Text('No videos yet', style: TextStyle(color: Colors.white54, fontSize: 16)),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: onPickFolder,
+            onPressed: onGrantAccess,
             icon: const Icon(Icons.folder_open),
-            label: const Text('Scan a folder'),
+            label: const Text('Grant access & scan device'),
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: onPickFolder,
+            icon: const Icon(Icons.create_new_folder_outlined, size: 18),
+            label: const Text('Or scan a specific folder'),
           ),
         ],
       ),

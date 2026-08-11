@@ -2,13 +2,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../utils/formatters.dart';
- 
+
 class VideoTile extends StatelessWidget {
   final VideoTrack track;
   final VoidCallback onTap;
- 
+
   const VideoTile({super.key, required this.track, required this.onTap});
- 
+
   @override
   Widget build(BuildContext context) {
     return InkWell(

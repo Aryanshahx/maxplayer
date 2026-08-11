@@ -2,13 +2,13 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import '../models/video_track.dart';
 import '../state/media_player_state.dart';
 import 'progress_bar.dart';
- 
+
 class PlayerControlsOverlay extends StatelessWidget {
   final MediaPlayerState player;
   final bool isFullscreen;
   final VoidCallback onToggleFullscreen;
   final VoidCallback onToggleQueue;
- 
+
   const PlayerControlsOverlay({
     super.key,
     required this.player,
@@ -16,7 +16,7 @@ class PlayerControlsOverlay extends StatelessWidget {
     required this.onToggleFullscreen,
     required this.onToggleQueue,
   });
- 
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -100,7 +100,7 @@ class PlayerControlsOverlay extends StatelessWidget {
       ),
     );
   }
- 
+
   Widget _iconBtn({
     required IconData icon,
     required VoidCallback onTap,
