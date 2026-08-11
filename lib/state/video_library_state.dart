@@ -68,7 +68,7 @@ class VideoLibraryState extends ChangeNotifier {
 
   /// Opens Android's folder picker (SAF) and recursively scans for videos.
   Future<void> pickFolderAndScan() async {
-    final dirPath = await FilePicker.platform.getDirectoryPath();
+    final dirPath = await FilePicker.getDirectoryPath();
     if (dirPath == null) return; // user cancelled
     _folderPath = dirPath;
     folderName = p.basename(dirPath);
@@ -84,7 +84,7 @@ class VideoLibraryState extends ChangeNotifier {
   /// Lets the user multi-select individual video files (fallback when
   /// folder scanning isn't convenient, mirrors the web app's drag/drop + file picker).
   Future<void> addFiles() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       allowMultiple: true,
       type: FileType.video,
     );

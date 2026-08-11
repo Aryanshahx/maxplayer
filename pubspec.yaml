@@ -19,7 +19,7 @@ dependencies:
 
   # Folder / file picking - uses Android Storage Access Framework,
   # no broad storage permission needed on Android 11+.
-  file_picker: ^8.1.2
+  file_picker: ^11.0.3
 
   # Per-video thumbnail generation
 
