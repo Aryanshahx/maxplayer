@@ -21,7 +21,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     super.initState();
     widget.library.addListener(_onChange);
     // Automatically ask for storage permission and scan the whole device
-    // the first time this screen opens - no folder picker needed.
+    // the first time this screen opens.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.library.folderName == null && !widget.library.isScanning) {
         widget.library.scanAllStorage();
@@ -46,61 +46,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  Future<void> _showFolderDialog() async {
-    final controller = TextEditingController(
-      text: VideoLibraryState.suggestedFolders.first,
-    );
-    final path = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a24),
-        title: const Text('Scan a folder', style: TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: controller,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: 'Folder path',
-                labelStyle: TextStyle(color: Colors.white54),
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text('Quick picks:', style: TextStyle(color: Colors.white38, fontSize: 12)),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: VideoLibraryState.suggestedFolders.map((folder) {
-                return ActionChip(
-                  label: Text(folder, style: const TextStyle(fontSize: 11)),
-                  onPressed: () => controller.text = folder,
-                  backgroundColor: Colors.white.withValues(alpha: 0.08),
-                  labelStyle: const TextStyle(color: Colors.white70),
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Scan'),
-          ),
-        ],
-      ),
-    );
-    if (path != null && path.isNotEmpty) {
-      await widget.library.scanFolder(path);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final lib = widget.library;
@@ -117,11 +62,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
               style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Scan a specific folder instead',
-            icon: const Icon(Icons.folder_open),
-            onPressed: _showFolderDialog,
-          ),
           if (lib.folderName != null)
             IconButton(
               tooltip: 'Rescan',
@@ -150,23 +90,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
           ),
-          if (lib.permissionError != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                ),
-                child: Text(
-                  lib.permissionError!,
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
-                ),
-              ),
-            ),
           if (lib.isScanning)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -192,8 +115,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: lib.videos.isEmpty
                 ? _EmptyState(
                     isScanning: lib.isScanning,
-                    onGrantAccess: () => lib.scanAllStorage(),
-                    onPickFolder: _showFolderDialog,
+                    permissionDenied: lib.permissionDenied,
+                    onGrantAccess: lib.scanAllStorage,
                   )
                 : GridView.builder(
                     padding: const EdgeInsets.all(12),
@@ -218,20 +141,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
 class _EmptyState extends StatelessWidget {
   final bool isScanning;
+  final bool permissionDenied;
   final VoidCallback onGrantAccess;
-  final VoidCallback onPickFolder;
 
   const _EmptyState({
     required this.isScanning,
+    required this.permissionDenied,
     required this.onGrantAccess,
-    required this.onPickFolder,
   });
 
   @override
   Widget build(BuildContext context) {
     if (isScanning) {
-      // Auto-scan is already in progress (shown via the progress bar above) -
-      // no need for a duplicate empty-state message.
+      // Progress bar above already shows scan status - avoid a duplicate message.
       return const SizedBox.shrink();
     }
     return Center(
@@ -240,18 +162,18 @@ class _EmptyState extends StatelessWidget {
         children: [
           const Icon(Icons.video_library_outlined, size: 48, color: Colors.white24),
           const SizedBox(height: 12),
-          const Text('No videos yet', style: TextStyle(color: Colors.white54, fontSize: 16)),
+          Text(
+            permissionDenied
+                ? 'Max Player needs storage access to find your videos'
+                : 'No videos yet',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54, fontSize: 16),
+          ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: onGrantAccess,
             icon: const Icon(Icons.folder_open),
-            label: const Text('Grant access & scan device'),
-          ),
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: onPickFolder,
-            icon: const Icon(Icons.create_new_folder_outlined, size: 18),
-            label: const Text('Or scan a specific folder'),
+            label: Text(permissionDenied ? 'Try again' : 'Scan device'),
           ),
         ],
       ),

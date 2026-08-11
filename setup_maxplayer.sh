@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Run this from inside your Flutter project root (e.g. ~/IdeaProjects/maxplayer).
-# It creates/overwrites pubspec.yaml, lib/, test/widget_test.dart, and drops the
-# Android manifest snippet + codemagic.yaml alongside your project.
 set -e
 
 mkdir -p lib/models lib/state lib/screens lib/widgets lib/utils test
@@ -267,37 +265,25 @@ class ScanProgress {
   const ScanProgress({this.found = 0, this.processed = 0, this.total = 0});
 }
 
-/// Mirrors the web app's useVideoLibrary hook.
-///
-/// Folder access is done via a manually-entered path + broad storage
-/// permission rather than a native folder-picker plugin - file_picker's
-/// Android implementation has proven incompatible with the current
-/// AGP 9 / Kotlin 2.3 / Flutter 3.44 toolchain combination (missing/renamed
-/// native class at build time across every 8.x-11.x version tried).
+/// Mirrors the web app's useVideoLibrary hook, simplified to a single flow:
+/// request storage permission, then scan all of internal storage for videos.
+/// No folder picker - file_picker's Android implementation proved
+/// incompatible with the current AGP 9 / Kotlin 2.3 / Flutter 3.44 toolchain.
 class VideoLibraryState extends ChangeNotifier {
   List<VideoTrack> _videos = [];
   bool isScanning = false;
   ScanProgress scanProgress = const ScanProgress();
   String? folderName;
-  String? _folderPath;
-  String? permissionError;
+  bool permissionDenied = false;
 
   String searchQuery = '';
   SortMode sortMode = SortMode.name;
   bool sortAscending = true;
 
-  /// Common Android video folders, offered as quick-pick suggestions in the UI.
-  static const List<String> suggestedFolders = [
-    '/storage/emulated/0/Movies',
-    '/storage/emulated/0/DCIM/Camera',
-    '/storage/emulated/0/Download',
-    '/storage/emulated/0/',
-  ];
-
   static const String _internalStorageRoot = '/storage/emulated/0/';
 
   /// Folders under internal storage that are never worth scanning for videos
-  /// (app-private caches, thumbnails, etc) - skipping these keeps a
+  /// (app-private caches, thumbnails, etc) - skipping these keeps the
   /// whole-device scan fast and avoids permission-denied noise.
   static const List<String> _skipDirNames = [
     'Android', // app-private data/obb, largely inaccessible + irrelevant anyway
@@ -347,49 +333,24 @@ class VideoLibraryState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Requests "All files access" (needed to read arbitrary folders outside
-  /// the media-store-scoped directories on Android 11+), then scans [dirPath].
-  Future<void> scanFolder(String dirPath) async {
-    if (!await _ensurePermission()) return;
-
-    _folderPath = dirPath;
-    folderName = p.basename(dirPath.endsWith('/')
-        ? dirPath.substring(0, dirPath.length - 1)
-        : dirPath);
-    if (folderName!.isEmpty) folderName = 'Internal storage';
-    await _scanDirectory(dirPath);
-  }
-
-  /// Requests storage permission, then scans the whole of internal storage
-  /// for videos in one go - no folder selection needed.
+  /// Requests "All files access", then scans the whole of internal storage
+  /// for videos. Call this again any time to retry after a denial.
   Future<void> scanAllStorage() async {
-    if (!await _ensurePermission()) return;
-
-    _folderPath = _internalStorageRoot;
-    folderName = 'Internal storage';
-    await _scanDirectory(_internalStorageRoot);
-  }
-
-  Future<bool> _ensurePermission() async {
-    permissionError = null;
+    permissionDenied = false;
     notifyListeners();
 
     final status = await Permission.manageExternalStorage.request();
     if (!status.isGranted) {
-      permissionError =
-          'Storage access was not granted. Open Settings > Apps > Max Player > '
-          'Permissions and enable "All files access", then try again.';
+      permissionDenied = true;
       notifyListeners();
-      return false;
+      return;
     }
-    return true;
+
+    folderName = 'Internal storage';
+    await _scanDirectory(_internalStorageRoot);
   }
 
-  Future<void> rescan() async {
-    if (_folderPath != null) {
-      await _scanDirectory(_folderPath!);
-    }
-  }
+  Future<void> rescan() => scanAllStorage();
 
   Future<void> _scanDirectory(String dirPath) async {
     isScanning = true;
@@ -399,13 +360,8 @@ class VideoLibraryState extends ChangeNotifier {
 
     final dir = Directory(dirPath);
     final foundFiles = <File>[];
-    try {
-      await for (final entity in _listVideosSkippingJunk(dir)) {
-        foundFiles.add(entity);
-      }
-    } catch (e) {
-      debugPrint('Folder scan failed: $e');
-      permissionError = 'Could not read that folder: $e';
+    await for (final entity in _listVideosSkippingJunk(dir)) {
+      foundFiles.add(entity);
     }
 
     scanProgress = ScanProgress(found: foundFiles.length, total: foundFiles.length);
@@ -1020,7 +976,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     super.initState();
     widget.library.addListener(_onChange);
     // Automatically ask for storage permission and scan the whole device
-    // the first time this screen opens - no folder picker needed.
+    // the first time this screen opens.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.library.folderName == null && !widget.library.isScanning) {
         widget.library.scanAllStorage();
@@ -1045,61 +1001,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  Future<void> _showFolderDialog() async {
-    final controller = TextEditingController(
-      text: VideoLibraryState.suggestedFolders.first,
-    );
-    final path = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a24),
-        title: const Text('Scan a folder', style: TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: controller,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: 'Folder path',
-                labelStyle: TextStyle(color: Colors.white54),
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text('Quick picks:', style: TextStyle(color: Colors.white38, fontSize: 12)),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: VideoLibraryState.suggestedFolders.map((folder) {
-                return ActionChip(
-                  label: Text(folder, style: const TextStyle(fontSize: 11)),
-                  onPressed: () => controller.text = folder,
-                  backgroundColor: Colors.white.withValues(alpha: 0.08),
-                  labelStyle: const TextStyle(color: Colors.white70),
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Scan'),
-          ),
-        ],
-      ),
-    );
-    if (path != null && path.isNotEmpty) {
-      await widget.library.scanFolder(path);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final lib = widget.library;
@@ -1116,11 +1017,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
               style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Scan a specific folder instead',
-            icon: const Icon(Icons.folder_open),
-            onPressed: _showFolderDialog,
-          ),
           if (lib.folderName != null)
             IconButton(
               tooltip: 'Rescan',
@@ -1149,23 +1045,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
           ),
-          if (lib.permissionError != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                ),
-                child: Text(
-                  lib.permissionError!,
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
-                ),
-              ),
-            ),
           if (lib.isScanning)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1191,8 +1070,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: lib.videos.isEmpty
                 ? _EmptyState(
                     isScanning: lib.isScanning,
-                    onGrantAccess: () => lib.scanAllStorage(),
-                    onPickFolder: _showFolderDialog,
+                    permissionDenied: lib.permissionDenied,
+                    onGrantAccess: lib.scanAllStorage,
                   )
                 : GridView.builder(
                     padding: const EdgeInsets.all(12),
@@ -1217,20 +1096,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
 class _EmptyState extends StatelessWidget {
   final bool isScanning;
+  final bool permissionDenied;
   final VoidCallback onGrantAccess;
-  final VoidCallback onPickFolder;
 
   const _EmptyState({
     required this.isScanning,
+    required this.permissionDenied,
     required this.onGrantAccess,
-    required this.onPickFolder,
   });
 
   @override
   Widget build(BuildContext context) {
     if (isScanning) {
-      // Auto-scan is already in progress (shown via the progress bar above) -
-      // no need for a duplicate empty-state message.
+      // Progress bar above already shows scan status - avoid a duplicate message.
       return const SizedBox.shrink();
     }
     return Center(
@@ -1239,18 +1117,18 @@ class _EmptyState extends StatelessWidget {
         children: [
           const Icon(Icons.video_library_outlined, size: 48, color: Colors.white24),
           const SizedBox(height: 12),
-          const Text('No videos yet', style: TextStyle(color: Colors.white54, fontSize: 16)),
+          Text(
+            permissionDenied
+                ? 'Max Player needs storage access to find your videos'
+                : 'No videos yet',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54, fontSize: 16),
+          ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: onGrantAccess,
             icon: const Icon(Icons.folder_open),
-            label: const Text('Grant access & scan device'),
-          ),
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: onPickFolder,
-            icon: const Icon(Icons.create_new_folder_outlined, size: 18),
-            label: const Text('Or scan a specific folder'),
+            label: Text(permissionDenied ? 'Try again' : 'Scan device'),
           ),
         ],
       ),
