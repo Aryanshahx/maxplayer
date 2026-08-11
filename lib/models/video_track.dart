@@ -1,3 +1,5 @@
+import 'package:path/path.dart' as p;
+
 /// Mirrors the web app's VideoTrack type, adapted for local files on Android.
 class VideoTrack {
   final String id;
@@ -18,6 +20,13 @@ class VideoTrack {
     this.lastModifiedMs,
   });
 
+  /// Name of the folder containing this video (used by "Group by folder").
+  String get folderName {
+    final dir = p.dirname(path);
+    final base = p.basename(dir);
+    return base.isEmpty ? dir : base;
+  }
+
   VideoTrack copyWith({
     String? thumbnailPath,
     Duration? duration,
@@ -36,4 +45,11 @@ class VideoTrack {
 
 enum RepeatMode { none, one, all }
 
-enum SortMode { name, date, size }
+enum SortMode { name, date, size, length }
+
+enum ViewMode { grid, list }
+
+enum GroupMode { none, name, folder }
+
+/// What tapping a video does: queue every visible video, or just that file.
+enum PlaybackAction { all, single }

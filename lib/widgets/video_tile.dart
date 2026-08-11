@@ -5,9 +5,17 @@ import '../utils/formatters.dart';
 
 class VideoTile extends StatelessWidget {
   final VideoTrack track;
+  final bool isFavorite;
   final VoidCallback onTap;
+  final VoidCallback onFavorite;
 
-  const VideoTile({super.key, required this.track, required this.onTap});
+  const VideoTile({
+    super.key,
+    required this.track,
+    required this.isFavorite,
+    required this.onTap,
+    required this.onFavorite,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -30,25 +38,52 @@ class VideoTile extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   if (track.thumbnailPath != null)
-                    Image.file(File(track.thumbnailPath!), fit: BoxFit.cover)
+                    Image.file(
+                      File(track.thumbnailPath!),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const _Placeholder(),
+                    )
                   else
-                    Container(
-                      color: Colors.black45,
-                      child: const Icon(Icons.movie_outlined, size: 32, color: Colors.white24),
+                    const _Placeholder(),
+                  // Favourite toggle
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: onFavorite,
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          isFavorite ? Icons.favorite : Icons.favorite_border,
+                          size: 15,
+                          color: isFavorite
+                              ? const Color(0xFFA855F7)
+                              : Colors.white70,
+                        ),
+                      ),
                     ),
+                  ),
+                  // Duration pill
                   if (track.duration != null)
                     Positioned(
                       right: 6,
                       bottom: 6,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.7),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           formatDuration(track.duration),
-                          style: const TextStyle(fontSize: 11, color: Colors.white),
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.white),
                         ),
                       ),
                     ),
@@ -64,18 +99,37 @@ class VideoTile extends StatelessWidget {
                     track.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     formatFileSize(track.sizeBytes),
-                    style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.5)),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.5)),
                   ),
                 ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _Placeholder extends StatelessWidget {
+  const _Placeholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black45,
+      child: const Center(
+        child: Icon(Icons.movie_outlined, size: 32, color: Colors.white24),
       ),
     );
   }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../state/media_player_state.dart';
 import '../state/video_library_state.dart';
+import '../widgets/display_settings_sheet.dart';
+import '../widgets/video_list_item.dart';
 import '../widgets/video_tile.dart';
 import 'player_screen.dart';
 
@@ -38,9 +40,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void _onChange() => setState(() {});
 
   void _playVideo(VideoTrack track) {
-    final all = widget.library.videos;
-    final idx = all.indexWhere((v) => v.id == track.id);
-    widget.player.setPlaylistAndPlay(all, idx >= 0 ? idx : 0);
+    final lib = widget.library;
+    if (lib.playbackAction == PlaybackAction.single) {
+      // Queue only the tapped file.
+      widget.player.setPlaylistAndPlay([track], 0);
+    } else {
+      // Queue every visible video, starting at the tapped one.
+      final all = lib.videos;
+      final idx = all.indexWhere((v) => v.id == track.id);
+      widget.player.setPlaylistAndPlay(all, idx >= 0 ? idx : 0);
+    }
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => PlayerScreen(player: widget.player)),
     );
@@ -59,7 +68,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
             colors: [Color(0xFFA78BFA), Color(0xFF8B5CF6), Color(0xFF22D3EE)],
           ).createShader(bounds),
           child: const Text('Max Player',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         ),
         actions: [
           if (lib.folderName != null)
@@ -68,6 +78,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
               icon: const Icon(Icons.refresh),
               onPressed: lib.rescan,
             ),
+          IconButton(
+            tooltip: 'Display settings',
+            icon: const Icon(Icons.tune),
+            onPressed: () => DisplaySettingsSheet.show(context, lib),
+          ),
         ],
       ),
       body: Column(
@@ -111,29 +126,104 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ],
               ),
             ),
-          Expanded(
-            child: lib.videos.isEmpty
-                ? _EmptyState(
-                    isScanning: lib.isScanning,
-                    permissionDenied: lib.permissionDenied,
-                    onGrantAccess: lib.scanAllStorage,
-                  )
-                : GridView.builder(
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 220,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 0.82,
-                    ),
-                    itemCount: lib.videos.length,
-                    itemBuilder: (context, i) {
-                      final track = lib.videos[i];
-                      return VideoTile(track: track, onTap: () => _playVideo(track));
-                    },
-                  ),
-          ),
+          Expanded(child: _buildBody(lib)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBody(VideoLibraryState lib) {
+    // Single evaluation - the getter filters+sorts, so compute once per build.
+    final groups = lib.groups;
+    final visibleCount =
+        groups.fold<int>(0, (sum, g) => sum + g.videos.length);
+
+    if (visibleCount == 0) {
+      return _EmptyState(
+        isScanning: lib.isScanning,
+        permissionDenied: lib.permissionDenied,
+        favoritesOnly: lib.favoritesOnly,
+        onGrantAccess: lib.scanAllStorage,
+      );
+    }
+
+    return CustomScrollView(
+      slivers: [
+        for (final group in groups) ...[
+          if (lib.groupMode != GroupMode.none)
+            SliverToBoxAdapter(
+              child: _GroupHeader(
+                title: group.title,
+                count: group.videos.length,
+              ),
+            ),
+          if (lib.viewMode == ViewMode.grid)
+            SliverPadding(
+              padding: const EdgeInsets.all(12),
+              sliver: SliverGrid(
+                gridDelegate:
+                    const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 220,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.82,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    final track = group.videos[i];
+                    return VideoTile(
+                      track: track,
+                      isFavorite: lib.isFavorite(track),
+                      onTap: () => _playVideo(track),
+                      onFavorite: () => lib.toggleFavorite(track),
+                    );
+                  },
+                  childCount: group.videos.length,
+                ),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    final track = group.videos[i];
+                    return VideoListItem(
+                      track: track,
+                      isFavorite: lib.isFavorite(track),
+                      onTap: () => _playVideo(track),
+                      onFavorite: () => lib.toggleFavorite(track),
+                    );
+                  },
+                  childCount: group.videos.length,
+                ),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class _GroupHeader extends StatelessWidget {
+  final String title;
+  final int count;
+
+  const _GroupHeader({required this.title, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
+      child: Text(
+        '$title  ·  $count',
+        style: const TextStyle(
+          color: Colors.white54,
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.6,
+        ),
       ),
     );
   }
@@ -142,11 +232,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
 class _EmptyState extends StatelessWidget {
   final bool isScanning;
   final bool permissionDenied;
+  final bool favoritesOnly;
   final VoidCallback onGrantAccess;
 
   const _EmptyState({
     required this.isScanning,
     required this.permissionDenied,
+    required this.favoritesOnly,
     required this.onGrantAccess,
   });
 
@@ -156,11 +248,31 @@ class _EmptyState extends StatelessWidget {
       // Progress bar above already shows scan status - avoid a duplicate message.
       return const SizedBox.shrink();
     }
+
+    // Library loaded, but the favourites filter hides everything.
+    if (favoritesOnly && !permissionDenied) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.favorite_border, size: 48, color: Colors.white24),
+            SizedBox(height: 12),
+            Text(
+              'No favourites yet.\nTap the heart on any video to add it here.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white54, fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.video_library_outlined, size: 48, color: Colors.white24),
+          const Icon(Icons.video_library_outlined,
+              size: 48, color: Colors.white24),
           const SizedBox(height: 12),
           Text(
             permissionDenied
