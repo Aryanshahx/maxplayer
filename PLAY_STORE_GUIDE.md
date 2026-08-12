@@ -49,7 +49,9 @@ Both files are git-ignored. **Back up the .jks + passwords somewhere safe
 - **Privacy policy URL:** host `PRIVACY_POLICY.md` — easiest free option is
   the GitHub repo itself:
   `https://github.com/Aryanshahx/maxplayer/blob/main/PRIVACY_POLICY.md`
-  (Play accepts GitHub blob URLs), or GitHub Pages later.
+  (Play accepts GitHub blob URLs), or GitHub Pages later. The same text is
+  also bundled inside the app (⋮ → About Max Player → Privacy policy), so
+  reviewers can read it offline during review.
 - **Target audience:** 13+ (it's a media player, not child-directed).
 - **Content rating questionnaire:** answer honestly — app plays user content,
   no generated/social content features → low ratings everywhere.

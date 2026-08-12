@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_info.dart';
 import '../services/native_bridge.dart';
 import '../state/theme_state.dart';
+import '../utils/privacy_policy.dart';
 
 /// "About Max Player" sheet, opened from the home screen's ⋮ menu.
 /// Brand copy by Hyper Tech Labs. Static content - no platform calls.
@@ -173,6 +174,17 @@ class AboutSheet extends StatelessWidget {
         const SizedBox(height: 22),
         const Divider(color: Colors.white12),
         const SizedBox(height: 6),
+        Center(
+          child: TextButton.icon(
+            onPressed: () => showPrivacyPolicyDialog(context),
+            icon: const Icon(Icons.privacy_tip_outlined, size: 16),
+            label: const Text('Privacy policy'),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white54,
+              textStyle: const TextStyle(fontSize: 12.5),
+            ),
+          ),
+        ),
         const Center(
           child: Text(
             'Version $kAppVersion',

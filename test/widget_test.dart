@@ -10,6 +10,7 @@ import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/player_settings.dart';
 import 'package:maxplayer/state/video_library_state.dart';
 import 'package:maxplayer/utils/formatters.dart';
+import 'package:maxplayer/utils/privacy_policy.dart';
 import 'package:maxplayer/utils/srt.dart';
 import 'package:maxplayer/widgets/about_sheet.dart';
 import 'package:maxplayer/widgets/gesture_illustrations.dart';
@@ -429,6 +430,22 @@ void main() {
     });
   });
 
+  group('privacy policy', () {
+    test('in-app text carries the same anchors as PRIVACY_POLICY.md', () {
+      final md = File('PRIVACY_POLICY.md').readAsStringSync();
+      for (final anchor in [
+        '13 August 2026',
+        'Hyper Tech Labs',
+        'github.com/Aryanshahx/maxplayer',
+      ]) {
+        expect(md, contains(anchor));
+        expect(kPrivacyPolicyText, contains(anchor),
+            reason: 'keep lib/utils/privacy_policy.dart in sync with '
+                'PRIVACY_POLICY.md');
+      }
+    });
+  });
+
   group('manual & about sheets', () {
     /// The sheets are lazy ListViews - give the test a huge viewport so
     /// every section builds, not just the first screenful.
@@ -484,6 +501,23 @@ void main() {
       expect(find.text('Max Player'), findsOneWidget);
       expect(find.text('by Hyper Tech Labs'), findsOneWidget);
       expect(find.text('Version $kAppVersion'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('about sheet bundles the privacy policy offline',
+        (tester) async {
+      useTallViewport(tester);
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: AboutSheet())),
+      );
+      await tester.tap(find.text('Privacy policy'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('does not collect, store, transmit'),
+          findsOneWidget);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('does not collect, store, transmit'),
+          findsNothing);
       expect(tester.takeException(), isNull);
     });
   });
