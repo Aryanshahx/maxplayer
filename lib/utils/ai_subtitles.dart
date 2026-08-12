@@ -11,7 +11,7 @@ import 'srt.dart';
 
 /// Runs the offline AI subtitle flow end to end and shows a progress dialog:
 ///
-///   download model once (75 MB) -> extract audio -> whisper.cpp ->
+///   download model once (~142 MB) -> extract audio -> whisper.cpp ->
 ///   write "<video>.maxai.srt" next to the video -> load it into the player
 ///
 /// Everything after the one-time model download is 100% offline & free.
@@ -57,7 +57,13 @@ class AiSubtitleRunner {
       },
     );
 
-    final jobId = await NativeBridge.aiSubtitleGenerate(videoPath: track.path);
+    final jobId = await NativeBridge.aiSubtitleGenerate(
+      videoPath: track.path,
+      // "base" (~142 MB one-time): the multilingual "tiny" model degrades
+      // Hindi/Urdu/mixed speech into stray "music" captions; base is the
+      // smallest model that's reliable for them.
+      model: 'base',
+    );
     if (!context.mounted) return;
     if (jobId == null) {
       _snack(context, 'AI engine is not available in this build');
@@ -149,7 +155,7 @@ class _AiProgressDialog extends StatelessWidget {
   static String _stageLabel(String stage) {
     switch (stage) {
       case 'downloading':
-        return 'Downloading the AI model (one time, ~75 MB)…';
+        return 'Downloading the AI model (one time, ~142 MB)…';
       case 'extracting':
         return 'Extracting audio from the video…';
       case 'transcribing':

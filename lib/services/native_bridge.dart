@@ -202,6 +202,32 @@ class NativeBridge {
     } catch (_) {}
   }
 
+  // --- Device MEDIA volume (player swipe drives the real system volume) ---
+
+  /// Current media volume as 0..1. Falls back to 1.0 when unavailable.
+  static Future<double> getMediaVolume() async {
+    try {
+      final res =
+          await _channel.invokeMethod<Map<Object?, Object?>>('getMediaVolume');
+      final level = (res?['level'] as num?)?.toDouble() ?? 1.0;
+      final max = (res?['max'] as num?)?.toDouble() ?? 1.0;
+      if (max <= 0) return 1.0;
+      return (level / max).clamp(0.0, 1.0);
+    } catch (_) {
+      return 1.0;
+    }
+  }
+
+  /// Sets the device media volume (0..1). MX Player / VLC style: the
+  /// player's inline volume IS the system media volume, so the user can
+  /// always reach the phone's true maximum.
+  static Future<void> setMediaVolume(double value) async {
+    try {
+      await _channel
+          .invokeMethod('setMediaVolume', {'value': value.clamp(0.0, 1.0)});
+    } catch (_) {}
+  }
+
   // --- "Open with" intent delivery ---
 
   /// Cold-start check: a video opened from another app before Dart attached.

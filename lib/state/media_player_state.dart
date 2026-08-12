@@ -132,7 +132,10 @@ class MediaPlayerState extends ChangeNotifier {
         notifyListeners();
       }),
     ];
-    player.setVolume(volume * 100);
+    // libmpv stays at 100%: loudness is driven by the DEVICE media volume
+    // (MX Player / VLC style) so the swipe can always reach the phone's
+    // true maximum, no matter where the system volume started.
+    player.setVolume(100);
     // Play/pause from the picture-in-picture window's own button.
     NativeBridge.configureCallbacks(onPipAction: togglePlay);
     _init();
@@ -447,16 +450,45 @@ class MediaPlayerState extends ChangeNotifier {
     await player.seek(target);
   }
 
+  // ---------------------------------------------------------------------------
+  // Volume (device MEDIA volume, MX Player / VLC style)
+  // ---------------------------------------------------------------------------
+
+  bool _volumeSynced = false;
+  double _preMuteVolume = 0.5;
+
+  /// Reads the real device media volume once so the player swipe starts
+  /// from the true level (mirrors [currentBrightness]).
+  Future<double> currentVolume() async {
+    if (!_volumeSynced) {
+      volume = await NativeBridge.getMediaVolume();
+      isMuted = volume <= 0;
+      _volumeSynced = true;
+      notifyListeners();
+    }
+    return volume;
+  }
+
   Future<void> setVolume(double v) async {
     volume = v.clamp(0.0, 1.0);
-    if (volume > 0) isMuted = false;
-    await player.setVolume(isMuted ? 0 : volume * 100);
+    if (volume > 0) {
+      isMuted = false;
+      _preMuteVolume = volume;
+    }
+    await NativeBridge.setMediaVolume(isMuted ? 0 : volume);
     notifyListeners();
   }
 
   Future<void> toggleMute() async {
-    isMuted = !isMuted;
-    await player.setVolume(isMuted ? 0 : volume * 100);
+    if (isMuted) {
+      isMuted = false;
+      if (volume <= 0) volume = _preMuteVolume;
+      await NativeBridge.setMediaVolume(volume);
+    } else {
+      if (volume > 0) _preMuteVolume = volume;
+      isMuted = true;
+      await NativeBridge.setMediaVolume(0);
+    }
     notifyListeners();
   }
 

@@ -129,6 +129,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
     _reloadSettings();
     widget.player.currentBrightness(); // sync once for the swipe gesture
+    widget.player.currentVolume(); // start swipe from REAL device volume
     _startHideTimer();
   }
 

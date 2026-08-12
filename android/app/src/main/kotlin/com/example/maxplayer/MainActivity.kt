@@ -14,6 +14,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.Icon
+import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -29,6 +31,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.WindowManager
 import dev.ffmpegkit.whisper.Whisper
+import dev.ffmpegkit.whisper.WhisperConfig
 import dev.ffmpegkit.whisper.WhisperModel
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -38,8 +41,11 @@ import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.concurrent.Executors
+import kotlin.math.roundToInt
 import kotlin.math.min
 import kotlinx.coroutines.runBlocking
 
@@ -165,6 +171,39 @@ class MainActivity : FlutterActivity() {
                         WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
                     window.attributes = lp
                     result.success(true)
+                }
+                "getMediaVolume" -> {
+                    // DEVICE media volume (the player's swipe drives this,
+                    // like MX Player/VLC, so it can always reach the phone's
+                    // true maximum loudness).
+                    try {
+                        val am =
+                            getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                            .coerceAtLeast(1)
+                        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                        result.success(hashMapOf("level" to cur, "max" to max))
+                    } catch (e: Exception) {
+                        result.error("volume", e.message, null)
+                    }
+                }
+                "setMediaVolume" -> {
+                    try {
+                        val v = (call.argument<Double>("value") ?: 0.75)
+                            .coerceIn(0.0, 1.0)
+                        val am =
+                            getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                            .coerceAtLeast(1)
+                        am.setStreamVolume(
+                            AudioManager.STREAM_MUSIC,
+                            (v * max).roundToInt().coerceIn(0, max),
+                            0
+                        )
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
                 }
                 "getInitialOpenVideo" -> {
                     val map = HashMap<String, String?>()
@@ -810,7 +849,14 @@ class MainActivity : FlutterActivity() {
                 var model: WhisperModel? = null
                 try {
                     model = Whisper.loadModel(this@MainActivity, modelFile.absolutePath)
-                    val res = Whisper.transcribe(model, wav.absolutePath)
+                    // "auto" = detect the spoken language (Hindi/Urdu/
+                    // English/...). Without this the default leans English
+                    // and non-English speech degrades into stray captions.
+                    val res = Whisper.transcribe(
+                        model,
+                        wav.absolutePath,
+                        WhisperConfig(language = "auto")
+                    )
                     for (s in res.segments) {
                         val text = s.text.trim()
                         if (text.isEmpty()) continue
@@ -945,6 +991,26 @@ class MainActivity : FlutterActivity() {
             extractor.selectTrack(trackIndex)
             codec!!.start()
 
+            // The decoder's OUTPUT format is authoritative: it can differ
+            // from the container's declared format AND it reveals the PCM
+            // encoding. Many AAC decoders output 32-bit FLOAT PCM - feeding
+            // those bytes to the 16-bit resampler produced noise, and
+            // whisper answered noise with "music" captions.
+            var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
+            try {
+                val of = codec!!.outputFormat
+                if (of.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                    sampleRate = of.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                }
+                if (of.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                    channels = of.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                }
+                if (of.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
+                    pcmEncoding = of.getInteger(MediaFormat.KEY_PCM_ENCODING)
+                }
+            } catch (_: Exception) {
+            }
+
             raf = RandomAccessFile(outFile, "rw")
             raf.setLength(0)
             writeWavHeader(raf, 16000, 0) // placeholder, patched at the end
@@ -981,7 +1047,7 @@ class MainActivity : FlutterActivity() {
                         val pcm = ByteArray(info.size)
                         outBuf.get(pcm)
                         outBuf.clear()
-                        val mono = pcmToMono16k(pcm, channels, sampleRate)
+                        val mono = pcmToMono16k(pcm, channels, sampleRate, pcmEncoding)
                         raf.write(mono)
                         dataBytes += mono.size
                         if (durationUs > 0 && info.presentationTimeUs > 0) {
@@ -1022,12 +1088,60 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Downmixes interleaved 16-bit little-endian PCM to mono and resamples
-     * to 16 kHz using a simple averaging window (good enough for speech).
+     * Normalizes decoder PCM (any common encoding) to interleaved signed
+     * 16-bit little-endian samples. Without this, FLOAT/32-bit decoder
+     * output was interpreted as 16-bit, which sounds like noise - and
+     * whisper transcribes noise as "music".
      */
-    private fun pcmToMono16k(pcm: ByteArray, channels: Int, srcRate: Int): ByteArray {
+    private fun pcmToShorts(pcm: ByteArray, encoding: Int): ShortArray {
+        return when (encoding) {
+            AudioFormat.ENCODING_PCM_FLOAT -> {
+                val fb = ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN)
+                    .asFloatBuffer()
+                ShortArray(fb.remaining()) { i ->
+                    (fb.get(i).coerceIn(-1f, 1f) * 32767f).toInt().toShort()
+                }
+            }
+            AudioFormat.ENCODING_PCM_32BIT -> {
+                val n = pcm.size / 4
+                ShortArray(n) { i ->
+                    // Top two bytes of each 32-bit LE sample.
+                    val hi = pcm[i * 4 + 3].toInt()
+                    val mid = pcm[i * 4 + 2].toInt() and 0xFF
+                    ((hi shl 8) or mid).toShort()
+                }
+            }
+            AudioFormat.ENCODING_PCM_24BIT_PACKED -> {
+                val n = pcm.size / 3
+                ShortArray(n) { i ->
+                    val hi = pcm[i * 3 + 2].toInt()
+                    val mid = pcm[i * 3 + 1].toInt() and 0xFF
+                    ((hi shl 8) or mid).toShort()
+                }
+            }
+            else -> { // ENCODING_PCM_16BIT (and sane fallback)
+                val n = pcm.size / 2
+                ShortArray(n) { i ->
+                    ((pcm[i * 2 + 1].toInt() shl 8) or
+                        (pcm[i * 2].toInt() and 0xFF)).toShort()
+                }
+            }
+        }
+    }
+
+    /**
+     * Downmixes interleaved PCM to mono and resamples to 16 kHz using a
+     * simple averaging window (good enough for speech).
+     */
+    private fun pcmToMono16k(
+        pcm: ByteArray,
+        channels: Int,
+        srcRate: Int,
+        encoding: Int
+    ): ByteArray {
         if (channels < 1) return ByteArray(0)
-        val frames = pcm.size / (2 * channels)
+        val samples = pcmToShorts(pcm, encoding)
+        val frames = samples.size / channels
         if (frames == 0) return ByteArray(0)
         val step = srcRate.toDouble() / 16000.0
         val outCount = (frames / step).toInt()
@@ -1043,10 +1157,7 @@ class MainActivity : FlutterActivity() {
             while (f < endF) {
                 var mixed = 0
                 for (ch in 0 until channels) {
-                    val i = (f * channels + ch) * 2
-                    val lo = pcm[i].toInt() and 0xFF
-                    val hi = pcm[i + 1].toInt()
-                    mixed += (hi shl 8) or lo
+                    mixed += samples[f * channels + ch]
                 }
                 sum += mixed / channels
                 cnt++
