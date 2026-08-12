@@ -7,12 +7,28 @@ class VideoMetadata {
   final int? width;
   final int? height;
 
+  /// Overall bitrate in bits/sec (from the container), if reported.
+  final int? bitrateBps;
+
+  /// Video codec name (e.g. "hevc"); only on Android 12+.
+  final String? codec;
+
   const VideoMetadata({
     this.duration,
     this.thumbnailPath,
     this.width,
     this.height,
+    this.bitrateBps,
+    this.codec,
   });
+}
+
+/// One AI-generated subtitle cue (whisper.cpp segment).
+class AiSegment {
+  final int startMs;
+  final int endMs;
+  final String text;
+  const AiSegment(this.startMs, this.endMs, this.text);
 }
 
 /// Bridge to the Android native code in `MainActivity.kt` over a single
@@ -41,6 +57,9 @@ class NativeBridge {
   static void Function(String uri)? _onOpenVideoFailed;
   static void Function(bool isPip)? _onPipChanged;
   static void Function()? _onPipAction;
+  static void Function(String stage, int percent)? _onAiProgress;
+  static void Function(List<AiSegment> segments)? _onAiDone;
+  static void Function(String error)? _onAiFailed;
   static bool _handlerRegistered = false;
 
   /// Registers (or replaces) the app-level native event callbacks.
@@ -51,11 +70,19 @@ class NativeBridge {
 
     /// Fired when the play/pause button ON THE PiP WINDOW is tapped.
     void Function()? onPipAction,
+
+    /// AI subtitle job events (see [aiSubtitleGenerate]).
+    void Function(String stage, int percent)? onAiProgress,
+    void Function(List<AiSegment> segments)? onAiDone,
+    void Function(String error)? onAiFailed,
   }) {
     if (onOpenVideo != null) _onOpenVideo = onOpenVideo;
     if (onOpenVideoFailed != null) _onOpenVideoFailed = onOpenVideoFailed;
     if (onPipChanged != null) _onPipChanged = onPipChanged;
     if (onPipAction != null) _onPipAction = onPipAction;
+    if (onAiProgress != null) _onAiProgress = onAiProgress;
+    if (onAiDone != null) _onAiDone = onAiDone;
+    if (onAiFailed != null) _onAiFailed = onAiFailed;
     if (_handlerRegistered) return;
     _handlerRegistered = true;
     _channel.setMethodCallHandler(_dispatch);
@@ -77,6 +104,35 @@ class NativeBridge {
       case 'onPipAction':
         _onPipAction?.call();
         break;
+      case 'onAiProgress':
+        final m = call.arguments as Map?;
+        if (m != null) {
+          _onAiProgress?.call(
+            '${m['stage']}',
+            (m['percent'] as num?)?.toInt() ?? 0,
+          );
+        }
+        break;
+      case 'onAiSubtitleDone':
+        final list = call.arguments as Map?;
+        final raw = list?['segments'] as List?;
+        if (raw != null) {
+          final segments = <AiSegment>[
+            for (final e in raw)
+              if (e is Map)
+                AiSegment(
+                  (e['start'] as num?)?.toInt() ?? 0,
+                  (e['end'] as num?)?.toInt() ?? 0,
+                  '${e['text']}',
+                ),
+          ];
+          _onAiDone?.call(segments);
+        }
+        break;
+      case 'onAiSubtitleFailed':
+        final m = call.arguments as Map?;
+        _onAiFailed?.call('${m?['message'] ?? 'failed'}');
+        break;
     }
     return null;
   }
@@ -89,11 +145,14 @@ class NativeBridge {
       final durationMs = res['durationMs'];
       final width = res['width'];
       final height = res['height'];
+      final bitrate = res['bitrate'];
       return VideoMetadata(
         duration: durationMs is int ? Duration(milliseconds: durationMs) : null,
         thumbnailPath: res['thumbnailPath'] as String?,
         width: width is int ? width : null,
         height: height is int ? height : null,
+        bitrateBps: bitrate is int ? bitrate : null,
+        codec: res['codec'] as String?,
       );
     } catch (_) {
       return const VideoMetadata();
@@ -193,5 +252,45 @@ class NativeBridge {
     } catch (_) {
       return null;
     }
+  }
+
+  // --- AI subtitles pipeline (Phases 2+3) ---
+
+  /// Which models are present on device. Returns {tiny: MB, base: MB,
+  /// small: MB}; 0 MB means "not downloaded yet".
+  static Future<Map<String, int>> aiModelStatus() async {
+    try {
+      final res = await _channel
+          .invokeMethod<Map<Object?, Object?>>('aiModelStatus');
+      if (res == null) return const {};
+      return res.map((k, v) => MapEntry('$k', (v as num?)?.toInt() ?? 0));
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Starts the offline AI subtitle job for [videoPath]. Returns the job id
+  /// immediately; progress/completion arrive via [configureCallbacks]
+  /// (`onAiProgress` / `onAiDone` / `onAiFailed`).
+  static Future<int?> aiSubtitleGenerate({
+    required String videoPath,
+    String model = 'tiny',
+  }) async {
+    try {
+      return await _channel.invokeMethod<int>(
+        'aiSubtitleGenerate',
+        {'videoPath': videoPath, 'model': model},
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Asks the running job to stop (effective during download/extraction; a
+  /// running transcription finishes but its result is discarded).
+  static Future<void> aiSubtitleCancel() async {
+    try {
+      await _channel.invokeMethod('aiSubtitleCancel');
+    } catch (_) {}
   }
 }

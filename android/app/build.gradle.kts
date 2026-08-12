@@ -58,4 +58,8 @@ dependencies {
     // Plain Maven artifact (NOT a Gradle/Flutter plugin) = no toolchain
     // conflicts. ~1.1 MB AAR, MIT licensed, runs 100% offline & free.
     implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
+    // The AAR only exports coroutines on the runtime classpath; we call its
+    // suspend functions from Kotlin, so we need it explicitly at compile
+    // time. Same version as the AAR's -> no conflict.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }

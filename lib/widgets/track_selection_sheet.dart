@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart' hide VideoTrack;
 import '../state/theme_state.dart';
+import '../utils/ai_subtitles.dart';
 
 import '../state/media_player_state.dart';
 
@@ -126,6 +127,32 @@ class TrackSelectionSheet extends StatelessWidget {
               Navigator.of(context).pop();
             },
           ),
+        const Divider(height: 16, color: Colors.white12),
+        // Offline AI subtitle generation (whisper.cpp) - free, no internet
+        // after the one-time model download.
+        ListTile(
+          dense: true,
+          leading: Icon(Icons.auto_awesome,
+              size: 20, color: TrackSelectionSheet._accent),
+          title: const Text(
+            'Generate with AI ✨',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          subtitle: const Text(
+            'Offline & free · the AI writes subtitles for this video',
+            style: TextStyle(color: Colors.white38, fontSize: 12),
+          ),
+          onTap: () {
+            final rootCtx =
+                Navigator.of(context, rootNavigator: true).context;
+            Navigator.of(context).pop();
+            AiSubtitleRunner.start(rootCtx, player);
+          },
+        ),
       ],
     );
   }

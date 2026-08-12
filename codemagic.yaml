@@ -13,8 +13,11 @@ workflows:
         script: flutter clean
       - name: Get Flutter packages
         script: flutter pub get
-      - name: Build APK (release)
-        script: flutter build apk --release
+      - name: Build APK (release, arm64 only)
+        # --target-platform makes the Flutter TOOL package only arm64 engine
+        # + plugin libs (ndk.abiFilters alone doesn't strip the Flutter
+        # artefacts). This is what cut the APK from ~93 MB to ~33 MB.
+        script: flutter build apk --release --target-platform=android-arm64
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
     publishing:

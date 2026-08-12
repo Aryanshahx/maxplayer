@@ -12,6 +12,7 @@ import '../widgets/equalizer_sheet.dart';
 import '../widgets/player_controls_overlay.dart';
 import '../widgets/player_settings_sheet.dart';
 import '../widgets/playlist_panel.dart';
+import '../widgets/video_info_sheet.dart';
 
 class PlayerScreen extends StatefulWidget {
   final MediaPlayerState player;
@@ -410,6 +411,12 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ),
                 ),
                 actions: [
+                  IconButton(
+                    tooltip: 'Video info',
+                    icon: const Icon(Icons.info_outline),
+                    onPressed: () =>
+                        VideoInfoSheet.show(context, widget.player),
+                  ),
                   IconButton(
                     tooltip: 'Equalizer',
                     icon: const Icon(Icons.graphic_eq),

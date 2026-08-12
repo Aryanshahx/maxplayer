@@ -8,6 +8,7 @@ import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/video_library_state.dart';
 import 'package:maxplayer/utils/formatters.dart';
+import 'package:maxplayer/utils/srt.dart';
 import 'package:maxplayer/widgets/about_sheet.dart';
 import 'package:maxplayer/widgets/gesture_illustrations.dart';
 import 'package:maxplayer/widgets/user_manual_sheet.dart';
@@ -231,6 +232,36 @@ void main() {
       lib.setGroupMode(GroupMode.none);
       expect(lib.groups.length, 1);
       expect(lib.groups.single.title, '');
+    });
+  });
+
+  group('SRT builder (AI subtitles)', () {
+    test('formats numbered cues with HH:MM:SS,mmm times', () {
+      final srt = buildSrt(const [
+        SrtCue(1200, 3400, 'Hello world'),
+        SrtCue(3605000, 3607000, 'second line'),
+      ]);
+      expect(
+        srt,
+        '1\n00:00:01,200 --> 00:00:03,400\nHello world\n\n'
+        '2\n01:00:05,000 --> 01:00:07,000\nsecond line\n\n',
+      );
+    });
+
+    test('drops empty cues and bumps zero-length ends', () {
+      final srt = buildSrt(const [
+        SrtCue(500, 500, 'same'),
+        SrtCue(100, 900, '   '),
+      ]);
+      expect(srt, '1\n00:00:00,500 --> 00:00:01,500\nsame\n\n');
+    });
+
+    test('sorts cues by start time', () {
+      final srt = buildSrt(const [
+        SrtCue(5000, 6000, 'later'),
+        SrtCue(1000, 2000, 'first'),
+      ]);
+      expect(srt.startsWith('1\n00:00:01,000'), isTrue);
     });
   });
 
