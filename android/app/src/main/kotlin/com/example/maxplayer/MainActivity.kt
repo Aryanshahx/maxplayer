@@ -18,7 +18,9 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.media.MediaScannerConnection
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -84,6 +86,12 @@ class MainActivity : FlutterActivity() {
     @Volatile
     private var aiCancelled = false
     private var aiJobCounter = 0
+
+    // --- DLNA casting: multicast lock held during SSDP discovery ---
+    private var multicastLock: WifiManager.MulticastLock? = null
+
+    /** Thrown by the model downloader when the user cancels the job. */
+    private class AiCancelledException : Exception("cancelled")
 
     companion object {
         private const val ACTION_PIP_TOGGLE = "com.example.maxplayer.action.PIP_TOGGLE"
@@ -241,6 +249,46 @@ class MainActivity : FlutterActivity() {
                 "aiSubtitleCancel" -> {
                     aiCancelled = true
                     result.success(true)
+                }
+                "scanFile" -> {
+                    // Register a freshly-written file (screenshot, AI .srt)
+                    // with the media scanner so gallery apps see it at once.
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrEmpty()) {
+                        result.error("bad_args", "path is required", null)
+                    } else {
+                        try {
+                            MediaScannerConnection.scanFile(
+                                applicationContext, arrayOf(path), null, null
+                            )
+                            result.success(true)
+                        } catch (_: Exception) {
+                            result.success(false)
+                        }
+                    }
+                }
+                "setMulticastLock" -> {
+                    // DLNA casting: SSDP multicast discovery needs a Wi-Fi
+                    // multicast lock on many devices; Dart holds it while a
+                    // device scan runs and releases it afterwards.
+                    val hold = call.arguments as? Boolean ?: false
+                    try {
+                        if (hold) {
+                            if (multicastLock == null) {
+                                val wm =
+                                    applicationContext.getSystemService(Context.WIFI_SERVICE)
+                                        as WifiManager
+                                multicastLock = wm.createMulticastLock("maxplayer_cast")
+                                multicastLock?.setReferenceCounted(true)
+                            }
+                            multicastLock?.acquire()
+                        } else {
+                            if (multicastLock?.isHeld == true) multicastLock?.release()
+                        }
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
                 }
                 else -> result.notImplemented()
             }
@@ -717,12 +765,20 @@ class MainActivity : FlutterActivity() {
             val modelFile = modelFileFor(modelName)
             if (!modelFile.exists() || modelFile.length() < 1_000_000) {
                 aiProgress(jobId, "downloading", 0)
-                if (!downloadModel(modelUrlFor(modelName), modelFile, jobId)) {
+                val dlError = try {
+                    downloadModel(modelUrlFor(modelName), modelFile, jobId)
+                    null
+                } catch (e: AiCancelledException) {
+                    "cancelled"
+                } catch (e: Exception) {
+                    (e.message ?: "network error").take(80)
+                }
+                if (dlError != null) {
                     modelFile.delete()
                     aiFailed(
                         jobId,
-                        if (aiCancelled) "cancelled"
-                        else "Model download failed - internet is needed once; after that AI subtitles work fully offline."
+                        if (dlError == "cancelled") "cancelled"
+                        else "Model download failed ($dlError) - internet is needed once; after that AI subtitles work fully offline."
                     )
                     return
                 }
@@ -778,43 +834,76 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun downloadModel(url: String, dest: File, jobId: Int): Boolean {
-        return try {
-            dest.parentFile?.mkdirs()
-            val tmp = File(dest.parentFile, dest.name + ".part")
-            val conn = URL(url).openConnection() as HttpURLConnection
-            conn.connectTimeout = 20000
-            conn.readTimeout = 30000
-            conn.instanceFollowRedirects = true
-            conn.connect()
-            if (conn.responseCode !in 200..299) {
-                conn.disconnect()
-                return false
+    /**
+     * Downloads [url] into [dest] via a ".part" temp file. Redirects are
+     * followed MANUALLY: huggingface.co /resolve/ URLs answer with a 302 to
+     * a CDN host, and relying on HttpURLConnection's automatic redirect
+     * handling has proven unreliable across Android versions. Progress is
+     * reported as the "downloading" stage.
+     *
+     * Throws [AiCancelledException] when the user cancels, and
+     * [java.io.IOException] with a short machine-readable reason otherwise,
+     * so the failure snackbar can say WHAT went wrong.
+     */
+    private fun downloadModel(url: String, dest: File, jobId: Int) {
+        dest.parentFile?.mkdirs()
+        val tmp = File(dest.parentFile, dest.name + ".part")
+        var conn: HttpURLConnection? = null
+        try {
+            var current = url
+            var hops = 0
+            while (true) {
+                val c = URL(current).openConnection() as HttpURLConnection
+                conn = c
+                c.connectTimeout = 20000
+                c.readTimeout = 30000
+                c.instanceFollowRedirects = false
+                c.setRequestProperty("User-Agent", "MaxPlayer/1.0 (Android)")
+                c.connect()
+                val code = c.responseCode
+                if (code in 300..399) {
+                    val loc = c.getHeaderField("Location")
+                    c.disconnect()
+                    if (loc == null || ++hops > 6) {
+                        throw java.io.IOException("redirect failed (HTTP $code)")
+                    }
+                    // Handles both absolute and relative Location headers.
+                    current = URL(URL(current), loc).toString()
+                    continue
+                }
+                if (code !in 200..299) {
+                    c.disconnect()
+                    throw java.io.IOException("HTTP $code")
+                }
+                break
             }
-            val total = conn.contentLengthLong
-            conn.inputStream.use { input ->
+            val c = conn ?: throw java.io.IOException("no connection")
+            val total = c.contentLengthLong
+            c.inputStream.use { input ->
                 FileOutputStream(tmp).use { out ->
                     val buf = ByteArray(256 * 1024)
                     var done = 0L
                     var read: Int
                     while (input.read(buf).also { read = it } != -1) {
-                        if (aiCancelled) {
-                            tmp.delete()
-                            return false
-                        }
+                        if (aiCancelled) throw AiCancelledException()
                         out.write(buf, 0, read)
                         done += read
                         if (total > 0) {
                             aiProgress(jobId, "downloading", (done * 100 / total).toInt())
                         }
                     }
+                    if (total > 0 && done != total) {
+                        throw java.io.IOException("incomplete download")
+                    }
                 }
             }
-            conn.disconnect()
-            tmp.renameTo(dest)
-            true
-        } catch (e: Exception) {
-            false
+            c.disconnect()
+            if (!tmp.renameTo(dest)) {
+                tmp.copyTo(dest, overwrite = true)
+                tmp.delete()
+            }
+        } finally {
+            if (tmp.exists()) tmp.delete()
         }
     }
 

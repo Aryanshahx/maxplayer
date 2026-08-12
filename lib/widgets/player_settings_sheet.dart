@@ -136,6 +136,14 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                     _update(_settings.copyWith(brightnessSwipe: v)),
               ),
               _SwitchTile(
+                icon: Icons.swap_horizontal_circle_outlined,
+                label: 'Horizontal swipe to seek',
+                subtitle: 'Drag sideways anywhere to scrub (±90s per screen)',
+                value: _settings.horizontalSeek,
+                onChanged: (v) =>
+                    _update(_settings.copyWith(horizontalSeek: v)),
+              ),
+              _SwitchTile(
                 icon: Icons.pinch_outlined,
                 label: 'Pinch to zoom (two fingers)',
                 value: _settings.pinchZoom,
@@ -186,6 +194,29 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 value: _settings.resumePlayback,
                 onChanged: (v) =>
                     _update(_settings.copyWith(resumePlayback: v)),
+              ),
+              const _SectionHeader('Player buttons'),
+              _SwitchTile(
+                icon: Icons.cast_outlined,
+                label: 'Cast to TV (DLNA)',
+                subtitle: 'Show the cast button in the player top bar',
+                value: _settings.castButton,
+                onChanged: (v) => _update(_settings.copyWith(castButton: v)),
+              ),
+              _SwitchTile(
+                icon: Icons.camera_alt_outlined,
+                label: 'Screenshot button',
+                subtitle: 'Save the current frame to the gallery',
+                value: _settings.screenshotButton,
+                onChanged: (v) =>
+                    _update(_settings.copyWith(screenshotButton: v)),
+              ),
+              _SwitchTile(
+                icon: Icons.lock_outline,
+                label: 'Screen lock (kids mode)',
+                subtitle: 'Lock button on the video edge locks every touch',
+                value: _settings.lockButton,
+                onChanged: (v) => _update(_settings.copyWith(lockButton: v)),
               ),
             ],
             const SizedBox(height: 8),

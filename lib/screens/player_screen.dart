@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../cast/cast_state.dart';
 import '../services/native_bridge.dart';
 import '../state/media_player_state.dart';
 import '../state/player_settings.dart';
 import '../state/theme_state.dart';
+import '../utils/formatters.dart';
+import '../utils/srt.dart';
+import '../widgets/cast_sheet.dart';
 import '../widgets/equalizer_sheet.dart';
 import '../widgets/player_controls_overlay.dart';
 import '../widgets/player_settings_sheet.dart';
@@ -29,10 +34,18 @@ class _PlayerScreenState extends State<PlayerScreen>
   // version has no VideoController.dispose, so per-visit controllers leaked).
   late final VideoController _controller = widget.player.videoController;
 
+  /// DLNA cast session for this visit to the player. Disposed with the
+  /// screen (leaving the player stops casting).
+  final CastState _castState = CastState();
+
   bool _controlsVisible = true;
   bool _isFullscreen = false;
   bool _showQueue = false;
   bool _isPip = false;
+
+  /// Screen lock (kids mode): every gesture/button is swallowed until the
+  /// on-screen lock is double-tapped (or long-pressed).
+  bool _locked = false;
 
   // Orientation lock (rotation toggle in the controls).
   bool _orientationLocked = false;
@@ -46,6 +59,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   // Transient center indicator ("+10s", "Volume 80%", "Resumed 12:34", ...).
   String? _indicatorText;
   IconData? _indicatorIcon;
+  String? _indicatorKey; // dedupe: identical text just refreshes the timer
   Timer? _indicatorTimer;
   StreamSubscription<String>? _noticeSub;
 
@@ -60,22 +74,38 @@ class _PlayerScreenState extends State<PlayerScreen>
   ];
 
   // Pinch zoom (1x..4x), anchored at the fingers' focal point, with
-  // two-finger panning while zoomed.
+  // one-finger panning while zoomed.
   double _zoom = 1.0;
   double _zoomBase = 1.0;
   Offset _pan = Offset.zero;
   Offset _panBase = Offset.zero;
   Offset _focalBase = Offset.zero;
 
-  // Gesture plumbing (double-tap seek / volume & brightness swipes).
+  // Gesture plumbing (double-tap seek / unified drag handling).
   double _gestureWidth = 0;
   double _gestureHeight = 0;
   double _lastDoubleTapDx = 0;
 
-  /// Which axis the current vertical drag drives.
-  _DragMode _dragMode = _DragMode.none;
+  // --- Unified single-recognizer drag handling -----------------------------
+  //
+  // EVERYTHING drag-ish (volume / brightness / horizontal seek / zoom-pan)
+  // is handled through the scale recognizer only. The old code ALSO
+  // registered onVerticalDrag* on the same GestureDetector, and the two
+  // recognizers fought in the gesture arena - whichever won was decided by
+  // tiny direction differences, which is exactly what made the volume swipe
+  // feel "glitchy". One recognizer = deterministic behavior.
+  _ScaleMode _scaleMode = _ScaleMode.undecided;
+  Offset _dragAccum = Offset.zero;
+  Offset _focalStart = Offset.zero;
   double _dragStartValue = 0;
-  double _dragDy = 0;
+
+  // Horizontal seek drag.
+  Duration _seekBasePos = Duration.zero;
+  Duration? _seekTarget;
+  int _seekLastAppliedSec = -1;
+
+  // Volume drag dedupe (cuts mpv IPC + indicator reflows ~10x).
+  int _lastVolPct = -1;
 
   // NOTE: no addListener/setState on the player here. The ticking parts
   // (overlay, spinner, queue, title) listen via their own AnimatedBuilder,
@@ -104,6 +134,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   void dispose() {
+    _castState.dispose(); // stops casting + the embedded file server
     WidgetsBinding.instance.removeObserver(this);
     _hideTimer?.cancel();
     _indicatorTimer?.cancel();
@@ -178,12 +209,39 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   // ---------------------------------------------------------------------------
+  // Screen lock (kids mode)
+  // ---------------------------------------------------------------------------
+
+  void _lockScreen() {
+    _hideTimer?.cancel();
+    setState(() {
+      _locked = true;
+      _controlsVisible = false;
+    });
+    _showIndicator('Screen locked', Icons.lock);
+  }
+
+  void _unlockScreen() {
+    setState(() {
+      _locked = false;
+      _controlsVisible = true;
+    });
+    _startHideTimer();
+    _showIndicator('Unlocked', Icons.lock_open);
+  }
+
+  void _showLockHint() {
+    _showIndicator('Locked - double-tap the lock to unlock', Icons.lock);
+  }
+
+  // ---------------------------------------------------------------------------
   // Transient indicator
   // ---------------------------------------------------------------------------
 
   void _showIndicator(String text, [IconData? icon]) {
     if (!mounted) return;
     _indicatorTimer?.cancel();
+    _indicatorKey = '$text|${icon?.codePoint ?? 0}';
     setState(() {
       _indicatorText = text;
       _indicatorIcon = icon;
@@ -191,6 +249,22 @@ class _PlayerScreenState extends State<PlayerScreen>
     _indicatorTimer = Timer(const Duration(milliseconds: 900), () {
       if (mounted) setState(() => _indicatorText = null);
     });
+  }
+
+  /// Same as [_showIndicator] but an unchanged message only refreshes the
+  /// hide timer (no setState flood while a drag gesture keeps reporting the
+  /// same percentage).
+  void _showIndicatorThrottled(String text, [IconData? icon]) {
+    if (!mounted) return;
+    final key = '$text|${icon?.codePoint ?? 0}';
+    if (key == _indicatorKey) {
+      _indicatorTimer?.cancel();
+      _indicatorTimer = Timer(const Duration(milliseconds: 900), () {
+        if (mounted) setState(() => _indicatorText = null);
+      });
+      return;
+    }
+    _showIndicator(text, icon);
   }
 
   // ---------------------------------------------------------------------------
@@ -270,45 +344,184 @@ class _PlayerScreenState extends State<PlayerScreen>
     _onUserInteraction();
   }
 
+  // ---------------------------------------------------------------------------
+  // Unified scale recognizer (pinch zoom + ALL drag gestures)
+  // ---------------------------------------------------------------------------
+
   void _onScaleStart(ScaleStartDetails details) {
-    if (!_settings.pinchZoom) return;
+    _scaleMode = _ScaleMode.undecided;
+    _dragAccum = Offset.zero;
+    _focalStart = details.localFocalPoint;
     _zoomBase = _zoom;
     _panBase = _pan;
     _focalBase = details.localFocalPoint;
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
-    if (!_settings.pinchZoom) return;
-    // One-finger moves only pan once already zoomed; otherwise leave them
-    // for the tap / volume / brightness recognizers.
-    if (details.pointerCount < 2 && _zoom <= 1.0) return;
+    // Two+ fingers -> pinch zoom (focal-anchored).
+    if (details.pointerCount >= 2) {
+      if (!_settings.pinchZoom) return;
+      _scaleMode = _ScaleMode.zoom;
 
-    // Focal-anchored transform: the content point that was under the
-    // fingers when the pinch started stays glued to the CURRENT focal
-    // point. Because we track the live focal point, moving both fingers
-    // together pans the zoomed video for free.
-    final z = (_zoomBase * details.scale).clamp(1.0, 4.0);
-    final contentV = (_focalBase - _panBase) / _zoomBase;
-    final pan = _clampPan(details.localFocalPoint - contentV * z, z);
+      // Focal-anchored transform: the content point that was under the
+      // fingers when the pinch started stays glued to the CURRENT focal
+      // point. Because we track the live focal point, moving both fingers
+      // together pans the zoomed video for free.
+      final z = (_zoomBase * details.scale).clamp(1.0, 4.0);
+      final contentV = (_focalBase - _panBase) / _zoomBase;
+      final pan = _clampPan(details.localFocalPoint - contentV * z, z);
 
-    if (z == _zoom && pan == _pan) return;
-    setState(() {
-      _zoom = z;
-      _pan = pan;
-    });
-    if (details.scale != 1.0) {
-      _showIndicator('Zoom ${z.toStringAsFixed(1)}x', Icons.pinch_outlined);
+      if (z == _zoom && pan == _pan) return;
+      setState(() {
+        _zoom = z;
+        _pan = pan;
+      });
+      if (details.scale != 1.0) {
+        _showIndicator('Zoom ${z.toStringAsFixed(1)}x', Icons.pinch_outlined);
+      }
+      return;
+    }
+
+    // One finger -> figure out WHAT the drag is once we're past the slop,
+    // then stick with that mode until the gesture ends.
+    switch (_scaleMode) {
+      case _ScaleMode.zoom:
+        return; // came from two fingers; ignore until scale end
+      case _ScaleMode.cant:
+        return; // all relevant gestures are disabled
+      case _ScaleMode.volume:
+      case _ScaleMode.brightness:
+        _dragAccum += details.focalPointDelta;
+        _applyLevelDrag();
+        return;
+      case _ScaleMode.seekH:
+        _dragAccum += details.focalPointDelta;
+        _applySeekDrag();
+        return;
+      case _ScaleMode.pan:
+        _applyPanDrag(details);
+        return;
+      case _ScaleMode.undecided:
+        _dragAccum += details.focalPointDelta;
+        if (_dragAccum.distance < 14) return; // slop
+        final dx = _dragAccum.dx.abs();
+        final dy = _dragAccum.dy.abs();
+        if (dx > dy * 1.3) {
+          // Horizontal: seek (or pan when zoomed in).
+          if (_zoom > 1.0) {
+            _scaleMode = _ScaleMode.pan;
+            _applyPanDrag(details);
+          } else if (_settings.horizontalSeek &&
+              widget.player.currentTrack != null &&
+              widget.player.duration > Duration.zero) {
+            _scaleMode = _ScaleMode.seekH;
+            _seekBasePos = widget.player.position;
+            _seekTarget = null;
+            _seekLastAppliedSec = -1;
+            _dragAccum = Offset.zero;
+          } else {
+            _scaleMode = _ScaleMode.cant;
+          }
+        } else {
+          // Vertical: volume (right half) or brightness (left half).
+          final rightHalf = _focalStart.dx > _gestureWidth / 2;
+          if (rightHalf && _settings.volumeSwipe) {
+            _scaleMode = _ScaleMode.volume;
+            _lastVolPct = (widget.player.isMuted
+                    ? 0.0
+                    : widget.player.volume * 100)
+                .round();
+            _dragStartValue =
+                widget.player.isMuted ? 0.0 : widget.player.volume;
+          } else if (!rightHalf && _settings.brightnessSwipe) {
+            _scaleMode = _ScaleMode.brightness;
+            _dragStartValue = widget.player.brightness;
+          } else {
+            _scaleMode = _ScaleMode.cant;
+            return;
+          }
+          _dragAccum = Offset.zero;
+        }
+        return;
     }
   }
 
+  /// Volume / brightness value from the accumulated vertical movement.
+  void _applyLevelDrag() {
+    // Dragging up increases; a 300px sweep covers the full 0..100% range.
+    final v = (_dragStartValue - _dragAccum.dy / 300).clamp(0.0, 1.0);
+    if (_scaleMode == _ScaleMode.volume) {
+      final pct = (v * 100).round();
+      if (pct == _lastVolPct) return; // spare mpv from per-pixel IPC
+      _lastVolPct = pct;
+      widget.player.setVolume(v);
+      _showIndicatorThrottled(
+        'Volume $pct%',
+        pct == 0 ? Icons.volume_off : Icons.volume_up,
+      );
+    } else {
+      widget.player.setBrightness(v);
+      _showIndicatorThrottled(
+        'Brightness ${(v * 100).round()}%',
+        Icons.brightness_6_outlined,
+      );
+    }
+  }
+
+  /// Horizontal scrub: a full screen-width drag is +-90 seconds. Seeks live
+  /// in whole-second steps (mpv is fine with it) and lands exactly on end.
+  void _applySeekDrag() {
+    final dur = widget.player.duration;
+    if (dur <= Duration.zero) return;
+    final offsetSec = _dragAccum.dx / _gestureWidth * 90.0;
+    final targetMs =
+        (_seekBasePos.inMilliseconds + (offsetSec * 1000).round())
+            .clamp(0, dur.inMilliseconds);
+    final target = Duration(milliseconds: targetMs);
+    _seekTarget = target;
+    final diffMs = targetMs - _seekBasePos.inMilliseconds;
+    final sign = diffMs >= 0 ? '+' : '-';
+    _showIndicatorThrottled(
+      '$sign${(diffMs.abs() / 1000).round()}s · ${formatDuration(target)}',
+      diffMs >= 0 ? Icons.fast_forward : Icons.fast_rewind,
+    );
+    // Live-seek in 1s steps while the finger moves.
+    final s = target.inSeconds;
+    if ((s - _seekLastAppliedSec).abs() >= 1) {
+      _seekLastAppliedSec = s;
+      widget.player.seek(Duration(seconds: s));
+    }
+  }
+
+  /// One-finger panning while zoomed in.
+  void _applyPanDrag(ScaleUpdateDetails details) {
+    if (_zoom <= 1.0) return;
+    final pan = _clampPan(
+      _panBase + (details.localFocalPoint - _focalBase),
+      _zoom,
+    );
+    if (pan != _pan) setState(() => _pan = pan);
+  }
+
   void _onScaleEnd(ScaleEndDetails details) {
-    if (!_settings.pinchZoom) return;
+    final mode = _scaleMode;
+    _scaleMode = _ScaleMode.undecided;
+    if (mode == _ScaleMode.seekH) {
+      final t = _seekTarget;
+      if (t != null) widget.player.seek(t); // exact final landing
+      _seekTarget = null;
+      return;
+    }
+    if (mode == _ScaleMode.volume || mode == _ScaleMode.brightness) return;
+    if (!_settings.pinchZoom && mode != _ScaleMode.pan) return;
     // Snap back when barely zoomed.
     if (_zoom < 1.1) {
-      setState(() {
-        _zoom = 1.0;
-        _pan = Offset.zero;
-      });
+      if (_zoom != 1.0 || _pan != Offset.zero) {
+        setState(() {
+          _zoom = 1.0;
+          _pan = Offset.zero;
+        });
+      }
     } else {
       setState(() => _pan = _clampPan(_pan, _zoom));
     }
@@ -322,7 +535,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   // ---------------------------------------------------------------------------
-  // Tap & swipe gestures
+  // Tap gestures
   // ---------------------------------------------------------------------------
 
   void _onDoubleTap() {
@@ -347,42 +560,53 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  void _onVerticalDragStart(DragStartDetails d) {
-    final rightHalf = d.localPosition.dx > _gestureWidth / 2;
-    if (rightHalf && _settings.volumeSwipe) {
-      _dragMode = _DragMode.volume;
-      _dragStartValue = widget.player.isMuted ? 0.0 : widget.player.volume;
-      _dragDy = 0;
-    } else if (!rightHalf && _settings.brightnessSwipe) {
-      _dragMode = _DragMode.brightness;
-      _dragStartValue = widget.player.brightness;
-      _dragDy = 0;
-    } else {
-      _dragMode = _DragMode.none;
-    }
+  // ---------------------------------------------------------------------------
+  // Screenshot + cast
+  // ---------------------------------------------------------------------------
+
+  Future<void> _takeScreenshot() async {
+    final path = await widget.player.captureScreenshot();
+    if (!mounted) return;
+    _showIndicator(
+      path == null
+          ? 'Screenshot unavailable for streams'
+          : 'Screenshot saved to gallery',
+      path == null ? Icons.error_outline : Icons.camera_alt,
+    );
   }
 
-  void _onVerticalDragUpdate(DragUpdateDetails d) {
-    if (_dragMode == _DragMode.none) return;
-    _dragDy -= d.delta.dy; // dragging up = increase
-    final v = (_dragStartValue + _dragDy / 300).clamp(0.0, 1.0);
-    if (_dragMode == _DragMode.volume) {
-      widget.player.setVolume(v);
-      _showIndicator(
-        'Volume ${(v * 100).round()}%',
-        v == 0 ? Icons.volume_off : Icons.volume_up,
-      );
-    } else {
-      widget.player.setBrightness(v);
-      _showIndicator(
-        'Brightness ${(v * 100).round()}%',
-        Icons.brightness_6_outlined,
-      );
+  Future<void> _openCast() async {
+    final track = widget.player.currentTrack;
+    if (track == null) {
+      _showIndicator('Nothing to cast - open a video first',
+          Icons.videocam_off_outlined);
+      return;
     }
-  }
-
-  void _onVerticalDragEnd(DragEndDetails d) {
-    _dragMode = _DragMode.none;
+    // Offer AI-generated subtitles to the TV when they exist on disk.
+    String? subsPath;
+    if (!track.path.startsWith('http')) {
+      final srt = srtPathForVideo(track.path);
+      if (File(srt).existsSync()) subsPath = srt;
+    }
+    // Kick off the device scan right away (the sheet renders its states).
+    unawaited(_castState.scan());
+    await CastSheet.show(
+      context,
+      _castState,
+      videoPath: track.path,
+      title: track.title,
+      subsPath: subsPath,
+      onCastStarted: () {
+        widget.player.pause(); // the TV is playing; phone becomes remote
+        _showIndicator('Casting to TV', Icons.cast_connected);
+      },
+      onCastStopped: (tvPos) async {
+        // Hand playback back to the phone at the TV's position.
+        if (tvPos > Duration.zero) await widget.player.seek(tvPos);
+        await widget.player.resumePlayback();
+        if (mounted) _showIndicator('Back on this phone', Icons.smartphone);
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -392,9 +616,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     final player = widget.player;
 
     return PopScope(
-      canPop: !_isFullscreen,
+      canPop: !_isFullscreen && !_locked,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _isFullscreen) _toggleFullscreen();
+        if (didPop) return;
+        if (_locked) {
+          _showLockHint();
+        } else {
+          _toggleFullscreen();
+        }
       },
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -411,28 +640,34 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ),
                 ),
                 actions: [
-                  IconButton(
-                    tooltip: 'Video info',
-                    icon: const Icon(Icons.info_outline),
-                    onPressed: () =>
-                        VideoInfoSheet.show(context, widget.player),
+                  _appBarBtn(
+                    'Video info',
+                    Icons.info_outline,
+                    () => VideoInfoSheet.show(context, widget.player),
                   ),
-                  IconButton(
-                    tooltip: 'Equalizer',
-                    icon: const Icon(Icons.graphic_eq),
-                    onPressed: () =>
-                        EqualizerSheet.show(context, widget.player),
+                  _appBarBtn(
+                    'Equalizer',
+                    Icons.graphic_eq,
+                    () => EqualizerSheet.show(context, widget.player),
                   ),
-                  IconButton(
-                    tooltip: 'Picture in picture',
-                    icon: const Icon(Icons.picture_in_picture_alt_outlined),
-                    onPressed: () =>
-                        NativeBridge.enterPip(playing: widget.player.isPlaying),
+                  if (_settings.castButton)
+                    _appBarBtn('Cast to TV', Icons.cast_outlined, _openCast),
+                  if (_settings.screenshotButton)
+                    _appBarBtn(
+                      'Screenshot',
+                      Icons.camera_alt_outlined,
+                      _takeScreenshot,
+                    ),
+                  _appBarBtn(
+                    'Picture in picture',
+                    Icons.picture_in_picture_alt_outlined,
+                    () => NativeBridge.enterPip(
+                        playing: widget.player.isPlaying),
                   ),
-                  IconButton(
-                    tooltip: 'Player settings',
-                    icon: const Icon(Icons.settings_outlined),
-                    onPressed: _openSettings,
+                  _appBarBtn(
+                    'Player settings',
+                    Icons.settings_outlined,
+                    _openSettings,
                   ),
                 ],
               ),
@@ -448,18 +683,18 @@ class _PlayerScreenState extends State<PlayerScreen>
                     _gestureWidth = constraints.maxWidth;
                     _gestureHeight = constraints.maxHeight;
                     return GestureDetector(
-                      onTap: _toggleControls,
-                      onDoubleTapDown: (d) =>
-                          _lastDoubleTapDx = d.localPosition.dx,
-                      onDoubleTap: _onDoubleTap,
-                      onLongPressStart: _onLongPressStart,
-                      onLongPressEnd: _onLongPressEnd,
-                      onVerticalDragStart: _onVerticalDragStart,
-                      onVerticalDragUpdate: _onVerticalDragUpdate,
-                      onVerticalDragEnd: _onVerticalDragEnd,
-                      onScaleStart: _onScaleStart,
-                      onScaleUpdate: _onScaleUpdate,
-                      onScaleEnd: _onScaleEnd,
+                      // While locked every gesture collapses to a lock hint.
+                      onTap: _locked ? _showLockHint : _toggleControls,
+                      onDoubleTapDown: _locked
+                          ? null
+                          : (d) => _lastDoubleTapDx = d.localPosition.dx,
+                      onDoubleTap: _locked ? null : _onDoubleTap,
+                      onLongPressStart: _locked ? null : _onLongPressStart,
+                      onLongPressEnd: _locked ? null : _onLongPressEnd,
+                      onScaleStart:
+                          _locked ? (_) => _showLockHint() : _onScaleStart,
+                      onScaleUpdate: _locked ? null : _onScaleUpdate,
+                      onScaleEnd: _locked ? null : _onScaleEnd,
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
@@ -639,6 +874,52 @@ class _PlayerScreenState extends State<PlayerScreen>
                               ),
                             ),
                           ),
+                          // Screen-lock ENTER button (left edge, shown with
+                          // the controls, MX-Player style).
+                          Positioned(
+                            left: 4,
+                            top: 0,
+                            bottom: 0,
+                            child: IgnorePointer(
+                              ignoring: !(_controlsVisible &&
+                                  !_isPip &&
+                                  !_locked &&
+                                  _settings.lockButton &&
+                                  player.currentTrack != null),
+                              child: AnimatedOpacity(
+                                opacity: (_controlsVisible &&
+                                        !_isPip &&
+                                        !_locked &&
+                                        _settings.lockButton &&
+                                        player.currentTrack != null)
+                                    ? 1.0
+                                    : 0.0,
+                                duration: const Duration(milliseconds: 180),
+                                child: Center(
+                                  child: _lockChip(
+                                    icon: Icons.lock_open_outlined,
+                                    onTap: _lockScreen,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Screen-lock EXIT chip (right edge, always visible
+                          // while locked).
+                          if (_locked && !_isPip)
+                            Positioned(
+                              right: 4,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: _lockChip(
+                                  icon: Icons.lock,
+                                  onTap: _showLockHint,
+                                  onDoubleTap: _unlockScreen,
+                                  onLongPress: _unlockScreen,
+                                ),
+                              ),
+                            ),
                           // Controls slide up + fade in instead of snapping.
                           Positioned(
                             left: 0,
@@ -704,6 +985,39 @@ class _PlayerScreenState extends State<PlayerScreen>
       ),
     );
   }
+
+  Widget _appBarBtn(String tooltip, IconData icon, VoidCallback onPressed) {
+    return IconButton(
+      tooltip: tooltip,
+      icon: Icon(icon, size: 22),
+      constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      onPressed: onPressed,
+    );
+  }
+
+  Widget _lockChip({
+    required IconData icon,
+    VoidCallback? onTap,
+    VoidCallback? onDoubleTap,
+    VoidCallback? onLongPress,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      onDoubleTap: onDoubleTap,
+      onLongPress: onLongPress,
+      child: Container(
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Icon(icon, color: Colors.white, size: 22),
+      ),
+    );
+  }
 }
 
-enum _DragMode { none, volume, brightness }
+enum _ScaleMode { undecided, volume, brightness, seekH, pan, zoom, cant }

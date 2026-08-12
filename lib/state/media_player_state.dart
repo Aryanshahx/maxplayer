@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' hide VideoTrack;
@@ -387,6 +388,44 @@ class MediaPlayerState extends ChangeNotifier {
       await pause();
     } else {
       await player.play();
+    }
+  }
+
+  /// Unconditional resume (used when handing playback back from a TV cast
+  /// session - togglePlay would pause if the user already resumed).
+  Future<void> resumePlayback() => player.play();
+
+  /// Saves the CURRENT video frame exactly as shown (subtitles included)
+  /// as a PNG into /storage/emulated/0/Pictures/Max Player and registers it
+  /// with the media scanner so gallery apps see it immediately.
+  ///
+  /// Returns the saved path, or null when there is nothing to capture
+  /// (no video, or a network stream) or the capture failed.
+  Future<String?> captureScreenshot() async {
+    final track = currentTrack;
+    if (track == null) return null;
+    if (track.path.startsWith('http')) return null; // stream: nothing on disk
+    final platform = player.platform;
+    if (platform is! NativePlayer) return null;
+    try {
+      final dir = Directory('/storage/emulated/0/Pictures/Max Player');
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final out =
+          '${dir.path}/MaxPlayer_${DateTime.now().millisecondsSinceEpoch}.png';
+      // libmpv command; plain (non-async) screenshot-to-file blocks mpv's
+      // core until the PNG is written, then we verify from Dart.
+      await platform.command(['screenshot-to-file', out]);
+      final f = File(out);
+      for (var i = 0; i < 20; i++) {
+        if (f.existsSync() && f.lengthSync() > 0) {
+          await NativeBridge.scanFile(out);
+          return out;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 

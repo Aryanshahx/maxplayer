@@ -14,6 +14,7 @@ enum GestureKind {
   doubleTapMiddle,
   swipeBrightness,
   swipeVolume,
+  swipeSeek,
   pinchZoom,
   holdSpeed,
 }
@@ -311,6 +312,31 @@ class _GesturePainter extends CustomPainter {
             leftHalf: false,
             tint: accent,
             doodle: IconKindDoodle.speaker);
+        break;
+
+      case GestureKind.swipeSeek:
+        // Fingertip sliding sideways across the screen, with the "+45s ·
+        // 03:12" pill the real player shows while scrubbing.
+        final fy = c.dy + 8;
+        _fingertip(canvas, Offset(c.dx, fy));
+        _arrow(canvas, Offset(c.dx - 16, fy), Offset(c.dx - 48, fy),
+            _accentPaint);
+        _arrow(canvas, Offset(c.dx + 16, fy), Offset(c.dx + 48, fy),
+            _accentPaint);
+        // Landing pill, like the indicator in the player.
+        final pill = RRect.fromRectAndRadius(
+            Rect.fromCenter(
+                center: Offset(c.dx, r.top + 13), width: 92, height: 18),
+            const Radius.circular(9));
+        canvas.drawRRect(
+            pill,
+            Paint()
+              ..color = accent
+              ..style = PaintingStyle.fill);
+        _label(canvas, '+45s · 03:12', Offset(c.dx, r.top + 13),
+            color: Colors.white, size: 9.5);
+        _label(canvas, 'or the other way', Offset(c.dx, r.bottom - 9),
+            size: 8.5);
         break;
 
       case GestureKind.pinchZoom:

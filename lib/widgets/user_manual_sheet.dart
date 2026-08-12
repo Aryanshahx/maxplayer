@@ -334,6 +334,16 @@ const List<_GestureItem> _gestureItems = [
         'unmute.',
   ),
   _GestureItem(
+    GestureKind.swipeSeek,
+    'Swipe SIDEWAYS - scrub through the video',
+    'Drag one finger LEFT or RIGHT anywhere on the video to scrub: the pill '
+        'at the top shows how far you are jumping ("+45s · 03:12") and the '
+        'video follows live while you drag. A full screen-width swipe is '
+        '±90 seconds. Release to land exactly there. When zoomed in, the '
+        'same drag moves the picture instead. Can be turned off in ⚙ '
+        'settings → Gesture controls.',
+  ),
+  _GestureItem(
     GestureKind.pinchZoom,
     'Pinch with two fingers - zoom up to 4×',
     'Place TWO fingers on the video and spread them apart to zoom in, pinch '
@@ -415,11 +425,37 @@ const List<_Item> _playerItems = [
         'English).',
   ),
   _Item(
+    Icons.cast_outlined,
+    'Cast to TV (top bar)',
+    'Tap the cast icon to send the video to any DLNA smart TV or Android '
+        'box on the same Wi-Fi. The phone turns into a remote: play/pause, '
+        'a live seek slider, and "Stop casting" hands the video back to '
+        'the phone right where the TV left off. Closing the player stops '
+        'casting. (Chromecast dongles use a different protocol and are '
+        'not supported yet.)',
+  ),
+  _Item(
+    Icons.camera_alt_outlined,
+    'Screenshot (top bar)',
+    'Saves the current frame - with any subtitles burned in, exactly as '
+        'you see it - as a PNG into Pictures/Max Player, visible in your '
+        'gallery at once. Not available for online streams.',
+  ),
+  _Item(
+    Icons.lock_outline,
+    'Screen lock / kids mode (left edge)',
+    'The lock button on the left edge of the video locks EVERY button and '
+        'gesture - safe to hand the phone to a child or keep in a pocket. '
+        'To unlock, double-tap (or long-press) the lock on the right edge. '
+        'The button can be hidden in ⚙ settings → Player buttons.',
+  ),
+  _Item(
     Icons.settings_outlined,
     'Player settings (⚙ top bar)',
-    'Every gesture can be turned on/off individually, plus: seek step, '
-        'auto-hide delay, speed-boost multiplier, and whether videos resume '
-        'where you left off.',
+    'Every gesture can be turned on/off individually (including horizontal '
+        'swipe-to-seek), plus: seek step, auto-hide delay, speed-boost '
+        'multiplier, resume playback, and which extra buttons (cast / '
+        'screenshot / lock) show in the player.',
   ),
 ];
 

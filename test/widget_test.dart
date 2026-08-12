@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:maxplayer/app_info.dart';
+import 'package:maxplayer/cast/cast_support.dart';
 import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/state/media_player_state.dart';
+import 'package:maxplayer/state/player_settings.dart';
 import 'package:maxplayer/state/video_library_state.dart';
 import 'package:maxplayer/utils/formatters.dart';
 import 'package:maxplayer/utils/srt.dart';
@@ -262,6 +264,157 @@ void main() {
         SrtCue(1000, 2000, 'first'),
       ]);
       expect(srt.startsWith('1\n00:00:01,000'), isTrue);
+    });
+  });
+
+  group('player settings (v12 defaults)', () {
+    test('new v12 toggles all start ON and persist round-trip', () {
+      const s = PlayerSettings();
+      expect(s.horizontalSeek, isTrue);
+      expect(s.castButton, isTrue);
+      expect(s.screenshotButton, isTrue);
+      expect(s.lockButton, isTrue);
+      // copyWith actually carries them
+      final t = s.copyWith(horizontalSeek: false, castButton: false);
+      expect(t.horizontalSeek, isFalse);
+      expect(t.castButton, isFalse);
+      expect(t.screenshotButton, isTrue);
+      expect(t.lockButton, isTrue);
+    });
+
+    test('load from empty store yields all v12 defaults', () async {
+      final s = await PlayerSettings.load();
+      expect(s.horizontalSeek, isTrue);
+      expect(s.castButton, isTrue);
+      expect(s.screenshotButton, isTrue);
+      expect(s.lockButton, isTrue);
+    });
+  });
+
+  group('DLNA cast helpers', () {
+    test('SSDP header lookup is case-insensitive and trims', () {
+      const dg = 'HTTP/1.1 200 OK\r\n'
+          'CACHE-CONTROL: max-age=1800\r\n'
+          'LOCATION: http://192.168.1.10:8080/dd.xml\r\n'
+          'location: http://other/x.xml\r\n' // duplicate -> first wins
+          'ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n';
+      expect(ssdpHeader(dg, 'location'), 'http://192.168.1.10:8080/dd.xml');
+      expect(ssdpHeader(dg, 'ST'),
+          'urn:schemas-upnp-org:device:MediaRenderer:1');
+      expect(ssdpHeader(dg, 'server'), isNull);
+    });
+
+    test('M-SEARCH request is well formed', () {
+      final m = buildMSearchRequest('ssdp:all');
+      expect(m.startsWith('M-SEARCH * HTTP/1.1\r\n'), isTrue);
+      expect(m, contains('ST: ssdp:all\r\n'));
+      expect(m.endsWith('\r\n\r\n'), isTrue);
+    });
+
+    test('device description: finds AVTransport and resolves relative URL',
+        () {
+      const xml = '''
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <device>
+    <friendlyName>Living Room TV</friendlyName>
+    <serviceList>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType>
+        <controlURL>/rc/control</controlURL>
+      </service>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+        <controlURL>/avt/control</controlURL>
+      </service>
+    </serviceList>
+  </device>
+</root>''';
+      final d = parseDeviceDescription(xml, 'http://192.168.1.10:9000/dd.xml');
+      expect(d, isNotNull);
+      expect(d!.name, 'Living Room TV');
+      expect(d.controlUrl, 'http://192.168.1.10:9000/avt/control');
+    });
+
+    test('device description: rejects devices without AVTransport', () {
+      const xml = '<root><device><friendlyName>Router</friendlyName>'
+          '<serviceList><service>'
+          '<serviceType>urn:schemas-upnp-org:service:WANIPConnection:1</serviceType>'
+          '<controlURL>/wan/control</controlURL>'
+          '</service></serviceList></device></root>';
+      expect(parseDeviceDescription(xml, 'http://10.0.0.1/d.xml'), isNull);
+    });
+
+    test('absolute controlURL kept as-is; xml entities unescaped in name',
+        () {
+      const xml = '<root><device><friendlyName>A &amp; B TV</friendlyName>'
+          '<serviceList><service>'
+          '<serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>'
+          '<controlURL>http://192.168.1.5:81/avt</controlURL>'
+          '</service></serviceList></device></root>';
+      final d = parseDeviceDescription(xml, 'http://192.168.1.5:9999/dd');
+      expect(d!.name, 'A & B TV');
+      expect(d.controlUrl, 'http://192.168.1.5:81/avt');
+    });
+
+    test('SOAP envelope carries InstanceID first and escapes args', () {
+      final env = buildSoapEnvelope('Play', const [
+        MapEntry('Speed', '1'),
+      ]);
+      expect(env, contains('<u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">'));
+      expect(env.indexOf('<InstanceID>0</InstanceID>'),
+          lessThan(env.indexOf('<Speed>1</Speed>')));
+      final esc = buildSoapEnvelope('X', const [
+        MapEntry('V', 'a & <b> "q"'),
+      ]);
+      expect(esc, contains('a &amp; &lt;b&gt; &quot;q&quot;'));
+    });
+
+    test('soapTag digs values out of responses', () {
+      const body = '<s:Envelope><s:Body><u:GetPositionInfoResponse>'
+          '<Track>1</Track><RelTime>0:06:12</RelTime>'
+          '</u:GetPositionInfoResponse></s:Body></s:Envelope>';
+      expect(soapTag(body, 'RelTime'), '0:06:12');
+      expect(soapTag(body, 'Track'), '1');
+      expect(soapTag(body, 'AbsTime'), isNull);
+    });
+
+    test('DIDL metadata carries title, res and optional subtitle', () {
+      final didl = buildDidlMetadata(
+        title: 'My Video <1080p>',
+        videoUrl: 'http://p:1/video.mp4',
+        mime: 'video/mp4',
+        subsUrl: 'http://p:1/subs.srt',
+      );
+      expect(didl, contains('<dc:title>My Video &lt;1080p&gt;</dc:title>'));
+      expect(didl, contains('protocolInfo="http-get:*:video/mp4:*"'));
+      expect(didl, contains('<sec:CaptionInfoEx'));
+      final noSubs = buildDidlMetadata(
+          title: 't', videoUrl: 'http://p/v.mp4', mime: 'video/mp4');
+      expect(noSubs.contains('CaptionInfoEx'), isFalse);
+    });
+
+    test('mime map covers the containers we scan for', () {
+      expect(mimeForExtension('/x/a.mkv'), 'video/x-matroska');
+      expect(mimeForExtension('/x/a.MP4'), 'video/mp4');
+      expect(mimeForExtension('/x/a.webm'), 'video/webm');
+      expect(mimeForExtension('/x/a.avi'), 'video/x-msvideo');
+      expect(mimeForExtension('/x/a.mov'), 'video/quicktime');
+      expect(mimeForExtension('/x/a.wmv'), 'video/x-ms-wmv');
+      expect(mimeForExtension('/x/a.ts'), 'video/mp2t');
+      expect(mimeForExtension('http://s/v.mkv?token=1'), 'video/x-matroska');
+      expect(mimeForExtension('/x/a.unknown'), 'video/mp4'); // safe default
+    });
+
+    test('DLNA rel-time format/parse round-trips', () {
+      expect(formatRelTime(const Duration(hours: 1, minutes: 2, seconds: 3)),
+          '1:02:03');
+      expect(formatRelTime(Duration.zero), '0:00:00');
+      expect(parseRelTime('0:06:12'), const Duration(minutes: 6, seconds: 12));
+      expect(parseRelTime('1:02:03.500'),
+          const Duration(hours: 1, minutes: 2, seconds: 3, milliseconds: 500));
+      expect(parseRelTime('NOT_IMPLEMENTED'), isNull);
+      expect(parseRelTime(null), isNull);
+      expect(parseRelTime('garbage'), isNull);
     });
   });
 

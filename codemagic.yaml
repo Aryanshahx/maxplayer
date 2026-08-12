@@ -3,7 +3,12 @@ workflows:
     name: Max Player - Android APK
     max_build_duration: 60
     environment:
-      flutter: stable
+      # Pinned on purpose: 'stable' auto-upgrades, and upcoming Flutter
+      # versions will refuse to build plugins that still apply the Kotlin
+      # Gradle Plugin (media_kit's transitive package_info_plus /
+      # wakelock_plus warn about this today). A pinned version keeps every
+      # CI build reproducible.
+      flutter: 3.44.9
       # No android_signing block yet - this ships a debug-signed APK, which is
       # fine for sideloading and testing. Add an android_signing entry here
       # later once you've created a keystore and registered it in

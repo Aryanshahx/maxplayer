@@ -10,7 +10,8 @@ class VideoMetadata {
   /// Overall bitrate in bits/sec (from the container), if reported.
   final int? bitrateBps;
 
-  /// Video codec name (e.g. "hevc"); only on Android 12+.
+  /// Friendly video codec name (e.g. "H.265 (HEVC)"); works on every
+  /// Android version (read via MediaExtractor track MIME).
   final String? codec;
 
   const VideoMetadata({
@@ -291,6 +292,22 @@ class NativeBridge {
   static Future<void> aiSubtitleCancel() async {
     try {
       await _channel.invokeMethod('aiSubtitleCancel');
+    } catch (_) {}
+  }
+
+  /// Registers [path] with the Android media scanner so freshly-written
+  /// files (screenshots, AI subtitles) show up in gallery apps at once.
+  static Future<void> scanFile(String path) async {
+    try {
+      await _channel.invokeMethod('scanFile', {'path': path});
+    } catch (_) {}
+  }
+
+  /// Holds/releases the Wi-Fi multicast lock used during DLNA (SSDP)
+  /// device discovery. [hold] true = acquire, false = release.
+  static Future<void> setMulticastLock(bool hold) async {
+    try {
+      await _channel.invokeMethod('setMulticastLock', hold);
     } catch (_) {}
   }
 }

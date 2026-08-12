@@ -1,3 +1,14 @@
+import 'package:path/path.dart' as p;
+
+/// Where the AI subtitle runner writes sidecar files for [videoPath]:
+/// "<video-name>.maxai.srt" next to the video. Shared by the runner and
+/// the DLNA caster (which offers this file to the TV).
+String srtPathForVideo(String videoPath) {
+  final dir = p.dirname(videoPath);
+  final base = p.basenameWithoutExtension(videoPath);
+  return p.join(dir, '$base.maxai.srt');
+}
+
 /// One SRT subtitle cue.
 class SrtCue {
   final int startMs;

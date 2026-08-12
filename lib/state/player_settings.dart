@@ -23,6 +23,18 @@ class PlayerSettings {
   /// Reopen a video where you left off (backed by the watch history).
   final bool resumePlayback;
 
+  /// Drag horizontally anywhere on the video to scrub through it.
+  final bool horizontalSeek;
+
+  /// Show the "Cast to TV" (DLNA) button in the player top bar.
+  final bool castButton;
+
+  /// Show the screenshot button in the player top bar.
+  final bool screenshotButton;
+
+  /// Show the screen-lock (kids mode) button on the video.
+  final bool lockButton;
+
   const PlayerSettings({
     this.doubleTapSeek = true,
     this.seekSeconds = 10,
@@ -34,6 +46,10 @@ class PlayerSettings {
     this.longPressMultiplier = 2.0,
     this.autoHideSeconds = 4,
     this.resumePlayback = true,
+    this.horizontalSeek = true,
+    this.castButton = true,
+    this.screenshotButton = true,
+    this.lockButton = true,
   });
 
   // Persisted keys (MediaPlayerState reads the resume key directly).
@@ -47,6 +63,10 @@ class PlayerSettings {
   static const String kLongPressMultiplier = 'player.longPressMultiplier';
   static const String kAutoHideSeconds = 'player.autoHideSeconds';
   static const String kResumePlayback = 'player.resumePlayback';
+  static const String kHorizontalSeek = 'player.horizontalSeek';
+  static const String kCastButton = 'player.castButton';
+  static const String kScreenshotButton = 'player.screenshotButton';
+  static const String kLockButton = 'player.lockButton';
 
   static Future<PlayerSettings> load() async {
     final s = await NativeBridge.loadSettings();
@@ -65,6 +85,10 @@ class PlayerSettings {
       autoHideSeconds:
           int.tryParse(s[kAutoHideSeconds] ?? '') ?? d.autoHideSeconds,
       resumePlayback: s[kResumePlayback] != 'false',
+      horizontalSeek: s[kHorizontalSeek] != 'false',
+      castButton: s[kCastButton] != 'false',
+      screenshotButton: s[kScreenshotButton] != 'false',
+      lockButton: s[kLockButton] != 'false',
     );
   }
 
@@ -79,7 +103,11 @@ class PlayerSettings {
     NativeBridge.saveSetting(
         kLongPressMultiplier, longPressMultiplier.toStringAsFixed(1));
     NativeBridge.saveSetting(kAutoHideSeconds, '$autoHideSeconds');
-    return NativeBridge.saveSetting(kResumePlayback, '$resumePlayback');
+    NativeBridge.saveSetting(kResumePlayback, '$resumePlayback');
+    NativeBridge.saveSetting(kHorizontalSeek, '$horizontalSeek');
+    NativeBridge.saveSetting(kCastButton, '$castButton');
+    NativeBridge.saveSetting(kScreenshotButton, '$screenshotButton');
+    return NativeBridge.saveSetting(kLockButton, '$lockButton');
   }
 
   PlayerSettings copyWith({
@@ -93,6 +121,10 @@ class PlayerSettings {
     double? longPressMultiplier,
     int? autoHideSeconds,
     bool? resumePlayback,
+    bool? horizontalSeek,
+    bool? castButton,
+    bool? screenshotButton,
+    bool? lockButton,
   }) {
     return PlayerSettings(
       doubleTapSeek: doubleTapSeek ?? this.doubleTapSeek,
@@ -105,6 +137,10 @@ class PlayerSettings {
       longPressMultiplier: longPressMultiplier ?? this.longPressMultiplier,
       autoHideSeconds: autoHideSeconds ?? this.autoHideSeconds,
       resumePlayback: resumePlayback ?? this.resumePlayback,
+      horizontalSeek: horizontalSeek ?? this.horizontalSeek,
+      castButton: castButton ?? this.castButton,
+      screenshotButton: screenshotButton ?? this.screenshotButton,
+      lockButton: lockButton ?? this.lockButton,
     );
   }
 }
