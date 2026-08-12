@@ -1,3 +1,16 @@
+#!/usr/bin/env bash
+# =============================================================================
+# HOTFIX: Codemagic build failure in update v5
+# Error was: AAPT: ... |screenDensity|... incompatible with configChanges
+# Cause: manifest had the invalid flag "screenDensity" instead of the
+# valid "screenLayout". This script rewrites the manifest with the fix.
+# Run from your flutter project root:  cd ~/IdeaProjects/maxplayer
+# =============================================================================
+set -e
+
+mkdir -p android/app/src/main
+
+cat > 'android/app/src/main/AndroidManifest.xml' << 'MAXPLAYER_EOF'
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
@@ -87,3 +100,7 @@
         </intent>
     </queries>
 </manifest>
+MAXPLAYER_EOF
+
+echo "Manifest fixed. Now run:"
+echo "  git add -A && git commit -m \"fix: valid configChanges flags (screenLayout) - AAPT build failure\" && git push"
