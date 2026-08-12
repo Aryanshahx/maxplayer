@@ -1,3 +1,24 @@
+#!/bin/bash
+# ============================================================
+# Max Player - v7 HOTFIX (build fix)
+# ============================================================
+# Fixes the Codemagic build error:
+#   MainActivity.kt:178:29 Unresolved reference
+#   'setPictureInPictureParameters'
+# The Android Activity method is called setPictureInPictureParams
+# (no "ers"). One-word change, everything else untouched.
+#
+# HOW TO USE (on the Pi):
+#   cd ~/IdeaProjects/maxplayer
+#   nano hotfix2.sh      # paste this whole file, save & exit
+#   bash hotfix2.sh
+#   git add -A && git commit -m "hotfix: rename to setPictureInPictureParams (build fix)" && git push
+# ============================================================
+set -e
+cd "$(dirname "$0")"
+echo "==> Applying PiP hotfix..."
+
+cat > 'android/app/src/main/kotlin/com/example/maxplayer/MainActivity.kt' <<'EOF_MARKER_MAINACTIVITY'
 package com.example.maxplayer
 
 import android.app.PendingIntent
@@ -512,3 +533,8 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
     }
 }
+EOF_MARKER_MAINACTIVITY
+
+echo ""
+echo "==> Done! Now run:"
+echo "    git add -A && git commit -m \"hotfix: rename to setPictureInPictureParams (build fix)\" && git pusH
