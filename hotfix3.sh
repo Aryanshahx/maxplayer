@@ -1,3 +1,27 @@
+#!/bin/bash
+# ============================================================
+# Max Player - v11 HOTFIX (build fix)
+# ============================================================
+# Fixes the Codemagic build error:
+#   MainActivity.kt:561:70 Unresolved reference
+#   'METADATA_KEY_VIDEO_CODEC_NAME'
+# That constant does not exist in the public Android SDK.
+# The video codec is now read from the container's video track
+# via MediaExtractor + MediaFormat.KEY_MIME (works on EVERY
+# Android version, and MediaExtractor was already imported for
+# the AI subtitle pipeline). Everything else untouched.
+#
+# HOW TO USE (on the Pi):
+#   cd ~/IdeaProjects/maxplayer
+#   nano hotfix3.sh      # paste this whole file, save & exit
+#   bash hotfix3.sh
+#   git add -A && git commit -m "hotfix: read codec via MediaExtractor KEY_MIME (build fix)" && git push
+# ============================================================
+set -e
+cd "$(dirname "$0")"
+echo "==> Applying codec-name hotfix..."
+
+cat > 'android/app/src/main/kotlin/com/example/maxplayer/MainActivity.kt' <<'EOF_MARKER_MAINACTIVITY'
 package com.example.maxplayer
 
 import android.app.PendingIntent
@@ -1014,3 +1038,8 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
     }
 }
+EOF_MARKER_MAINACTIVITY
+
+echo ""
+echo "==> Done! Now run:"
+echo "    git add -A && git commit -m \"hotfix: read codec via MediaExtractor KEY_MIME (build fix)\" && git push"
