@@ -60,6 +60,10 @@ class MediaPlayerState extends ChangeNotifier {
   // --- Long-press speed boost ---
   double? _preBoostRate;
 
+  /// True while the long-press speed boost is engaged; the player shows a
+  /// persistent "Nx" badge for the whole boost, not just a flash.
+  bool get isSpeedBoosting => _preBoostRate != null;
+
   // --- Equalizer (libmpv lavfi filter chain) ---
   static const List<int> eqFrequencies = [60, 230, 910, 3600, 14000];
   List<double> eqGains = List.filled(eqFrequencies.length, 0);
@@ -78,7 +82,9 @@ class MediaPlayerState extends ChangeNotifier {
   List<HistoryEntry> get history => List.unmodifiable(_history);
 
   VideoTrack? get currentTrack =>
-      playlist.isNotEmpty && currentIndex < playlist.length ? playlist[currentIndex] : null;
+      playlist.isNotEmpty && currentIndex < playlist.length
+      ? playlist[currentIndex]
+      : null;
 
   final _rand = Random();
   late final List<StreamSubscription> _subs;
@@ -88,6 +94,9 @@ class MediaPlayerState extends ChangeNotifier {
       player.stream.playing.listen((v) {
         isPlaying = v;
         notifyListeners();
+        // Keep the PiP window's play/pause remote action in sync
+        // (native side ignores this when not in PiP).
+        NativeBridge.setPipPlaying(v);
       }),
       player.stream.position.listen((v) {
         position = v;
@@ -123,15 +132,14 @@ class MediaPlayerState extends ChangeNotifier {
       }),
     ];
     player.setVolume(volume * 100);
+    // Play/pause from the picture-in-picture window's own button.
+    NativeBridge.configureCallbacks(onPipAction: togglePlay);
     _init();
     // Persist the resume point + watch time every few seconds.
-    _bookmarkTimer = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) {
-        _saveBookmark();
-        _trackWatchTime();
-      },
-    );
+    _bookmarkTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _saveBookmark();
+      _trackWatchTime();
+    });
   }
 
   Future<void> _init() async {
@@ -178,7 +186,9 @@ class MediaPlayerState extends ChangeNotifier {
         ? _history.sublist(0, _kHistoryMax)
         : _history;
     NativeBridge.saveSetting(
-        _kHistoryKey, jsonEncode([for (final e in capped) e.toJson()]));
+      _kHistoryKey,
+      jsonEncode([for (final e in capped) e.toJson()]),
+    );
   }
 
   HistoryEntry? _historyEntryFor(String path) {
@@ -230,8 +240,9 @@ class MediaPlayerState extends ChangeNotifier {
       title: entry.title,
       path: entry.path,
       thumbnailPath: entry.thumbnailPath,
-      duration:
-          entry.durationSecs > 0 ? Duration(seconds: entry.durationSecs) : null,
+      duration: entry.durationSecs > 0
+          ? Duration(seconds: entry.durationSecs)
+          : null,
     );
     await setPlaylistAndPlay([track], 0);
   }
@@ -263,7 +274,10 @@ class MediaPlayerState extends ChangeNotifier {
   }
 
   /// Replace the whole queue and start playing at [startIndex].
-  Future<void> setPlaylistAndPlay(List<VideoTrack> videos, [int startIndex = 0]) async {
+  Future<void> setPlaylistAndPlay(
+    List<VideoTrack> videos, [
+    int startIndex = 0,
+  ]) async {
     playlist = videos;
     currentIndex = startIndex.clamp(0, videos.isEmpty ? 0 : videos.length - 1);
     notifyListeners();
@@ -304,8 +318,10 @@ class MediaPlayerState extends ChangeNotifier {
         // Wait briefly for the demuxer to report the length.
         d = await player.stream.duration
             .firstWhere((v) => v > Duration.zero)
-            .timeout(const Duration(seconds: 3),
-                onTimeout: () => Duration.zero);
+            .timeout(
+              const Duration(seconds: 3),
+              onTimeout: () => Duration.zero,
+            );
       }
       if (d == Duration.zero) return;
       // Almost-finished videos start from the beginning again.
@@ -485,7 +501,8 @@ class MediaPlayerState extends ChangeNotifier {
     for (var i = 0; i < eqFrequencies.length && i < gains.length; i++) {
       if (gains[i] == 0) continue;
       parts.add(
-          'equalizer=f=${eqFrequencies[i]}:t=q:w=1.0:g=${gains[i].toStringAsFixed(1)}');
+        'equalizer=f=${eqFrequencies[i]}:t=q:w=1.0:g=${gains[i].toStringAsFixed(1)}',
+      );
     }
     return parts.isEmpty ? '' : 'lavfi=[${parts.join(',')}]';
   }
@@ -495,7 +512,9 @@ class MediaPlayerState extends ChangeNotifier {
     eqEnabled = enabled;
     NativeBridge.saveSetting(_kEqEnabledKey, '$enabled');
     NativeBridge.saveSetting(
-        _kEqGainsKey, gains.map((g) => g.toStringAsFixed(1)).join(','));
+      _kEqGainsKey,
+      gains.map((g) => g.toStringAsFixed(1)).join(','),
+    );
     notifyListeners();
     await _applyEqFilter();
   }
@@ -505,7 +524,9 @@ class MediaPlayerState extends ChangeNotifier {
     if (platform is NativePlayer) {
       try {
         await platform.setProperty(
-            'af', eqEnabled ? buildEqualizerFilter(eqGains) : '');
+          'af',
+          eqEnabled ? buildEqualizerFilter(eqGains) : '',
+        );
       } catch (_) {}
     }
   }
@@ -557,8 +578,6 @@ class MediaPlayerState extends ChangeNotifier {
     notifyListeners();
     await player.stop();
   }
-
-
 
   Future<void> nextTrack() async {
     if (playlist.length <= 1) return;
@@ -619,7 +638,8 @@ class MediaPlayerState extends ChangeNotifier {
     if (repeatMode == RepeatMode.one) {
       await player.seek(Duration.zero);
       await player.play();
-    } else if (repeatMode == RepeatMode.all || currentIndex < playlist.length - 1) {
+    } else if (repeatMode == RepeatMode.all ||
+        currentIndex < playlist.length - 1) {
       await nextTrack();
     }
   }

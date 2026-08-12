@@ -40,6 +40,7 @@ class NativeBridge {
   static void Function(String path)? _onOpenVideo;
   static void Function(String uri)? _onOpenVideoFailed;
   static void Function(bool isPip)? _onPipChanged;
+  static void Function()? _onPipAction;
   static bool _handlerRegistered = false;
 
   /// Registers (or replaces) the app-level native event callbacks.
@@ -47,10 +48,14 @@ class NativeBridge {
     void Function(String path)? onOpenVideo,
     void Function(String uri)? onOpenVideoFailed,
     void Function(bool isPip)? onPipChanged,
+
+    /// Fired when the play/pause button ON THE PiP WINDOW is tapped.
+    void Function()? onPipAction,
   }) {
     if (onOpenVideo != null) _onOpenVideo = onOpenVideo;
     if (onOpenVideoFailed != null) _onOpenVideoFailed = onOpenVideoFailed;
     if (onPipChanged != null) _onPipChanged = onPipChanged;
+    if (onPipAction != null) _onPipAction = onPipAction;
     if (_handlerRegistered) return;
     _handlerRegistered = true;
     _channel.setMethodCallHandler(_dispatch);
@@ -69,17 +74,17 @@ class NativeBridge {
       case 'onPipChanged':
         _onPipChanged?.call(call.arguments == true);
         break;
+      case 'onPipAction':
+        _onPipAction?.call();
+        break;
     }
     return null;
   }
 
   static Future<VideoMetadata> fetchMetadata(String path) async {
     try {
-      final Map<Object?, Object?>? res =
-          await _channel.invokeMethod<Map<Object?, Object?>>(
-        'getMetadata',
-        {'path': path},
-      );
+      final Map<Object?, Object?>? res = await _channel
+          .invokeMethod<Map<Object?, Object?>>('getMetadata', {'path': path});
       if (res == null) return const VideoMetadata();
       final durationMs = res['durationMs'];
       final width = res['width'];
@@ -97,8 +102,8 @@ class NativeBridge {
 
   static Future<Map<String, String>> loadSettings() async {
     try {
-      final Map<Object?, Object?>? res =
-          await _channel.invokeMethod<Map<Object?, Object?>>('settingsGetAll');
+      final Map<Object?, Object?>? res = await _channel
+          .invokeMethod<Map<Object?, Object?>>('settingsGetAll');
       if (res == null) return <String, String>{};
       return res.map((k, v) => MapEntry('$k', '$v'));
     } catch (_) {
@@ -144,9 +149,8 @@ class NativeBridge {
   /// (the URI we could not resolve); both may be null.
   static Future<Map<String, String>> getInitialOpenVideo() async {
     try {
-      final Map<Object?, Object?>? res =
-          await _channel.invokeMethod<Map<Object?, Object?>>(
-              'getInitialOpenVideo');
+      final Map<Object?, Object?>? res = await _channel
+          .invokeMethod<Map<Object?, Object?>>('getInitialOpenVideo');
       if (res == null) return const {};
       final out = <String, String>{};
       for (final key in ['path', 'failed']) {
@@ -161,9 +165,19 @@ class NativeBridge {
 
   // --- Picture in picture ---
 
-  static Future<void> enterPip() async {
+  /// Ask Android to enter PiP. [playing] picks the correct initial icon for
+  /// the PiP window's play/pause remote action.
+  static Future<void> enterPip({bool playing = true}) async {
     try {
-      await _channel.invokeMethod('enterPip');
+      await _channel.invokeMethod('enterPip', {'playing': playing});
+    } catch (_) {}
+  }
+
+  /// Keeps the PiP window's play/pause action in sync with the player.
+  /// Cheap no-op when not in PiP (and on non-Android platforms).
+  static Future<void> setPipPlaying(bool playing) async {
+    try {
+      await _channel.invokeMethod('setPipPlaying', playing);
     } catch (_) {}
   }
 }

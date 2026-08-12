@@ -1,9 +1,19 @@
 package com.example.maxplayer
 
+import android.app.PendingIntent
 import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.drawable.Icon
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -11,6 +21,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -33,11 +44,18 @@ import java.util.concurrent.Executors
  *  - getBrightness / setBrightness / resetBrightness: app-local screen
  *    brightness for the player's left-half swipe gesture.
  *
- *  - "Open with" support: VIEW intents carrying video files are resolved to
- *    real filesystem paths (file://, MediaStore content://, and external
- *    storage document URIs) and delivered to Dart via getInitialOpenVideo
- *    (cold start) or the onOpenVideo / onOpenVideoFailed channel calls
- *    (warm start, singleTop re-use).
+ *  - "Open with" / "Share" support: VIEW and SEND intents carrying videos are
+ *    resolved to real filesystem paths (file://, MediaStore content://,
+ *    external-storage document URIs) and delivered to Dart via
+ *    getInitialOpenVideo (cold start) or onOpenVideo / onOpenVideoFailed
+ *    (warm start, singleTop re-use). Gallery/cloud URIs that do not expose a
+ *    real path are stream-copied into the app cache as a fallback. Network
+ *    URLs (http/https/rtsp/rtmp/mms) are passed to the player as-is.
+ *
+ *  - Picture-in-picture with a custom play/pause remote action: providing our
+ *    own action also replaces the system's default "settings" gear in the PiP
+ *    window. Playback state is kept in sync via setPipPlaying; taps on the
+ *    PiP action arrive as the "onPipAction" channel call.
  */
 class MainActivity : FlutterActivity() {
     private val channelName = "maxplayer/native"
@@ -48,14 +66,24 @@ class MainActivity : FlutterActivity() {
     private var pendingOpenPath: String? = null
     private var pendingOpenFailed: String? = null
 
+    // --- Picture-in-picture remote action state ---
+    private var pipPlaying = true
+    private var pipReceiverRegistered = false
+
+    companion object {
+        private const val ACTION_PIP_TOGGLE = "com.example.maxplayer.action.PIP_TOGGLE"
+        private const val REQ_PIP_TOGGLE = 42
+        private val STREAM_SCHEMES = setOf("http", "https", "rtsp", "rtmp", "mms")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        handleViewIntent(intent)
+        handleIncomingIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        handleViewIntent(intent)
+        handleIncomingIntent(intent)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -123,19 +151,35 @@ class MainActivity : FlutterActivity() {
                     result.success(map)
                 }
                 "enterPip" -> {
-                    result.success(try {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            enterPictureInPictureMode(
-                                PictureInPictureParams.Builder().build()
-                            )
-                        } else {
-                            @Suppress("DEPRECATION")
-                            enterPictureInPictureMode()
+                    pipPlaying = call.argument<Boolean>("playing") ?: true
+                    result.success(
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                ensurePipReceiver()
+                                enterPictureInPictureMode(buildPipParams())
+                                true
+                            } else {
+                                false
+                            }
+                        } catch (e: Exception) {
+                            false
                         }
-                        true
-                    } catch (e: Exception) {
-                        false
-                    })
+                    )
+                }
+                "setPipPlaying" -> {
+                    pipPlaying = (call.arguments as? Boolean) ?: true
+                    // Only refresh the action while actually in PiP; swapping
+                    // the action replaces the default settings gear with our
+                    // play/pause button.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                        isInPictureInPictureMode
+                    ) {
+                        try {
+                            setPictureInPictureParameters(buildPipParams())
+                        } catch (_: Exception) {
+                        }
+                    }
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }
@@ -159,21 +203,131 @@ class MainActivity : FlutterActivity() {
         channel?.invokeMethod("onPipChanged", isInPictureInPictureMode)
     }
 
-    private fun handleViewIntent(intent: Intent?) {
-        if (intent == null || intent.action != Intent.ACTION_VIEW) return
-        val data = intent.data ?: return
-        val resolved = resolveVideoPath(data)
+    // ---------------------------------------------------------------------------
+    // PiP play/pause remote action
+    // ---------------------------------------------------------------------------
+
+    private fun buildPipParams(): PictureInPictureParams {
+        val toggleIntent = PendingIntent.getBroadcast(
+            this,
+            REQ_PIP_TOGGLE,
+            Intent(ACTION_PIP_TOGGLE).setPackage(packageName),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val label = if (pipPlaying) "Pause" else "Play"
+        val action =
+            RemoteAction(makePipIcon(pause = pipPlaying), label, label, toggleIntent)
+        return PictureInPictureParams.Builder().setActions(listOf(action)).build()
+    }
+
+    /** Draws a simple white play triangle / pause bars icon (no resources needed). */
+    private fun makePipIcon(pause: Boolean): Icon {
+        val size = 96
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        if (pause) {
+            val barW = size * 0.18f
+            val gap = size * 0.14f
+            val top = size * 0.24f
+            val bottom = size * 0.76f
+            val left = (size - barW * 2 - gap) / 2f
+            canvas.drawRect(left, top, left + barW, bottom, paint)
+            canvas.drawRect(left + barW + gap, top, left + barW * 2 + gap, bottom, paint)
+        } else {
+            val path = Path()
+            path.moveTo(size * 0.36f, size * 0.24f)
+            path.lineTo(size * 0.74f, size * 0.5f)
+            path.lineTo(size * 0.36f, size * 0.76f)
+            path.close()
+            canvas.drawPath(path, paint)
+        }
+        return Icon.createWithBitmap(bmp)
+    }
+
+    private val pipReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_PIP_TOGGLE) {
+                channel?.invokeMethod("onPipAction", "toggle")
+            }
+        }
+    }
+
+    private fun ensurePipReceiver() {
+        if (pipReceiverRegistered) return
+        pipReceiverRegistered = true
+        val filter = IntentFilter(ACTION_PIP_TOGGLE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(pipReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(pipReceiver, filter)
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // "Open with" / "Share" handling
+    // ---------------------------------------------------------------------------
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent == null) return
+        val uri: Uri = when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data ?: return
+            Intent.ACTION_SEND -> extractSendUri(intent) ?: return
+            else -> return
+        }
+        val scheme = uri.scheme?.lowercase()
+        when {
+            // Network link: hand the URL to libmpv directly.
+            scheme in STREAM_SCHEMES -> deliverOpen(uri.toString(), null)
+            else -> {
+                // Path resolution + possible stream copy hit the disk - keep
+                // it off the main thread.
+                executor.execute {
+                    var resolved = resolveVideoPath(uri)
+                    if (resolved == null && scheme == "content") {
+                        resolved = copyContentToCache(uri)
+                    }
+                    mainHandler.post {
+                        deliverOpen(resolved, if (resolved == null) uri.toString() else null)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun deliverOpen(resolved: String?, failed: String?) {
         if (channel != null) {
             if (resolved != null) {
                 channel?.invokeMethod("onOpenVideo", resolved)
-            } else {
-                channel?.invokeMethod("onOpenVideoFailed", data.toString())
+            } else if (failed != null) {
+                channel?.invokeMethod("onOpenVideoFailed", failed)
             }
         } else {
             // Dart side not attached yet - getInitialOpenVideo picks this up.
             if (resolved != null) pendingOpenPath = resolved
-            else pendingOpenFailed = data.toString()
+            else if (failed != null) pendingOpenFailed = failed
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun extractSendUri(intent: Intent): Uri? {
+        val direct: Uri? =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            }
+        if (direct != null) return direct
+        // A few apps stuff the Uri into ClipData instead of EXTRA_STREAM.
+        val clip = intent.clipData
+        if (clip != null && clip.itemCount > 0) {
+            return clip.getItemAt(0).uri
+        }
+        return null
     }
 
     /**
@@ -218,6 +372,54 @@ class MainActivity : FlutterActivity() {
         }
         return null
     }
+
+    /**
+     * Last-resort fallback for gallery/cloud URIs that expose no real path
+     * (e.g. Google Photos mediakey URIs): stream the bytes into the app cache
+     * and play the copy. Older copies are cleared out first so this cannot
+     * grow unboundedly.
+     */
+    private fun copyContentToCache(uri: Uri): String? {
+        return try {
+            var name = queryDisplayName(uri) ?: "video.mp4"
+            name = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            if (!name.contains('.')) name += ".mp4"
+            val dir = File(cacheDir, "opened")
+            if (dir.exists()) {
+                dir.listFiles()?.forEach { it.delete() }
+            } else {
+                dir.mkdirs()
+            }
+            val out = File(dir, name)
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(out).use { output -> input.copyTo(output) }
+            } ?: return null
+            if (out.length() <= 0) {
+                out.delete()
+                null
+            } else {
+                out.absolutePath
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {
+        return try {
+            contentResolver.query(
+                uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+            )?.use { c ->
+                if (c.moveToFirst() && !c.isNull(0)) c.getString(0) else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Metadata + thumbnails
+    // ---------------------------------------------------------------------------
 
     /**
      * Extracts duration/dimensions and writes a thumbnail JPEG into the app
@@ -297,6 +499,13 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        if (pipReceiverRegistered) {
+            try {
+                unregisterReceiver(pipReceiver)
+            } catch (_: Exception) {
+            }
+            pipReceiverRegistered = false
+        }
         executor.shutdown()
         super.onDestroy()
     }

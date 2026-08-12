@@ -39,15 +39,43 @@ String timeAgo(int msSinceEpoch) {
   if (diff.inHours < 24) return '${diff.inHours}h ago';
   if (diff.inDays < 7) return '${diff.inDays}d ago';
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${dt.day} ${months[dt.month - 1]}';
 }
 
 const List<String> videoExtensions = [
-  '.mp4', '.webm', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.m4v',
-  '.3gp', '.ogv', '.ts', '.mts', '.m2ts', '.vob',
+  '.mp4',
+  '.webm',
+  '.mkv',
+  '.avi',
+  '.mov',
+  '.wmv',
+  '.flv',
+  '.m4v',
+  '.3gp',
+  '.3gpp',
+  '.ogv',
+  '.ts',
+  '.mts',
+  '.m2ts',
+  '.vob',
+  '.mpg',
+  '.mpeg',
+  '.rmvb',
+  '.divx',
+  '.f4v',
 ];
 
 bool isVideoFile(String name) {

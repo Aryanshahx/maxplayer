@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart' hide VideoTrack;
 import 'package:path/path.dart' as p;
 
@@ -21,6 +22,9 @@ final GlobalKey<ScaffoldMessengerState> _messengerKey =
 void main() {
   // Must be called before any media_kit Player is created.
   MediaKit.ensureInitialized();
+  // Follow the phone's own rotation everywhere; the player's lock button
+  // temporarily restricts it (and restores on exit).
+  SystemChrome.setPreferredOrientations(DeviceOrientation.values);
   runApp(const MaxPlayerApp());
 }
 
@@ -58,9 +62,21 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
     });
   }
 
-  /// Plays a video file that another app sent us. Assumes [path] is already
-  /// resolved by native code; verifies readability before jumping in.
+  /// Plays a video that another app sent us. Local files arrive as real
+  /// filesystem paths (resolved natively); http/rtsp-style links are treated
+  /// as network streams and handed to libmpv directly.
   Future<void> _openExternalVideo(String path) async {
+    const streamSchemes = {'http', 'https', 'rtsp', 'rtmp', 'mms'};
+    final uri = Uri.tryParse(path);
+    if (uri != null && streamSchemes.contains(uri.scheme.toLowerCase())) {
+      final title =
+          uri.pathSegments.isNotEmpty && uri.pathSegments.last.isNotEmpty
+              ? Uri.decodeComponent(uri.pathSegments.last)
+              : uri.host;
+      await player.playStream(path, title);
+      _navigateToPlayer();
+      return;
+    }
     try {
       await File(path).stat();
     } catch (_) {
@@ -78,9 +94,13 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
       height: meta.height,
     );
     await player.setPlaylistAndPlay([track], 0);
+    _navigateToPlayer();
+  }
+
+  /// Jump straight into the player, replacing an already-open one.
+  void _navigateToPlayer() {
     final nav = _navigatorKey.currentState;
     if (nav == null) return;
-    // Jump straight into the player, replacing an already-open one.
     nav.popUntil((route) => route.isFirst);
     nav.push(MaterialPageRoute(builder: (_) => PlayerScreen(player: player)));
   }

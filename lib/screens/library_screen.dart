@@ -5,6 +5,7 @@ import '../state/theme_state.dart';
 import '../state/video_library_state.dart';
 import '../widgets/display_settings_sheet.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/user_manual_sheet.dart';
 import '../widgets/video_list_item.dart';
 import '../widgets/video_tile.dart';
 import 'history_screen.dart';
@@ -71,12 +72,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
         );
         break;
       case 'rescan':
-        lib.rescan();
+        _rescan(lib);
+        break;
+      case 'manual':
+        UserManualSheet.show(context);
         break;
       case 'display':
         DisplaySettingsSheet.show(context, lib);
         break;
     }
+  }
+
+  /// User-triggered rescan (top-bar ⟳ button or the ⋮ menu entry) with
+  /// feedback so it's obvious something is happening.
+  void _rescan(VideoLibraryState lib) {
+    if (lib.isScanning) return;
+    lib.rescan();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Rescanning device for videos…'),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   /// Lets the user paste an http(s)/rtsp/rtmp URL and play it directly.
@@ -155,6 +173,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         ),
         actions: [
+          // Prominent rescan button (new videos don't appear otherwise).
+          IconButton(
+            tooltip: 'Rescan library',
+            onPressed: lib.isScanning ? null : () => _rescan(lib),
+            icon: lib.isScanning
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white54,
+                    ),
+                  )
+                : const Icon(Icons.sync),
+          ),
           IconButton(
             tooltip: 'History',
             icon: const Icon(Icons.history),
@@ -203,6 +236,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.tune),
                   title: Text('Display settings'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'manual',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.menu_book_outlined),
+                  title: Text('User manual'),
                 ),
               ),
             ],

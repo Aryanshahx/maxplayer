@@ -22,7 +22,8 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
+class _PlayerScreenState extends State<PlayerScreen>
+    with WidgetsBindingObserver {
   // Shared, app-lifetime controller owned by MediaPlayerState (this media_kit
   // version has no VideoController.dispose, so per-visit controllers leaked).
   late final VideoController _controller = widget.player.videoController;
@@ -83,8 +84,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _noticeSub =
-        widget.player.notices.listen((m) => _showIndicator(m, Icons.history));
+    // Follow the phone's own rotation while in the player (the app used to
+    // stay stuck in portrait); the lock button below restricts this on
+    // demand and dispose() hands free rotation back.
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    _noticeSub = widget.player.notices.listen(
+      (m) => _showIndicator(m, Icons.history),
+    );
     NativeBridge.configureCallbacks(
       onPipChanged: (isPip) {
         if (mounted) setState(() => _isPip = isPip);
@@ -102,6 +108,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _indicatorTimer?.cancel();
     _noticeSub?.cancel();
     if (_isFullscreen) _exitFullscreen();
+    // Never leave an orientation restriction behind.
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     // Do NOT keep the audio running after leaving the player screen, and
     // hand brightness control back to the system.
     unawaited(widget.player.pause());
@@ -111,10 +119,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   /// Pause when the app goes to the background (sound must not keep playing
   /// with the app hidden).
+  ///
+  /// IMPORTANT: entering picture-in-picture maps to AppLifecycleState.
+  /// inactive on Android - we must NOT pause for it, and we must skip the
+  /// fully-backgrounded states while the PiP window is up. Otherwise PiP
+  /// would freeze the video the moment it opens.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_isPip) return;
     if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
       widget.player.pause();
     }
   }
@@ -199,7 +214,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     // Respect an active rotation lock when leaving fullscreen.
     SystemChrome.setPreferredOrientations(
-        _orientationLocked ? _lockedOrientations : DeviceOrientation.values);
+      _orientationLocked ? _lockedOrientations : DeviceOrientation.values,
+    );
   }
 
   /// Rotation toggle: auto-rotate <-> locked to the CURRENT orientation.
@@ -208,8 +224,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       final landscape =
           MediaQuery.of(context).orientation == Orientation.landscape;
       _lockedOrientations = landscape
-          ? const [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
-          : const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown];
+          ? const [
+              DeviceOrientation.landscapeLeft,
+              DeviceOrientation.landscapeRight,
+            ]
+          : const [
+              DeviceOrientation.portraitUp,
+              DeviceOrientation.portraitDown,
+            ];
       SystemChrome.setPreferredOrientations(_lockedOrientations);
       setState(() => _orientationLocked = true);
       _showIndicator('Rotation locked', Icons.screen_lock_rotation);
@@ -229,12 +251,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void _onLongPressStart(LongPressStartDetails _) {
     if (!_settings.longPressSpeed) return;
     widget.player.startSpeedBoost(_settings.longPressMultiplier);
-    _showIndicator(
-        '${_settings.longPressMultiplier}x ▶▶', Icons.fast_forward);
+    setState(() {}); // mount the persistent "Nx" badge
+    _showIndicator('${_settings.longPressMultiplier}x ▶▶', Icons.fast_forward);
   }
 
   void _onLongPressEnd(LongPressEndDetails _) {
     widget.player.stopSpeedBoost();
+    setState(() {}); // remove the persistent badge
   }
 
   void _cycleFit() {
@@ -314,8 +337,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       final wasPlaying = widget.player.isPlaying;
       widget.player.togglePlay();
       _showIndicator(
-          wasPlaying ? 'Paused' : 'Playing',
-          wasPlaying ? Icons.pause_circle_outline : Icons.play_circle_outline);
+        wasPlaying ? 'Paused' : 'Playing',
+        wasPlaying ? Icons.pause_circle_outline : Icons.play_circle_outline,
+      );
     }
   }
 
@@ -340,12 +364,16 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final v = (_dragStartValue + _dragDy / 300).clamp(0.0, 1.0);
     if (_dragMode == _DragMode.volume) {
       widget.player.setVolume(v);
-      _showIndicator('Volume ${(v * 100).round()}%',
-          v == 0 ? Icons.volume_off : Icons.volume_up);
+      _showIndicator(
+        'Volume ${(v * 100).round()}%',
+        v == 0 ? Icons.volume_off : Icons.volume_up,
+      );
     } else {
       widget.player.setBrightness(v);
       _showIndicator(
-          'Brightness ${(v * 100).round()}%', Icons.brightness_6_outlined);
+        'Brightness ${(v * 100).round()}%',
+        Icons.brightness_6_outlined,
+      );
     }
   }
 
@@ -388,7 +416,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   IconButton(
                     tooltip: 'Picture in picture',
                     icon: const Icon(Icons.picture_in_picture_alt_outlined),
-                    onPressed: () => NativeBridge.enterPip(),
+                    onPressed: () =>
+                        NativeBridge.enterPip(playing: widget.player.isPlaying),
                   ),
                   IconButton(
                     tooltip: 'Player settings',
@@ -442,9 +471,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                             fit: _fits[_fitIndex],
                                           ),
                                         )
-                                      : const Text('No video loaded',
+                                      : const Text(
+                                          'No video loaded',
                                           style: TextStyle(
-                                              color: Colors.white38)),
+                                            color: Colors.white38,
+                                          ),
+                                        ),
                                 ),
                               ),
                             ),
@@ -456,7 +488,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                               builder: (context, _) => player.isLoading
                                   ? Center(
                                       child: CircularProgressIndicator(
-                                          color: themeState.accent),
+                                        color: themeState.accent,
+                                      ),
                                     )
                                   : const SizedBox.shrink(),
                             ),
@@ -472,18 +505,24 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                 child: Center(
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 10),
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.72),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.72,
+                                      ),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         if (_indicatorIcon != null) ...[
-                                          Icon(_indicatorIcon,
-                                              color: Colors.white, size: 20),
+                                          Icon(
+                                            _indicatorIcon,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
                                           const SizedBox(width: 8),
                                         ],
                                         Text(
@@ -492,6 +531,49 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                             color: Colors.white,
                                             fontSize: 15,
                                             fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          // Persistent speed badge for the WHOLE long-press
+                          // boost (used to flash once and disappear).
+                          if (player.isSpeedBoosting && !_isPip)
+                            Positioned(
+                              top: 12,
+                              left: 0,
+                              right: 0,
+                              child: IgnorePointer(
+                                child: Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: themeState.accent.withValues(
+                                        alpha: 0.9,
+                                      ),
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.fast_forward,
+                                          color: Colors.white,
+                                          size: 15,
+                                        ),
+                                        const SizedBox(width: 5),
+                                        Text(
+                                          '${_settings.longPressMultiplier}x',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
                                           ),
                                         ),
                                       ],
@@ -537,6 +619,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                         currentIndex: player.currentIndex,
                         onPlay: player.playTrack,
                         onRemove: player.removeFromPlaylist,
+                        onClose: () => setState(() => _showQueue = false),
                       ),
                     ),
                   ),

@@ -61,6 +61,19 @@ void main() {
       expect(isVideoFile('notes.txt'), isFalse);
     });
 
+    test('covers the extension set advertised in the manifest', () {
+      // Keep in sync with the pathPatterns in AndroidManifest.xml.
+      for (final ext in [
+        'mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'm4v', '3gp',
+        '3gpp', 'ogv', 'ts', 'mts', 'm2ts', 'vob', 'mpg', 'mpeg', 'rmvb',
+        'divx', 'f4v',
+      ]) {
+        expect(isVideoFile('movie.$ext'), isTrue,
+            reason: '.$ext must scan into the library');
+        expect(isVideoFile('movie.${ext.toUpperCase()}'), isTrue);
+      }
+    });
+
     test('timeAgo buckets', () {
       final now = DateTime.now().millisecondsSinceEpoch;
       expect(timeAgo(now), 'Just now');
