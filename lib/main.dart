@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +14,7 @@ import 'services/native_bridge.dart';
 import 'state/media_player_state.dart';
 import 'state/theme_state.dart';
 import 'state/video_library_state.dart';
+import 'utils/crash_log.dart';
 
 // Global keys so a native "Open with" callback can navigate + snackbar from
 // anywhere, without a BuildContext of its own.
@@ -20,12 +23,29 @@ final GlobalKey<ScaffoldMessengerState> _messengerKey =
     GlobalKey<ScaffoldMessengerState>();
 
 void main() {
-  // Must be called before any media_kit Player is created.
-  MediaKit.ensureInitialized();
-  // Follow the phone's own rotation everywhere; the player's lock button
-  // temporarily restricts it (and restores on exit).
-  SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-  runApp(const MaxPlayerApp());
+  // Crash journal: rather than vanishing silently, record any Dart-side
+  // error and offer it as a copyable report on the next app launch -
+  // "app closed unexpectedly" becomes debuggable without a PC/logcat.
+  runZonedGuarded(() {
+    WidgetsFlutterBinding.ensureInitialized();
+    // Must be called before any media_kit Player is created.
+    MediaKit.ensureInitialized();
+    FlutterError.onError = (details) {
+      CrashLog.record(
+          'flutter', details.exceptionAsString(), details.stack);
+      FlutterError.presentError(details);
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      CrashLog.record('async', error.toString(), stack);
+      return true;
+    };
+    // Follow the phone's own rotation everywhere; the player's lock button
+    // temporarily restricts it (and restores on exit).
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    runApp(const MaxPlayerApp());
+  }, (error, stack) {
+    CrashLog.record('zone', error.toString(), stack);
+  });
 }
 
 class MaxPlayerApp extends StatefulWidget {

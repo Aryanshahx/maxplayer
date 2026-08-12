@@ -1,6 +1,6 @@
 workflows:
   android-apk:
-    name: Max Player - Android APK
+    name: Max Player - Android APK + AAB
     max_build_duration: 60
     environment:
       # Pinned on purpose: 'stable' auto-upgrades, and upcoming Flutter
@@ -9,11 +9,31 @@ workflows:
       # wakelock_plus warn about this today). A pinned version keeps every
       # CI build reproducible.
       flutter: 3.44.9
-      # No android_signing block yet - this ships a debug-signed APK, which is
-      # fine for sideloading and testing. Add an android_signing entry here
-      # later once you've created a keystore and registered it in
-      # Codemagic > Team settings > Code signing identities, for a real release build.
+      # Play Store upload key comes from these environment variables when
+      # they are configured in Codemagic (App settings -> Environment
+      # variables -> group "keystore_credentials"): CM_KEYSTORE (base64 of
+      # the .jks/.keystore), CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS,
+      # CM_KEY_ALIAS_PASSWORD. Without them the build signs with the debug
+      # key (fine for testing; Play Console needs the real key).
+      groups:
+        - keystore_credentials
+      vars:
+        CM_KEYSTORE_PATH: /tmp/maxplayer-upload.keystore
     scripts:
+      - name: Prepare upload key (optional)
+        script: |
+          if [ -n "$CM_KEYSTORE" ]; then
+            echo "$CM_KEYSTORE" | base64 --decode > "$CM_KEYSTORE_PATH"
+            {
+              echo "storePassword=$CM_KEYSTORE_PASSWORD"
+              echo "keyPassword=$CM_KEY_ALIAS_PASSWORD"
+              echo "keyAlias=$CM_KEY_ALIAS"
+              echo "storeFile=$CM_KEYSTORE_PATH"
+            } > android/key.properties
+            echo "Upload key configured - release will be Play-Store signed."
+          else
+            echo "No upload key configured - release signs with the debug key."
+          fi
       - name: Clean build (avoid stale plugin registration after dependency upgrades)
         script: flutter clean
       - name: Get Flutter packages
@@ -21,10 +41,13 @@ workflows:
       - name: Build APK (release, arm64 only)
         # --target-platform makes the Flutter TOOL package only arm64 engine
         # + plugin libs (ndk.abiFilters alone doesn't strip the Flutter
-        # artefacts). This is what cut the APK from ~93 MB to ~33 MB.
+        # artefacts). This is what cut the APK from ~93 MB to ~62 MB.
         script: flutter build apk --release --target-platform=android-arm64
+      - name: Build AAB for the Play Store (release, arm64 only)
+        script: flutter build appbundle --release --target-platform=android-arm64
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
+      - build/app/outputs/bundle/release/*.aab
     publishing:
       email:
         recipients:

@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Play Store upload key - NEVER commit these
+android/key.properties
+android/upload-keystore.jks
+android/upload-keystore.keystore

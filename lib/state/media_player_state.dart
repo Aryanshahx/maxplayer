@@ -10,6 +10,7 @@ import '../models/history_entry.dart';
 import '../models/video_track.dart';
 import '../services/native_bridge.dart';
 import '../utils/formatters.dart';
+import '../utils/srt.dart';
 import 'player_settings.dart';
 
 /// Mirrors the web app's useMediaPlayer hook, backed by media_kit's Player.
@@ -303,8 +304,27 @@ class MediaPlayerState extends ChangeNotifier {
     loopB = null;
     await player.open(Media(track.path), play: autoplay);
     await player.setRate(playbackRate);
+    await _attachSidecarSubtitles(track.path);
     await _recordOpen(track);
     await _restoreBookmark(track);
+  }
+
+  /// Re-attaches previously generated AI subtitles ("<video>.maxai.srt"
+  /// next to the video) so they survive closing/reopening the app - they
+  /// are written to disk, only the player session forgot them.
+  Future<void> _attachSidecarSubtitles(String videoPath) async {
+    if (videoPath.contains('://')) return; // no sidecars for streams
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    try {
+      final srt = srtPathForVideo(videoPath);
+      if (File(srt).existsSync()) {
+        // "select" makes it the active track right away.
+        await platform.command(['sub-add', srt, 'select']);
+      }
+    } catch (_) {
+      // Missing/unreadable sidecar is not fatal.
+    }
   }
 
   /// Jump to where the user left off last time this file was open. The saved

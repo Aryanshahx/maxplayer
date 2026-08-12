@@ -1,4 +1,4 @@
-package com.example.maxplayer
+package com.hypertechlabs.maxplayer
 
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
@@ -100,7 +100,7 @@ class MainActivity : FlutterActivity() {
     private class AiCancelledException : Exception("cancelled")
 
     companion object {
-        private const val ACTION_PIP_TOGGLE = "com.example.maxplayer.action.PIP_TOGGLE"
+        private const val ACTION_PIP_TOGGLE = "com.hypertechlabs.maxplayer.action.PIP_TOGGLE"
         private const val REQ_PIP_TOGGLE = 42
         private const val REQ_PIP_OPEN = 43
         private val STREAM_SCHEMES = setOf("http", "https", "rtsp", "rtmp", "mms")
@@ -275,13 +275,16 @@ class MainActivity : FlutterActivity() {
                 }
                 "aiSubtitleGenerate" -> {
                     val videoPath = call.argument<String>("videoPath")
-                    val model = call.argument<String>("model") ?: "tiny"
+                    val model = call.argument<String>("model") ?: "base"
+                    val language = call.argument<String>("language") ?: "auto"
                     if (videoPath.isNullOrEmpty()) {
                         result.error("bad_args", "videoPath is required", null)
                     } else {
                         aiCancelled = false
                         val jobId = ++aiJobCounter
-                        executor.execute { runAiPipeline(jobId, videoPath, model) }
+                        executor.execute {
+                            runAiPipeline(jobId, videoPath, model, language)
+                        }
                         result.success(jobId)
                     }
                 }
@@ -798,7 +801,12 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun runAiPipeline(jobId: Int, videoPath: String, modelName: String) {
+    private fun runAiPipeline(
+        jobId: Int,
+        videoPath: String,
+        modelName: String,
+        language: String
+    ) {
         try {
             // 1. Model file (one-time download).
             val modelFile = modelFileFor(modelName)
@@ -849,13 +857,14 @@ class MainActivity : FlutterActivity() {
                 var model: WhisperModel? = null
                 try {
                     model = Whisper.loadModel(this@MainActivity, modelFile.absolutePath)
-                    // "auto" = detect the spoken language (Hindi/Urdu/
-                    // English/...). Without this the default leans English
-                    // and non-English speech degrades into stray captions.
+                    // The user can pin a language ("hi", "ur", "en", ...) in
+                    // the Generate dialog; "auto" = detect it. Pinning the
+                    // right language is noticeably more accurate than
+                    // detection on short clips.
                     val res = Whisper.transcribe(
                         model,
                         wav.absolutePath,
-                        WhisperConfig(language = "auto")
+                        WhisperConfig(language = language)
                     )
                     for (s in res.segments) {
                         val text = s.text.trim()

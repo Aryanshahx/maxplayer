@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -18,6 +19,44 @@ import 'srt.dart';
 class AiSubtitleRunner {
   AiSubtitleRunner._();
 
+  /// Persisted picker defaults (native settings store).
+  static const String _kModelKey = 'ai.model';
+  static const String _kLanguageKey = 'ai.language';
+
+  /// Model choices: id -> (label, detail with size).
+  static const Map<String, (String, String)> modelChoices = {
+    'tiny': ('Fast', '~75 MB · weakest on Hindi/Urdu'),
+    'base': ('Balanced', '~142 MB · good for most videos'),
+    'small': ('Best', '~466 MB · slowest, most accurate'),
+  };
+
+  /// Language choices: whisper code -> label; 'auto' = detect.
+  static const Map<String, String> languageChoices = {
+    'auto': 'Auto-detect',
+    'en': 'English',
+    'hi': 'Hindi',
+    'ur': 'Urdu',
+    'ar': 'Arabic',
+    'bn': 'Bengali',
+    'ta': 'Tamil',
+    'te': 'Telugu',
+    'pa': 'Punjabi',
+    'mr': 'Marathi',
+    'gu': 'Gujarati',
+    'kn': 'Kannada',
+    'ml': 'Malayalam',
+    'ne': 'Nepali',
+    'es': 'Spanish',
+    'fr': 'French',
+  };
+
+  /// Approximate download size label per model (for the progress dialog).
+  static String modelSizeLabel(String model) => switch (model) {
+        'tiny' => '~75 MB',
+        'small' => '~466 MB',
+        _ => '~142 MB',
+      };
+
   /// Launches generation for the video currently loaded in [player].
   /// [context] must be a context that outlives the subtitle sheet (the
   /// caller closes the sheet first).
@@ -31,6 +70,20 @@ class AiSubtitleRunner {
           'AI subtitles work on local video files (not network streams)');
       return;
     }
+
+    // Ask for quality + language first (choices are remembered).
+    final stored = await NativeBridge.loadSettings();
+    if (!context.mounted) return;
+    final options = await showDialog<({String model, String language})>(
+      context: context,
+      builder: (_) => _AiOptionsDialog(
+        initialModel: stored[_kModelKey] ?? 'base',
+        initialLanguage: stored[_kLanguageKey] ?? 'auto',
+      ),
+    );
+    if (options == null || !context.mounted) return;
+    unawaited(NativeBridge.saveSetting(_kModelKey, options.model));
+    unawaited(NativeBridge.saveSetting(_kLanguageKey, options.language));
 
     // One active job at a time; hook up the event callbacks first.
     final progress = ValueNotifier<(String, int)>(('starting', 0));
@@ -59,10 +112,8 @@ class AiSubtitleRunner {
 
     final jobId = await NativeBridge.aiSubtitleGenerate(
       videoPath: track.path,
-      // "base" (~142 MB one-time): the multilingual "tiny" model degrades
-      // Hindi/Urdu/mixed speech into stray "music" captions; base is the
-      // smallest model that's reliable for them.
-      model: 'base',
+      model: options.model,
+      language: options.language,
     );
     if (!context.mounted) return;
     if (jobId == null) {
@@ -77,6 +128,7 @@ class AiSubtitleRunner {
       barrierDismissible: false,
       builder: (dialogContext) => _AiProgressDialog(
         progress: progress,
+        model: options.model,
         onCancel: () {
           error = 'cancelled';
           NativeBridge.aiSubtitleCancel();
@@ -148,14 +200,20 @@ class AiSubtitleRunner {
 
 class _AiProgressDialog extends StatelessWidget {
   final ValueNotifier<(String, int)> progress;
+  final String model;
   final VoidCallback onCancel;
 
-  const _AiProgressDialog({required this.progress, required this.onCancel});
+  const _AiProgressDialog({
+    required this.progress,
+    required this.model,
+    required this.onCancel,
+  });
 
-  static String _stageLabel(String stage) {
+  static String _stageLabel(String stage, String model) {
     switch (stage) {
       case 'downloading':
-        return 'Downloading the AI model (one time, ~142 MB)…';
+        return 'Downloading the AI model (one time, '
+            '${AiSubtitleRunner.modelSizeLabel(model)})…';
       case 'extracting':
         return 'Extracting audio from the video…';
       case 'transcribing':
@@ -186,7 +244,7 @@ class _AiProgressDialog extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _stageLabel(stage),
+                _stageLabel(stage, model),
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
               const SizedBox(height: 14),
@@ -212,6 +270,125 @@ class _AiProgressDialog extends StatelessWidget {
           child: const Text('Cancel'),
         ),
       ],
+    );
+  }
+}
+
+/// "Generate with AI" options: which whisper model (speed vs accuracy) and
+/// which language the video is spoken in (auto-detect or pinned). Choosing
+/// the right language is the single biggest accuracy boost on short clips.
+class _AiOptionsDialog extends StatefulWidget {
+  final String initialModel;
+  final String initialLanguage;
+
+  const _AiOptionsDialog({
+    required this.initialModel,
+    required this.initialLanguage,
+  });
+
+  @override
+  State<_AiOptionsDialog> createState() => _AiOptionsDialogState();
+}
+
+class _AiOptionsDialogState extends State<_AiOptionsDialog> {
+  late String _model = widget.initialModel;
+  late String _language = widget.initialLanguage;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1a1a24),
+      title: Row(
+        children: [
+          Icon(Icons.auto_awesome, color: themeState.accent, size: 20),
+          const SizedBox(width: 8),
+          const Text('AI subtitles', style: TextStyle(color: Colors.white)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Spoken language',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          _dropdown<String>(
+            value: _language,
+            items: [
+              for (final e in AiSubtitleRunner.languageChoices.entries)
+                DropdownMenuItem(value: e.key, child: Text(e.value)),
+            ],
+            onChanged: (v) => setState(() => _language = v ?? 'auto'),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'AI model (quality)',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          _dropdown<String>(
+            value: _model,
+            items: [
+              for (final e in AiSubtitleRunner.modelChoices.entries)
+                DropdownMenuItem(
+                  value: e.key,
+                  child: Text('${e.value.$1}  ·  ${e.value.$2}'),
+                ),
+            ],
+            onChanged: (v) => setState(() => _model = v ?? 'base'),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Runs 100% offline after a one-time model download.',
+            style: TextStyle(color: Colors.white38, fontSize: 11.5),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context)
+              .pop((model: _model, language: _language)),
+          icon: const Icon(Icons.auto_awesome, size: 16),
+          label: const Text('Generate'),
+        ),
+      ],
+    );
+  }
+
+  Widget _dropdown<T>({
+    required T value,
+    required List<DropdownMenuItem<T>> items,
+    required ValueChanged<T?> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          items: items,
+          onChanged: onChanged,
+          isExpanded: true,
+          dropdownColor: const Color(0xFF26262f),
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+        ),
+      ),
     );
   }
 }

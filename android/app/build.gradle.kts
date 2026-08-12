@@ -1,11 +1,25 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Play Store upload key: android/key.properties holds the real signing
+// credentials when present (generated per PLAY_STORE_GUIDE.md); CI injects
+// it. When absent (local dev, old clones) release falls back to the debug
+// key so nothing breaks - a debug-signed build just can't go to the Play
+// Console.
+val uploadProps = Properties().apply {
+    // Conventional location: android/key.properties (git-ignored).
+    val f = rootProject.file("key.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val hasUploadKey = uploadProps.getProperty("storeFile")?.isNotEmpty() == true
+
 android {
-    namespace = "com.example.maxplayer"
+    namespace = "com.hypertechlabs.maxplayer"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -14,9 +28,22 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    signingConfigs {
+        create("playStore") {
+            keyAlias = uploadProps.getProperty("keyAlias") ?: ""
+            keyPassword = uploadProps.getProperty("keyPassword") ?: ""
+            storePassword = uploadProps.getProperty("storePassword") ?: ""
+            uploadProps.getProperty("storeFile")?.let {
+                // Resolved relative to the android/ project dir.
+                storeFile = rootProject.file(it)
+            }
+        }
+    }
+
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.maxplayer"
+        // Unique application ID (renamed from com.example.* for Play Store;
+        // a published app can never change this again).
+        applicationId = "com.hypertechlabs.maxplayer"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -36,9 +63,13 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Real upload key when android/key.properties exists, otherwise
+            // the debug key so `flutter run --release` still works.
+            signingConfig = if (hasUploadKey) {
+                signingConfigs.getByName("playStore")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

@@ -298,15 +298,17 @@ class NativeBridge {
 
   /// Starts the offline AI subtitle job for [videoPath]. Returns the job id
   /// immediately; progress/completion arrive via [configureCallbacks]
-  /// (`onAiProgress` / `onAiDone` / `onAiFailed`).
+  /// (`onAiProgress` / `onAiDone` / `onAiFailed`). [model] is tiny/base/
+  /// small; [language] is a whisper language code or 'auto' (detect).
   static Future<int?> aiSubtitleGenerate({
     required String videoPath,
-    String model = 'tiny',
+    String model = 'base',
+    String language = 'auto',
   }) async {
     try {
       return await _channel.invokeMethod<int>(
         'aiSubtitleGenerate',
-        {'videoPath': videoPath, 'model': model},
+        {'videoPath': videoPath, 'model': model, 'language': language},
       );
     } catch (_) {
       return null;

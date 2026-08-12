@@ -190,8 +190,15 @@ class _CastSheetState extends State<CastSheet> {
               _message(
                 Icons.tv_off,
                 'No TVs found',
-                'Check that the TV supports DLNA / screen-share, is turned '
-                    'on, and shares this phone\'s Wi-Fi, then scan again.',
+                cast.repliesSeen == 0
+                    ? 'Nothing on this Wi-Fi answered the search (${cast.repliesSeen} replies). '
+                        'Check the phone and TV are on the SAME Wi-Fi (not '
+                        'mobile data / guest network), then scan again.'
+                    : '${cast.repliesSeen} device(s) answered, but none offer '
+                        'DLNA video playback. Many newer Samsung/LG TVs '
+                        'dropped DLNA - try opening the video in a DLNA '
+                        'renderer app on the TV (e.g. VLC for Android TV) '
+                        'and scan again.',
               ),
               const SizedBox(height: 4),
               TextButton.icon(

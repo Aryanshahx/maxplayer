@@ -45,6 +45,12 @@ class CastState extends ChangeNotifier {
   Duration tvDuration = Duration.zero;
   bool tvPlaying = false;
 
+  /// How many SSDP replies we heard during the last scan. 0 = the
+  /// network/router is eating multicast; >0 but no TVs = the answers
+  /// weren't DLNA renderers. Shown in the sheet to make "no TVs found"
+  /// diagnosable.
+  int repliesSeen = 0;
+
   final CastFileServer _server = CastFileServer();
   Timer? _pollTimer;
   bool _disposed = false;
@@ -62,6 +68,7 @@ class CastState extends ChangeNotifier {
     phase = CastPhase.scanning;
     devices = const [];
     error = null;
+    repliesSeen = 0;
     notifyListeners();
 
     await NativeBridge.setMulticastLock(true);
@@ -82,14 +89,16 @@ class CastState extends ChangeNotifier {
         if (event != RawSocketEvent.read) return;
         Datagram? dg;
         while ((dg = s.receive()) != null) {
+          repliesSeen++;
           final text = utf8.decode(dg!.data, allowMalformed: true);
           final loc = ssdpHeader(text, 'location');
           if (loc != null && loc.startsWith('http')) locations.add(loc);
         }
       });
 
-      // Three waves - multicast UDP can drop packets.
-      for (var wave = 0; wave < 3; wave++) {
+      // Four waves over ~2s then a quiet listening window - multicast UDP
+      // can drop packets, and some TVs are slow to answer.
+      for (var wave = 0; wave < 4; wave++) {
         for (final p in packets) {
           try {
             s.send(p, target, 1900);
@@ -97,7 +106,7 @@ class CastState extends ChangeNotifier {
         }
         await Future<void>.delayed(const Duration(milliseconds: 500));
       }
-      await Future<void>.delayed(const Duration(milliseconds: 2200));
+      await Future<void>.delayed(const Duration(milliseconds: 3200));
       await sub.cancel();
     } catch (e) {
       phase = CastPhase.error;

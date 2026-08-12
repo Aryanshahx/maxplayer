@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../app_info.dart';
 import '../models/video_track.dart';
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
 import '../state/video_library_state.dart';
+import '../utils/crash_log.dart';
 import '../widgets/about_sheet.dart';
 import '../widgets/display_settings_sheet.dart';
 import '../widgets/mini_player.dart';
@@ -35,7 +37,66 @@ class _LibraryScreenState extends State<LibraryScreen> {
       if (widget.library.folderName == null && !widget.library.isScanning) {
         widget.library.scanAllStorage();
       }
+      // If the previous session died with an error, offer the recorded
+      // crash report (copyable) so it can be sent for analysis.
+      CrashLog.takeLast().then((report) {
+        if (report != null && mounted) _showCrashReport(report);
+      });
     });
+  }
+
+  void _showCrashReport(String report) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a24),
+        title: const Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Max Player closed unexpectedly',
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: SelectableText(
+            report,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 11.5,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              await Clipboard.setData(ClipboardData(text: report));
+              if (dialogContext.mounted) {
+                Navigator.of(dialogContext).pop();
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        'Crash report copied - send it to the developer'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            child: const Text('Copy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Dismiss'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

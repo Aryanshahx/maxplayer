@@ -1,0 +1,13 @@
+# Play Store upload key configuration.
+# 1) Generate the keystore ONCE from the repo root (keep the file AND the
+#    passwords safe forever - every future update must be signed with the
+#    same key, or the Play Store rejects it):
+#      keytool -genkey -v -keystore android/upload-keystore.jks \
+#        -keyalg RSA -keysize 2048 -validity 10000 -alias maxplayer
+# 2) Copy this file to  android/key.properties  (git-ignored) and replace
+#    the two passwords with the ones you chose. Both files are listed in
+#    .gitignore, so the key never lands on GitHub.
+storePassword=YOUR_STORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=maxplayer
+storeFile=upload-keystore.jks
