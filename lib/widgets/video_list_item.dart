@@ -23,8 +23,12 @@ class VideoListItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final duration = formatDuration(track.duration);
     final size = formatFileSize(track.sizeBytes);
-    final subtitle =
-        duration == '--:--' ? size : '$duration${size.isEmpty ? '' : '  ·  $size'}';
+    final parts = <String>[
+      if (track.qualityLabel != null) track.qualityLabel!,
+      if (duration != '--:--') duration,
+      if (size.isNotEmpty) size,
+    ];
+    final subtitle = parts.join('  ·  ');
 
     return ListTile(
       onTap: onTap,

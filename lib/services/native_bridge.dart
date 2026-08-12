@@ -69,4 +69,27 @@ class NativeBridge {
       // Ignore - settings persistence is best-effort.
     }
   }
+
+  // --- App-local screen brightness (player swipe gesture) ---
+
+  static Future<double> getBrightness() async {
+    try {
+      final res = await _channel.invokeMethod<double>('getBrightness');
+      if (res != null) return res.clamp(0.0, 1.0);
+    } catch (_) {}
+    return 1.0;
+  }
+
+  static Future<void> setBrightness(double value) async {
+    try {
+      await _channel.invokeMethod('setBrightness', {'value': value});
+    } catch (_) {}
+  }
+
+  /// Give control back to the system auto-brightness.
+  static Future<void> resetBrightness() async {
+    try {
+      await _channel.invokeMethod('resetBrightness');
+    } catch (_) {}
+  }
 }

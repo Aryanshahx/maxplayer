@@ -59,6 +59,36 @@ void main() {
       expect(isVideoFile('movie.mp4'), isTrue);
       expect(isVideoFile('notes.txt'), isFalse);
     });
+
+    test('timeAgo buckets', () {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      expect(timeAgo(now), 'Just now');
+      expect(
+          timeAgo(now - const Duration(minutes: 5).inMilliseconds), '5m ago');
+      expect(timeAgo(now - const Duration(hours: 3).inMilliseconds), '3h ago');
+      expect(timeAgo(now - const Duration(days: 2).inMilliseconds), '2d ago');
+      expect(timeAgo(0), '');
+    });
+  });
+
+  group('quality label', () {
+    String? q(int? w, int? h) => VideoTrack(
+        id: 'x', title: 'x', path: '/x.mp4', width: w, height: h).qualityLabel;
+
+    test('maps the SHORTER side to a resolution badge', () {
+      expect(q(1920, 1080), '1080p');
+      expect(q(1080, 1920), '1080p'); // portrait video
+      expect(q(3840, 2160), '4K');
+      expect(q(2560, 1440), '2K');
+      expect(q(1280, 720), '720p');
+      expect(q(640, 480), '480p');
+      expect(q(320, 240), 'SD');
+    });
+
+    test('null when dimensions unknown', () {
+      expect(q(null, null), isNull);
+      expect(q(0, 0), isNull);
+    });
   });
 
   group('library sorting', () {

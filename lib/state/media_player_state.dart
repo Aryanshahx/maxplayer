@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' hide VideoTrack;
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../models/history_entry.dart';
 import '../models/video_track.dart';
 import '../services/native_bridge.dart';
 import '../utils/formatters.dart';
+import 'player_settings.dart';
 
 /// Mirrors the web app's useMediaPlayer hook, backed by media_kit's Player.
 class MediaPlayerState extends ChangeNotifier {
@@ -44,7 +47,18 @@ class MediaPlayerState extends ChangeNotifier {
 
   /// Periodic bookmark saver ("resume from where you left off").
   Timer? _bookmarkTimer;
-  static const String _resumePrefix = 'resume:';
+
+  /// Last-used app-local brightness (left-half swipe in the player).
+  double brightness = 1.0;
+  bool _brightnessSynced = false;
+
+  // --- Watch history (drives the home History screen + resume playback) ---
+  final List<HistoryEntry> _history = [];
+  bool _historyLoaded = false;
+  static const String _kHistoryKey = 'history';
+  static const int _kHistoryMax = 150;
+
+  List<HistoryEntry> get history => List.unmodifiable(_history);
 
   VideoTrack? get currentTrack =>
       playlist.isNotEmpty && currentIndex < playlist.length ? playlist[currentIndex] : null;
@@ -86,11 +100,99 @@ class MediaPlayerState extends ChangeNotifier {
       }),
     ];
     player.setVolume(volume * 100);
+    _ensureHistoryLoaded();
     // Persist the resume point of the current video every few seconds.
     _bookmarkTimer = Timer.periodic(
       const Duration(seconds: 5),
       (_) => _saveBookmark(),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Watch history
+  // ---------------------------------------------------------------------------
+
+  Future<void> _ensureHistoryLoaded() async {
+    if (_historyLoaded) return;
+    _historyLoaded = true;
+    try {
+      final s = await NativeBridge.loadSettings();
+      final raw = s[_kHistoryKey];
+      if (raw == null || raw.isEmpty) return;
+      final list = jsonDecode(raw) as List<dynamic>;
+      _history
+        ..clear()
+        ..addAll([
+          for (final e in list)
+            HistoryEntry.fromJson(Map<String, dynamic>.from(e as Map)),
+        ]);
+      notifyListeners();
+    } catch (_) {
+      // Corrupt payload -> start with an empty history.
+    }
+  }
+
+  void _persistHistory() {
+    final capped = _history.length > _kHistoryMax
+        ? _history.sublist(0, _kHistoryMax)
+        : _history;
+    NativeBridge.saveSetting(
+        _kHistoryKey, jsonEncode([for (final e in capped) e.toJson()]));
+  }
+
+  HistoryEntry? _historyEntryFor(String path) {
+    for (final e in _history) {
+      if (e.path == path) return e;
+    }
+    return null;
+  }
+
+  /// Move the just-opened video to the top of the history, preserving its
+  /// previous resume position.
+  Future<void> _recordOpen(VideoTrack track) async {
+    try {
+      await _ensureHistoryLoaded();
+      final prevPos = _historyEntryFor(track.path)?.lastPositionSecs ?? 0;
+      _history.removeWhere((e) => e.path == track.path);
+      _history.insert(
+        0,
+        HistoryEntry(
+          path: track.path,
+          title: track.title,
+          thumbnailPath: track.thumbnailPath,
+          durationSecs: track.duration?.inSeconds ?? 0,
+          lastPositionSecs: prevPos,
+          playedAtMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      _persistHistory();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  void clearHistory() {
+    _history.clear();
+    _persistHistory();
+    notifyListeners();
+  }
+
+  void removeHistoryEntry(String path) {
+    _history.removeWhere((e) => e.path == path);
+    _persistHistory();
+    notifyListeners();
+  }
+
+  /// Play a single video straight from a history row.
+  Future<void> playHistoryEntry(HistoryEntry entry) async {
+    final track = VideoTrack(
+      id: entry.path,
+      title: entry.title,
+      path: entry.path,
+      thumbnailPath: entry.thumbnailPath,
+      duration:
+          entry.durationSecs > 0 ? Duration(seconds: entry.durationSecs) : null,
+    );
+    await setPlaylistAndPlay([track], 0);
   }
 
   List<int> _generateShuffledOrder(int length, int currentIdx) {
@@ -132,15 +234,19 @@ class MediaPlayerState extends ChangeNotifier {
     if (track == null) return;
     await player.open(Media(track.path), play: autoplay);
     await player.setRate(playbackRate);
+    await _recordOpen(track);
     await _restoreBookmark(track);
   }
 
-  /// Jump to where the user left off last time this file was open.
+  /// Jump to where the user left off last time this file was open. The saved
+  /// position lives in the watch history; honours the "Resume playback"
+  /// player setting.
   Future<void> _restoreBookmark(VideoTrack track) async {
     try {
       final settings = await NativeBridge.loadSettings();
-      final secs = int.tryParse(settings['$_resumePrefix${track.path}'] ?? '');
-      if (secs == null || secs < 10) return; // ignore tiny offsets
+      if (settings[PlayerSettings.kResumePlayback] == 'false') return;
+      final secs = _historyEntryFor(track.path)?.lastPositionSecs ?? 0;
+      if (secs < 10) return; // ignore tiny offsets
 
       var d = duration;
       if (d == Duration.zero) {
@@ -153,7 +259,11 @@ class MediaPlayerState extends ChangeNotifier {
       if (d == Duration.zero) return;
       // Almost-finished videos start from the beginning again.
       if (secs >= d.inSeconds - 15) {
-        NativeBridge.saveSetting('$_resumePrefix${track.path}', '0');
+        final e = _historyEntryFor(track.path);
+        if (e != null) {
+          e.lastPositionSecs = 0;
+          _persistHistory();
+        }
         return;
       }
       // User may have switched tracks while we waited.
@@ -169,9 +279,40 @@ class MediaPlayerState extends ChangeNotifier {
     final track = currentTrack;
     if (track == null || !isPlaying) return;
     final secs = position.inSeconds;
-    if (secs > 0) {
-      NativeBridge.saveSetting('$_resumePrefix${track.path}', '$secs');
+    if (secs <= 0) return;
+    final entry = _historyEntryFor(track.path);
+    if (entry != null && entry.lastPositionSecs != secs) {
+      entry.lastPositionSecs = secs;
+      _persistHistory();
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Brightness (left-half swipe in the player)
+  // ---------------------------------------------------------------------------
+
+  /// Reads the current override once so the first drag starts from the real
+  /// screen brightness instead of a guess.
+  Future<double> currentBrightness() async {
+    if (!_brightnessSynced) {
+      brightness = await NativeBridge.getBrightness();
+      _brightnessSynced = true;
+      notifyListeners();
+    }
+    return brightness;
+  }
+
+  Future<void> setBrightness(double v) async {
+    brightness = v.clamp(0.0, 1.0);
+    notifyListeners();
+    await NativeBridge.setBrightness(brightness);
+  }
+
+  Future<void> resetBrightness() async {
+    brightness = 1.0;
+    _brightnessSynced = false;
+    notifyListeners();
+    await NativeBridge.resetBrightness();
   }
 
   Future<void> togglePlay() async {
@@ -276,10 +417,14 @@ class MediaPlayerState extends ChangeNotifier {
   }
 
   Future<void> _handleEnded() async {
-    // Completed video: clear its bookmark so it replays from the start.
+    // Completed video: reset its saved position so it replays from the start.
     final track = currentTrack;
     if (track != null) {
-      NativeBridge.saveSetting('$_resumePrefix${track.path}', '0');
+      final e = _historyEntryFor(track.path);
+      if (e != null) {
+        e.lastPositionSecs = 0;
+        _persistHistory();
+      }
     }
     if (repeatMode == RepeatMode.one) {
       await player.seek(Duration.zero);

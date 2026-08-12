@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../state/media_player_state.dart';
+import '../state/player_settings.dart';
 import '../widgets/player_controls_overlay.dart';
+import '../widgets/player_settings_sheet.dart';
 import '../widgets/playlist_panel.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -19,15 +21,16 @@ class PlayerScreen extends StatefulWidget {
 
 class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
   // Shared, app-lifetime controller owned by MediaPlayerState (this media_kit
-  // version has no VideoController.dispose, so per-visit controllers leaked
-  // and glitched the player).
+  // version has no VideoController.dispose, so per-visit controllers leaked).
   late final VideoController _controller = widget.player.videoController;
 
   bool _controlsVisible = true;
   bool _isFullscreen = false;
   bool _showQueue = false;
 
-  // Controls auto-hide while playing.
+  // Customizable behavior (persisted, edited in the Settings sheet).
+  PlayerSettings _settings = const PlayerSettings();
+
   Timer? _hideTimer;
 
   // Transient center indicator ("+10s", "Volume 80%", "Resumed 12:34", ...).
@@ -40,12 +43,24 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   static const List<BoxFit> _fits = [BoxFit.contain, BoxFit.cover, BoxFit.fill];
   static const List<String> _fitNames = ['Contain', 'Cover', 'Fill'];
   int _fitIndex = 0;
+  static const List<IconData> _fitIcons = [
+    Icons.fit_screen,
+    Icons.crop_free,
+    Icons.open_in_full,
+  ];
 
-  // Gesture plumbing (double-tap seek / volume swipe).
+  // Pinch zoom (1x..4x, center anchored).
+  double _zoom = 1.0;
+  double _zoomBase = 1.0;
+
+  // Gesture plumbing (double-tap seek / volume & brightness swipes).
   double _gestureWidth = 0;
   double _lastDoubleTapDx = 0;
-  double? _volumeDragStart; // volume when the right-side drag began
-  double _volumeDragDy = 0;
+
+  /// Which axis the current vertical drag drives.
+  _DragMode _dragMode = _DragMode.none;
+  double _dragStartValue = 0;
+  double _dragDy = 0;
 
   // NOTE: no addListener/setState on the player here. The ticking parts
   // (overlay, spinner, queue, title) listen via their own AnimatedBuilder,
@@ -57,6 +72,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.addObserver(this);
     _noticeSub =
         widget.player.notices.listen((m) => _showIndicator(m, Icons.history));
+    _reloadSettings();
+    widget.player.currentBrightness(); // sync once for the swipe gesture
     _startHideTimer();
   }
 
@@ -67,8 +84,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _indicatorTimer?.cancel();
     _noticeSub?.cancel();
     if (_isFullscreen) _exitFullscreen();
-    // Do NOT keep the audio running after leaving the player screen.
+    // Do NOT keep the audio running after leaving the player screen, and
+    // hand brightness control back to the system.
     unawaited(widget.player.pause());
+    unawaited(widget.player.resetBrightness());
     super.dispose();
   }
 
@@ -82,13 +101,26 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
   }
 
+  Future<void> _reloadSettings() async {
+    final s = await PlayerSettings.load();
+    if (mounted) setState(() => _settings = s);
+    _startHideTimer();
+  }
+
+  Future<void> _openSettings() async {
+    await PlayerSettingsSheet.show(context);
+    await _reloadSettings(); // apply changes immediately
+  }
+
   // ---------------------------------------------------------------------------
-  // Controls visibility
+  // Controls visibility (auto-hide)
   // ---------------------------------------------------------------------------
 
   void _startHideTimer() {
     _hideTimer?.cancel();
-    _hideTimer = Timer(const Duration(seconds: 4), () {
+    final delay = _settings.autoHideSeconds;
+    if (delay <= 0) return; // "never auto-hide"
+    _hideTimer = Timer(Duration(seconds: delay), () {
       // Only auto-hide during playback; keep controls up while paused.
       if (mounted && widget.player.isPlaying) {
         setState(() => _controlsVisible = false);
@@ -97,7 +129,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   /// Called by the overlay on every button press / seek / menu selection so
-  /// the 4-second auto-hide countdown restarts on any interaction.
+  /// the auto-hide countdown restarts on any interaction.
   void _onUserInteraction() {
     if (_controlsVisible) _startHideTimer();
   }
@@ -128,7 +160,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   // ---------------------------------------------------------------------------
-  // Fullscreen & fit
+  // Fullscreen, fit, zoom
   // ---------------------------------------------------------------------------
 
   void _toggleFullscreen() {
@@ -152,45 +184,91 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   void _cycleFit() {
     setState(() => _fitIndex = (_fitIndex + 1) % _fits.length);
-    _showIndicator('Fit: ${_fitNames[_fitIndex]}', Icons.aspect_ratio);
+    _showIndicator('Fit: ${_fitNames[_fitIndex]}', _fitIcons[_fitIndex]);
     _onUserInteraction();
   }
 
+  void _onScaleStart(ScaleStartDetails details) {
+    if (!_settings.pinchZoom) return;
+    _zoomBase = _zoom;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (!_settings.pinchZoom) return;
+    // Ignore scale==1 "updates" coming from one-finger vertical drags so the
+    // two gestures coexist.
+    if (details.scale == 1.0 && details.pointerCount < 2) return;
+    final z = (_zoomBase * details.scale).clamp(1.0, 4.0);
+    if (z == _zoom) return;
+    setState(() => _zoom = z);
+    _showIndicator('Zoom ${z.toStringAsFixed(1)}x', Icons.pinch_outlined);
+  }
+
+  void _onScaleEnd(ScaleEndDetails details) {
+    if (!_settings.pinchZoom) return;
+    // Snap back when barely zoomed.
+    if (_zoom < 1.1) {
+      setState(() => _zoom = 1.0);
+    }
+  }
+
   // ---------------------------------------------------------------------------
-  // Gestures
+  // Tap & swipe gestures
   // ---------------------------------------------------------------------------
 
   void _onDoubleTap() {
     final third = _gestureWidth / 3;
     if (_lastDoubleTapDx < third) {
-      widget.player.seekBy(-10);
-      _showIndicator('-10s', Icons.replay_10);
+      if (!_settings.doubleTapSeek) return;
+      widget.player.seekBy(-_settings.seekSeconds);
+      _showIndicator('-${_settings.seekSeconds}s', Icons.replay_10);
     } else if (_lastDoubleTapDx > _gestureWidth - third) {
-      widget.player.seekBy(10);
-      _showIndicator('+10s', Icons.forward_10);
+      if (!_settings.doubleTapSeek) return;
+      widget.player.seekBy(_settings.seekSeconds);
+      _showIndicator('+${_settings.seekSeconds}s', Icons.forward_10);
+    } else {
+      // Middle third: play / pause.
+      if (!_settings.doubleTapPlayPause) return;
+      final wasPlaying = widget.player.isPlaying;
+      widget.player.togglePlay();
+      _showIndicator(
+          wasPlaying ? 'Paused' : 'Playing',
+          wasPlaying ? Icons.pause_circle_outline : Icons.play_circle_outline);
     }
-    // Middle third double-tap intentionally does nothing.
   }
 
   void _onVerticalDragStart(DragStartDetails d) {
-    // Only the right half of the screen drives volume.
-    if (d.localPosition.dx > _gestureWidth / 2) {
-      _volumeDragStart =
-          widget.player.isMuted ? 0.0 : widget.player.volume;
-      _volumeDragDy = 0;
+    final rightHalf = d.localPosition.dx > _gestureWidth / 2;
+    if (rightHalf && _settings.volumeSwipe) {
+      _dragMode = _DragMode.volume;
+      _dragStartValue = widget.player.isMuted ? 0.0 : widget.player.volume;
+      _dragDy = 0;
+    } else if (!rightHalf && _settings.brightnessSwipe) {
+      _dragMode = _DragMode.brightness;
+      _dragStartValue = widget.player.brightness;
+      _dragDy = 0;
     } else {
-      _volumeDragStart = null;
+      _dragMode = _DragMode.none;
     }
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails d) {
-    final start = _volumeDragStart;
-    if (start == null) return;
-    _volumeDragDy -= d.delta.dy; // dragging up = louder
-    final v = (start + _volumeDragDy / 300).clamp(0.0, 1.0);
-    widget.player.setVolume(v);
-    _showIndicator('Volume ${(v * 100).round()}%',
-        v == 0 ? Icons.volume_off : Icons.volume_up);
+    if (_dragMode == _DragMode.none) return;
+    _dragDy -= d.delta.dy; // dragging up = increase
+    final v = (_dragStartValue + _dragDy / 300).clamp(0.0, 1.0);
+    if (_dragMode == _DragMode.volume) {
+      widget.player.setVolume(v);
+      _showIndicator('Volume ${(v * 100).round()}%',
+          v == 0 ? Icons.volume_off : Icons.volume_up);
+    } else {
+      widget.player.setBrightness(v);
+      _showIndicator(
+          'Brightness ${(v * 100).round()}%', Icons.brightness_6_outlined);
+    }
+  }
+
+  void _onVerticalDragEnd(DragEndDetails d) {
+    _dragMode = _DragMode.none;
   }
 
   // ---------------------------------------------------------------------------
@@ -218,6 +296,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                actions: [
+                  IconButton(
+                    tooltip: 'Player settings',
+                    icon: const Icon(Icons.settings_outlined),
+                    onPressed: _openSettings,
+                  ),
+                ],
               ),
         body: SafeArea(
           top: !_isFullscreen,
@@ -236,20 +321,34 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       onDoubleTap: _onDoubleTap,
                       onVerticalDragStart: _onVerticalDragStart,
                       onVerticalDragUpdate: _onVerticalDragUpdate,
+                      onVerticalDragEnd: _onVerticalDragEnd,
+                      onScaleStart: _onScaleStart,
+                      onScaleUpdate: _onScaleUpdate,
+                      onScaleEnd: _onScaleEnd,
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          Center(
-                            child: player.currentTrack != null
-                                ? RepaintBoundary(
-                                    child: Video(
-                                      controller: _controller,
-                                      controls: NoVideoControls,
-                                      fit: _fits[_fitIndex],
-                                    ),
-                                  )
-                                : const Text('No video loaded',
-                                    style: TextStyle(color: Colors.white38)),
+                          // Video surface - pinch zoom scales it, clipped to
+                          // the available area.
+                          Positioned.fill(
+                            child: ClipRect(
+                              child: Transform.scale(
+                                scale: _zoom,
+                                child: Center(
+                                  child: player.currentTrack != null
+                                      ? RepaintBoundary(
+                                          child: Video(
+                                            controller: _controller,
+                                            controls: NoVideoControls,
+                                            fit: _fits[_fitIndex],
+                                          ),
+                                        )
+                                      : const Text('No video loaded',
+                                          style: TextStyle(
+                                              color: Colors.white38)),
+                                ),
+                              ),
+                            ),
                           ),
                           // Buffering spinner - follows the player stream only.
                           Positioned.fill(
@@ -263,7 +362,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                   : const SizedBox.shrink(),
                             ),
                           ),
-                          // Transient indicator (seek / volume / resume / fit).
+                          // Transient indicator (seek / volume / brightness /
+                          // zoom / resume / fit / play-pause).
                           if (_indicatorText != null)
                             Positioned(
                               top: 72,
@@ -347,3 +447,5 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     );
   }
 }
+
+enum _DragMode { none, volume, brightness }

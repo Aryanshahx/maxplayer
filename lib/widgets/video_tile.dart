@@ -45,6 +45,28 @@ class VideoTile extends StatelessWidget {
                     )
                   else
                     const _Placeholder(),
+                  // Quality badge (e.g. "1080p"), top-left like VLC.
+                  if (track.qualityLabel != null)
+                    Positioned(
+                      top: 4,
+                      left: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          track.qualityLabel!,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
                   // Favourite toggle
                   Positioned(
                     top: 4,

@@ -9,6 +9,8 @@ class VideoTrack {
   final Duration? duration;
   final int? sizeBytes;
   final int? lastModifiedMs;
+  final int? width; // pixels, from native metadata
+  final int? height;
 
   const VideoTrack({
     required this.id,
@@ -18,6 +20,8 @@ class VideoTrack {
     this.duration,
     this.sizeBytes,
     this.lastModifiedMs,
+    this.width,
+    this.height,
   });
 
   /// Name of the folder containing this video (used by "Group by folder").
@@ -25,6 +29,23 @@ class VideoTrack {
     final dir = p.dirname(path);
     final base = p.basename(dir);
     return base.isEmpty ? dir : base;
+  }
+
+  /// Human resolution badge ("1080p", "4K", "SD", ...) based on the SHORTER
+  /// side, so portrait videos get the same label as their landscape peers.
+  /// Null when dimensions are unknown.
+  String? get qualityLabel {
+    final w = width ?? 0;
+    final h = height ?? 0;
+    final short = w < h ? (w == 0 ? h : w) : (h == 0 ? w : h);
+    if (short <= 0) return null;
+    if (short >= 2160) return '4K';
+    if (short >= 1440) return '2K';
+    if (short >= 1080) return '1080p';
+    if (short >= 720) return '720p';
+    if (short >= 480) return '480p';
+    if (short >= 360) return '360p';
+    return 'SD';
   }
 
   VideoTrack copyWith({
@@ -39,6 +60,8 @@ class VideoTrack {
       duration: duration ?? this.duration,
       sizeBytes: sizeBytes,
       lastModifiedMs: lastModifiedMs,
+      width: width,
+      height: height,
     );
   }
 }

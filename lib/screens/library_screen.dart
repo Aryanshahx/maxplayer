@@ -5,6 +5,7 @@ import '../state/video_library_state.dart';
 import '../widgets/display_settings_sheet.dart';
 import '../widgets/video_list_item.dart';
 import '../widgets/video_tile.dart';
+import 'history_screen.dart';
 import 'player_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -78,6 +79,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
               icon: const Icon(Icons.refresh),
               onPressed: lib.rescan,
             ),
+          IconButton(
+            tooltip: 'History',
+            icon: const Icon(Icons.history),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                  builder: (_) => HistoryScreen(player: widget.player)),
+            ),
+          ),
           IconButton(
             tooltip: 'Display settings',
             icon: const Icon(Icons.tune),

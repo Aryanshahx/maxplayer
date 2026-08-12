@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.os.Handler
 import android.os.Looper
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -15,16 +16,17 @@ import java.util.concurrent.Executors
 /**
  * Native bridge for Max Player. One MethodChannel ("maxplayer/native") exposes:
  *
- *  - getMetadata(path): video duration + a cached JPEG thumbnail, extracted with
- *    Android's own MediaMetadataRetriever. We use this instead of the
- *    `video_thumbnail` plugin, which proved incompatible with the
- *    AGP 9 / Kotlin 2.3 toolchain. No third-party plugin = no AAR conflicts.
+ *  - getMetadata(path): video duration/dimensions + a cached JPEG thumbnail,
+ *    extracted with Android's own MediaMetadataRetriever (no third-party
+ *    plugin = no AAR conflicts with the AGP 9 / Kotlin 2.3 toolchain).
  *
  *  - settingsGetAll / settingsPut: tiny key/value store backed by Android
- *    SharedPreferences, so no extra Dart plugin is needed either.
+ *    SharedPreferences (settings, watch history, gesture prefs).
  *
- * Metadata extraction runs on a background executor; results are posted back
- * on the main thread as required by MethodChannel.
+ *  - getBrightness / setBrightness / resetBrightness: app-local screen
+ *    brightness for the player's left-half swipe gesture. This only changes
+ *    THIS window's brightness (WindowManager.LayoutParams), so unlike the
+ *    screen_brightness plugins it needs no WRITE_SETTINGS permission.
  */
 class MainActivity : FlutterActivity() {
     private val channelName = "maxplayer/native"
@@ -66,14 +68,35 @@ class MainActivity : FlutterActivity() {
                             result.success(true)
                         }
                     }
+                    "getBrightness" -> {
+                        // screenBrightness < 0 means "no override" (system default).
+                        val b = window.attributes.screenBrightness
+                        result.success(if (b < 0f) 1.0 else b.toDouble())
+                    }
+                    "setBrightness" -> {
+                        // Clamp to [0.02, 1] so the screen can never go fully
+                        // black and trap the user.
+                        val v = (call.argument<Double>("value") ?: 1.0).coerceIn(0.02, 1.0)
+                        val lp = window.attributes
+                        lp.screenBrightness = v.toFloat()
+                        window.attributes = lp
+                        result.success(true)
+                    }
+                    "resetBrightness" -> {
+                        val lp = window.attributes
+                        lp.screenBrightness =
+                            WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                        window.attributes = lp
+                        result.success(true)
+                    }
                     else -> result.notImplemented()
                 }
             }
     }
 
     /**
-     * Extracts duration (ms) + dimensions and writes a thumbnail JPEG into the
-     * app cache dir. Thumbnails are cached per video path and re-used while the
+     * Extracts duration/dimensions and writes a thumbnail JPEG into the app
+     * cache dir. Thumbnails are cached per video path and re-used while the
      * source file's mtime is older than the cached image, so rescanning the
      * library does NOT regenerate them every launch.
      */

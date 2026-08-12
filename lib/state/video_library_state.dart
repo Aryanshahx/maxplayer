@@ -337,6 +337,8 @@ class VideoLibraryState extends ChangeNotifier {
         duration: meta.duration,
         sizeBytes: stat.size,
         lastModifiedMs: stat.modified.millisecondsSinceEpoch,
+        width: meta.width,
+        height: meta.height,
       );
     } catch (e) {
       debugPrint('Failed to read $path: $e');

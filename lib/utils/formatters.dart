@@ -20,6 +20,23 @@ String formatDuration(Duration? d) {
   return '$m:${s.toString().padLeft(2, '0')}';
 }
 
+/// Relative "watched" timestamps for the history list ("5m ago", "3h ago",
+/// "12 Aug", ...).
+String timeAgo(int msSinceEpoch) {
+  if (msSinceEpoch <= 0) return '';
+  final dt = DateTime.fromMillisecondsSinceEpoch(msSinceEpoch);
+  final diff = DateTime.now().difference(dt);
+  if (diff.isNegative || diff.inSeconds < 60) return 'Just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  if (diff.inDays < 7) return '${diff.inDays}d ago';
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return '${dt.day} ${months[dt.month - 1]}';
+}
+
 const List<String> videoExtensions = [
   '.mp4', '.webm', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.m4v',
   '.3gp', '.ogv', '.ts', '.mts', '.m2ts', '.vob',
