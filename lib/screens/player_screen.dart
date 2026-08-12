@@ -49,12 +49,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     Icons.open_in_full,
   ];
 
-  // Pinch zoom (1x..4x, center anchored).
+  // Pinch zoom (1x..4x), anchored at the fingers' focal point, with
+  // two-finger panning while zoomed.
   double _zoom = 1.0;
   double _zoomBase = 1.0;
+  Offset _pan = Offset.zero;
+  Offset _panBase = Offset.zero;
+  Offset _focalBase = Offset.zero;
 
   // Gesture plumbing (double-tap seek / volume & brightness swipes).
   double _gestureWidth = 0;
+  double _gestureHeight = 0;
   double _lastDoubleTapDx = 0;
 
   /// Which axis the current vertical drag drives.
@@ -191,25 +196,52 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void _onScaleStart(ScaleStartDetails details) {
     if (!_settings.pinchZoom) return;
     _zoomBase = _zoom;
+    _panBase = _pan;
+    _focalBase = details.localFocalPoint;
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
     if (!_settings.pinchZoom) return;
-    // Ignore scale==1 "updates" coming from one-finger vertical drags so the
-    // two gestures coexist.
-    if (details.scale == 1.0 && details.pointerCount < 2) return;
+    // One-finger moves only pan once already zoomed; otherwise leave them
+    // for the tap / volume / brightness recognizers.
+    if (details.pointerCount < 2 && _zoom <= 1.0) return;
+
+    // Focal-anchored transform: the content point that was under the
+    // fingers when the pinch started stays glued to the CURRENT focal
+    // point. Because we track the live focal point, moving both fingers
+    // together pans the zoomed video for free.
     final z = (_zoomBase * details.scale).clamp(1.0, 4.0);
-    if (z == _zoom) return;
-    setState(() => _zoom = z);
-    _showIndicator('Zoom ${z.toStringAsFixed(1)}x', Icons.pinch_outlined);
+    final contentV = (_focalBase - _panBase) / _zoomBase;
+    final pan = _clampPan(details.localFocalPoint - contentV * z, z);
+
+    if (z == _zoom && pan == _pan) return;
+    setState(() {
+      _zoom = z;
+      _pan = pan;
+    });
+    if (details.scale != 1.0) {
+      _showIndicator('Zoom ${z.toStringAsFixed(1)}x', Icons.pinch_outlined);
+    }
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
     if (!_settings.pinchZoom) return;
     // Snap back when barely zoomed.
     if (_zoom < 1.1) {
-      setState(() => _zoom = 1.0);
+      setState(() {
+        _zoom = 1.0;
+        _pan = Offset.zero;
+      });
+    } else {
+      setState(() => _pan = _clampPan(_pan, _zoom));
     }
+  }
+
+  /// Keep the scaled video covering the viewport (no drifting past edges).
+  Offset _clampPan(Offset pan, double z) {
+    final maxX = _gestureWidth * (z - 1);
+    final maxY = _gestureHeight * (z - 1);
+    return Offset(pan.dx.clamp(-maxX, 0.0), pan.dy.clamp(-maxY, 0.0));
   }
 
   // ---------------------------------------------------------------------------
@@ -314,6 +346,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     _gestureWidth = constraints.maxWidth;
+                    _gestureHeight = constraints.maxHeight;
                     return GestureDetector(
                       onTap: _toggleControls,
                       onDoubleTapDown: (d) =>
@@ -328,12 +361,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          // Video surface - pinch zoom scales it, clipped to
+                          // Video surface - pinch zoom/pan applies a matrix
+                          // (scale about the finger focal point), clipped to
                           // the available area.
                           Positioned.fill(
                             child: ClipRect(
-                              child: Transform.scale(
-                                scale: _zoom,
+                              child: Transform(
+                                transform: Matrix4.identity()
+                                  ..translateByDouble(_pan.dx, _pan.dy, 0, 1)
+                                  ..scaleByDouble(_zoom, _zoom, _zoom, 1),
                                 child: Center(
                                   child: player.currentTrack != null
                                       ? RepaintBoundary(

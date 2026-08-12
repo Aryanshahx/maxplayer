@@ -92,4 +92,46 @@ class NativeBridge {
       await _channel.invokeMethod('resetBrightness');
     } catch (_) {}
   }
+
+  // --- "Open with" intent delivery ---
+
+  /// Cold-start check: a video opened from another app before Dart attached.
+  /// Returns a map with keys 'path' (resolved file path) and/or 'failed'
+  /// (the URI we could not resolve); both may be null.
+  static Future<Map<String, String>> getInitialOpenVideo() async {
+    try {
+      final Map<Object?, Object?>? res =
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+              'getInitialOpenVideo');
+      if (res == null) return const {};
+      final out = <String, String>{};
+      for (final key in ['path', 'failed']) {
+        final v = res[key];
+        if (v is String && v.isNotEmpty) out[key] = v;
+      }
+      return out;
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Warm-start delivery: registers the callbacks fired when another app
+  /// opens a video with Max Player while it is already running.
+  static void setOpenVideoHandler({
+    required void Function(String path) onOpenVideo,
+    void Function(String uri)? onOpenVideoFailed,
+  }) {
+    _channel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'onOpenVideo':
+          final p = call.arguments as String?;
+          if (p != null && p.isNotEmpty) onOpenVideo(p);
+          break;
+        case 'onOpenVideoFailed':
+          final u = call.arguments as String?;
+          if (u != null) onOpenVideoFailed?.call(u);
+          break;
+      }
+    });
+  }
 }

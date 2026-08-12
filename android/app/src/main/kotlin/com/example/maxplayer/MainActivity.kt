@@ -1,9 +1,13 @@
 package com.example.maxplayer
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -24,74 +28,169 @@ import java.util.concurrent.Executors
  *    SharedPreferences (settings, watch history, gesture prefs).
  *
  *  - getBrightness / setBrightness / resetBrightness: app-local screen
- *    brightness for the player's left-half swipe gesture. This only changes
- *    THIS window's brightness (WindowManager.LayoutParams), so unlike the
- *    screen_brightness plugins it needs no WRITE_SETTINGS permission.
+ *    brightness for the player's left-half swipe gesture.
+ *
+ *  - "Open with" support: VIEW intents carrying video files are resolved to
+ *    real filesystem paths (file://, MediaStore content://, and external
+ *    storage document URIs) and delivered to Dart via getInitialOpenVideo
+ *    (cold start) or the onOpenVideo / onOpenVideoFailed channel calls
+ *    (warm start, singleTop re-use).
  */
 class MainActivity : FlutterActivity() {
     private val channelName = "maxplayer/native"
     private val executor = Executors.newFixedThreadPool(4)
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    private var channel: MethodChannel? = null
+    private var pendingOpenPath: String? = null
+    private var pendingOpenFailed: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        handleViewIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleViewIntent(intent)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "getMetadata" -> {
-                        val path = call.argument<String>("path")
-                        if (path.isNullOrEmpty()) {
-                            result.error("bad_args", "path argument is required", null)
-                        } else {
-                            executor.execute {
-                                val data = extractMetadata(path)
-                                mainHandler.post { result.success(data) }
-                            }
+        channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
+        channel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getMetadata" -> {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrEmpty()) {
+                        result.error("bad_args", "path argument is required", null)
+                    } else {
+                        executor.execute {
+                            val data = extractMetadata(path)
+                            mainHandler.post { result.success(data) }
                         }
                     }
-                    "settingsGetAll" -> {
-                        val prefs = getSharedPreferences("maxplayer_settings", MODE_PRIVATE)
-                        val map = HashMap<String, String>()
-                        for ((k, v) in prefs.all) {
-                            if (v is String) map[k] = v
-                        }
-                        result.success(map)
+                }
+                "settingsGetAll" -> {
+                    val prefs = getSharedPreferences("maxplayer_settings", MODE_PRIVATE)
+                    val map = HashMap<String, String>()
+                    for ((k, v) in prefs.all) {
+                        if (v is String) map[k] = v
                     }
-                    "settingsPut" -> {
-                        val key = call.argument<String>("key")
-                        val value = call.argument<String>("value")
-                        if (key == null || value == null) {
-                            result.error("bad_args", "key and value are required", null)
-                        } else {
-                            getSharedPreferences("maxplayer_settings", MODE_PRIVATE)
-                                .edit().putString(key, value).apply()
-                            result.success(true)
-                        }
-                    }
-                    "getBrightness" -> {
-                        // screenBrightness < 0 means "no override" (system default).
-                        val b = window.attributes.screenBrightness
-                        result.success(if (b < 0f) 1.0 else b.toDouble())
-                    }
-                    "setBrightness" -> {
-                        // Clamp to [0.02, 1] so the screen can never go fully
-                        // black and trap the user.
-                        val v = (call.argument<Double>("value") ?: 1.0).coerceIn(0.02, 1.0)
-                        val lp = window.attributes
-                        lp.screenBrightness = v.toFloat()
-                        window.attributes = lp
+                    result.success(map)
+                }
+                "settingsPut" -> {
+                    val key = call.argument<String>("key")
+                    val value = call.argument<String>("value")
+                    if (key == null || value == null) {
+                        result.error("bad_args", "key and value are required", null)
+                    } else {
+                        getSharedPreferences("maxplayer_settings", MODE_PRIVATE)
+                            .edit().putString(key, value).apply()
                         result.success(true)
                     }
-                    "resetBrightness" -> {
-                        val lp = window.attributes
-                        lp.screenBrightness =
-                            WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-                        window.attributes = lp
-                        result.success(true)
+                }
+                "getBrightness" -> {
+                    // screenBrightness < 0 means "no override" (system default).
+                    val b = window.attributes.screenBrightness
+                    result.success(if (b < 0f) 1.0 else b.toDouble())
+                }
+                "setBrightness" -> {
+                    // Clamp to [0.02, 1] so the screen can never go fully
+                    // black and trap the user.
+                    val v = (call.argument<Double>("value") ?: 1.0).coerceIn(0.02, 1.0)
+                    val lp = window.attributes
+                    lp.screenBrightness = v.toFloat()
+                    window.attributes = lp
+                    result.success(true)
+                }
+                "resetBrightness" -> {
+                    val lp = window.attributes
+                    lp.screenBrightness =
+                        WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                    window.attributes = lp
+                    result.success(true)
+                }
+                "getInitialOpenVideo" -> {
+                    val map = HashMap<String, String?>()
+                    map["path"] = pendingOpenPath
+                    map["failed"] = pendingOpenFailed
+                    pendingOpenPath = null
+                    pendingOpenFailed = null
+                    result.success(map)
+                }
+                else -> result.notImplemented()
+            }
+        }
+        // Channel is ready: deliver anything that arrived before Dart attached.
+        pendingOpenPath?.let {
+            channel?.invokeMethod("onOpenVideo", it)
+            pendingOpenPath = null
+        }
+        pendingOpenFailed?.let {
+            channel?.invokeMethod("onOpenVideoFailed", it)
+            pendingOpenFailed = null
+        }
+    }
+
+    private fun handleViewIntent(intent: Intent?) {
+        if (intent == null || intent.action != Intent.ACTION_VIEW) return
+        val data = intent.data ?: return
+        val resolved = resolveVideoPath(data)
+        if (channel != null) {
+            if (resolved != null) {
+                channel?.invokeMethod("onOpenVideo", resolved)
+            } else {
+                channel?.invokeMethod("onOpenVideoFailed", data.toString())
+            }
+        } else {
+            // Dart side not attached yet - getInitialOpenVideo picks this up.
+            if (resolved != null) pendingOpenPath = resolved
+            else pendingOpenFailed = data.toString()
+        }
+    }
+
+    /**
+     * Turns a content:// or file:// URI into a real filesystem path our
+     * player (libmpv) can open. Strategies:
+     *  1. file:// -> direct path
+     *  2. MediaStore DATA column (we hold all-files access, so it answers)
+     *  3. ExternalStorageProvider document URIs ("primary:Downloads/x.mp4")
+     */
+    private fun resolveVideoPath(uri: Uri): String? {
+        when (uri.scheme) {
+            "file" -> return uri.path
+            "content" -> {
+                // MediaStore / generic providers exposing the _data column.
+                try {
+                    contentResolver.query(
+                        uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null
+                    )?.use { c ->
+                        if (c.moveToFirst()) {
+                            val p = c.getString(0)
+                            if (!p.isNullOrEmpty()) return p
+                        }
                     }
-                    else -> result.notImplemented()
+                } catch (e: Exception) {
+                    // fall through to document parsing
+                }
+                // content://com.android.externalstorage.documents/document/primary:Dir/x.mp4
+                if (uri.authority == "com.android.externalstorage.documents") {
+                    val doc = uri.lastPathSegment ?: return null
+                    val parts = doc.split(":", limit = 2)
+                    if (parts.size == 2) {
+                        val decoded = Uri.decode(parts[1])
+                        return if (parts[0].equals("primary", ignoreCase = true)) {
+                            "/storage/emulated/0/$decoded"
+                        } else {
+                            // SD card style volumes: "1234-5678:Dir/x.mp4"
+                            "/storage/${parts[0]}/$decoded"
+                        }
+                    }
                 }
             }
+        }
+        return null
     }
 
     /**
