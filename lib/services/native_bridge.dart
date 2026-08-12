@@ -180,4 +180,18 @@ class NativeBridge {
       await _channel.invokeMethod('setPipPlaying', playing);
     } catch (_) {}
   }
+
+  // --- AI subtitles (Phase 1 probe) ---
+
+  /// Returns the whisper.cpp system-info string when the on-device AI
+  /// subtitle engine is bundled and its native library loads, else null.
+  /// Used by the About sheet as a build verification.
+  static Future<String?> whisperEngineStatus() async {
+    try {
+      final res = await _channel.invokeMethod<String>('whisperAvailable');
+      return (res != null && res.isNotEmpty) ? res : null;
+    } catch (_) {
+      return null;
+    }
+  }
 }

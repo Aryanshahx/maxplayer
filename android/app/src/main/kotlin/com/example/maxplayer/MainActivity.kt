@@ -23,6 +23,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.WindowManager
+import dev.ffmpegkit.whisper.Whisper
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -183,6 +184,20 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                     result.success(true)
+                }
+                "whisperAvailable" -> {
+                    // AI SUBTITLES Phase-1 probe: proves the on-device
+                    // whisper.cpp engine loaded its native library on this
+                    // device. Runs off the main thread (first call may load
+                    // libwhisper.so).
+                    executor.execute {
+                        val info = try {
+                            Whisper.getSystemInfo()
+                        } catch (t: Throwable) {
+                            null
+                        }
+                        mainHandler.post { result.success(info) }
+                    }
                 }
                 else -> result.notImplemented()
             }

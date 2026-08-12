@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_info.dart';
+import '../services/native_bridge.dart';
 import '../state/theme_state.dart';
 
 /// "About Max Player" sheet, opened from the home screen's ⋮ menu.
@@ -176,6 +177,28 @@ class AboutSheet extends StatelessWidget {
           child: Text(
             'Version $kAppVersion',
             style: TextStyle(color: Colors.white38, fontSize: 12.5),
+          ),
+        ),
+        const SizedBox(height: 4),
+        // Phase-1 verification: proves the offline whisper.cpp engine
+        // bundled in this build actually loads on this device.
+        Center(
+          child: FutureBuilder<String?>(
+            future: NativeBridge.whisperEngineStatus(),
+            builder: (context, snap) {
+              final ready = snap.hasData && snap.data != null;
+              return Text(
+                ready
+                    ? 'AI subtitle engine: ready (offline & free)'
+                    : 'AI subtitle engine: unavailable on this build',
+                style: TextStyle(
+                  color: ready
+                      ? Colors.greenAccent.withValues(alpha: 0.7)
+                      : Colors.white24,
+                  fontSize: 11,
+                ),
+              );
+            },
           ),
         ),
       ],
