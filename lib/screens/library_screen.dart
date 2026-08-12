@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import '../app_info.dart';
 import '../models/video_track.dart';
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
 import '../state/video_library_state.dart';
+import '../widgets/about_sheet.dart';
 import '../widgets/display_settings_sheet.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/user_manual_sheet.dart';
@@ -76,6 +78,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
         break;
       case 'manual':
         UserManualSheet.show(context);
+        break;
+      case 'about':
+        AboutSheet.show(context);
         break;
       case 'display':
         DisplaySettingsSheet.show(context, lib);
@@ -245,6 +250,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.menu_book_outlined),
                   title: Text('User manual'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'about',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.info_outline),
+                  title: Text('About'),
+                ),
+              ),
+              // Footer: app version (not selectable).
+              PopupMenuItem(
+                value: 'version',
+                enabled: false,
+                height: 30,
+                padding: EdgeInsets.zero,
+                child: Center(
+                  child: Text(
+                    'Version $kAppVersion',
+                    style: TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
                 ),
               ),
             ],

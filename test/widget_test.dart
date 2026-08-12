@@ -1,9 +1,16 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:maxplayer/app_info.dart';
 import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/video_library_state.dart';
 import 'package:maxplayer/utils/formatters.dart';
+import 'package:maxplayer/widgets/about_sheet.dart';
+import 'package:maxplayer/widgets/gesture_illustrations.dart';
+import 'package:maxplayer/widgets/user_manual_sheet.dart';
 
 // Pure unit tests - no platform channels involved. (NativeBridge calls in
 // VideoLibraryState are guarded and return defaults when no channel exists,
@@ -224,6 +231,76 @@ void main() {
       lib.setGroupMode(GroupMode.none);
       expect(lib.groups.length, 1);
       expect(lib.groups.single.title, '');
+    });
+  });
+
+  group('app version', () {
+    test('kAppVersion matches the pubspec version name', () {
+      final pub = File('pubspec.yaml').readAsStringSync();
+      final m = RegExp(r'^version:\s*([0-9][0-9.]*)\+', multiLine: true)
+          .firstMatch(pub);
+      expect(m, isNotNull, reason: 'pubspec.yaml must declare version: x.y.z+N');
+      expect(m!.group(1), kAppVersion,
+          reason: 'Keep kAppVersion in lib/app_info.dart in sync');
+    });
+  });
+
+  group('manual & about sheets', () {
+    /// The sheets are lazy ListViews - give the test a huge viewport so
+    /// every section builds, not just the first screenful.
+    void useTallViewport(WidgetTester tester) {
+      tester.view.physicalSize = const Size(1200, 6000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
+
+    testWidgets('every gesture illustration paints without errors',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: Column(
+                children: [
+                  for (final kind in GestureKind.values)
+                    SizedBox(
+                      width: 320,
+                      child: GestureIllustration(kind: kind),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(
+          find.byType(GestureIllustration), findsNWidgets(GestureKind.values.length));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('user manual renders all sections', (tester) async {
+      useTallViewport(tester);
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: UserManualSheet())),
+      );
+      expect(find.text('User manual'), findsOneWidget);
+      expect(find.text('GESTURE CONTROLS'), findsOneWidget);
+      expect(find.text('Max Player v$kAppVersion  ·  Hyper Tech Labs'),
+          findsOneWidget);
+      expect(find.byType(GestureIllustration),
+          findsNWidgets(GestureKind.values.length));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('about sheet renders brand text and version', (tester) async {
+      useTallViewport(tester);
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: AboutSheet())),
+      );
+      expect(find.text('Max Player'), findsOneWidget);
+      expect(find.text('by Hyper Tech Labs'), findsOneWidget);
+      expect(find.text('Version $kAppVersion'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   });
 }
