@@ -391,6 +391,8 @@ class MediaPlayerState extends ChangeNotifier {
   }
 
   Future<void> pause() async {
+    // Pausing always ends an active long-press boost (and its badge).
+    await stopSpeedBoost();
     _saveBookmark();
     await player.pause();
   }
@@ -472,6 +474,7 @@ class MediaPlayerState extends ChangeNotifier {
 
   Future<void> startSpeedBoost(double multiplier) async {
     if (_preBoostRate != null) return; // already boosting
+    if (!isPlaying) return; // no boost/badge while paused
     _preBoostRate = playbackRate;
     playbackRate = multiplier;
     await player.setRate(multiplier);

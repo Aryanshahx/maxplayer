@@ -69,8 +69,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         break;
       case 'stats':
         Navigator.of(context).push(
-          MaterialPageRoute(
-              builder: (_) => StatsScreen(player: widget.player)),
+          MaterialPageRoute(builder: (_) => StatsScreen(player: widget.player)),
         );
         break;
       case 'rescan':
@@ -109,8 +108,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a24),
-        title: const Text('Open stream URL',
-            style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Open stream URL',
+          style: TextStyle(color: Colors.white),
+        ),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -126,8 +127,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: themeState.accent),
+            style: FilledButton.styleFrom(backgroundColor: themeState.accent),
             onPressed: () =>
                 Navigator.of(dialogContext).pop(controller.text.trim()),
             child: const Text('Play'),
@@ -151,7 +151,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
       }
       return;
     }
-    final title = uri.pathSegments.isNotEmpty && uri.pathSegments.last.isNotEmpty
+    final title =
+        uri.pathSegments.isNotEmpty && uri.pathSegments.last.isNotEmpty
         ? Uri.decodeComponent(uri.pathSegments.last)
         : uri.host;
     await widget.player.playStream(url, title);
@@ -173,9 +174,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
           shaderCallback: (bounds) => const LinearGradient(
             colors: [Color(0xFFA78BFA), Color(0xFF8B5CF6), Color(0xFF22D3EE)],
           ).createShader(bounds),
-          child: const Text('Max Player',
-              style:
-                  TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+          child: const Text(
+            'Max Player',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
         ),
         actions: [
           // Prominent rescan button (new videos don't appear otherwise).
@@ -198,7 +200,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
             icon: const Icon(Icons.history),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
-                  builder: (_) => HistoryScreen(player: widget.player)),
+                builder: (_) => HistoryScreen(player: widget.player),
+              ),
             ),
           ),
           PopupMenuButton<String>(
@@ -321,7 +324,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ],
               ),
             ),
-          Expanded(child: _buildBody(lib)),
+          // Soft crossfade between grid/list/empty states.
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 260),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              child: _buildBody(lib),
+            ),
+          ),
         ],
       ),
     );
@@ -330,11 +341,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget _buildBody(VideoLibraryState lib) {
     // Single evaluation - the getter filters+sorts, so compute once per build.
     final groups = lib.groups;
-    final visibleCount =
-        groups.fold<int>(0, (sum, g) => sum + g.videos.length);
+    final visibleCount = groups.fold<int>(0, (sum, g) => sum + g.videos.length);
 
     if (visibleCount == 0) {
       return _EmptyState(
+        key: const ValueKey('empty'),
         isScanning: lib.isScanning,
         permissionDenied: lib.permissionDenied,
         favoritesOnly: lib.favoritesOnly,
@@ -342,7 +353,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
       );
     }
 
+    // Keyed by view mode so grid <-> list crossfades through the
+    // AnimatedSwitcher above.
     return CustomScrollView(
+      key: ValueKey(lib.viewMode),
       slivers: [
         for (final group in groups) ...[
           if (lib.groupMode != GroupMode.none)
@@ -356,43 +370,36 @@ class _LibraryScreenState extends State<LibraryScreen> {
             SliverPadding(
               padding: const EdgeInsets.all(12),
               sliver: SliverGrid(
-                gridDelegate:
-                    const SliverGridDelegateWithMaxCrossAxisExtent(
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                   maxCrossAxisExtent: 220,
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
                   childAspectRatio: 0.82,
                 ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) {
-                    final track = group.videos[i];
-                    return VideoTile(
-                      track: track,
-                      isFavorite: lib.isFavorite(track),
-                      onTap: () => _playVideo(track),
-                      onFavorite: () => lib.toggleFavorite(track),
-                    );
-                  },
-                  childCount: group.videos.length,
-                ),
+                delegate: SliverChildBuilderDelegate((context, i) {
+                  final track = group.videos[i];
+                  return VideoTile(
+                    track: track,
+                    isFavorite: lib.isFavorite(track),
+                    onTap: () => _playVideo(track),
+                    onFavorite: () => lib.toggleFavorite(track),
+                  );
+                }, childCount: group.videos.length),
               ),
             )
           else
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) {
-                    final track = group.videos[i];
-                    return VideoListItem(
-                      track: track,
-                      isFavorite: lib.isFavorite(track),
-                      onTap: () => _playVideo(track),
-                      onFavorite: () => lib.toggleFavorite(track),
-                    );
-                  },
-                  childCount: group.videos.length,
-                ),
+                delegate: SliverChildBuilderDelegate((context, i) {
+                  final track = group.videos[i];
+                  return VideoListItem(
+                    track: track,
+                    isFavorite: lib.isFavorite(track),
+                    onTap: () => _playVideo(track),
+                    onFavorite: () => lib.toggleFavorite(track),
+                  );
+                }, childCount: group.videos.length),
               ),
             ),
         ],
@@ -431,6 +438,7 @@ class _EmptyState extends StatelessWidget {
   final VoidCallback onGrantAccess;
 
   const _EmptyState({
+    super.key,
     required this.isScanning,
     required this.permissionDenied,
     required this.favoritesOnly,
@@ -466,8 +474,11 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.video_library_outlined,
-              size: 48, color: Colors.white24),
+          const Icon(
+            Icons.video_library_outlined,
+            size: 48,
+            color: Colors.white24,
+          ),
           const SizedBox(height: 12),
           Text(
             permissionDenied

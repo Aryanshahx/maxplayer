@@ -250,9 +250,12 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _onLongPressStart(LongPressStartDetails _) {
     if (!_settings.longPressSpeed) return;
+    // No boost (and no badge) while the video is paused.
+    if (!widget.player.isPlaying) return;
     widget.player.startSpeedBoost(_settings.longPressMultiplier);
     setState(() {}); // mount the persistent "Nx" badge
-    _showIndicator('${_settings.longPressMultiplier}x ▶▶', Icons.fast_forward);
+    // NOTE: no flash indicator here - the persistent purple badge IS the
+    // feedback (showing both looked like a duplicated "2x" bug).
   }
 
   void _onLongPressEnd(LongPressEndDetails _) {
@@ -495,112 +498,176 @@ class _PlayerScreenState extends State<PlayerScreen>
                             ),
                           ),
                           // Transient indicator (seek / volume / brightness /
-                          // zoom / resume / fit / play-pause).
-                          if (_indicatorText != null && !_isPip)
-                            Positioned(
-                              top: 72,
-                              left: 0,
-                              right: 0,
-                              child: IgnorePointer(
-                                child: Center(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 10,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.72,
-                                      ),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (_indicatorIcon != null) ...[
-                                          Icon(
-                                            _indicatorIcon,
-                                            color: Colors.white,
-                                            size: 20,
+                          // zoom / resume / fit / play-pause) - pops in and
+                          // out with a small scale+fade.
+                          Positioned(
+                            top: 72,
+                            left: 0,
+                            right: 0,
+                            child: IgnorePointer(
+                              child: Center(
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 150),
+                                  transitionBuilder: (child, anim) =>
+                                      FadeTransition(
+                                        opacity: anim,
+                                        child: ScaleTransition(
+                                          scale: anim.drive(
+                                            CurveTween(
+                                              curve: Curves.decelerate,
+                                            ),
                                           ),
-                                          const SizedBox(width: 8),
-                                        ],
-                                        Text(
-                                          _indicatorText!,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                          child: child,
                                         ),
-                                      ],
-                                    ),
-                                  ),
+                                      ),
+                                  child: (_indicatorText != null && !_isPip)
+                                      ? Container(
+                                          key: ValueKey(
+                                            '$_indicatorText|${_indicatorIcon?.codePoint}',
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 10,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.72,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (_indicatorIcon != null) ...[
+                                                Icon(
+                                                  _indicatorIcon,
+                                                  color: Colors.white,
+                                                  size: 20,
+                                                ),
+                                                const SizedBox(width: 8),
+                                              ],
+                                              Text(
+                                                _indicatorText!,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        )
+                                      : const SizedBox.shrink(
+                                          key: ValueKey('noIndicator'),
+                                        ),
                                 ),
                               ),
                             ),
+                          ),
                           // Persistent speed badge for the WHOLE long-press
-                          // boost (used to flash once and disappear).
-                          if (player.isSpeedBoosting && !_isPip)
-                            Positioned(
-                              top: 12,
-                              left: 0,
-                              right: 0,
-                              child: IgnorePointer(
-                                child: Center(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: themeState.accent.withValues(
-                                        alpha: 0.9,
-                                      ),
-                                      borderRadius: BorderRadius.circular(18),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.fast_forward,
-                                          color: Colors.white,
-                                          size: 15,
-                                        ),
-                                        const SizedBox(width: 5),
-                                        Text(
-                                          '${_settings.longPressMultiplier}x',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
+                          // boost. Follows the player state directly (so it
+                          // vanishes instantly if the video is paused during
+                          // a boost) and pops in/out.
+                          Positioned(
+                            top: 12,
+                            left: 0,
+                            right: 0,
+                            child: IgnorePointer(
+                              child: Center(
+                                child: AnimatedBuilder(
+                                  animation: player,
+                                  builder: (context, _) => AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 160),
+                                    transitionBuilder: (child, anim) =>
+                                        FadeTransition(
+                                          opacity: anim,
+                                          child: ScaleTransition(
+                                            scale: anim,
+                                            child: child,
                                           ),
                                         ),
-                                      ],
-                                    ),
+                                    child:
+                                        (player.isSpeedBoosting &&
+                                            player.isPlaying &&
+                                            !_isPip)
+                                        ? Container(
+                                            key: const ValueKey('speedBadge'),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: themeState.accent
+                                                  .withValues(alpha: 0.9),
+                                              borderRadius:
+                                                  BorderRadius.circular(18),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(
+                                                  Icons.fast_forward,
+                                                  color: Colors.white,
+                                                  size: 15,
+                                                ),
+                                                const SizedBox(width: 5),
+                                                Text(
+                                                  '${_settings.longPressMultiplier}x',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          )
+                                        : const SizedBox.shrink(
+                                            key: ValueKey('noSpeedBadge'),
+                                          ),
                                   ),
                                 ),
                               ),
                             ),
-                          if (_controlsVisible && !_isPip)
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              child: PlayerControlsOverlay(
-                                player: player,
-                                isFullscreen: _isFullscreen,
-                                onToggleFullscreen: _toggleFullscreen,
-                                onToggleQueue: () {
-                                  setState(() => _showQueue = !_showQueue);
-                                  _onUserInteraction();
-                                },
-                                onInteract: _onUserInteraction,
-                                onCycleFit: _cycleFit,
-                                orientationLocked: _orientationLocked,
-                                onToggleOrientationLock: _toggleOrientationLock,
+                          ),
+                          // Controls slide up + fade in instead of snapping.
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: IgnorePointer(
+                              ignoring: !_controlsVisible,
+                              child: AnimatedSlide(
+                                offset: _controlsVisible && !_isPip
+                                    ? Offset.zero
+                                    : const Offset(0, 0.45),
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOutCubic,
+                                child: AnimatedOpacity(
+                                  opacity: _controlsVisible && !_isPip
+                                      ? 1.0
+                                      : 0.0,
+                                  duration: const Duration(milliseconds: 180),
+                                  child: PlayerControlsOverlay(
+                                    player: player,
+                                    isFullscreen: _isFullscreen,
+                                    onToggleFullscreen: _toggleFullscreen,
+                                    onToggleQueue: () {
+                                      setState(() => _showQueue = !_showQueue);
+                                      _onUserInteraction();
+                                    },
+                                    onInteract: _onUserInteraction,
+                                    onCycleFit: _cycleFit,
+                                    orientationLocked: _orientationLocked,
+                                    onToggleOrientationLock:
+                                        _toggleOrientationLock,
+                                  ),
+                                ),
                               ),
                             ),
+                          ),
                         ],
                       ),
                     );

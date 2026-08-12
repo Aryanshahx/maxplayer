@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../utils/formatters.dart';
 import '../state/theme_state.dart';
+import 'fade_in_image.dart';
 
 class PlaylistPanel extends StatelessWidget {
   final List<VideoTrack> playlist;
@@ -173,6 +174,7 @@ class _QueueThumb extends StatelessWidget {
       return Image.file(
         File(track.thumbnailPath!),
         fit: BoxFit.cover,
+        frameBuilder: fadeInImageFrame,
         errorBuilder: (_, __, ___) => const _Placeholder(),
       );
     }

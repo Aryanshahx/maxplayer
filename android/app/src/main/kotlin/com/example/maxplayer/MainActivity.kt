@@ -73,6 +73,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val ACTION_PIP_TOGGLE = "com.example.maxplayer.action.PIP_TOGGLE"
         private const val REQ_PIP_TOGGLE = 42
+        private const val REQ_PIP_OPEN = 43
         private val STREAM_SCHEMES = setOf("http", "https", "rtsp", "rtmp", "mms")
     }
 
@@ -217,9 +218,21 @@ class MainActivity : FlutterActivity() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val label = if (pipPlaying) "Pause" else "Play"
-        val action =
-            RemoteAction(makePipIcon(pause = pipPlaying), label, label, toggleIntent)
-        return PictureInPictureParams.Builder().setActions(listOf(action)).build()
+        val toggle = RemoteAction(makePipIcon(pause = pipPlaying), label, label, toggleIntent)
+        // Second action: pop the PiP window back into the full app. Filling
+        // the action tray with OUR buttons replaces any default system
+        // "settings" gear the launcher would otherwise show.
+        val openIntent = PendingIntent.getActivity(
+            this,
+            REQ_PIP_OPEN,
+            packageManager.getLaunchIntentForPackage(packageName)
+                ?: Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val open = RemoteAction(makeExpandIcon(), "Open Max Player", "Open Max Player", openIntent)
+        return PictureInPictureParams.Builder()
+            .setActions(listOf(toggle, open))
+            .build()
     }
 
     /** Draws a simple white play triangle / pause bars icon (no resources needed). */
@@ -247,6 +260,37 @@ class MainActivity : FlutterActivity() {
             path.close()
             canvas.drawPath(path, paint)
         }
+        return Icon.createWithBitmap(bmp)
+    }
+
+    /** Draws a white "expand" glyph (inner square + outward arrow). */
+    private fun makeExpandIcon(): Icon {
+        val size = 96
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = size * 0.07f
+            strokeCap = Paint.Cap.ROUND
+        }
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        // Inner square.
+        val inset = size * 0.28f
+        canvas.drawRect(inset, inset, size - inset, size - inset, paint)
+        // Outward diagonal arrow (top-right).
+        val ax = size * 0.58f
+        val ay = size * 0.42f
+        canvas.drawLine(ax - size * 0.12f, ay + size * 0.12f, ax, ay, paint)
+        val arrowHead = Path()
+        arrowHead.moveTo(ax - size * 0.13f, ay - size * 0.02f)
+        arrowHead.lineTo(ax + size * 0.02f, ay - size * 0.02f)
+        arrowHead.lineTo(ax + size * 0.02f, ay + size * 0.13f)
+        arrowHead.close()
+        canvas.drawPath(arrowHead, fill)
         return Icon.createWithBitmap(bmp)
     }
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../utils/formatters.dart';
 import '../state/theme_state.dart';
+import 'fade_in_image.dart';
 
 class VideoTile extends StatelessWidget {
   final VideoTrack track;
@@ -42,6 +43,7 @@ class VideoTile extends StatelessWidget {
                     Image.file(
                       File(track.thumbnailPath!),
                       fit: BoxFit.cover,
+                      frameBuilder: fadeInImageFrame,
                       errorBuilder: (_, __, ___) => const _Placeholder(),
                     )
                   else

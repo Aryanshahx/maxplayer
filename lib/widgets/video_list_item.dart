@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../utils/formatters.dart';
 import '../state/theme_state.dart';
+import 'fade_in_image.dart';
 
 /// List-mode row for the library (see "Display in list" in the settings
 /// sheet): small thumbnail, title, size + duration, and a favourite toggle.
@@ -76,6 +77,7 @@ class _Thumb extends StatelessWidget {
       return Image.file(
         File(track.thumbnailPath!),
         fit: BoxFit.cover,
+        frameBuilder: fadeInImageFrame,
         errorBuilder: (_, __, ___) => const _Placeholder(),
       );
     }
