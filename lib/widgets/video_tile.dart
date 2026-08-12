@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../utils/formatters.dart';
+import '../state/theme_state.dart';
 
 class VideoTile extends StatelessWidget {
   final VideoTrack track;
@@ -84,7 +85,7 @@ class VideoTile extends StatelessWidget {
                           isFavorite ? Icons.favorite : Icons.favorite_border,
                           size: 15,
                           color: isFavorite
-                              ? const Color(0xFFA855F7)
+                              ? themeState.accent
                               : Colors.white70,
                         ),
                       ),

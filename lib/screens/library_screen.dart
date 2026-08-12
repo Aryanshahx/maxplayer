@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../state/media_player_state.dart';
+import '../state/theme_state.dart';
 import '../state/video_library_state.dart';
 import '../widgets/display_settings_sheet.dart';
+import '../widgets/mini_player.dart';
 import '../widgets/video_list_item.dart';
 import '../widgets/video_tile.dart';
 import 'history_screen.dart';
 import 'player_screen.dart';
+import 'stats_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   final VideoLibraryState library;
@@ -56,6 +59,85 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
+  void _onMenuChoice(String choice, VideoLibraryState lib) {
+    switch (choice) {
+      case 'stream':
+        _openStreamDialog();
+        break;
+      case 'stats':
+        Navigator.of(context).push(
+          MaterialPageRoute(
+              builder: (_) => StatsScreen(player: widget.player)),
+        );
+        break;
+      case 'rescan':
+        lib.rescan();
+        break;
+      case 'display':
+        DisplaySettingsSheet.show(context, lib);
+        break;
+    }
+  }
+
+  /// Lets the user paste an http(s)/rtsp/rtmp URL and play it directly.
+  Future<void> _openStreamDialog() async {
+    final controller = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a24),
+        title: const Text('Open stream URL',
+            style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'https:// or rtsp:// ...',
+            hintStyle: TextStyle(color: Colors.white38),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: themeState.accent),
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Play'),
+          ),
+        ],
+      ),
+    );
+    if (url == null || url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    const schemes = {'http', 'https', 'rtsp', 'rtmp', 'mms'};
+    if (uri == null ||
+        !schemes.contains(uri.scheme.toLowerCase()) ||
+        uri.host.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('That does not look like a stream URL'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+    final title = uri.pathSegments.isNotEmpty && uri.pathSegments.last.isNotEmpty
+        ? Uri.decodeComponent(uri.pathSegments.last)
+        : uri.host;
+    await widget.player.playStream(url, title);
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PlayerScreen(player: widget.player)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final lib = widget.library;
@@ -73,12 +155,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         ),
         actions: [
-          if (lib.folderName != null)
-            IconButton(
-              tooltip: 'Rescan',
-              icon: const Icon(Icons.refresh),
-              onPressed: lib.rescan,
-            ),
           IconButton(
             tooltip: 'History',
             icon: const Icon(Icons.history),
@@ -87,13 +163,54 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   builder: (_) => HistoryScreen(player: widget.player)),
             ),
           ),
-          IconButton(
-            tooltip: 'Display settings',
-            icon: const Icon(Icons.tune),
-            onPressed: () => DisplaySettingsSheet.show(context, lib),
+          PopupMenuButton<String>(
+            tooltip: 'More',
+            icon: const Icon(Icons.more_vert),
+            color: const Color(0xFF26262f),
+            onSelected: (choice) => _onMenuChoice(choice, lib),
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'stream',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.link),
+                  title: Text('Open stream URL'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'stats',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.bar_chart),
+                  title: Text('Statistics'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'rescan',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.refresh),
+                  title: Text('Rescan library'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'display',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.tune),
+                  title: Text('Display settings'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
+      // Mini player sits at the bottom while something is loaded.
+      bottomNavigationBar: MiniPlayer(player: widget.player),
       body: Column(
         children: [
           Padding(
@@ -123,7 +240,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     value: lib.scanProgress.total > 0
                         ? lib.scanProgress.processed / lib.scanProgress.total
                         : null,
-                    color: const Color(0xFFA855F7),
+                    color: themeState.accent,
                     backgroundColor: Colors.white10,
                   ),
                   const SizedBox(height: 6),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart' hide VideoTrack;
+import '../state/theme_state.dart';
 
 import '../state/media_player_state.dart';
 
@@ -15,7 +16,7 @@ class TrackSelectionSheet extends StatelessWidget {
     required this.isSubtitle,
   });
 
-  static const Color _accent = Color(0xFFA855F7);
+  static Color get _accent => themeState.accent;
   static const Color _surface = Color(0xFF1a1a24);
 
   static Future<void> show(
@@ -56,7 +57,7 @@ class TrackSelectionSheet extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
             child: Text(
               isSubtitle ? 'Subtitles' : 'Audio track',
-              style: const TextStyle(
+              style: TextStyle(
                 color: _accent,
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -166,7 +167,7 @@ class _TrackTile extends StatelessWidget {
       leading: SizedBox(
         width: 24,
         child: selected
-            ? const Icon(Icons.check,
+            ? Icon(Icons.check,
                 size: 18, color: TrackSelectionSheet._accent)
             : null,
       ),

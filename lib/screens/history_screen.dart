@@ -6,6 +6,7 @@ import '../models/history_entry.dart';
 import '../state/media_player_state.dart';
 import '../utils/formatters.dart';
 import 'player_screen.dart';
+import '../state/theme_state.dart';
 
 /// Watch history - most recently opened videos first, each with its saved
 /// progress. Tapping resumes where you left off.
@@ -89,7 +90,7 @@ class HistoryScreen extends StatelessWidget {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFA855F7)),
+                backgroundColor: themeState.accent),
             onPressed: () {
               player.clearHistory();
               Navigator.of(dialogContext).pop();
@@ -152,7 +153,7 @@ class _HistoryTile extends StatelessWidget {
                 value: entry.progress,
                 minHeight: 3,
                 backgroundColor: Colors.white10,
-                color: const Color(0xFFA855F7),
+                color: themeState.accent,
               ),
             ),
           ],

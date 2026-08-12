@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../state/video_library_state.dart';
+import '../state/theme_state.dart';
 
 /// VLC-style "Display settings" sheet: list/grid toggle, favourites filter,
 /// grouping, playback action and grouped sort options with direction choices.
@@ -9,7 +10,7 @@ class DisplaySettingsSheet extends StatelessWidget {
 
   const DisplaySettingsSheet({super.key, required this.library});
 
-  static const Color _accent = Color(0xFFA855F7);
+  static Color get _accent => themeState.accent;
   static const Color _surface = Color(0xFF1a1a24);
 
   static Future<void> show(BuildContext context, VideoLibraryState library) {
@@ -26,9 +27,10 @@ class DisplaySettingsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Rebuilds whenever the library notifies, so checkmarks update in place.
+    // Rebuilds whenever the library OR theme notifies, so checkmarks and
+    // swatch selection update in place.
     return AnimatedBuilder(
-      animation: library,
+      animation: Listenable.merge([library, themeState]),
       builder: (context, _) {
         final lib = library;
         return SafeArea(
@@ -51,8 +53,8 @@ class DisplaySettingsSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(20, 14, 20, 4),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
                   child: Text(
                     'Display settings',
                     style: TextStyle(
@@ -99,7 +101,31 @@ class DisplaySettingsSheet extends StatelessWidget {
                       lib.setPlaybackAction(a ?? PlaybackAction.all),
                 ),
                 const Padding(
-                  padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
+                  padding: EdgeInsets.fromLTRB(20, 14, 20, 2),
+                  child: Text(
+                    'Theme color',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 6),
+                  child: Row(
+                    children: [
+                      for (final c in ThemeState.swatches)
+                        _ColorSwatch(
+                          color: c,
+                          selected: themeState.accent.toARGB32() == c.toARGB32(),
+                          onTap: () => themeState.setAccent(c),
+                        ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
                   child: Text(
                     'Sort by...',
                     style: TextStyle(
@@ -144,6 +170,41 @@ class DisplaySettingsSheet extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _ColorSwatch extends StatelessWidget {
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ColorSwatch({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(right: 12),
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? Colors.white : Colors.transparent,
+            width: 2.5,
+          ),
+        ),
+        child: selected
+            ? const Icon(Icons.check, size: 16, color: Colors.white)
+            : null,
+      ),
     );
   }
 }
@@ -377,7 +438,7 @@ class _SortOption extends StatelessWidget {
             SizedBox(
               width: 22,
               child: active
-                  ? const Icon(Icons.check,
+                  ? Icon(Icons.check,
                       size: 18, color: DisplaySettingsSheet._accent)
                   : null,
             ),

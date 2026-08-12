@@ -1,9 +1,12 @@
 package com.example.maxplayer
 
+import android.app.PictureInPictureParams
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -119,6 +122,21 @@ class MainActivity : FlutterActivity() {
                     pendingOpenFailed = null
                     result.success(map)
                 }
+                "enterPip" -> {
+                    result.success(try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            enterPictureInPictureMode(
+                                PictureInPictureParams.Builder().build()
+                            )
+                        } else {
+                            @Suppress("DEPRECATION")
+                            enterPictureInPictureMode()
+                        }
+                        true
+                    } catch (e: Exception) {
+                        false
+                    })
+                }
                 else -> result.notImplemented()
             }
         }
@@ -131,6 +149,14 @@ class MainActivity : FlutterActivity() {
             channel?.invokeMethod("onOpenVideoFailed", it)
             pendingOpenFailed = null
         }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        channel?.invokeMethod("onPipChanged", isInPictureInPictureMode)
     }
 
     private fun handleViewIntent(intent: Intent?) {

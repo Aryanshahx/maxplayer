@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:maxplayer/models/video_track.dart';
+import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/video_library_state.dart';
 import 'package:maxplayer/utils/formatters.dart';
 
@@ -88,6 +89,34 @@ void main() {
     test('null when dimensions unknown', () {
       expect(q(null, null), isNull);
       expect(q(0, 0), isNull);
+    });
+  });
+
+  group('equalizer filter builder', () {
+    test('all-zero gains produce an empty filter (clears af)', () {
+      expect(MediaPlayerState.buildEqualizerFilter([0, 0, 0, 0, 0]), '');
+    });
+
+    test('skips flat bands and formats the rest as lavfi', () {
+      final f =
+          MediaPlayerState.buildEqualizerFilter([6, 0, -2, 0, 3.5]);
+      expect(f,
+          'lavfi=[equalizer=f=60:t=q:w=1.0:g=6.0,equalizer=f=910:t=q:w=1.0:g=-2.0,equalizer=f=14000:t=q:w=1.0:g=3.5]');
+    });
+  });
+
+  group('watch stats', () {
+    test('stats key is a sortable YYYYMMDD bucket', () {
+      expect(MediaPlayerState.statsKeyFor(DateTime(2026, 8, 11)),
+          'stats.20260811');
+      expect(MediaPlayerState.statsKeyFor(DateTime(2026, 1, 5)),
+          'stats.20260105');
+    });
+
+    test('formatWatchTime', () {
+      expect(formatWatchTime(30), '30s');
+      expect(formatWatchTime(45 * 60), '45m');
+      expect(formatWatchTime(2 * 3600 + 15 * 60), '2h 15m');
     });
   });
 

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart' hide RepeatMode;
 import '../models/video_track.dart' show RepeatMode;
 import '../state/media_player_state.dart';
+import '../state/theme_state.dart';
 import 'progress_bar.dart';
 import 'track_selection_sheet.dart';
 
 /// Controls drawn on top of the video. Two slim rows are used instead of one
 /// long row - the previous single-row layout needed ~540dp and overflowed
-/// (black/yellow error stripes) on portrait phones.
+/// (black/yellow error stripes) on portrait phones. Row 2 uses compact 34dp
+/// buttons so all options fit on narrow screens.
 ///
 /// This widget rebuilds itself via [AnimatedBuilder] on every player tick,
 /// so the parent screen does NOT rebuild (which kept recreating the video
@@ -24,6 +26,10 @@ class PlayerControlsOverlay extends StatelessWidget {
   /// Cycles the video fit (contain -> cover -> fill).
   final VoidCallback onCycleFit;
 
+  /// Rotation lock toggle (auto-rotate vs locked to current orientation).
+  final bool orientationLocked;
+  final VoidCallback onToggleOrientationLock;
+
   const PlayerControlsOverlay({
     super.key,
     required this.player,
@@ -32,10 +38,13 @@ class PlayerControlsOverlay extends StatelessWidget {
     required this.onToggleQueue,
     required this.onInteract,
     required this.onCycleFit,
+    required this.orientationLocked,
+    required this.onToggleOrientationLock,
   });
 
   @override
   Widget build(BuildContext context) {
+    final accent = themeState.accent;
     return AnimatedBuilder(
       animation: player,
       builder: (context, _) {
@@ -99,7 +108,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                   ),
                 ],
               ),
-              // Row 2: options (mute speed audio subs fit | queue fullscreen)
+              // Row 2 (compact): mute speed audio subs fit AB rotate | queue fs
               Row(
                 children: [
                   _iconBtn(
@@ -107,6 +116,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                         ? Icons.volume_off
                         : Icons.volume_up,
                     onTap: player.toggleMute,
+                    compact: true,
                   ),
                   _speedMenu(),
                   _iconBtn(
@@ -118,6 +128,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                       player,
                       isSubtitle: false,
                     ),
+                    compact: true,
                   ),
                   _iconBtn(
                     icon: player.subtitlesActive
@@ -129,15 +140,34 @@ class PlayerControlsOverlay extends StatelessWidget {
                       player,
                       isSubtitle: true,
                     ),
+                    compact: true,
                   ),
-                  _iconBtn(icon: Icons.aspect_ratio, onTap: onCycleFit),
+                  _iconBtn(
+                    icon: Icons.aspect_ratio,
+                    onTap: onCycleFit,
+                    compact: true,
+                  ),
+                  _abButton(accent),
+                  _iconBtn(
+                    icon: orientationLocked
+                        ? Icons.screen_lock_rotation
+                        : Icons.screen_rotation,
+                    active: orientationLocked,
+                    onTap: onToggleOrientationLock,
+                    compact: true,
+                  ),
                   const Spacer(),
-                  _iconBtn(icon: Icons.queue_music, onTap: onToggleQueue),
+                  _iconBtn(
+                    icon: Icons.queue_music,
+                    onTap: onToggleQueue,
+                    compact: true,
+                  ),
                   _iconBtn(
                     icon: isFullscreen
                         ? Icons.fullscreen_exit
                         : Icons.fullscreen,
                     onTap: onToggleFullscreen,
+                    compact: true,
                   ),
                 ],
               ),
@@ -145,6 +175,48 @@ class PlayerControlsOverlay extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  /// A-B loop: compact two-letter button; each letter lights up when set.
+  Widget _abButton(Color accent) {
+    final hasA = player.loopA != null;
+    final hasB = player.loopB != null;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () {
+        player.tapLoopPoint();
+        onInteract();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: 'A',
+                style: TextStyle(
+                  color: hasA ? accent : Colors.white54,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+              const TextSpan(
+                text: '→',
+                style: TextStyle(color: Colors.white38, fontSize: 11),
+              ),
+              TextSpan(
+                text: 'B',
+                style: TextStyle(
+                  color: hasB ? accent : Colors.white54,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -164,9 +236,9 @@ class PlayerControlsOverlay extends StatelessWidget {
               ))
           .toList(),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
         child: Text('${player.playbackRate}x',
-            style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            style: const TextStyle(color: Colors.white70, fontSize: 11)),
       ),
     );
   }
@@ -176,10 +248,17 @@ class PlayerControlsOverlay extends StatelessWidget {
     required VoidCallback onTap,
     bool active = false,
     double size = 24,
+    bool compact = false,
   }) {
+    final accent = themeState.accent;
     return IconButton(
-      icon: Icon(icon,
-          size: size, color: active ? const Color(0xFFA855F7) : Colors.white),
+      icon: Icon(icon, size: compact ? 20 : size,
+          color: active ? accent : Colors.white),
+      // Compact rows must fit ~9 actions on a 320dp-wide phone.
+      constraints:
+          compact ? const BoxConstraints.tightFor(width: 34, height: 40) : null,
+      padding: compact ? EdgeInsets.zero : null,
+      visualDensity: compact ? VisualDensity.compact : null,
       // Every press also restarts the screen's auto-hide countdown.
       onPressed: () {
         onTap();

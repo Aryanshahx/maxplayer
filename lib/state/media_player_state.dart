@@ -52,6 +52,23 @@ class MediaPlayerState extends ChangeNotifier {
   double brightness = 1.0;
   bool _brightnessSynced = false;
 
+  // --- A-B loop ---
+  Duration? loopA;
+  Duration? loopB;
+  bool get abLoopActive => loopA != null && loopB != null;
+
+  // --- Long-press speed boost ---
+  double? _preBoostRate;
+
+  // --- Equalizer (libmpv lavfi filter chain) ---
+  static const List<int> eqFrequencies = [60, 230, 910, 3600, 14000];
+  List<double> eqGains = List.filled(eqFrequencies.length, 0);
+  bool eqEnabled = false;
+
+  // --- Watch-time stats ---
+  int _watchTodaySecs = 0;
+  String _todayStatsKey = '';
+
   // --- Watch history (drives the home History screen + resume playback) ---
   final List<HistoryEntry> _history = [];
   bool _historyLoaded = false;
@@ -74,6 +91,12 @@ class MediaPlayerState extends ChangeNotifier {
       }),
       player.stream.position.listen((v) {
         position = v;
+        // Enforce the A-B loop window.
+        final a = loopA;
+        final b = loopB;
+        if (a != null && b != null && b > a && v >= b) {
+          player.seek(a);
+        }
         notifyListeners();
       }),
       player.stream.duration.listen((v) {
@@ -100,12 +123,30 @@ class MediaPlayerState extends ChangeNotifier {
       }),
     ];
     player.setVolume(volume * 100);
-    _ensureHistoryLoaded();
-    // Persist the resume point of the current video every few seconds.
+    _init();
+    // Persist the resume point + watch time every few seconds.
     _bookmarkTimer = Timer.periodic(
       const Duration(seconds: 5),
-      (_) => _saveBookmark(),
+      (_) {
+        _saveBookmark();
+        _trackWatchTime();
+      },
     );
+  }
+
+  Future<void> _init() async {
+    await _ensureHistoryLoaded();
+    final s = await NativeBridge.loadSettings();
+    // Restore today's accumulated watch time.
+    _todayStatsKey = statsKeyFor(DateTime.now());
+    _watchTodaySecs = int.tryParse(s[_todayStatsKey] ?? '') ?? 0;
+    // Restore equalizer.
+    eqEnabled = s[_kEqEnabledKey] == 'true';
+    final gainsRaw = (s[_kEqGainsKey] ?? '').split(',');
+    for (var i = 0; i < eqFrequencies.length && i < gainsRaw.length; i++) {
+      eqGains[i] = double.tryParse(gainsRaw[i]) ?? 0;
+    }
+    if (eqEnabled) _applyEqFilter();
   }
 
   // ---------------------------------------------------------------------------
@@ -195,6 +236,13 @@ class MediaPlayerState extends ChangeNotifier {
     await setPlaylistAndPlay([track], 0);
   }
 
+  /// Play a network stream URL (http/https/rtsp/rtmp). Handled directly by
+  /// libmpv - the local-file metadata pipeline is skipped upstream.
+  Future<void> playStream(String url, String title) async {
+    final track = VideoTrack(id: url, title: title, path: url);
+    await setPlaylistAndPlay([track], 0);
+  }
+
   List<int> _generateShuffledOrder(int length, int currentIdx) {
     final indices = List.generate(length, (i) => i)..remove(currentIdx);
     indices.shuffle(_rand);
@@ -232,6 +280,9 @@ class MediaPlayerState extends ChangeNotifier {
   Future<void> _loadCurrent({required bool autoplay}) async {
     final track = currentTrack;
     if (track == null) return;
+    // A new file invalidates any A-B loop points from the previous one.
+    loopA = null;
+    loopB = null;
     await player.open(Media(track.path), play: autoplay);
     await player.setRate(playbackRate);
     await _recordOpen(track);
@@ -370,6 +421,145 @@ class MediaPlayerState extends ChangeNotifier {
   bool get subtitlesActive =>
       currentSubtitleTrack != null && currentSubtitleTrack!.id != 'no';
 
+  // ---------------------------------------------------------------------------
+  // A-B loop
+  // ---------------------------------------------------------------------------
+
+  /// Button callback: 1st tap sets A, 2nd sets B (loop starts), 3rd clears.
+  /// Returns a short message for the on-screen indicator.
+  String tapLoopPoint() {
+    if (loopA == null) {
+      loopA = position;
+      notifyListeners();
+      return 'A set ${formatDuration(position)}';
+    }
+    if (loopB == null) {
+      // Ignore a B that's not after A (user double-tapped by accident).
+      if (position <= loopA! + const Duration(seconds: 1)) {
+        loopA = position;
+        notifyListeners();
+        return 'A set ${formatDuration(position)}';
+      }
+      loopB = position;
+      notifyListeners();
+      return 'Looping ${formatDuration(loopA!)} → ${formatDuration(loopB!)}';
+    }
+    loopA = null;
+    loopB = null;
+    notifyListeners();
+    return 'A-B loop cleared';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Long-press speed boost (customizable multiplier)
+  // ---------------------------------------------------------------------------
+
+  Future<void> startSpeedBoost(double multiplier) async {
+    if (_preBoostRate != null) return; // already boosting
+    _preBoostRate = playbackRate;
+    playbackRate = multiplier;
+    await player.setRate(multiplier);
+    notifyListeners();
+  }
+
+  Future<void> stopSpeedBoost() async {
+    final restore = _preBoostRate;
+    if (restore == null) return;
+    _preBoostRate = null;
+    playbackRate = restore;
+    await player.setRate(restore);
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Equalizer (libmpv `af` lavfi chain)
+  // ---------------------------------------------------------------------------
+
+  static const String _kEqEnabledKey = 'eq.enabled';
+  static const String _kEqGainsKey = 'eq.gains';
+
+  /// Builds the lavfi audio-filter chain, skipping bands at 0 dB.
+  /// Pure + testable.
+  static String buildEqualizerFilter(List<double> gains) {
+    final parts = <String>[];
+    for (var i = 0; i < eqFrequencies.length && i < gains.length; i++) {
+      if (gains[i] == 0) continue;
+      parts.add(
+          'equalizer=f=${eqFrequencies[i]}:t=q:w=1.0:g=${gains[i].toStringAsFixed(1)}');
+    }
+    return parts.isEmpty ? '' : 'lavfi=[${parts.join(',')}]';
+  }
+
+  Future<void> applyEqualizer(List<double> gains, bool enabled) async {
+    eqGains = List.of(gains);
+    eqEnabled = enabled;
+    NativeBridge.saveSetting(_kEqEnabledKey, '$enabled');
+    NativeBridge.saveSetting(
+        _kEqGainsKey, gains.map((g) => g.toStringAsFixed(1)).join(','));
+    notifyListeners();
+    await _applyEqFilter();
+  }
+
+  Future<void> _applyEqFilter() async {
+    final platform = player.platform;
+    if (platform is NativePlayer) {
+      try {
+        await platform.setProperty(
+            'af', eqEnabled ? buildEqualizerFilter(eqGains) : '');
+      } catch (_) {}
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Watch-time stats
+  // ---------------------------------------------------------------------------
+
+  /// Persisted key for a day bucket, e.g. stats.20260811. Pure + testable.
+  static String statsKeyFor(DateTime d) =>
+      'stats.${d.year * 10000 + d.month * 100 + d.day}';
+
+  void _trackWatchTime() {
+    if (!isPlaying) return;
+    final key = statsKeyFor(DateTime.now());
+    if (key != _todayStatsKey) {
+      // Day rolled over while playing.
+      _todayStatsKey = key;
+      _watchTodaySecs = 0;
+    }
+    _watchTodaySecs += 5;
+    NativeBridge.saveSetting(key, '$_watchTodaySecs');
+  }
+
+  /// Last 7 days of watch time (index 0 = 6 days ago, last = today).
+  Future<List<WatchDay>> getWeekStats() async {
+    final s = await NativeBridge.loadSettings();
+    final now = DateTime.now();
+    final todayKey = statsKeyFor(now);
+    final days = <WatchDay>[];
+    for (var i = 6; i >= 0; i--) {
+      final d = now.subtract(Duration(days: i));
+      final key = statsKeyFor(d);
+      var secs = int.tryParse(s[key] ?? '') ?? 0;
+      if (key == todayKey && _watchTodaySecs > secs) secs = _watchTodaySecs;
+      days.add(WatchDay(d, secs));
+    }
+    return days;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mini player
+  // ---------------------------------------------------------------------------
+
+  /// Dismisses the mini player: clears the queue and stops playback.
+  Future<void> stopMini() async {
+    playlist = [];
+    currentIndex = 0;
+    notifyListeners();
+    await player.stop();
+  }
+
+
+
   Future<void> nextTrack() async {
     if (playlist.length <= 1) return;
     await playTrack(_getNextIndex(forward: true));
@@ -444,4 +634,11 @@ class MediaPlayerState extends ChangeNotifier {
     player.dispose();
     super.dispose();
   }
+}
+
+/// One day of watch time for the stats screen.
+class WatchDay {
+  final DateTime day;
+  final int seconds;
+  const WatchDay(this.day, this.seconds);
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../utils/formatters.dart';
+import '../state/theme_state.dart';
 
 class VideoProgressBar extends StatefulWidget {
   final Duration position;
@@ -34,9 +35,9 @@ class _VideoProgressBarState extends State<VideoProgressBar> {
               trackHeight: 3,
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-              activeTrackColor: const Color(0xFFA855F7),
+              activeTrackColor: themeState.accent,
               inactiveTrackColor: Colors.white.withValues(alpha: 0.15),
-              thumbColor: const Color(0xFFA855F7),
+              thumbColor: themeState.accent,
             ),
             child: Slider(
               value: value,

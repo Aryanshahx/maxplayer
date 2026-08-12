@@ -11,6 +11,12 @@ class PlayerSettings {
   final bool brightnessSwipe;
   final bool pinchZoom;
 
+  /// Hold a finger on the video to temporarily play faster.
+  final bool longPressSpeed;
+
+  /// Multiplier applied while long-pressing (1.5 / 2.0 / 2.5 / 3.0).
+  final double longPressMultiplier;
+
   /// Seconds of inactivity before the controls vanish. 0 = never auto-hide.
   final int autoHideSeconds;
 
@@ -24,6 +30,8 @@ class PlayerSettings {
     this.volumeSwipe = true,
     this.brightnessSwipe = true,
     this.pinchZoom = true,
+    this.longPressSpeed = true,
+    this.longPressMultiplier = 2.0,
     this.autoHideSeconds = 4,
     this.resumePlayback = true,
   });
@@ -35,6 +43,8 @@ class PlayerSettings {
   static const String kVolumeSwipe = 'player.volumeSwipe';
   static const String kBrightnessSwipe = 'player.brightnessSwipe';
   static const String kPinchZoom = 'player.pinchZoom';
+  static const String kLongPressSpeed = 'player.longPressSpeed';
+  static const String kLongPressMultiplier = 'player.longPressMultiplier';
   static const String kAutoHideSeconds = 'player.autoHideSeconds';
   static const String kResumePlayback = 'player.resumePlayback';
 
@@ -48,6 +58,10 @@ class PlayerSettings {
       volumeSwipe: s[kVolumeSwipe] != 'false',
       brightnessSwipe: s[kBrightnessSwipe] != 'false',
       pinchZoom: s[kPinchZoom] != 'false',
+      longPressSpeed: s[kLongPressSpeed] != 'false',
+      longPressMultiplier:
+          double.tryParse(s[kLongPressMultiplier] ?? '') ??
+              d.longPressMultiplier,
       autoHideSeconds:
           int.tryParse(s[kAutoHideSeconds] ?? '') ?? d.autoHideSeconds,
       resumePlayback: s[kResumePlayback] != 'false',
@@ -61,6 +75,9 @@ class PlayerSettings {
     NativeBridge.saveSetting(kVolumeSwipe, '$volumeSwipe');
     NativeBridge.saveSetting(kBrightnessSwipe, '$brightnessSwipe');
     NativeBridge.saveSetting(kPinchZoom, '$pinchZoom');
+    NativeBridge.saveSetting(kLongPressSpeed, '$longPressSpeed');
+    NativeBridge.saveSetting(
+        kLongPressMultiplier, longPressMultiplier.toStringAsFixed(1));
     NativeBridge.saveSetting(kAutoHideSeconds, '$autoHideSeconds');
     return NativeBridge.saveSetting(kResumePlayback, '$resumePlayback');
   }
@@ -72,6 +89,8 @@ class PlayerSettings {
     bool? volumeSwipe,
     bool? brightnessSwipe,
     bool? pinchZoom,
+    bool? longPressSpeed,
+    double? longPressMultiplier,
     int? autoHideSeconds,
     bool? resumePlayback,
   }) {
@@ -82,6 +101,8 @@ class PlayerSettings {
       volumeSwipe: volumeSwipe ?? this.volumeSwipe,
       brightnessSwipe: brightnessSwipe ?? this.brightnessSwipe,
       pinchZoom: pinchZoom ?? this.pinchZoom,
+      longPressSpeed: longPressSpeed ?? this.longPressSpeed,
+      longPressMultiplier: longPressMultiplier ?? this.longPressMultiplier,
       autoHideSeconds: autoHideSeconds ?? this.autoHideSeconds,
       resumePlayback: resumePlayback ?? this.resumePlayback,
     );

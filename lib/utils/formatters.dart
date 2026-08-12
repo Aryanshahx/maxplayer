@@ -20,6 +20,14 @@ String formatDuration(Duration? d) {
   return '$m:${s.toString().padLeft(2, '0')}';
 }
 
+/// Compact watch-time totals for the stats screen ("2h 15m", "45m", "30s").
+String formatWatchTime(int seconds) {
+  if (seconds < 60) return '${seconds}s';
+  final m = seconds ~/ 60;
+  if (m < 60) return '${m}m';
+  return '${m ~/ 60}h ${m % 60}m';
+}
+
 /// Relative "watched" timestamps for the history list ("5m ago", "3h ago",
 /// "12 Aug", ...).
 String timeAgo(int msSinceEpoch) {

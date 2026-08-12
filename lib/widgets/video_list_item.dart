@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../utils/formatters.dart';
+import '../state/theme_state.dart';
 
 /// List-mode row for the library (see "Display in list" in the settings
 /// sheet): small thumbnail, title, size + duration, and a favourite toggle.
@@ -57,7 +58,7 @@ class VideoListItem extends StatelessWidget {
         icon: Icon(
           isFavorite ? Icons.favorite : Icons.favorite_border,
           size: 20,
-          color: isFavorite ? const Color(0xFFA855F7) : Colors.white38,
+          color: isFavorite ? themeState.accent : Colors.white38,
         ),
         onPressed: onFavorite,
       ),

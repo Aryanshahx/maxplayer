@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../state/player_settings.dart';
+import '../state/theme_state.dart';
 
 /// "Player settings" sheet - customize every gesture and playback behavior.
 /// Changes are saved immediately and picked up by the open PlayerScreen.
 class PlayerSettingsSheet extends StatefulWidget {
   const PlayerSettingsSheet({super.key});
 
-  static const Color _accent = Color(0xFFA855F7);
+  static Color get _accent => themeState.accent;
   static const Color _surface = Color(0xFF1a1a24);
 
   static Future<void> show(BuildContext context) {
@@ -72,8 +73,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 ),
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 14, 20, 4),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
               child: Text(
                 'Player settings',
                 style: TextStyle(
@@ -84,11 +85,11 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               ),
             ),
             if (!_loaded)
-              const Padding(
-                padding: EdgeInsets.all(32),
+              Padding(
+                padding: const EdgeInsets.all(32),
                 child: Center(
-                  child:
-                      CircularProgressIndicator(color: PlayerSettingsSheet._accent),
+                  child: CircularProgressIndicator(
+                      color: PlayerSettingsSheet._accent),
                 ),
               )
             else ...[
@@ -140,6 +141,27 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 value: _settings.pinchZoom,
                 onChanged: (v) => _update(_settings.copyWith(pinchZoom: v)),
               ),
+              _SwitchTile(
+                icon: Icons.fast_forward,
+                label: 'Long-press to speed up',
+                subtitle: 'Hold finger on the video',
+                value: _settings.longPressSpeed,
+                onChanged: (v) =>
+                    _update(_settings.copyWith(longPressSpeed: v)),
+                trailing: _settings.longPressSpeed
+                    ? _MiniDropdown<double>(
+                        value: _settings.longPressMultiplier,
+                        entries: {
+                          1.5: '1.5x',
+                          2.0: '2x',
+                          2.5: '2.5x',
+                          3.0: '3x',
+                        },
+                        onChanged: (v) => _update(_settings.copyWith(
+                            longPressMultiplier: v ?? 2.0)),
+                      )
+                    : null,
+              ),
               const _SectionHeader('Playback'),
               _SwitchTile(
                 icon: Icons.timer_off_outlined,
@@ -184,7 +206,7 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
       child: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           color: PlayerSettingsSheet._accent,
           fontSize: 14,
           fontWeight: FontWeight.bold,

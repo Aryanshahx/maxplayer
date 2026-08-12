@@ -9,6 +9,7 @@ import 'screens/library_screen.dart';
 import 'screens/player_screen.dart';
 import 'services/native_bridge.dart';
 import 'state/media_player_state.dart';
+import 'state/theme_state.dart';
 import 'state/video_library_state.dart';
 
 // Global keys so a native "Open with" callback can navigate + snackbar from
@@ -37,8 +38,10 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
   @override
   void initState() {
     super.initState();
+    // App-wide accent color (persisted).
+    themeState.load();
     // "Open with Max Player" from other apps: warm delivery ...
-    NativeBridge.setOpenVideoHandler(
+    NativeBridge.configureCallbacks(
       onOpenVideo: _openExternalVideo,
       onOpenVideoFailed: _externalOpenFailed,
     );
@@ -101,21 +104,27 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: _navigatorKey,
-      scaffoldMessengerKey: _messengerKey,
-      title: 'Max Player',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0a0a0f),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFA855F7),
-          brightness: Brightness.dark,
-        ),
-      ),
-      home: LibraryScreen(library: library, player: player),
+    // Rebuild the whole app when the accent color changes.
+    return AnimatedBuilder(
+      animation: themeState,
+      builder: (context, _) {
+        return MaterialApp(
+          navigatorKey: _navigatorKey,
+          scaffoldMessengerKey: _messengerKey,
+          title: 'Max Player',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.dark,
+            scaffoldBackgroundColor: const Color(0xFF0a0a0f),
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: themeState.accent,
+              brightness: Brightness.dark,
+            ),
+          ),
+          home: LibraryScreen(library: library, player: player),
+        );
+      },
     );
   }
 }

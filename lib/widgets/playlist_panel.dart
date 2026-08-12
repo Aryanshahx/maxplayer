@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../utils/formatters.dart';
+import '../state/theme_state.dart';
 
 class PlaylistPanel extends StatelessWidget {
   final List<VideoTrack> playlist;
@@ -57,8 +58,8 @@ class PlaylistPanel extends StatelessWidget {
                         color: Colors.black87,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.equalizer,
-                          size: 10, color: Color(0xFFA855F7)),
+                      child: Icon(Icons.equalizer,
+                          size: 10, color: themeState.accent),
                     ),
                   ),
               ],

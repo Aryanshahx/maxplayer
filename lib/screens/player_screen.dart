@@ -4,8 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../services/native_bridge.dart';
 import '../state/media_player_state.dart';
 import '../state/player_settings.dart';
+import '../state/theme_state.dart';
+import '../widgets/equalizer_sheet.dart';
 import '../widgets/player_controls_overlay.dart';
 import '../widgets/player_settings_sheet.dart';
 import '../widgets/playlist_panel.dart';
@@ -27,6 +30,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   bool _controlsVisible = true;
   bool _isFullscreen = false;
   bool _showQueue = false;
+  bool _isPip = false;
+
+  // Orientation lock (rotation toggle in the controls).
+  bool _orientationLocked = false;
+  List<DeviceOrientation> _lockedOrientations = DeviceOrientation.values;
 
   // Customizable behavior (persisted, edited in the Settings sheet).
   PlayerSettings _settings = const PlayerSettings();
@@ -77,6 +85,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.addObserver(this);
     _noticeSub =
         widget.player.notices.listen((m) => _showIndicator(m, Icons.history));
+    NativeBridge.configureCallbacks(
+      onPipChanged: (isPip) {
+        if (mounted) setState(() => _isPip = isPip);
+      },
+    );
     _reloadSettings();
     widget.player.currentBrightness(); // sync once for the swipe gesture
     _startHideTimer();
@@ -184,7 +197,44 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   void _exitFullscreen() {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    // Respect an active rotation lock when leaving fullscreen.
+    SystemChrome.setPreferredOrientations(
+        _orientationLocked ? _lockedOrientations : DeviceOrientation.values);
+  }
+
+  /// Rotation toggle: auto-rotate <-> locked to the CURRENT orientation.
+  void _toggleOrientationLock() {
+    if (!_orientationLocked) {
+      final landscape =
+          MediaQuery.of(context).orientation == Orientation.landscape;
+      _lockedOrientations = landscape
+          ? const [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
+          : const [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown];
+      SystemChrome.setPreferredOrientations(_lockedOrientations);
+      setState(() => _orientationLocked = true);
+      _showIndicator('Rotation locked', Icons.screen_lock_rotation);
+    } else {
+      _lockedOrientations = DeviceOrientation.values;
+      SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+      setState(() => _orientationLocked = false);
+      _showIndicator('Auto-rotate on', Icons.screen_rotation);
+    }
+    _onUserInteraction();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Long-press speed boost (customizable multiplier)
+  // ---------------------------------------------------------------------------
+
+  void _onLongPressStart(LongPressStartDetails _) {
+    if (!_settings.longPressSpeed) return;
+    widget.player.startSpeedBoost(_settings.longPressMultiplier);
+    _showIndicator(
+        '${_settings.longPressMultiplier}x ▶▶', Icons.fast_forward);
+  }
+
+  void _onLongPressEnd(LongPressEndDetails _) {
+    widget.player.stopSpeedBoost();
   }
 
   void _cycleFit() {
@@ -316,7 +366,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        appBar: _isFullscreen
+        appBar: _isFullscreen || _isPip
             ? null
             : AppBar(
                 backgroundColor: Colors.black,
@@ -329,6 +379,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   ),
                 ),
                 actions: [
+                  IconButton(
+                    tooltip: 'Equalizer',
+                    icon: const Icon(Icons.graphic_eq),
+                    onPressed: () =>
+                        EqualizerSheet.show(context, widget.player),
+                  ),
+                  IconButton(
+                    tooltip: 'Picture in picture',
+                    icon: const Icon(Icons.picture_in_picture_alt_outlined),
+                    onPressed: () => NativeBridge.enterPip(),
+                  ),
                   IconButton(
                     tooltip: 'Player settings',
                     icon: const Icon(Icons.settings_outlined),
@@ -352,6 +413,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       onDoubleTapDown: (d) =>
                           _lastDoubleTapDx = d.localPosition.dx,
                       onDoubleTap: _onDoubleTap,
+                      onLongPressStart: _onLongPressStart,
+                      onLongPressEnd: _onLongPressEnd,
                       onVerticalDragStart: _onVerticalDragStart,
                       onVerticalDragUpdate: _onVerticalDragUpdate,
                       onVerticalDragEnd: _onVerticalDragEnd,
@@ -391,16 +454,16 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                             child: AnimatedBuilder(
                               animation: player,
                               builder: (context, _) => player.isLoading
-                                  ? const Center(
+                                  ? Center(
                                       child: CircularProgressIndicator(
-                                          color: Color(0xFFA855F7)),
+                                          color: themeState.accent),
                                     )
                                   : const SizedBox.shrink(),
                             ),
                           ),
                           // Transient indicator (seek / volume / brightness /
                           // zoom / resume / fit / play-pause).
-                          if (_indicatorText != null)
+                          if (_indicatorText != null && !_isPip)
                             Positioned(
                               top: 72,
                               left: 0,
@@ -437,7 +500,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                 ),
                               ),
                             ),
-                          if (_controlsVisible)
+                          if (_controlsVisible && !_isPip)
                             Positioned(
                               left: 0,
                               right: 0,
@@ -452,6 +515,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                 },
                                 onInteract: _onUserInteraction,
                                 onCycleFit: _cycleFit,
+                                orientationLocked: _orientationLocked,
+                                onToggleOrientationLock: _toggleOrientationLock,
                               ),
                             ),
                         ],
@@ -460,7 +525,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   },
                 ),
               ),
-              if (_showQueue && !_isFullscreen)
+              if (_showQueue && !_isFullscreen && !_isPip)
                 SizedBox(
                   width: 280,
                   child: Container(

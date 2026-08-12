@@ -23,11 +23,55 @@ class VideoMetadata {
 ///    AGP 9 / Kotlin 2.3 toolchain — the native side has no external deps.
 ///  - [loadSettings] / [saveSetting]: a tiny key/value store backed by
 ///    Android SharedPreferences, avoiding another plugin dependency.
+///  - brightness helpers for the player's left-half swipe.
+///  - "Open with" VIDEO intent delivery (cold + warm).
+///  - Picture-in-picture enter + state callbacks.
+///
+/// IMPORTANT: there is exactly ONE MethodChannel.setMethodCallHandler
+/// registration ([_dispatch]) — a second registration would silently replace
+/// the first. All native->Dart events flow through the callbacks configured
+/// via [configureCallbacks].
 ///
 /// EVERY call is guarded: where the channel doesn't exist (unit tests,
 /// desktop platforms), calls fail silently and return empty values.
 class NativeBridge {
   static const MethodChannel _channel = MethodChannel('maxplayer/native');
+
+  static void Function(String path)? _onOpenVideo;
+  static void Function(String uri)? _onOpenVideoFailed;
+  static void Function(bool isPip)? _onPipChanged;
+  static bool _handlerRegistered = false;
+
+  /// Registers (or replaces) the app-level native event callbacks.
+  static void configureCallbacks({
+    void Function(String path)? onOpenVideo,
+    void Function(String uri)? onOpenVideoFailed,
+    void Function(bool isPip)? onPipChanged,
+  }) {
+    if (onOpenVideo != null) _onOpenVideo = onOpenVideo;
+    if (onOpenVideoFailed != null) _onOpenVideoFailed = onOpenVideoFailed;
+    if (onPipChanged != null) _onPipChanged = onPipChanged;
+    if (_handlerRegistered) return;
+    _handlerRegistered = true;
+    _channel.setMethodCallHandler(_dispatch);
+  }
+
+  static Future<dynamic> _dispatch(MethodCall call) async {
+    switch (call.method) {
+      case 'onOpenVideo':
+        final p = call.arguments as String?;
+        if (p != null && p.isNotEmpty) _onOpenVideo?.call(p);
+        break;
+      case 'onOpenVideoFailed':
+        final u = call.arguments as String?;
+        if (u != null) _onOpenVideoFailed?.call(u);
+        break;
+      case 'onPipChanged':
+        _onPipChanged?.call(call.arguments == true);
+        break;
+    }
+    return null;
+  }
 
   static Future<VideoMetadata> fetchMetadata(String path) async {
     try {
@@ -115,23 +159,11 @@ class NativeBridge {
     }
   }
 
-  /// Warm-start delivery: registers the callbacks fired when another app
-  /// opens a video with Max Player while it is already running.
-  static void setOpenVideoHandler({
-    required void Function(String path) onOpenVideo,
-    void Function(String uri)? onOpenVideoFailed,
-  }) {
-    _channel.setMethodCallHandler((call) async {
-      switch (call.method) {
-        case 'onOpenVideo':
-          final p = call.arguments as String?;
-          if (p != null && p.isNotEmpty) onOpenVideo(p);
-          break;
-        case 'onOpenVideoFailed':
-          final u = call.arguments as String?;
-          if (u != null) onOpenVideoFailed?.call(u);
-          break;
-      }
-    });
+  // --- Picture in picture ---
+
+  static Future<void> enterPip() async {
+    try {
+      await _channel.invokeMethod('enterPip');
+    } catch (_) {}
   }
 }
