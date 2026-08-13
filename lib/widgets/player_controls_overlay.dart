@@ -1,22 +1,28 @@
-import 'package:flutter/material.dart' hide RepeatMode;
-import '../models/video_track.dart' show RepeatMode;
+import 'package:flutter/material.dart';
+
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
+import '../utils/formatters.dart';
 import 'progress_bar.dart';
 import 'track_selection_sheet.dart';
 
-/// Controls drawn on top of the video. Two slim rows are used instead of one
-/// long row - the previous single-row layout needed ~540dp and overflowed
-/// (black/yellow error stripes) on portrait phones. Row 2 uses compact 34dp
-/// buttons so all options fit on narrow screens.
+/// Controls drawn on top of the video - v19 final-polish layout:
+///
+///   [progress bar, with scrub thumbnail preview]
+///   row 1:  previous  -  play/pause  -  next            (centered trio)
+///   row 2:  mute - speed - Tracks(subs/audio/A-B) - rotation lock
+///           ...  queue - fit
+///
+/// Removed per the final polish pass: shuffle, repeat, the dedicated
+/// +/-10 s buttons (horizontal drag-seek covers them) and the fullscreen
+/// button (sensor auto-rotate replaces it); the fit cycle moved to the
+/// corner where fullscreen used to sit.
 ///
 /// This widget rebuilds itself via [AnimatedBuilder] on every player tick,
 /// so the parent screen does NOT rebuild (which kept recreating the video
 /// surface and caused fullscreen flicker).
 class PlayerControlsOverlay extends StatelessWidget {
   final MediaPlayerState player;
-  final bool isFullscreen;
-  final VoidCallback onToggleFullscreen;
   final VoidCallback onToggleQueue;
 
   /// Fired on every control interaction; the screen uses it to restart the
@@ -26,15 +32,13 @@ class PlayerControlsOverlay extends StatelessWidget {
   /// Cycles the video fit (contain -> cover -> fill).
   final VoidCallback onCycleFit;
 
-  /// Rotation lock toggle (auto-rotate vs locked to current orientation).
+  /// Rotation lock toggle (auto-rotate by sensor vs pinned).
   final bool orientationLocked;
   final VoidCallback onToggleOrientationLock;
 
   const PlayerControlsOverlay({
     super.key,
     required this.player,
-    required this.isFullscreen,
-    required this.onToggleFullscreen,
     required this.onToggleQueue,
     required this.onInteract,
     required this.onCycleFit,
@@ -44,7 +48,6 @@ class PlayerControlsOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = themeState.accent;
     return AnimatedBuilder(
       animation: player,
       builder: (context, _) {
@@ -54,7 +57,10 @@ class PlayerControlsOverlay extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)],
+              colors: [
+                Colors.transparent,
+                Colors.black.withValues(alpha: 0.85),
+              ],
             ),
           ),
           child: Column(
@@ -63,52 +69,38 @@ class PlayerControlsOverlay extends StatelessWidget {
               VideoProgressBar(
                 position: player.position,
                 duration: player.duration,
+                previewThumb: player.scrubThumbPath,
                 onSeek: (d) {
                   player.seek(d);
                   onInteract();
                 },
               ),
-              // Row 1: playback (shuffle | -10s prev play next +10s | repeat)
+              // Row 1: previous / play-pause / next - the transport trio.
               Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _iconBtn(
-                    icon: player.isShuffled
-                        ? Icons.shuffle_on_outlined
-                        : Icons.shuffle,
-                    active: player.isShuffled,
-                    onTap: player.toggleShuffle,
+                    icon: Icons.skip_previous,
+                    size: 30,
+                    onTap: player.prevTrack,
                   ),
-                  const Spacer(),
-                  _iconBtn(
-                    icon: Icons.replay_10,
-                    onTap: () => player.seekBy(-10),
-                  ),
-                  _iconBtn(icon: Icons.skip_previous, onTap: player.prevTrack),
+                  const SizedBox(width: 22),
                   _iconBtn(
                     icon: player.isPlaying
                         ? Icons.pause_circle_filled
                         : Icons.play_circle_filled,
-                    size: 40,
+                    size: 46,
                     onTap: player.togglePlay,
                   ),
-                  _iconBtn(icon: Icons.skip_next, onTap: player.nextTrack),
+                  const SizedBox(width: 22),
                   _iconBtn(
-                    icon: Icons.forward_10,
-                    onTap: () => player.seekBy(10),
-                  ),
-                  const Spacer(),
-                  _iconBtn(
-                    icon: switch (player.repeatMode) {
-                      RepeatMode.none => Icons.repeat,
-                      RepeatMode.all => Icons.repeat_on_outlined,
-                      RepeatMode.one => Icons.repeat_one_on_outlined,
-                    },
-                    active: player.repeatMode != RepeatMode.none,
-                    onTap: player.toggleRepeat,
+                    icon: Icons.skip_next,
+                    size: 30,
+                    onTap: player.nextTrack,
                   ),
                 ],
               ),
-              // Row 2 (compact): mute speed audio subs fit AB rotate | queue fs
+              // Row 2 (compact): mute speed tracks rotate | queue fit
               Row(
                 children: [
                   _iconBtn(
@@ -119,35 +111,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                     compact: true,
                   ),
                   _speedMenu(),
-                  _iconBtn(
-                    icon: Icons.audiotrack_outlined,
-                    // Highlight when the file actually offers multiple tracks.
-                    active: player.audioTracks.length > 1,
-                    onTap: () => TrackSelectionSheet.show(
-                      context,
-                      player,
-                      isSubtitle: false,
-                    ),
-                    compact: true,
-                  ),
-                  _iconBtn(
-                    icon: player.subtitlesActive
-                        ? Icons.subtitles
-                        : Icons.subtitles_outlined,
-                    active: player.subtitlesActive,
-                    onTap: () => TrackSelectionSheet.show(
-                      context,
-                      player,
-                      isSubtitle: true,
-                    ),
-                    compact: true,
-                  ),
-                  _iconBtn(
-                    icon: Icons.aspect_ratio,
-                    onTap: onCycleFit,
-                    compact: true,
-                  ),
-                  _abButton(accent),
+                  _tracksMenu(context),
                   _iconBtn(
                     icon: orientationLocked
                         ? Icons.screen_lock_rotation
@@ -163,10 +127,9 @@ class PlayerControlsOverlay extends StatelessWidget {
                     compact: true,
                   ),
                   _iconBtn(
-                    icon: isFullscreen
-                        ? Icons.fullscreen_exit
-                        : Icons.fullscreen,
-                    onTap: onToggleFullscreen,
+                    tooltip: 'Fit: contain / cover / fill',
+                    icon: Icons.aspect_ratio,
+                    onTap: onCycleFit,
                     compact: true,
                   ),
                 ],
@@ -178,44 +141,66 @@ class PlayerControlsOverlay extends StatelessWidget {
     );
   }
 
-  /// A-B loop: compact two-letter button; each letter lights up when set.
-  Widget _abButton(Color accent) {
+  /// One menu for everything track-shaped: subtitles, audio tracks, and
+  /// the A-B loop (previously three separate buttons).
+  Widget _tracksMenu(BuildContext context) {
     final hasA = player.loopA != null;
     final hasB = player.loopB != null;
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () {
-        player.tapLoopPoint();
+    final abLabel = hasA && hasB
+        ? 'A-B loop (${formatDuration(player.loopA)} - ${formatDuration(player.loopB)})'
+        : hasA
+            ? 'A-B loop (A set - next tap sets B)'
+            : 'A-B loop (off - tap to set A)';
+    return PopupMenuButton<String>(
+      tooltip: 'Subtitles, audio tracks, A-B loop',
+      color: const Color(0xFF1a1a24),
+      icon: Icon(
+        Icons.tune,
+        size: 20,
+        color: (player.subtitlesActive || player.audioTracks.length > 1)
+            ? themeState.accent
+            : Colors.white,
+      ),
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 34, height: 40),
+      onSelected: (v) {
+        switch (v) {
+          case 'subs':
+            TrackSelectionSheet.show(context, player, isSubtitle: true);
+          case 'audio':
+            TrackSelectionSheet.show(context, player, isSubtitle: false);
+          case 'ab':
+            player.tapLoopPoint();
+        }
         onInteract();
       },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        child: Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(
-                text: 'A',
-                style: TextStyle(
-                  color: hasA ? accent : Colors.white54,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                ),
-              ),
-              const TextSpan(
-                text: '→',
-                style: TextStyle(color: Colors.white38, fontSize: 11),
-              ),
-              TextSpan(
-                text: 'B',
-                style: TextStyle(
-                  color: hasB ? accent : Colors.white54,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
+      itemBuilder: (context) => [
+        _menuItem(
+          'subs',
+          player.subtitlesActive ? Icons.subtitles : Icons.subtitles_outlined,
+          player.subtitlesActive ? 'Subtitles (on)' : 'Subtitles',
         ),
+        _menuItem(
+          'audio',
+          Icons.audiotrack_outlined,
+          player.audioTracks.length > 1
+              ? 'Audio track (${player.audioTracks.length} available)'
+              : 'Audio track',
+        ),
+        _menuItem('ab', Icons.repeat_one_outlined, abLabel),
+      ],
+    );
+  }
+
+  PopupMenuItem<String> _menuItem(String v, IconData icon, String label) {
+    return PopupMenuItem(
+      value: v,
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.white70),
+          const SizedBox(width: 10),
+          Text(label, style: const TextStyle(color: Colors.white)),
+        ],
       ),
     );
   }
@@ -249,12 +234,14 @@ class PlayerControlsOverlay extends StatelessWidget {
     bool active = false,
     double size = 24,
     bool compact = false,
+    String? tooltip,
   }) {
     final accent = themeState.accent;
     return IconButton(
-      icon: Icon(icon, size: compact ? 20 : size,
-          color: active ? accent : Colors.white),
-      // Compact rows must fit ~9 actions on a 320dp-wide phone.
+      tooltip: tooltip,
+      icon: Icon(icon,
+          size: compact ? 20 : size, color: active ? accent : Colors.white),
+      // Compact rows must fit ~7 actions on a 320dp-wide phone.
       constraints:
           compact ? const BoxConstraints.tightFor(width: 34, height: 40) : null,
       padding: compact ? EdgeInsets.zero : null,

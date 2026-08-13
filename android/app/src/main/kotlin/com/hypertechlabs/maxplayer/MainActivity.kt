@@ -33,6 +33,8 @@ import android.view.WindowManager
 import dev.ffmpegkit.whisper.Whisper
 import dev.ffmpegkit.whisper.WhisperConfig
 import dev.ffmpegkit.whisper.WhisperModel
+import android.hardware.SensorManager
+import android.view.OrientationEventListener
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -245,6 +247,40 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                     result.success(true)
+                }
+                "enableSensorRotate" -> {
+                    // v19: rotate the player by ACCELEROMETER, ignoring the
+                    // phone's auto-rotate switch (explicit orientation
+                    // requests win over the system toggle).
+                    ensureRotateListener()
+                    rotateLocked = false
+                    rotateListener?.enable()
+                    result.success(true)
+                }
+                "disableSensorRotate" -> {
+                    rotateListener?.disable()
+                    rotateLocked = false
+                    // Hand rotation control back to the system.
+                    requestedOrientation =
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    result.success(true)
+                }
+                "lockRotation" -> {
+                    val landscape = call.argument<Boolean>("landscape") ?: true
+                    rotateLocked = true
+                    rotateListener?.disable()
+                    requestedOrientation = if (landscape)
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    else
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    result.success(true)
+                }
+                "thumbStripEnsure" -> {
+                    val p = call.argument<String>("path")
+                    executor.execute {
+                        val dir = thumbStripEnsureSync(p)
+                        mainHandler.post { result.success(dir) }
+                    }
                 }
                 "whisperAvailable" -> {
                     // AI SUBTITLES Phase-1 probe: proves the on-device
@@ -1383,6 +1419,93 @@ class MainActivity : FlutterActivity() {
             chunked.add(intArrayOf(s0, e0))
         }
         return chunked
+    }
+
+    // -----------------------------------------------------------------------
+    // v19: sensor-driven rotation + scrub thumbnail strip
+    // -----------------------------------------------------------------------
+
+    private var rotateListener: OrientationEventListener? = null
+    private var rotateLocked = false
+
+    private fun ensureRotateListener() {
+        if (rotateListener != null) return
+        rotateListener = object : OrientationEventListener(
+            this, SensorManager.SENSOR_DELAY_NORMAL
+        ) {
+            override fun onOrientationChanged(angle: Int) {
+                if (angle == ORIENTATION_UNKNOWN || rotateLocked) return
+                // 45-degree quadrants, no upside-down portrait. Explicit
+                // requestedOrientation applies even while the phone's
+                // system auto-rotate is OFF - that is the whole point.
+                val target = when {
+                    angle in 45..134 ->
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                    angle in 225..314 ->
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    else ->
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                }
+                if (requestedOrientation != target) requestedOrientation = target
+            }
+        }
+    }
+
+    /**
+     * Builds (or reuses) a strip of 72 small JPEG frames for the scrub
+     * preview bubble. Returns the strip directory path, or null for
+     * streams / unreadable files. Runs on the executor; reusing a cached
+     * strip is instant.
+     */
+    private fun thumbStripEnsureSync(path: String?): String? {
+        if (path.isNullOrEmpty() || path.startsWith("http")) return null
+        val src = File(path)
+        if (!src.exists()) return null
+        val count = 72
+        val dir = File(cacheDir, "thumbstrip_" + md5(path))
+        try {
+            if (dir.isDirectory) {
+                val have =
+                    dir.listFiles()?.count { it.name.endsWith(".jpg") } ?: 0
+                if (have >= count) return dir.absolutePath
+            }
+            val retriever = android.media.MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(path)
+                val durMs = retriever.extractMetadata(
+                    android.media.MediaMetadataRetriever.METADATA_KEY_DURATION
+                )?.toLongOrNull() ?: 0L
+                if (durMs <= 0L) return null
+                dir.mkdirs()
+                for (i in 0 until count) {
+                    val us = durMs * 1000L * i / (count - 1)
+                    val frame = try {
+                        retriever.getFrameAtTime(
+                            us,
+                            android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                        )
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (frame != null) {
+                        val thumb = scaleToWidth(frame, 192)
+                        FileOutputStream(File(dir, "f_%03d.jpg".format(i)))
+                            .use { out ->
+                                thumb.compress(
+                                    Bitmap.CompressFormat.JPEG, 72, out
+                                )
+                            }
+                        if (thumb !== frame) thumb.recycle()
+                        frame.recycle()
+                    }
+                }
+            } finally {
+                retriever.release()
+            }
+            return dir.absolutePath
+        } catch (t: Throwable) {
+            return null
+        }
     }
 
     override fun onDestroy() {

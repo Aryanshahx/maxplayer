@@ -115,10 +115,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Follow the phone's own rotation while in the player (the app used to
-    // stay stuck in portrait); the lock button below restricts this on
-    // demand and dispose() hands free rotation back.
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    // v19: rotation is driven by our own accelerometer listener, so the
+    // player rotates even when the phone's auto-rotate switch is OFF
+    // (MX Player / VLC style). The lock chip pins the current orientation;
+    // dispose() hands control back to the system.
+    unawaited(NativeBridge.enableSensorRotate());
     _noticeSub = widget.player.notices.listen(
       (m) => _showIndicator(m, Icons.history),
     );
@@ -141,8 +142,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _indicatorTimer?.cancel();
     _noticeSub?.cancel();
     if (_isFullscreen) _exitFullscreen();
-    // Never leave an orientation restriction behind.
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    // Hand rotation control back to the system; never leave a lock behind.
+    unawaited(NativeBridge.disableSensorRotate());
     // Do NOT keep the audio running after leaving the player screen, and
     // hand brightness control back to the system.
     unawaited(widget.player.pause());
@@ -294,27 +295,29 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  /// Rotation toggle: auto-rotate <-> locked to the CURRENT orientation.
+  /// Rotation toggle: sensor auto-rotate <-> pinned to portrait/landscape.
   void _toggleOrientationLock() {
+    final landscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
     if (!_orientationLocked) {
-      final landscape =
-          MediaQuery.of(context).orientation == Orientation.landscape;
-      _lockedOrientations = landscape
-          ? const [
-              DeviceOrientation.landscapeLeft,
-              DeviceOrientation.landscapeRight,
-            ]
-          : const [
-              DeviceOrientation.portraitUp,
-              DeviceOrientation.portraitDown,
-            ];
-      SystemChrome.setPreferredOrientations(_lockedOrientations);
-      setState(() => _orientationLocked = true);
+      unawaited(NativeBridge.lockRotation(landscape: landscape));
+      setState(() {
+        _orientationLocked = true;
+        _lockedOrientations = landscape
+            ? const [
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+              ]
+            : const [
+                DeviceOrientation.portraitUp,
+                DeviceOrientation.portraitDown,
+              ];
+      });
       _showIndicator('Rotation locked', Icons.screen_lock_rotation);
     } else {
       _lockedOrientations = DeviceOrientation.values;
-      SystemChrome.setPreferredOrientations(DeviceOrientation.values);
       setState(() => _orientationLocked = false);
+      unawaited(NativeBridge.enableSensorRotate());
       _showIndicator('Auto-rotate on', Icons.screen_rotation);
     }
     _onUserInteraction();
@@ -628,50 +631,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        appBar: _isFullscreen || _isPip
-            ? null
-            : AppBar(
-                backgroundColor: Colors.black,
-                title: AnimatedBuilder(
-                  animation: player,
-                  builder: (context, _) => Text(
-                    player.currentTrack?.title ?? 'Max Player',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                actions: [
-                  _appBarBtn(
-                    'Video info',
-                    Icons.info_outline,
-                    () => VideoInfoSheet.show(context, widget.player),
-                  ),
-                  _appBarBtn(
-                    'Equalizer',
-                    Icons.graphic_eq,
-                    () => EqualizerSheet.show(context, widget.player),
-                  ),
-                  if (_settings.castButton)
-                    _appBarBtn('Cast to TV', Icons.cast_outlined, _openCast),
-                  if (_settings.screenshotButton)
-                    _appBarBtn(
-                      'Screenshot',
-                      Icons.camera_alt_outlined,
-                      _takeScreenshot,
-                    ),
-                  _appBarBtn(
-                    'Picture in picture',
-                    Icons.picture_in_picture_alt_outlined,
-                    () => NativeBridge.enterPip(
-                        playing: widget.player.isPlaying),
-                  ),
-                  _appBarBtn(
-                    'Player settings',
-                    Icons.settings_outlined,
-                    _openSettings,
-                  ),
-                ],
-              ),
+        // v19: no Scaffold AppBar anymore - the title + actions live in an
+        // auto-hiding top overlay INSIDE the video stack, so portrait video
+        // gets the full height and a tap reveals title and controls
+        // together (previously a tap surfaced only the bottom bar).
         body: SafeArea(
           top: !_isFullscreen,
           // Lift controls above the gesture/nav bar in landscape fullscreen.
@@ -749,62 +712,52 @@ class _PlayerScreenState extends State<PlayerScreen>
                             right: 0,
                             child: IgnorePointer(
                               child: Center(
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 150),
-                                  transitionBuilder: (child, anim) =>
-                                      FadeTransition(
-                                        opacity: anim,
-                                        child: ScaleTransition(
-                                          scale: anim.drive(
-                                            CurveTween(
-                                              curve: Curves.decelerate,
-                                            ),
-                                          ),
-                                          child: child,
-                                        ),
+                                // v19: this sign used to BLINK during
+                                // volume/brightness swipes - the old
+                                // switcher re-keyed itself on every tick,
+                                // replaying a scale animation each time.
+                                // Now: ONE stable container, only opacity
+                                // animates, text/icon swap in place.
+                                child: AnimatedOpacity(
+                                  duration: const Duration(milliseconds: 120),
+                                  opacity: (_indicatorText != null && !_isPip)
+                                      ? 1.0
+                                      : 0.0,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.72,
                                       ),
-                                  child: (_indicatorText != null && !_isPip)
-                                      ? Container(
-                                          key: ValueKey(
-                                            '$_indicatorText|${_indicatorIcon?.codePoint}',
+                                      borderRadius: BorderRadius.circular(
+                                        12,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (_indicatorIcon != null) ...[
+                                          Icon(
+                                            _indicatorIcon,
+                                            color: Colors.white,
+                                            size: 20,
                                           ),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 10,
+                                          const SizedBox(width: 8),
+                                        ],
+                                        Text(
+                                          _indicatorText ?? '',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
                                           ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black.withValues(
-                                              alpha: 0.72,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              if (_indicatorIcon != null) ...[
-                                                Icon(
-                                                  _indicatorIcon,
-                                                  color: Colors.white,
-                                                  size: 20,
-                                                ),
-                                                const SizedBox(width: 8),
-                                              ],
-                                              Text(
-                                                _indicatorText!,
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 15,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        )
-                                      : const SizedBox.shrink(
-                                          key: ValueKey('noIndicator'),
                                         ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -921,6 +874,81 @@ class _PlayerScreenState extends State<PlayerScreen>
                                 ),
                               ),
                             ),
+                          // Top bar (v19): back + marquee title + the
+                          // merged more-actions menu + settings. Auto-hides
+                          // with the controls, always readable over video.
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            child: IgnorePointer(
+                              ignoring: !_controlsVisible,
+                              child: AnimatedSlide(
+                                offset: _controlsVisible && !_isPip
+                                    ? Offset.zero
+                                    : const Offset(0, -0.5),
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOutCubic,
+                                child: AnimatedOpacity(
+                                  opacity: _controlsVisible && !_isPip
+                                      ? 1.0
+                                      : 0.0,
+                                  duration: const Duration(milliseconds: 180),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Colors.black.withValues(alpha: 0.75),
+                                          Colors.transparent,
+                                        ],
+                                      ),
+                                    ),
+                                    padding: const EdgeInsets.fromLTRB(
+                                        2, 2, 2, 14),
+                                    child: Row(
+                                      children: [
+                                        IconButton(
+                                          tooltip: 'Back',
+                                          icon: const Icon(Icons.arrow_back,
+                                              size: 22),
+                                          onPressed: () {
+                                            _onUserInteraction();
+                                            Navigator.of(context).maybePop();
+                                          },
+                                        ),
+                                        Expanded(
+                                          child: AnimatedBuilder(
+                                            animation: player,
+                                            builder: (context, _) =>
+                                                _MarqueeTitle(
+                                              player.currentTrack?.title ??
+                                                  'Max Player',
+                                              key: ValueKey(
+                                                player.currentTrack?.path,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        _topMenu(context),
+                                        IconButton(
+                                          tooltip: 'Player settings',
+                                          icon: const Icon(
+                                              Icons.settings_outlined,
+                                              size: 22),
+                                          onPressed: () {
+                                            _onUserInteraction();
+                                            _openSettings();
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                           // Controls slide up + fade in instead of snapping.
                           Positioned(
                             left: 0,
@@ -941,8 +969,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                                   duration: const Duration(milliseconds: 180),
                                   child: PlayerControlsOverlay(
                                     player: player,
-                                    isFullscreen: _isFullscreen,
-                                    onToggleFullscreen: _toggleFullscreen,
                                     onToggleQueue: () {
                                       setState(() => _showQueue = !_showQueue);
                                       _onUserInteraction();
@@ -987,14 +1013,52 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _appBarBtn(String tooltip, IconData icon, VoidCallback onPressed) {
-    return IconButton(
-      tooltip: tooltip,
-      icon: Icon(icon, size: 22),
-      constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-      padding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      onPressed: onPressed,
+  /// The merged more-actions menu (v19): video info, equalizer,
+  /// screenshot, cast and picture-in-picture behind ONE button.
+  Widget _topMenu(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: 'More actions',
+      icon: const Icon(Icons.more_vert, size: 22),
+      color: const Color(0xFF1a1a24),
+      onSelected: (v) {
+        _onUserInteraction();
+        switch (v) {
+          case 'info':
+            VideoInfoSheet.show(context, widget.player);
+          case 'eq':
+            EqualizerSheet.show(context, widget.player);
+          case 'shot':
+            _takeScreenshot();
+          case 'cast':
+            _openCast();
+          case 'pip':
+            NativeBridge.enterPip(playing: widget.player.isPlaying);
+        }
+      },
+      itemBuilder: (context) => [
+        _topMenuItem('info', Icons.info_outline, 'Video info'),
+        _topMenuItem('eq', Icons.graphic_eq, 'Equalizer'),
+        if (_settings.screenshotButton)
+          _topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot'),
+        if (_settings.castButton)
+          _topMenuItem('cast', Icons.cast_outlined, 'Cast to TV'),
+        _topMenuItem('pip', Icons.picture_in_picture_alt_outlined,
+            'Picture in picture'),
+      ],
+    );
+  }
+
+  PopupMenuItem<String> _topMenuItem(
+      String v, IconData icon, String label) {
+    return PopupMenuItem(
+      value: v,
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.white70),
+          const SizedBox(width: 10),
+          Text(label, style: const TextStyle(color: Colors.white)),
+        ],
+      ),
     );
   }
 
@@ -1022,3 +1086,68 @@ class _PlayerScreenState extends State<PlayerScreen>
 }
 
 enum _ScaleMode { undecided, volume, brightness, seekH, pan, zoom, cant }
+
+/// Player title bar (v19): long titles scroll sideways in a slow loop
+/// (marquee) instead of getting ellipsized. The widget is keyed by the
+/// track path, so it restarts cleanly on track change.
+class _MarqueeTitle extends StatefulWidget {
+  final String text;
+  const _MarqueeTitle(this.text, {super.key});
+
+  @override
+  State<_MarqueeTitle> createState() => _MarqueeTitleState();
+}
+
+class _MarqueeTitleState extends State<_MarqueeTitle> {
+  final ScrollController _sc = ScrollController();
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer =
+        Timer.periodic(const Duration(milliseconds: 2600), (_) => _tick());
+  }
+
+  void _tick() {
+    if (!mounted || !_sc.hasClients) return;
+    final max = _sc.position.maxScrollExtent;
+    if (max <= 0) return; // fits on screen - nothing to scroll
+    if (_sc.offset >= max - 1) {
+      _sc.jumpTo(0); // hold at the end, then wrap around
+    } else {
+      _sc.animateTo(
+        max,
+        duration:
+            Duration(milliseconds: (max * 24).clamp(900, 9000).toInt()),
+        curve: Curves.linear,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _sc.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      controller: _sc,
+      scrollDirection: Axis.horizontal,
+      physics: const NeverScrollableScrollPhysics(),
+      child: Text(
+        widget.text,
+        maxLines: 1,
+        softWrap: false,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 15.5,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}

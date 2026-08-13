@@ -338,4 +338,44 @@ class NativeBridge {
       await _channel.invokeMethod('setMulticastLock', hold);
     } catch (_) {}
   }
+
+  // ---------------------------------------------------------------------------
+  // v19: sensor-driven rotation + scrub thumbnail strip
+  // ---------------------------------------------------------------------------
+
+  /// Player rotation that IGNORES the phone's system auto-rotate switch:
+  /// native tracks the accelerometer and requests portrait/landscape
+  /// directly (MX Player / VLC style). Enabled when the player opens.
+  static Future<void> enableSensorRotate() async {
+    try {
+      await _channel.invokeMethod('enableSensorRotate');
+    } catch (_) {}
+  }
+
+  /// Hands rotation control back to the system (leaving the player).
+  static Future<void> disableSensorRotate() async {
+    try {
+      await _channel.invokeMethod('disableSensorRotate');
+    } catch (_) {}
+  }
+
+  /// Rotation lock chip: pins the player to landscape (both sides still
+  /// flippable) or portrait until [enableSensorRotate] is called again.
+  static Future<void> lockRotation({required bool landscape}) async {
+    try {
+      await _channel.invokeMethod('lockRotation', {'landscape': landscape});
+    } catch (_) {}
+  }
+
+  /// Ensures a strip of small JPEG frames exists for scrub previews and
+  /// returns its cache directory (null for streams/failures). Idempotent:
+  /// a strip is generated once per file and reused after that.
+  static Future<String?> thumbStripEnsure(String path) async {
+    try {
+      return await _channel
+          .invokeMethod<String>('thumbStripEnsure', {'path': path});
+    } catch (_) {
+      return null;
+    }
+  }
 }

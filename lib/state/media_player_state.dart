@@ -89,6 +89,7 @@ class MediaPlayerState extends ChangeNotifier {
       : null;
 
   final _rand = Random();
+  Timer? _uiTicker;
   late final List<StreamSubscription> _subs;
 
   MediaPlayerState() {
@@ -113,6 +114,9 @@ class MediaPlayerState extends ChangeNotifier {
       player.stream.duration.listen((v) {
         duration = v;
         notifyListeners();
+        // Kick off scrub-preview thumbnail generation (idempotent - runs
+        // once per file, cached on disk afterwards).
+        _ensureThumbStrip();
       }),
       player.stream.buffering.listen((v) {
         isLoading = v;
@@ -144,6 +148,17 @@ class MediaPlayerState extends ChangeNotifier {
     _bookmarkTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       _saveBookmark();
       _trackWatchTime();
+    });
+    // v19: guaranteed UI pulse - the mini player / scrub bar / time labels
+    // keep ticking even if the position stream coalesces (the home-screen
+    // mini player's progress bar looked frozen because of that).
+    _uiTicker = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!isPlaying) return;
+      final p = player.state.position;
+      if (p != position) {
+        position = p;
+        notifyListeners();
+      }
     });
   }
 
@@ -407,10 +422,16 @@ class MediaPlayerState extends ChangeNotifier {
   }
 
   Future<void> togglePlay() async {
-    if (isPlaying) {
-      await pause();
-    } else {
+    // v19: optimistic UI - flip the icon instantly; the playing stream
+    // confirms (or corrects) a moment later. Kills the visible tap->icon
+    // lag that made the play/pause button feel delayed.
+    final wantPlay = !isPlaying;
+    isPlaying = wantPlay;
+    notifyListeners();
+    if (wantPlay) {
       await player.play();
+    } else {
+      await pause();
     }
   }
 
@@ -662,6 +683,44 @@ class MediaPlayerState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
+  // Scrub preview thumbnail strip (v19)
+  // ---------------------------------------------------------------------------
+
+  /// Frames generated per video - must match the native generator
+  /// (MainActivity.thumbStripEnsureSync).
+  static const int thumbStripCount = 72;
+
+  String? _thumbStripFor;
+  String? _thumbStripDir;
+
+  void _ensureThumbStrip() {
+    final track = currentTrack;
+    if (track == null) return;
+    final path = track.path;
+    if (path.startsWith('http')) return; // streams: nothing on disk to scan
+    if (_thumbStripFor == path) return; // already requested for this file
+    _thumbStripFor = path;
+    _thumbStripDir = null;
+    NativeBridge.thumbStripEnsure(path).then((dir) {
+      if (dir != null && _thumbStripFor == path) {
+        _thumbStripDir = dir;
+        notifyListeners();
+      }
+    });
+  }
+
+  /// Thumbnail file for the preview bubble at [fraction] (0..1 of the
+  /// video), or null while that frame hasn't been generated yet (the
+  /// bubble then shows the timestamp only).
+  String? scrubThumbPath(double fraction) {
+    final dir = _thumbStripDir;
+    if (dir == null) return null;
+    final i = (fraction.clamp(0.0, 1.0) * (thumbStripCount - 1)).round();
+    final f = File('$dir/f_${i.toString().padLeft(3, '0')}.jpg');
+    return f.existsSync() ? f.path : null;
+  }
+
+  // ---------------------------------------------------------------------------
   // Mini player
   // ---------------------------------------------------------------------------
 
@@ -740,6 +799,7 @@ class MediaPlayerState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _uiTicker?.cancel();
     _bookmarkTimer?.cancel();
     _notices.close();
     for (final s in _subs) {

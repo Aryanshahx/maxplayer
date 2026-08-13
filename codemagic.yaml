@@ -34,27 +34,8 @@ workflows:
           else
             echo "No upload key configured - release signs with the debug key."
           fi
-      - name: Diagnose signing secrets (prints only safe fingerprints)
-        # v16, TEMPORARY: prints lengths + 12-char sha256 prefixes - never the
-        # secrets themselves - so the CI values can be compared against the
-        # fingerprints printed by the companion local check on the Pi.
-        # Remove this step once CI signing is green.
-        script: |
-          if [ -z "$CM_KEYSTORE" ]; then
-            echo "No upload key configured - nothing to diagnose."
-            exit 0
-          fi
-          echo "keystore file bytes    : $(stat -c%s "$CM_KEYSTORE_PATH")"
-          printf 'keystore sha256[:12]   : '; sha256sum "$CM_KEYSTORE_PATH" | cut -c1-12
-          echo "store password length  : ${#CM_KEYSTORE_PASSWORD}"
-          printf 'store pass sha256[:12] : '; printf '%s' "$CM_KEYSTORE_PASSWORD" | sha256sum | cut -c1-12
-          echo "alias password length  : ${#CM_KEY_ALIAS_PASSWORD}"
-          echo "alias name             : $CM_KEY_ALIAS"
-          if keytool -list -keystore "$CM_KEYSTORE_PATH" -storepass "$CM_KEYSTORE_PASSWORD" -alias "$CM_KEY_ALIAS"; then
-            echo "CI KEYSTORE CHECK      : OK - keystore and passwords match"
-          else
-            echo "CI KEYSTORE CHECK      : FAILED - CM_KEYSTORE and the passwords are not a matched pair"
-          fi
+      # v16's temporary "Diagnose signing secrets" step was removed in v17
+      # after it confirmed CI signing is green (CI KEYSTORE CHECK: OK).
       - name: Clean build (avoid stale plugin registration after dependency upgrades)
         script: flutter clean
       - name: Get Flutter packages
