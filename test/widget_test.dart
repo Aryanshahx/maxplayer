@@ -9,6 +9,7 @@ import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/player_settings.dart';
 import 'package:maxplayer/state/video_library_state.dart';
+import 'package:maxplayer/utils/ai_subtitles.dart';
 import 'package:maxplayer/utils/formatters.dart';
 import 'package:maxplayer/utils/privacy_policy.dart';
 import 'package:maxplayer/utils/srt.dart';
@@ -427,6 +428,45 @@ void main() {
       expect(m, isNotNull, reason: 'pubspec.yaml must declare version: x.y.z+N');
       expect(m!.group(1), kAppVersion,
           reason: 'Keep kAppVersion in lib/app_info.dart in sync');
+    });
+  });
+
+  group('AI subtitle options & caption filter (v18)', () {
+    test('the fast/tiny model is removed; defaults stay sane', () {
+      expect(AiSubtitleRunner.modelChoices.containsKey('tiny'), isFalse);
+      expect(AiSubtitleRunner.modelChoices.keys,
+          containsAll(<String>['base', 'small']));
+      expect(AiSubtitleRunner.normalizeModelId(null), 'base');
+      expect(AiSubtitleRunner.normalizeModelId('tiny'), 'base',
+          reason: 'a stale v14-17 "tiny" pref must migrate to base');
+      expect(AiSubtitleRunner.normalizeModelId('small'), 'small');
+      expect(AiSubtitleRunner.normalizeModelId('nonsense'), 'base');
+      expect(AiSubtitleRunner.modelSizeLabel('base'), '~142 MB');
+    });
+
+    test('music-only decoration captions are dropped, speech is kept', () {
+      for (final t in [
+        '♪',
+        '♪ ♪',
+        '♪♫♪',
+        '[Music]',
+        '(MUSIC)',
+        'music',
+        '( music playing )',
+        '♪ Music ♪',
+        '[Applause]',
+        '(laughter)',
+      ]) {
+        expect(isMusicOnlyCaption(t), isTrue, reason: '"$t" must be dropped');
+      }
+      for (final t in [
+        'Hello world',
+        'I love music',
+        'music is life',
+        'the background music in this scene',
+      ]) {
+        expect(isMusicOnlyCaption(t), isFalse, reason: '"$t" must be kept');
+      }
     });
   });
 

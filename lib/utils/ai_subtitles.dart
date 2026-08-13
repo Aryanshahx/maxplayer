@@ -10,6 +10,53 @@ import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
 import 'srt.dart';
 
+/// True when a whisper segment is caption decoration rather than speech -
+/// e.g. "♪", "♪ ♪", "[Music]", "(music playing)". Whisper emits these over
+/// music-only stretches; dropping them keeps the .srt clean (v18).
+///
+/// Deliberately conservative: anything that might be real speech (even
+/// speech ABOUT music, like "I love music") is kept - we only drop the
+/// exact decoration phrases whisper hallucinates.
+bool isMusicOnlyCaption(String text) {
+  var t = text.toLowerCase().trim();
+  if (t.isEmpty) return true;
+  // Pure note decorations: "♪", "♪ ♫ ♪", ...
+  t = t.replaceAll(RegExp(r'[♪♫𝄞𝄢]+'), ' ').trim();
+  if (t.isEmpty) return true;
+  // Reduce to letters only, then compare against known decorations.
+  final core = t.replaceAll(RegExp(r'[^a-z]'), '');
+  return _musicOnlyCores.contains(core);
+}
+
+/// Lowercase, letters-only forms of whisper's music/SFX-only captions.
+const Set<String> _musicOnlyCores = {
+  'music',
+  'musicplaying',
+  'playingmusic',
+  'backgroundmusic',
+  'upbeatmusic',
+  'instrumentalmusic',
+  'dramaticmusic',
+  'intensemusic',
+  'softmusic',
+  'loudmusic',
+  'slowmusic',
+  'rockmusic',
+  'popmusic',
+  'classicalmusic',
+  'sadmusic',
+  'happymusic',
+  'jazzmusic',
+  'applause',
+  'applauses',
+  'clapping',
+  'cheering',
+  'laughter',
+  'laughing',
+  'crowdcheering',
+  'silence',
+};
+
 /// Runs the offline AI subtitle flow end to end and shows a progress dialog:
 ///
 ///   download model once (~142 MB) -> extract audio -> whisper.cpp ->
@@ -23,12 +70,17 @@ class AiSubtitleRunner {
   static const String _kModelKey = 'ai.model';
   static const String _kLanguageKey = 'ai.language';
 
-  /// Model choices: id -> (label, detail with size).
+  /// Model choices: id -> (label, detail with size). v18 removed "tiny"
+  /// (~75 MB, "Fast") - it was the weakest link and produced most of the
+  /// garbled captions users saw.
   static const Map<String, (String, String)> modelChoices = {
-    'tiny': ('Fast', '~75 MB · weakest on Hindi/Urdu'),
     'base': ('Balanced', '~142 MB · good for most videos'),
-    'small': ('Best', '~466 MB · slowest, most accurate'),
+    'small': ('Best', '~466 MB · strongest on music & noise, slower'),
   };
+
+  /// Anything unknown (including a "tiny" id saved by older app versions)
+  /// falls back to the default model.
+  static String normalizeModelId(String? id) => id == 'small' ? 'small' : 'base';
 
   /// Language choices: whisper code -> label; 'auto' = detect.
   static const Map<String, String> languageChoices = {
@@ -50,9 +102,8 @@ class AiSubtitleRunner {
     'fr': 'French',
   };
 
-  /// Approximate download size label per model (for the progress dialog).
+    /// Approximate download size label per model (for the progress dialog).
   static String modelSizeLabel(String model) => switch (model) {
-        'tiny' => '~75 MB',
         'small' => '~466 MB',
         _ => '~142 MB',
       };
@@ -77,7 +128,7 @@ class AiSubtitleRunner {
     final options = await showDialog<({String model, String language})>(
       context: context,
       builder: (_) => _AiOptionsDialog(
-        initialModel: stored[_kModelKey] ?? 'base',
+        initialModel: normalizeModelId(stored[_kModelKey]),
         initialLanguage: stored[_kLanguageKey] ?? 'auto',
       ),
     );
@@ -155,12 +206,18 @@ class AiSubtitleRunner {
     // (mounted was checked right after the dialog closed above)
 
     // Build the .srt (pure function) and save it next to the video.
+    // Music-only decoration captions ("♪", "[Music]") are filtered out.
+    final cues = [
+      for (final s in segments!)
+        if (!isMusicOnlyCaption(s.text)) SrtCue(s.startMs, s.endMs, s.text),
+    ];
+    if (cues.isEmpty) {
+      _snack(context,
+          'Only background music was detected - no subtitles to write');
+      return;
+    }
     final srtPath = _srtPathFor(track.path);
     try {
-      final cues = [
-        for (final s in segments!)
-          SrtCue(s.startMs, s.endMs, s.text),
-      ];
       await File(srtPath).writeAsString(buildSrt(cues));
     } catch (_) {
       if (context.mounted) {
@@ -217,7 +274,8 @@ class _AiProgressDialog extends StatelessWidget {
       case 'extracting':
         return 'Extracting audio from the video…';
       case 'transcribing':
-        return 'Listening and writing subtitles…\n(this runs fully offline; long videos take longer)';
+        return 'Listening to the speech in this video…\n'
+            '(silent parts are skipped automatically for speed)';
       default:
         return 'Preparing…';
     }
@@ -238,7 +296,11 @@ class _AiProgressDialog extends StatelessWidget {
         valueListenable: progress,
         builder: (context, value, _) {
           final (stage, percent) = value;
-          final determinate = stage == 'downloading' || stage == 'extracting';
+          // "transcribing" became determinate in v18: Kotlin reports real
+          // progress as speech spans finish.
+          final determinate = stage == 'downloading' ||
+              stage == 'extracting' ||
+              stage == 'transcribing';
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,6 +410,12 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           const SizedBox(height: 10),
           const Text(
             'Runs 100% offline after a one-time model download.',
+            style: TextStyle(color: Colors.white38, fontSize: 11.5),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Tip: for videos with loud background music, pin the spoken '
+            'language above and choose the "Best" model.',
             style: TextStyle(color: Colors.white38, fontSize: 11.5),
           ),
         ],

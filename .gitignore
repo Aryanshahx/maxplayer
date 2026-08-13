@@ -46,5 +46,6 @@ app.*.map.json
 
 # Play Store upload key - NEVER commit these
 android/key.properties
+android/key.properties.*
 android/upload-keystore.jks
 android/upload-keystore.keystore

@@ -751,26 +751,28 @@ class MainActivity : FlutterActivity() {
     //         -> whisper.cpp (offline) -> timestamped segments -> Dart
     //
     // Dart builds the .srt text (pure, unit-tested) and mpv loads it via
-    // `sub-add`. The model is downloaded once from Hugging Face (~75 MB for
-    // tiny); after that everything is offline & free.
+    // `sub-add`. The model is downloaded once from Hugging Face (~142 MB
+    // base / ~466 MB small); after that everything is offline & free.
     // ---------------------------------------------------------------------------
 
+    // v18: the "tiny" (~75 MB) model was removed from the picker - it was
+    // the weakest link and the source of most garbled captions. Anything
+    // that is not an explicit id falls back to "base" (also covers a
+    // stale "tiny" id saved by older app versions).
     private fun modelFileFor(name: String): File {
         val safe = when (name) {
             "base", "small" -> name
-            else -> "tiny"
+            else -> "base"
         }
         return File(filesDir, "models/ggml-$safe.bin")
     }
 
     private fun modelUrlFor(name: String): String {
         return when (name) {
-            "base" ->
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
             "small" ->
                 "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
             else ->
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
         }
     }
 
@@ -848,34 +850,54 @@ class MainActivity : FlutterActivity() {
                 return aiFailed(jobId, "cancelled")
             }
 
-            // 3. Transcribe with whisper.cpp (offline). NOTE: this stage
-            // cannot be cancelled mid-run; a cancel during it discards the
-            // result afterwards.
+            // 3. Transcribe with whisper.cpp (offline), speech-gated:
+            // the 16 kHz track is first split into voiced spans and only
+            // those are sent to whisper. Long silent stretches of a video
+            // are skipped entirely, which is FASTER (a big share of any
+            // movie is non-speech) AND cleaner (whisper used to answer
+            // silence with "music" hallucinations). Music is never treated
+            // as silence, so speech over loud background music still gets
+            // transcribed. A cancel between spans takes effect immediately;
+            // a cancel mid-span discards the result afterwards.
             aiProgress(jobId, "transcribing", 0)
             val segments = ArrayList<HashMap<String, Any>>()
             runBlocking {
                 var model: WhisperModel? = null
                 try {
                     model = Whisper.loadModel(this@MainActivity, modelFile.absolutePath)
-                    // The user can pin a language ("hi", "ur", "en", ...) in
-                    // the Generate dialog; "auto" = detect it. Pinning the
-                    // right language is noticeably more accurate than
-                    // detection on short clips.
-                    val res = Whisper.transcribe(
-                        model,
-                        wav.absolutePath,
-                        WhisperConfig(language = language)
-                    )
-                    for (s in res.segments) {
-                        val text = s.text.trim()
-                        if (text.isEmpty()) continue
-                        segments.add(
-                            hashMapOf(
-                                "start" to s.startMs as Any,
-                                "end" to s.endMs as Any,
-                                "text" to text as Any
+                    val pcmData = readWavPcm(wav) ?: ByteArray(0)
+                    val spans = speechSpans(pcmData)
+                    // spans empty = no voice anywhere -> empty result, and
+                    // Dart shows its friendly "No speech detected" snack.
+                    spans.forEachIndexed { i, span ->
+                        if (aiCancelled) return@forEachIndexed
+                        val spanWav = File(cacheDir, "ai_span_${jobId}_$i.wav")
+                        try {
+                            writeSpanWav(spanWav, pcmData, span[0], span[1])
+                            // The user can pin a language ("hi", "ur", "en", ...)
+                            // in the Generate dialog; "auto" = detect it. Pinning
+                            // is noticeably more accurate than detection.
+                            val res = Whisper.transcribe(
+                                model,
+                                spanWav.absolutePath,
+                                WhisperConfig(language = language)
                             )
-                        )
+                            val offsetMs = span[0] * 1000L / 16000
+                            for (s in res.segments) {
+                                val text = s.text.trim()
+                                if (text.isEmpty()) continue
+                                segments.add(
+                                    hashMapOf(
+                                        "start" to (s.startMs + offsetMs) as Any,
+                                        "end" to (s.endMs + offsetMs) as Any,
+                                        "text" to text as Any
+                                    )
+                                )
+                            }
+                        } finally {
+                            spanWav.delete()
+                        }
+                        aiProgress(jobId, "transcribing", (i + 1) * 100 / spans.size)
                     }
                 } finally {
                     model?.let { Whisper.releaseModel(it) }
@@ -1209,6 +1231,158 @@ class MainActivity : FlutterActivity() {
         raf.write(shortLe(16)) // bit depth
         raf.writeBytes("data")
         raf.write(intLe(dataLen))
+    }
+
+    /** Reads the PCM data section of a 16 kHz mono 16-bit WAV we wrote
+     * (i.e. everything after the 44-byte header). Null if unreadable. */
+    private fun readWavPcm(wav: File): ByteArray? {
+        return try {
+            val bytes = wav.readBytes()
+            if (bytes.size <= 44) null else bytes.copyOfRange(44, bytes.size)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Writes [pcm] samples in [fromSample, toSample) as a standalone 16 kHz
+     * mono 16-bit WAV (header + raw little-endian data).
+     */
+    private fun writeSpanWav(out: File, pcm: ByteArray, fromSample: Int, toSample: Int) {
+        val from = fromSample * 2
+        val to = minOf(toSample * 2, pcm.size)
+        val raf = RandomAccessFile(out, "rw")
+        try {
+            raf.setLength(0)
+            writeWavHeader(raf, 16000, (to - from).toLong())
+            raf.write(pcm, from, to - from)
+        } finally {
+            raf.close()
+        }
+    }
+
+    /**
+     * Speech-gate for the AI pipeline (v18): finds voiced spans in 16 kHz
+     * mono 16-bit PCM (raw little-endian bytes, no header) and returns them
+     * as [startSample, endSample) pairs - padded, gap-merged and chunked to
+     * <=30 s so whisper's context window stays effective.
+     *
+     * Conservative by design: only true near-silence is dropped. The
+     * threshold sits at ~2x the adaptive noise floor with a very low
+     * absolute floor, so quiet speech is kept while digital/room silence is
+     * skipped. Music is far above this floor and is therefore NEVER gated
+     * out (speech over loud background music still reaches whisper).
+     */
+    private fun speechSpans(pcm: ByteArray): List<IntArray> {
+        val frame = 400 // 25 ms at 16 kHz
+        val totalSamples = pcm.size / 2
+        val totalFrames = totalSamples / frame
+        if (totalFrames < 8) return emptyList() // under 0.2 s of audio at all
+
+        // RMS energy per 25 ms frame, straight from the raw bytes.
+        val rms = DoubleArray(totalFrames)
+        var i = 0
+        while (i < totalFrames) {
+            var sum = 0.0
+            var j = 0
+            val base = i * frame
+            while (j < frame) {
+                val idx = (base + j) * 2
+                val s =
+                    ((pcm[idx + 1].toInt() shl 8) or (pcm[idx].toInt() and 0xFF))
+                        .toShort()
+                        .toInt()
+                sum += s * s
+                j++
+            }
+            rms[i] = kotlin.math.sqrt(sum / frame)
+            i++
+        }
+
+        // Adaptive threshold: ~2.2x the 20th-percentile frame energy (the
+        // noise floor), but never below a conservative absolute floor.
+        val sorted = rms.sorted()
+        val noise = sorted[(totalFrames * 0.2).toInt().coerceIn(0, totalFrames - 1)]
+        val threshold = maxOf(noise * 2.2, 260.0)
+
+        // Voiced frames -> raw spans.
+        val raw = mutableListOf<IntArray>()
+        var start = -1
+        i = 0
+        while (i < totalFrames) {
+            if (rms[i] >= threshold) {
+                if (start < 0) start = i
+            } else if (start >= 0) {
+                raw.add(intArrayOf(start, i))
+                start = -1
+            }
+            i++
+        }
+        if (start >= 0) raw.add(intArrayOf(start, totalFrames))
+        if (raw.isEmpty()) return emptyList()
+
+        // Merge spans separated by < 0.3 s (breaths / sentence gaps), then
+        // pad 0.15 s on each side and drop remnants shorter than 0.4 s.
+        val mergeGap = 12
+        val pad = 6
+        val merged = mutableListOf<IntArray>()
+        var cur = raw[0]
+        i = 1
+        while (i < raw.size) {
+            val n = raw[i]
+            if (n[0] - cur[1] <= mergeGap) {
+                cur[1] = n[1]
+            } else {
+                merged.add(cur)
+                cur = n
+            }
+            i++
+        }
+        merged.add(cur)
+        val padded = mutableListOf<IntArray>()
+        for (m in merged) {
+            val a = maxOf(0, m[0] - pad)
+            val b = minOf(totalFrames, m[1] + pad)
+            if (b - a >= 16) {
+                padded.add(intArrayOf(a * frame, minOf(b * frame, totalSamples)))
+            }
+        }
+
+        // Chunk anything longer than 30 s; split at the quietest frame near
+        // the midpoint (best-effort word boundary), with a hard-split
+        // fallback so the loop always makes progress.
+        val maxFrames = 1200 // 30 s
+        val chunked = mutableListOf<IntArray>()
+        for (o in padded) {
+            var s0 = o[0]
+            val e0 = o[1]
+            while (e0 - s0 > maxFrames * frame) {
+                val midFrame = (s0 / frame + e0 / frame) / 2
+                val win = 120 // +-3 s
+                var best = midFrame
+                var bestV = Double.MAX_VALUE
+                var f = maxOf(s0 / frame + 16, midFrame - win)
+                val fEnd = minOf(e0 / frame - 16, midFrame + win)
+                while (f <= fEnd) {
+                    if (f >= 0 && f < totalFrames && rms[f] < bestV) {
+                        bestV = rms[f]
+                        best = f
+                    }
+                    f++
+                }
+                val splitSample = best * frame
+                if (splitSample <= s0 + frame * 16 || splitSample >= e0 - frame * 16) {
+                    val hard = s0 + maxFrames * frame
+                    chunked.add(intArrayOf(s0, hard))
+                    s0 = hard
+                } else {
+                    chunked.add(intArrayOf(s0, splitSample))
+                    s0 = splitSample
+                }
+            }
+            chunked.add(intArrayOf(s0, e0))
+        }
+        return chunked
     }
 
     override fun onDestroy() {
