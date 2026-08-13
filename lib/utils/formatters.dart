@@ -82,3 +82,14 @@ bool isVideoFile(String name) {
   final lower = name.toLowerCase();
   return videoExtensions.any((ext) => lower.endsWith(ext));
 }
+
+/// hh:mm:ss / m:ss countdown text from a number of seconds (sleep timer
+/// "22:41" under the player title). Pure + unit-tested.
+String formatCountdown(int totalSeconds) {
+  final s = totalSeconds < 0 ? 0 : totalSeconds;
+  final h = s ~/ 3600;
+  final m = (s % 3600) ~/ 60;
+  final sec = s % 60;
+  String two(int v) => v.toString().padLeft(2, '0');
+  return h > 0 ? '$h:${two(m)}:${two(sec)}' : '$m:${two(sec)}';
+}

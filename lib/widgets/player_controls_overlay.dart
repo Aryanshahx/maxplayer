@@ -155,7 +155,11 @@ class PlayerControlsOverlay extends StatelessWidget {
       icon: Icon(
         Icons.tune,
         size: 20,
-        color: active ? themeState.accent : Colors.white,
+        // v23: whole player rides the theme colour; "active" states keep
+        // full strength, idle states dim to 75% of the same colour.
+        color: active
+            ? themeState.accent
+            : themeState.accent.withValues(alpha: 0.75),
       ),
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints.tightFor(width: 34, height: 40),
@@ -189,7 +193,7 @@ class PlayerControlsOverlay extends StatelessWidget {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: themeState.accent.withValues(alpha: 0.35),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -199,11 +203,11 @@ class PlayerControlsOverlay extends StatelessWidget {
                 player.subtitlesActive
                     ? Icons.subtitles
                     : Icons.subtitles_outlined,
-                color: Colors.white70,
+                color: themeState.accent.withValues(alpha: 0.75),
               ),
               title: Text(
                 player.subtitlesActive ? 'Subtitles (on)' : 'Subtitles',
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: themeState.accent),
               ),
               onTap: () {
                 Navigator.of(sheetContext).pop();
@@ -211,15 +215,15 @@ class PlayerControlsOverlay extends StatelessWidget {
               },
             ),
             ListTile(
-              leading: const Icon(
+              leading: Icon(
                 Icons.audiotrack_outlined,
-                color: Colors.white70,
+                color: themeState.accent.withValues(alpha: 0.75),
               ),
               title: Text(
                 player.audioTracks.length > 1
                     ? 'Audio track (${player.audioTracks.length} available)'
                     : 'Audio track',
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: themeState.accent),
               ),
               onTap: () {
                 Navigator.of(sheetContext).pop();
@@ -231,15 +235,17 @@ class PlayerControlsOverlay extends StatelessWidget {
                 Icons.repeat_one_outlined,
                 color: player.abLoopActive
                     ? themeState.accent
-                    : Colors.white70,
+                    : themeState.accent.withValues(alpha: 0.75),
               ),
-              title: const Text(
+              title: Text(
                 'A-B loop',
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(color: themeState.accent),
               ),
               subtitle: Text(
                 abSubtitle,
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                style: TextStyle(
+                    color: themeState.accent.withValues(alpha: 0.5),
+                    fontSize: 12),
               ),
               onTap: () {
                 Navigator.of(sheetContext).pop();
@@ -269,17 +275,20 @@ class PlayerControlsOverlay extends StatelessWidget {
         player.setPlaybackRate(r);
         onInteract();
       },
-      itemBuilder: (context) => [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
-          .map((r) => PopupMenuItem(
-                value: r,
-                child: Text('${r}x',
-                    style: const TextStyle(color: Colors.white)),
-              ))
-          .toList(),
+      itemBuilder: (context) =>
+          const [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0] // v22: up to 3x
+              .map((r) => PopupMenuItem(
+                    value: r,
+                    child: Text('${r}x',
+                        style: TextStyle(color: themeState.accent)),
+                  ))
+              .toList(),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
         child: Text('${player.playbackRate}x',
-            style: const TextStyle(color: Colors.white70, fontSize: 11)),
+            style: TextStyle(
+                color: themeState.accent.withValues(alpha: 0.75),
+                fontSize: 11)),
       ),
     );
   }
@@ -296,7 +305,8 @@ class PlayerControlsOverlay extends StatelessWidget {
     return IconButton(
       tooltip: tooltip,
       icon: Icon(icon,
-          size: compact ? 20 : size, color: active ? accent : Colors.white),
+          size: compact ? 20 : size,
+          color: active ? accent : accent.withValues(alpha: 0.75)),
       // Compact rows must fit ~7 actions on a 320dp-wide phone.
       constraints:
           compact ? const BoxConstraints.tightFor(width: 34, height: 40) : null,

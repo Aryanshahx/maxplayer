@@ -77,6 +77,7 @@ class _Thumb extends StatelessWidget {
       return Image.file(
         File(track.thumbnailPath!),
         fit: BoxFit.cover,
+        cacheWidth: 220, // v22: bound the decode size (see video_tile)
         frameBuilder: fadeInImageFrame,
         errorBuilder: (_, __, ___) => const _Placeholder(),
       );

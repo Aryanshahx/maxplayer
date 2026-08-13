@@ -41,8 +41,8 @@ class PlaylistPanel extends StatelessWidget {
                   'Queue · ${playlist.length}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: themeState.accent,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -50,23 +50,25 @@ class PlaylistPanel extends StatelessWidget {
               ),
               IconButton(
                 tooltip: 'Collapse playlist',
-                icon: const Icon(
+                icon: Icon(
                   Icons.last_page,
                   size: 20,
-                  color: Colors.white70,
+                  color: themeState.accent.withValues(alpha: 0.75),
                 ),
                 onPressed: onClose,
               ),
             ],
           ),
         ),
-        const Divider(height: 1, color: Colors.white12),
+        Divider(
+            height: 1, color: themeState.accent.withValues(alpha: 0.18)),
         Expanded(
           child: playlist.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
                     'Queue is empty',
-                    style: TextStyle(color: Colors.white38),
+                    style: TextStyle(
+                        color: themeState.accent.withValues(alpha: 0.5)),
                   ),
                 )
               : ListView.builder(
@@ -79,7 +81,7 @@ class PlaylistPanel extends StatelessWidget {
                       dense: true,
                       onTap: () => onPlay(i),
                       tileColor: active
-                          ? Colors.white.withValues(alpha: 0.08)
+                          ? themeState.accent.withValues(alpha: 0.10)
                           : null,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -121,7 +123,9 @@ class PlaylistPanel extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 13,
-                          color: active ? Colors.white : Colors.white70,
+                          color: active
+                              ? themeState.accent
+                              : themeState.accent.withValues(alpha: 0.75),
                           fontWeight: active
                               ? FontWeight.w600
                               : FontWeight.normal,
@@ -129,18 +133,18 @@ class PlaylistPanel extends StatelessWidget {
                       ),
                       subtitle: Text(
                         _subtitleFor(track),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: Colors.white38,
+                          color: themeState.accent.withValues(alpha: 0.5),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       trailing: IconButton(
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.close,
                           size: 16,
-                          color: Colors.white38,
+                          color: themeState.accent.withValues(alpha: 0.5),
                         ),
                         onPressed: () => onRemove(i),
                       ),
@@ -189,8 +193,9 @@ class _Placeholder extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFF1e1e2a),
-      child: const Center(
-        child: Icon(Icons.movie_outlined, size: 16, color: Colors.white24),
+      child: Center(
+        child: Icon(Icons.movie_outlined,
+            size: 16, color: themeState.accent.withValues(alpha: 0.35)),
       ),
     );
   }

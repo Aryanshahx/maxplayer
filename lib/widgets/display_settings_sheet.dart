@@ -113,7 +113,10 @@ class DisplaySettingsSheet extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 20, vertical: 6),
-                  child: Row(
+                  // v22: Wrap (was Row) - seven swatches can overflow very
+                  // narrow phones.
+                  child: Wrap(
+                    runSpacing: 10,
                     children: [
                       for (final c in ThemeState.swatches)
                         _ColorSwatch(
@@ -197,12 +200,27 @@ class _ColorSwatch extends StatelessWidget {
           color: color,
           shape: BoxShape.circle,
           border: Border.all(
-            color: selected ? Colors.white : Colors.transparent,
+            // White swatch needs a visible ring even when idle; others get
+            // the ring only while selected.
+            color: selected
+                ? (color.computeLuminance() > 0.7
+                    ? Colors.black87
+                    : Colors.white)
+                : (color.computeLuminance() > 0.7
+                    ? Colors.white24
+                    : Colors.transparent),
             width: 2.5,
           ),
         ),
         child: selected
-            ? const Icon(Icons.check, size: 16, color: Colors.white)
+            ? Icon(
+                Icons.check,
+                size: 16,
+                // v22: dark check on the white/light swatches.
+                color: color.computeLuminance() > 0.7
+                    ? Colors.black87
+                    : Colors.white,
+              )
             : null,
       ),
     );

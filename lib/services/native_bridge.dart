@@ -338,6 +338,18 @@ class NativeBridge {
     } catch (_) {}
   }
 
+  /// v22: the cache-file path the native scanner uses for [path]'s
+  /// thumbnail (null for streams/missing files). The player writes an
+  /// mpv-captured frame there when Android can't decode one itself.
+  static Future<String?> thumbnailPathFor(String path) async {
+    try {
+      return await _channel
+          .invokeMethod<String>('thumbnailPathFor', {'path': path});
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Holds/releases the Wi-Fi multicast lock used during DLNA (SSDP)
   /// device discovery. [hold] true = acquire, false = release.
   static Future<void> setMulticastLock(bool hold) async {

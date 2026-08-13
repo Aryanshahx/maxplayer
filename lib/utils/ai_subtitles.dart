@@ -71,17 +71,19 @@ class AiSubtitleRunner {
   static const String _kLanguageKey = 'ai.language';
   static const String _kTranslateKey = 'ai.translate';
 
-  /// Model choices: id -> (label, detail with size). v18 removed "tiny"
-  /// (~75 MB, "Fast") - it was the weakest link and produced most of the
-  /// garbled captions users saw.
+  /// Model choices: id -> (label, detail with size). v22 brought "tiny"
+  /// back as the explicit speed pick (v18's removal stopped being right
+  /// once "generation takes too much time" became the complaint) - plus
+  /// the engine now uses all CPU cores, so every choice is faster.
   static const Map<String, (String, String)> modelChoices = {
+    'tiny': ('Fast', '~75 MB · ~4x quicker, more mistakes'),
     'base': ('Balanced', '~142 MB · good for most videos'),
     'small': ('Best', '~466 MB · strongest on music & noise, slower'),
   };
 
-  /// Anything unknown (including a "tiny" id saved by older app versions)
-  /// falls back to the default model.
-  static String normalizeModelId(String? id) => id == 'small' ? 'small' : 'base';
+  /// Unknown ids (from older/future app versions) fall back to "base".
+  static String normalizeModelId(String? id) =>
+      modelChoices.containsKey(id) ? id! : 'base';
 
   /// Language choices: whisper code -> label; 'auto' = detect.
   static const Map<String, String> languageChoices = {
@@ -105,6 +107,7 @@ class AiSubtitleRunner {
 
     /// Approximate download size label per model (for the progress dialog).
   static String modelSizeLabel(String model) => switch (model) {
+        'tiny' => '~75 MB',
         'small' => '~466 MB',
         _ => '~142 MB',
       };
@@ -462,8 +465,9 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Tip: for videos with loud background music, pin the spoken '
-            'language above and choose the "Best" model.',
+            'Tip: "Fast" finishes roughly 4x sooner (more mistakes). For '
+            'videos with loud background music, pin the spoken language '
+            'above and choose "Best".',
             style: TextStyle(color: Colors.white38, fontSize: 11.5),
           ),
         ],

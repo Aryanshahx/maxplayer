@@ -475,33 +475,45 @@ const List<_Item> _smartItems = [
   _Item(
     Icons.lyrics_outlined,
     'Karaoke word highlight',
-    'Player ⋮ menu → Karaoke subtitles: the AI caption words light up one '
-        'by one as they are spoken.',
+    'Player ⋮ menu → Karaoke subtitles: words light up one by one as they '
+        'are spoken. Works with ANY subtitle - AI captions, the video\'s own '
+        '.srt file, or subtitles embedded in the video. While karaoke is '
+        'on, the normal subtitle display turns OFF so only the karaoke '
+        'line shows. The same switch also lives in Player settings → '
+        'Sound & subtitles.',
   ),
   _Item(
     Icons.fast_forward,
     'Skip intro chip',
-    'When AI captions show the dialogue starts late, a "Skip to …" chip '
-        'appears near the start of the video. Turn it off in Player '
-        'settings → Skip intro chip.',
+    'When subtitles (AI captions or the video\'s own .srt file) show the '
+        'dialogue starts late, a "Skip to …" chip appears near the start '
+        'of the video. Turn it off in Player settings → Skip intro chip.',
   ),
   _Item(
     Icons.volume_up,
     'Volume boost up to 200%',
-    'Player settings → Sound & subtitles → Volume boost. The volume swipe '
-        'then continues past 100% for quiet videos.',
+    'ON by default: the volume swipe simply continues past 100% for quiet '
+        'videos. Player settings → Sound & subtitles switches it off.',
   ),
   _Item(
     Icons.graphic_eq,
     'Volume leveling',
     'Player settings → Sound & subtitles → Volume leveling: soft dialogue '
-        'and loud explosions play at a steady loudness.',
+        'and loud explosions play at a steady loudness. Combines with the '
+        'equalizer instead of replacing it.',
   ),
   _Item(
     Icons.bedtime_outlined,
     'Sleep timer',
     'Player ⋮ menu → Sleep timer: pauses playback after 15/30/45/60 '
-        'minutes, or exactly at the end of the current video.',
+        'minutes, or exactly at the end of the current video. While it '
+        'runs, the remaining time shows under the video title.',
+  ),
+  _Item(
+    Icons.speed,
+    'Playback speed up to 3x',
+    'Tap the "1.0x" button in the player controls: 0.5x … 3x (v22 added '
+        '2.5x and 3x).',
   ),
   _Item(
     Icons.lock_outline,

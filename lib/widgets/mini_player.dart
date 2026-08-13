@@ -47,7 +47,7 @@ class MiniPlayer extends StatelessWidget {
                         LinearProgressIndicator(
                           value: progress,
                           minHeight: 2,
-                          backgroundColor: Colors.white10,
+                          backgroundColor: accent.withValues(alpha: 0.18),
                           color: accent,
                         ),
                         Padding(
@@ -75,17 +75,17 @@ class MiniPlayer extends StatelessWidget {
                                       track.title,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
-                                        color: Colors.white,
+                                        color: accent,
                                       ),
                                     ),
                                     Text(
                                       '${formatDuration(player.position)} / ${formatDuration(player.duration)}',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 11,
-                                        color: Colors.white38,
+                                        color: accent.withValues(alpha: 0.5),
                                       ),
                                     ),
                                   ],
@@ -102,9 +102,9 @@ class MiniPlayer extends StatelessWidget {
                                 onPressed: player.togglePlay,
                               ),
                               IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.close,
-                                  color: Colors.white38,
+                                  color: accent.withValues(alpha: 0.5),
                                   size: 20,
                                 ),
                                 onPressed: player.stopMini,
@@ -142,8 +142,9 @@ class _Placeholder extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFF1e1e2a),
-      child: const Center(
-        child: Icon(Icons.movie_outlined, size: 16, color: Colors.white24),
+      child: Center(
+        child: Icon(Icons.movie_outlined,
+            size: 16, color: themeState.accent.withValues(alpha: 0.35)),
       ),
     );
   }

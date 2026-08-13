@@ -68,7 +68,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: themeState.accent.withValues(alpha: 0.35),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -222,7 +222,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               _SwitchTile(
                 icon: Icons.volume_up,
                 label: 'Volume boost up to 200%',
-                subtitle: 'For quiet videos: swipe past 100% adds extra gain',
+                subtitle: 'ON by default - the swipe just continues past '
+                    '100% for quiet videos',
                 value: _settings.volumeBoost200,
                 onChanged: (v) =>
                     _update(_settings.copyWith(volumeBoost200: v)),
@@ -239,15 +240,16 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               _SwitchTile(
                 icon: Icons.lyrics_outlined,
                 label: 'Karaoke subtitle highlight',
-                subtitle: 'AI subtitle words light up as they are spoken',
+                subtitle: 'Words light up as they are spoken - works with '
+                    'any subtitle (AI, embedded or .srt file)',
                 value: _settings.karaokeSubs,
                 onChanged: (v) => _update(_settings.copyWith(karaokeSubs: v)),
               ),
               _SwitchTile(
                 icon: Icons.fast_forward,
                 label: 'Skip intro chip',
-                subtitle: 'Offer to jump when AI captions show the dialogue '
-                    'starts later',
+                subtitle: 'Offer to jump when subtitles (AI or the video\'s '
+                    'own .srt file) show the dialogue starts later',
                 value: _settings.skipIntroChip,
                 onChanged: (v) =>
                     _update(_settings.copyWith(skipIntroChip: v)),
@@ -304,7 +306,9 @@ class _SwitchTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       child: Row(
         children: [
-          Icon(icon, color: Colors.white70, size: 22),
+          // v23: the whole player UI rides the picked theme colour.
+          Icon(icon,
+              color: themeState.accent.withValues(alpha: 0.75), size: 22),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -312,11 +316,12 @@ class _SwitchTile extends StatelessWidget {
               children: [
                 Text(label,
                     style:
-                        const TextStyle(color: Colors.white, fontSize: 15)),
+                        TextStyle(color: themeState.accent, fontSize: 15)),
                 if (subtitle != null)
                   Text(subtitle!,
-                      style: const TextStyle(
-                          color: Colors.white38, fontSize: 12)),
+                      style: TextStyle(
+                          color: themeState.accent.withValues(alpha: 0.5),
+                          fontSize: 12)),
               ],
             ),
           ),
@@ -350,7 +355,8 @@ class _MiniDropdown<T> extends StatelessWidget {
       dropdownColor: const Color(0xFF26262f),
       underline: const SizedBox.shrink(),
       isDense: true,
-      style: const TextStyle(color: Colors.white70, fontSize: 13),
+      style: TextStyle(
+          color: themeState.accent.withValues(alpha: 0.75), fontSize: 13),
       items: [
         for (final e in entries.entries)
           DropdownMenuItem(value: e.key, child: Text(e.value)),

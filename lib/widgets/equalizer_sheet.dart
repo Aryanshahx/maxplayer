@@ -70,7 +70,7 @@ class _EqualizerSheetState extends State<EqualizerSheet> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: themeState.accent.withValues(alpha: 0.35),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -112,7 +112,8 @@ class _EqualizerSheetState extends State<EqualizerSheet> {
                       padding: const EdgeInsets.only(right: 8),
                       child: ActionChip(
                         label: Text(p.key),
-                        labelStyle: const TextStyle(color: Colors.white70),
+                        labelStyle: TextStyle(
+                            color: themeState.accent.withValues(alpha: 0.75)),
                         backgroundColor: Colors.white.withValues(alpha: 0.06),
                         side: BorderSide.none,
                         onPressed: () {
@@ -176,7 +177,9 @@ class _BandSlider extends StatelessWidget {
     return Column(
       children: [
         Text(value.toStringAsFixed(0),
-            style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            style: TextStyle(
+                color: themeState.accent.withValues(alpha: 0.5),
+                fontSize: 11)),
         SizedBox(
           height: 140,
           child: RotatedBox(
@@ -186,7 +189,7 @@ class _BandSlider extends StatelessWidget {
                 trackHeight: 2.5,
                 activeTrackColor: accent,
                 thumbColor: accent,
-                inactiveTrackColor: Colors.white12,
+                inactiveTrackColor: accent.withValues(alpha: 0.18),
                 thumbShape:
                     const RoundSliderThumbShape(enabledThumbRadius: 6),
               ),
@@ -201,7 +204,9 @@ class _BandSlider extends StatelessWidget {
           ),
         ),
         Text(label,
-            style: const TextStyle(color: Colors.white54, fontSize: 11)),
+            style: TextStyle(
+                color: themeState.accent.withValues(alpha: 0.6),
+                fontSize: 11)),
       ],
     );
   }

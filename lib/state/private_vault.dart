@@ -81,7 +81,10 @@ class PrivateVault {
     final target = await _uniqueIn(await _dir(), srcPath);
     final moved = await _move(src, target);
     // Refresh the gallery scan for the OLD location so it disappears.
-    await NativeBridge.scanFile(srcPath);
+    // v22: best-effort only - a failed rescan must NOT undo a good move.
+    try {
+      await NativeBridge.scanFile(srcPath);
+    } catch (_) {}
     return moved;
   }
 
@@ -95,7 +98,9 @@ class PrivateVault {
     if (!destDir.existsSync()) await destDir.create(recursive: true);
     final target = await _uniqueIn(destDir, hiddenPath);
     final moved = await _move(src, target);
-    await NativeBridge.scanFile(moved.path); // visible to gallery again
+    try {
+      await NativeBridge.scanFile(moved.path); // visible to gallery again
+    } catch (_) {}
     return moved;
   }
 
@@ -117,8 +122,22 @@ class PrivateVault {
     try {
       return await src.rename(targetPath);
     } on FileSystemException {
+      // Cross-volume move (e.g. SD card): copy, then remove the original.
+      // v22: if the delete fails we roll the copy back - the old code
+      // left a silent duplicate in the vault AND reported failure, which
+      // made "Private folder not working" reports un-debuggable.
       final copied = await src.copy(targetPath);
-      await src.delete();
+      try {
+        await src.delete();
+      } catch (_) {
+        try {
+          await copied.delete();
+        } catch (_) {}
+        throw const FileSystemException(
+          'Could not remove the original file - allow "All files access" '
+          'for Max Player and try again',
+        );
+      }
       return copied;
     }
   }

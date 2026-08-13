@@ -43,6 +43,10 @@ class VideoTile extends StatelessWidget {
                     Image.file(
                       File(track.thumbnailPath!),
                       fit: BoxFit.cover,
+                      // v22: bound the decode size - a stray full-size
+                      // capture must never cost a 33 MB bitmap while
+                      // scrolling the grid.
+                      cacheWidth: 360,
                       frameBuilder: fadeInImageFrame,
                       errorBuilder: (_, __, ___) => const _Placeholder(),
                     )

@@ -349,6 +349,19 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "thumbnailPathFor" -> {
+                    // The Dart player's 4K/HDR thumbnail fallback (v22): when
+                    // Android's metadata engine can't decode a frame from a
+                    // file, mpv (which plays them fine) captures one at this
+                    // exact cache path during playback. Returning null tells
+                    // Dart "don't even try" (missing file / stream).
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrEmpty() || !File(path).exists()) {
+                        result.success(null)
+                    } else {
+                        result.success(thumbFileFor(path).absolutePath)
+                    }
+                }
                 "setMulticastLock" -> {
                     // DLNA casting: SSDP multicast discovery needs a Wi-Fi
                     // multicast lock on many devices; Dart holds it while a
@@ -703,6 +716,16 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
+     * Cache file holding the thumbnail of [path]. Shared with the Dart
+     * player's mpv-screenshot fallback (v22), which writes to this exact
+     * location when Android's MediaMetadataRetriever can't decode a file.
+     */
+    private fun thumbFileFor(path: String): File {
+        val thumbsDir = File(cacheDir, "thumbs").apply { mkdirs() }
+        return File(thumbsDir, md5(path) + ".jpg")
+    }
+
+    /**
      * Extracts duration/dimensions and writes a thumbnail JPEG into the app
      * cache dir. Thumbnails are cached per video path and re-used while the
      * source file's mtime is older than the cached image, so rescanning the
@@ -735,8 +758,7 @@ class MainActivity : FlutterActivity() {
             // Video codec from the container's video track MIME (works on all API levels).
             out["codec"] = detectVideoCodec(path)
 
-            val thumbsDir = File(cacheDir, "thumbs").apply { mkdirs() }
-            val thumbFile = File(thumbsDir, md5(path) + ".jpg")
+            val thumbFile = thumbFileFor(path)
 
             val cacheValid =
                 thumbFile.exists() && thumbFile.length() > 0 &&
@@ -844,13 +866,13 @@ class MainActivity : FlutterActivity() {
     // base / ~466 MB small); after that everything is offline & free.
     // ---------------------------------------------------------------------------
 
-    // v18: the "tiny" (~75 MB) model was removed from the picker - it was
-    // the weakest link and the source of most garbled captions. Anything
-    // that is not an explicit id falls back to "base" (also covers a
-    // stale "tiny" id saved by older app versions).
+    // v22: "tiny" (~75 MB) returns as the explicit "Fast" choice - roughly
+    // 4x quicker than base at some accuracy cost (the user picks it, eyes
+    // open). Unknown ids still fall back to "base" (also covers stale ids
+    // saved by older versions).
     private fun modelFileFor(name: String): File {
         val safe = when (name) {
-            "base", "small" -> name
+            "tiny", "base", "small" -> name
             else -> "base"
         }
         return File(filesDir, "models/ggml-$safe.bin")
@@ -858,6 +880,8 @@ class MainActivity : FlutterActivity() {
 
     private fun modelUrlFor(name: String): String {
         return when (name) {
+            "tiny" ->
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"
             "small" ->
                 "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
             else ->
@@ -970,7 +994,17 @@ class MainActivity : FlutterActivity() {
                             val res = Whisper.transcribe(
                                 model,
                                 spanWav.absolutePath,
-                                WhisperConfig(language = language, translate = translate)
+                                WhisperConfig(
+                                    language = language,
+                                    translate = translate,
+                                    // v22: use every core the phone offers -
+                                    // whisper.cpp scales well to 8 threads,
+                                    // roughly halving transcription time vs
+                                    // the library default of 4.
+                                    threads = Runtime.getRuntime()
+                                        .availableProcessors()
+                                        .coerceIn(2, 8),
+                                )
                             )
                             val offsetMs = span[0] * 1000L / 16000
                             for (s in res.segments) {

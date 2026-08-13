@@ -8,6 +8,7 @@ import 'package:maxplayer/cast/cast_support.dart';
 import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/player_settings.dart';
+import 'package:maxplayer/state/theme_state.dart';
 import 'package:maxplayer/state/video_library_state.dart';
 import 'package:maxplayer/utils/ai_subtitles.dart';
 import 'package:maxplayer/utils/formatters.dart';
@@ -434,15 +435,17 @@ void main() {
   });
 
   group('AI subtitle options & caption filter (v18)', () {
-    test('the fast/tiny model is removed; defaults stay sane', () {
-      expect(AiSubtitleRunner.modelChoices.containsKey('tiny'), isFalse);
+    // v22: "tiny" returned as the explicit Fast pick (speed complaint).
+    test('the fast/tiny model is back as an explicit pick; defaults sane',
+        () {
+      expect(AiSubtitleRunner.modelChoices.containsKey('tiny'), isTrue);
       expect(AiSubtitleRunner.modelChoices.keys,
-          containsAll(<String>['base', 'small']));
+          containsAll(<String>['tiny', 'base', 'small']));
       expect(AiSubtitleRunner.normalizeModelId(null), 'base');
-      expect(AiSubtitleRunner.normalizeModelId('tiny'), 'base',
-          reason: 'a stale v14-17 "tiny" pref must migrate to base');
+      expect(AiSubtitleRunner.normalizeModelId('tiny'), 'tiny');
       expect(AiSubtitleRunner.normalizeModelId('small'), 'small');
       expect(AiSubtitleRunner.normalizeModelId('nonsense'), 'base');
+      expect(AiSubtitleRunner.modelSizeLabel('tiny'), '~75 MB');
       expect(AiSubtitleRunner.modelSizeLabel('base'), '~142 MB');
     });
 
@@ -644,6 +647,78 @@ void main() {
       expect(karaokeActiveCue(cues, 2500)?.text, 'Hello there');
       expect(karaokeActiveCue(cues, 3400)?.text, 'Hello there'); // grace
       expect(karaokeActiveCue(cues, 5000), isNull);
+    });
+
+    // v22: live mpv line -> AI sidecar -> same-name .srt fallback order.
+    test('karaokeCueAt picks live, then AI cues, then sidecar cues', () {
+      const live = SrtCue(9000, 11000, 'live line');
+      final ai = [const SrtCue(9000, 11000, 'ai line')];
+      final side = [const SrtCue(9000, 11000, 'sidecar line')];
+      expect(karaokeCueAt(live, ai, side, 10000)?.text, 'live line');
+      expect(karaokeCueAt(null, ai, side, 10000)?.text, 'ai line');
+      expect(karaokeCueAt(null, null, side, 10000)?.text, 'sidecar line');
+      expect(karaokeCueAt(null, null, null, 10000), isNull);
+      // Stale live cue (past its 600 ms grace) falls through to files.
+      final ai2 = [const SrtCue(45000, 55000, 'ai line later')];
+      expect(karaokeCueAt(live, ai2, side, 50000)?.text, 'ai line later');
+      // Everything expired -> nothing shown.
+      expect(karaokeCueAt(live, ai, side, 50000), isNull);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v22: same-name sidecar picking (karaoke / skip-intro on the video's
+  // own subtitle file)
+  // -------------------------------------------------------------------------
+  group('v22 sidecar .srt picking', () {
+    test('exact same-name match wins over language variants', () {
+      final names = ['movie.eng.srt', 'Movie.SRT', 'movie.maxai.srt', 'x.srt'];
+      expect(
+        sidecarSrtCandidates(names, '/sdcard/Movies/Movie.mp4'),
+        ['Movie.SRT', 'movie.eng.srt'],
+      );
+    });
+    test('AI sidecar is never picked as a plain sidecar', () {
+      final names = ['movie.maxai.srt'];
+      expect(sidecarSrtCandidates(names, '/a/movie.mkv'), isEmpty);
+    });
+    test('language variants are sorted and kept in original case', () {
+      final names = ['movie.hi.srt', 'movie.en.srt'];
+      expect(sidecarSrtCandidates(names, 'movie.mkv'),
+          ['movie.en.srt', 'movie.hi.srt']);
+    });
+    test('unrelated files and non-srt are ignored', () {
+      final names = ['movie.srt.txt', 'other.srt', 'movie.txt', '.srt'];
+      expect(sidecarSrtCandidates(names, '/m/movie.mp4'), isEmpty);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v22: sleep-timer countdown + white-accent contrast
+  // -------------------------------------------------------------------------
+  group('v22 sleep countdown + accent contrast', () {
+    test('formatCountdown renders m:ss and h:mm:ss', () {
+      expect(formatCountdown(0), '0:00');
+      expect(formatCountdown(9), '0:09');
+      expect(formatCountdown(61), '1:01');
+      expect(formatCountdown(599), '9:59');
+      expect(formatCountdown(3600), '1:00:00');
+      expect(formatCountdown(-5), '0:00'); // clamps negatives
+    });
+
+    test('contrastColorFor: dark ink on light accents, white on dark', () {
+      const darkInk = Color(0xFF16161f);
+      expect(contrastColorFor(const Color(0xFFFFFFFF)), darkInk);
+      expect(contrastColorFor(const Color(0xFF22D3EE)), darkInk); // cyan
+      expect(contrastColorFor(const Color(0xFFA855F7)), Colors.white);
+      expect(contrastColorFor(const Color(0xFF60A5FA)), Colors.white);
+    });
+
+    test('white is a selectable accent swatch', () {
+      expect(
+        ThemeState.swatches.any((c) => c.toARGB32() == 0xFFFFFFFF),
+        isTrue,
+      );
     });
   });
 }

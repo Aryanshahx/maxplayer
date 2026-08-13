@@ -234,14 +234,29 @@ class _PrivateScreenState extends State<PrivateScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (vids.isEmpty) {
-      return const Center(
+      // v22 (user request): the how-to line belongs ON this screen.
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Text(
-            'Nothing hidden yet.\nLong-press any video in the library and '
-            'choose "Move to Private folder".',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white38, height: 1.5),
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lock_outline,
+                  size: 44, color: accent.withValues(alpha: 0.65)),
+              const SizedBox(height: 12),
+              const Text(
+                'Hold on a video in the Library to add it to the Private folder',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: Colors.white70, fontSize: 14, height: 1.4),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Nothing is hidden yet.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white38, height: 1.5),
+              ),
+            ],
           ),
         ),
       );

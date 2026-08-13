@@ -64,7 +64,9 @@ class PlayerSettings {
     this.castButton = true,
     this.screenshotButton = true,
     this.lockButton = true,
-    this.volumeBoost200 = false,
+    // v22: ON by default ("volume up to 200% out of the box"); only people
+    // who explicitly turned it off keep it off (saved 'false' below).
+    this.volumeBoost200 = true,
     this.volumeLeveling = false,
     this.karaokeSubs = false,
     this.skipIntroChip = true,
@@ -111,7 +113,7 @@ class PlayerSettings {
       castButton: s[kCastButton] != 'false',
       screenshotButton: s[kScreenshotButton] != 'false',
       lockButton: s[kLockButton] != 'false',
-      volumeBoost200: s[kVolumeBoost200] == 'true',
+      volumeBoost200: s[kVolumeBoost200] != 'false', // v22: default on
       volumeLeveling: s[kVolumeLeveling] == 'true',
       karaokeSubs: s[kKaraokeSubs] == 'true',
       skipIntroChip: s[kSkipIntroChip] != 'false',

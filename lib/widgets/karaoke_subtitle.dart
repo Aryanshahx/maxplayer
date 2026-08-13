@@ -43,6 +43,26 @@ SrtCue? karaokeActiveCue(List<SrtCue> cues, int posMs) {
   return active;
 }
 
+/// Which cue the karaoke overlay should show at [posMs]. Pure + unit-tested.
+///
+/// Priority (v22):
+///  1. [live] - the line mpv is displaying right now, read through its
+///     sub-text/sub-start/sub-end properties. Real cue timing, and works
+///     with ANY subtitle source (embedded mkv tracks included).
+///  2. [aiCues] - the AI sidecar's cue list.
+///  3. [sidecarCues] - the video's own same-name .srt file.
+SrtCue? karaokeCueAt(
+  SrtCue? live,
+  List<SrtCue>? aiCues,
+  List<SrtCue>? sidecarCues,
+  int posMs,
+) {
+  if (live != null && posMs <= live.endMs + 600) return live;
+  final fromAi = aiCues == null ? null : karaokeActiveCue(aiCues, posMs);
+  if (fromAi != null) return fromAi;
+  return sidecarCues == null ? null : karaokeActiveCue(sidecarCues, posMs);
+}
+
 /// Karaoke-style AI subtitle: words light up one by one as they are spoken.
 /// Shown instead of mpv's own subtitle rendering while the setting is on.
 class KaraokeSubtitle extends StatelessWidget {
@@ -55,15 +75,21 @@ class KaraokeSubtitle extends StatelessWidget {
     return AnimatedBuilder(
       animation: player,
       builder: (context, _) {
-        final cues = player.aiCues;
-        if (cues == null || cues.isEmpty) return const SizedBox.shrink();
-        final cue = karaokeActiveCue(cues, player.position.inMilliseconds);
+        final posMs = player.position.inMilliseconds;
+        final cue = karaokeCueAt(
+          player.liveSubCue,
+          player.aiCues,
+          player.sidecarCues,
+          posMs,
+        );
         if (cue == null) return const SizedBox.shrink();
-        final activeIdx = karaokeWordIndex(cue, player.position.inMilliseconds);
+        final activeIdx = karaokeWordIndex(cue, posMs);
         final words =
             cue.text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
 
-        const baseColor = Color(0xE6FFFFFF); // 90% white
+        // v22: unlit words are dimmed further so the accent highlight
+        // stays visible even when the accent itself is white.
+        const baseColor = Colors.white54;
         const shadow = [
           Shadow(color: Colors.black, blurRadius: 6),
           Shadow(color: Colors.black, offset: Offset(0, 1)),

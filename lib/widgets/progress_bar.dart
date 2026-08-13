@@ -78,7 +78,7 @@ class _VideoProgressBarState extends State<VideoProgressBar> {
                           const RoundSliderOverlayShape(overlayRadius: 14),
                       activeTrackColor: themeState.accent,
                       inactiveTrackColor:
-                          Colors.white.withValues(alpha: 0.15),
+                          themeState.accent.withValues(alpha: 0.15),
                       thumbColor: themeState.accent,
                     ),
                     child: Slider(
@@ -102,7 +102,9 @@ class _VideoProgressBarState extends State<VideoProgressBar> {
                           decoration: BoxDecoration(
                             color: Colors.black.withValues(alpha: 0.88),
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.white24),
+                            border: Border.all(
+                                color: themeState.accent
+                                    .withValues(alpha: 0.35)),
                           ),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
@@ -128,8 +130,8 @@ class _VideoProgressBarState extends State<VideoProgressBar> {
                               Text(
                                 formatDuration(
                                     Duration(milliseconds: shownMs)),
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: themeState.accent,
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -150,7 +152,10 @@ class _VideoProgressBarState extends State<VideoProgressBar> {
     );
   }
 
-  static const _timeStyle = TextStyle(fontSize: 12, color: Colors.white70);
+  // v23: time labels ride the theme colour (75% strength, like all
+  // secondary player chrome).
+  static final _timeStyle = TextStyle(
+      fontSize: 12, color: themeState.accent.withValues(alpha: 0.75));
 }
 
 class _NoThumb extends StatelessWidget {
@@ -160,8 +165,9 @@ class _NoThumb extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFF1e1e2a),
-      child: const Center(
-        child: Icon(Icons.movie_outlined, size: 18, color: Colors.white24),
+      child: Center(
+        child: Icon(Icons.movie_outlined,
+            size: 18, color: themeState.accent.withValues(alpha: 0.35)),
       ),
     );
   }

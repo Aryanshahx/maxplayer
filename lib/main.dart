@@ -64,6 +64,11 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
     super.initState();
     // App-wide accent color (persisted).
     themeState.load();
+    // v22: the player's fallback for 4K/HDR thumbnails writes the cached
+    // image itself - swap it into the already-built library list so the
+    // tile updates without a rescan.
+    player.onThumbnailCaptured =
+        (videoPath, thumbPath) => library.setThumbnail(videoPath, thumbPath);
     // "Open with Max Player" from other apps: warm delivery ...
     NativeBridge.configureCallbacks(
       onOpenVideo: _openExternalVideo,

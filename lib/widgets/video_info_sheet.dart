@@ -68,7 +68,7 @@ class VideoInfoSheet extends StatelessWidget {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: accent.withValues(alpha: 0.35),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -84,8 +84,9 @@ class VideoInfoSheet extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             if (track == null)
-              const Text('Nothing is loaded right now',
-                  style: TextStyle(color: Colors.white38))
+              Text('Nothing is loaded right now',
+                  style: TextStyle(
+                      color: themeState.accent.withValues(alpha: 0.5)))
             else
               FutureBuilder<VideoMetadata>(
                 future: track.path.contains('://')
@@ -162,14 +163,16 @@ class _Row extends StatelessWidget {
             width: 106,
             child: Text(
               label,
-              style: const TextStyle(color: Colors.white38, fontSize: 13),
+              style: TextStyle(
+                  color: themeState.accent.withValues(alpha: 0.5),
+                  fontSize: 13),
             ),
           ),
           Expanded(
             child: Text(
               value,
               style: TextStyle(
-                color: Colors.white,
+                color: themeState.accent,
                 fontSize: small ? 11.5 : 13,
                 fontWeight: FontWeight.w500,
               ),

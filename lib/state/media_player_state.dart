@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' hide VideoTrack;
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:path/path.dart' as p;
 
 import '../models/history_entry.dart';
 import '../models/video_track.dart';
@@ -110,6 +112,7 @@ class MediaPlayerState extends ChangeNotifier {
           player.seek(a);
         }
         _checkSleepAtEnd(v); // "sleep at end of video" timer
+        _maybeCaptureThumb(v); // 4K/HDR thumbnail fallback (v22)
         notifyListeners();
       }),
       player.stream.duration.listen((v) {
@@ -135,6 +138,9 @@ class MediaPlayerState extends ChangeNotifier {
       player.stream.track.listen((t) {
         currentAudioTrack = t.audio;
         currentSubtitleTrack = t.subtitle;
+        // Karaoke mode: switching to a real subtitle track flips the
+        // overlay on (and mpv's own rendering off) immediately.
+        if (karaokeMode) unawaited(_applySubVisibility());
         notifyListeners();
       }),
     ];
@@ -154,13 +160,17 @@ class MediaPlayerState extends ChangeNotifier {
     // keep ticking even if the position stream coalesces (the home-screen
     // mini player's progress bar looked frozen because of that).
     _uiTicker = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (!isPlaying) return;
+      // v22: also pulse while a sleep timer runs so the under-title
+      // countdown keeps counting even when playback is paused.
+      if (!isPlaying && !sleepTimerActive) return;
       final p = player.state.position;
-      if (p != position) {
+      if (p != position || sleepTimerActive) {
         position = p;
+        _maybeCaptureThumb(p);
         notifyListeners();
       }
     });
+    _startLiveSubObserver();
   }
 
   Future<void> _init() async {
@@ -323,14 +333,24 @@ class MediaPlayerState extends ChangeNotifier {
       // Head-room for the 200% volume boost + re-apply the current gain /
       // leveling filter for the new file.
       unawaited(plat.setProperty('volume-max', '200'));
+      // Force the sub-visibility to be re-pushed for the new file (mpv may
+      // reset it at open, while our cache would think it's still applied).
+      _appliedSubVisibility = null;
     }
     await player.open(Media(track.path), play: autoplay);
     await player.setRate(playbackRate);
     await _applyMpvVolume();
-    if (_levelingOn) setVolumeLeveling(true);
+    await _applyAudioFilters(); // equalizer + leveling survive file changes
     await _attachSidecarSubtitles(track.path);
     await _recordOpen(track);
     await _restoreBookmark(track);
+    // v22: if this file has no cached thumbnail AND Android's metadata
+    // engine could not make one, remember it - after ~1.5 s of playback a
+    // frame is captured through mpv instead (see _maybeCaptureThumb).
+    _pendingThumbFor =
+        (track.thumbnailPath == null && !track.path.contains('://'))
+            ? track.path
+            : null;
   }
 
   /// Re-attaches previously generated AI subtitles ("<video>.maxai.srt"
@@ -340,13 +360,22 @@ class MediaPlayerState extends ChangeNotifier {
   /// file is a stream). Feeds the karaoke word-highlight overlay.
   List<SrtCue>? aiCues;
 
-  /// v21 skip-intro chip: where the dialogue actually starts, when AI
-  /// subtitles exist and speech begins noticeably late (see computeSkipIntro).
+  /// v22: cues parsed from the video's OWN same-name subtitle file
+  /// ("movie.srt", "movie.en.srt" - the files mpv auto-loads). Used when
+  /// there is no AI sidecar, so karaoke + skip-intro work on ordinary
+  /// subtitled videos too.
+  List<SrtCue>? sidecarCues;
+
+  /// v21 skip-intro chip: where the dialogue actually starts, when
+  /// subtitles (AI sidecar or same-name .srt) show speech begins
+  /// noticeably late (see computeSkipIntro).
   Duration? skipIntroAt;
 
   Future<void> _attachSidecarSubtitles(String videoPath) async {
     aiCues = null;
+    sidecarCues = null;
     skipIntroAt = null;
+    liveSubCue = null;
     if (videoPath.contains('://')) return; // no sidecars for streams
     final platform = player.platform;
     if (platform is! NativePlayer) return;
@@ -360,6 +389,41 @@ class MediaPlayerState extends ChangeNotifier {
     } catch (_) {
       // Missing/unreadable sidecar is not fatal.
     }
+    // v22: no AI captions -> look for the video's own subtitle file and
+    // use it as the skip-intro + karaoke source instead.
+    if (aiCues == null) {
+      try {
+        final cues = await _loadSidecarCues(videoPath);
+        if (cues != null && cues.isNotEmpty) sidecarCues = cues;
+      } catch (_) {
+        // An unreadable sibling file must never break playback.
+      }
+    }
+    _recomputeSkipIntro();
+    await _applySubVisibility();
+    notifyListeners();
+  }
+
+  /// Parses the best same-name .srt sitting next to [videoPath], if any.
+  Future<List<SrtCue>?> _loadSidecarCues(String videoPath) async {
+    final dir = Directory(p.dirname(videoPath));
+    if (!dir.existsSync()) return null;
+    final names = <String>[];
+    await for (final e in dir.list(followLinks: false)) {
+      if (e is File) names.add(p.basename(e.path));
+    }
+    final candidates = sidecarSrtCandidates(names, videoPath);
+    if (candidates.isEmpty) return null;
+    final cues = parseSrt(
+      await File(p.join(dir.path, candidates.first)).readAsString(),
+    );
+    return cues.isEmpty ? null : cues;
+  }
+
+  void _recomputeSkipIntro() {
+    // AI captions win (word-accurate); same-name .srt is the fallback.
+    final cues = aiCues ?? sidecarCues;
+    skipIntroAt = cues == null ? null : computeSkipIntro(cues);
   }
 
   /// (Re)parses the AI sidecar for karaoke + skip-intro. Called when a track
@@ -367,7 +431,6 @@ class MediaPlayerState extends ChangeNotifier {
   /// writing new subtitles.
   Future<void> refreshAiCues(String videoPath) async {
     aiCues = null;
-    skipIntroAt = null;
     if (videoPath.contains('://')) return;
     try {
       final srt = File(srtPathForVideo(videoPath));
@@ -375,11 +438,148 @@ class MediaPlayerState extends ChangeNotifier {
       final cues = parseSrt(await srt.readAsString());
       if (cues.isEmpty) return;
       aiCues = cues;
-      skipIntroAt = computeSkipIntro(cues);
     } catch (_) {
       // A corrupt sidecar must never break playback.
     }
+    _recomputeSkipIntro();
+    await _applySubVisibility();
     notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Karaoke mode + live subtitle reading (v22)
+  // ---------------------------------------------------------------------------
+
+  /// Whether karaoke rendering is enabled (mirrors the player setting).
+  bool karaokeMode = false;
+
+  /// The subtitle line mpv is showing RIGHT NOW (from its `sub-text` /
+  /// `sub-start` / `sub-end` properties), with real cue timing. This makes
+  /// karaoke work with ANY subtitle - embedded mkv tracks included - not
+  /// just ones we can parse as files.
+  SrtCue? liveSubCue;
+
+  /// Last sub-visibility value we pushed to mpv (avoids redundant sets).
+  String? _appliedSubVisibility;
+
+  Future<void> _startLiveSubObserver() async {
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    try {
+      await platform.observeProperty('sub-text', (text) async {
+        final plat = player.platform;
+        if (text.trim().isEmpty || plat is! NativePlayer) {
+          if (liveSubCue != null) {
+            liveSubCue = null;
+            notifyListeners();
+          }
+          return;
+        }
+        var startMs = 0;
+        var endMs = 0;
+        try {
+          startMs = ((double.tryParse(
+                          await plat.getProperty('sub-start')) ??
+                      0) *
+                  1000)
+              .round();
+          endMs = ((double.tryParse(await plat.getProperty('sub-end')) ??
+                      0) *
+                  1000)
+              .round();
+        } catch (_) {}
+        if (endMs <= startMs) endMs = startMs + 2000; // sane fallback
+        final clean = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+        liveSubCue = isMusicOnlyText(clean)
+            ? null
+            : SrtCue(startMs, endMs, clean);
+        notifyListeners();
+      });
+    } catch (_) {
+      // Older engine - karaoke simply falls back to parsed cue files.
+    }
+  }
+
+  /// Player-settings-driven: turn karaoke mode on/off. Hides mpv's own
+  /// subtitle rendering (our overlay takes over) whenever a usable
+  /// subtitle source exists.
+  Future<void> setKaraokeMode(bool on) async {
+    karaokeMode = on;
+    await _applySubVisibility();
+  }
+
+  Future<void> _applySubVisibility() async {
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    final hide = karaokeMode &&
+        (subtitlesActive || aiCues != null || sidecarCues != null);
+    final want = hide ? 'no' : 'yes';
+    if (want == _appliedSubVisibility) return;
+    _appliedSubVisibility = want;
+    try {
+      await platform.setProperty('sub-visibility', want);
+    } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------------------
+  // 4K/HDR thumbnail fallback (v22)
+  //
+  // Android's MediaMetadataRetriever gives up on some 4K/HDR (10-bit HEVC,
+  // certain mkv) files, so their library tiles stayed placeholder-grey.
+  // mpv plays those same files fine - so once such a video has been playing
+  // for ~1.5 s we ask mpv for a frame and write it to the exact cache file
+  // the native scanner uses, then shrink it to the standard 320px width.
+  // ---------------------------------------------------------------------------
+
+  /// Video awaiting a playback-captured thumbnail.
+  String? _pendingThumbFor;
+
+  /// Wired by main.dart: (videoPath, thumbPath) -> live-updates the
+  /// library tile so the image appears without a rescan.
+  void Function(String videoPath, String thumbPath)? onThumbnailCaptured;
+
+  void _maybeCaptureThumb(Duration pos) {
+    final path = _pendingThumbFor;
+    if (path == null || pos < const Duration(milliseconds: 1500)) return;
+    _pendingThumbFor = null;
+    unawaited(_captureThumbWithMpv(path));
+  }
+
+  Future<void> _captureThumbWithMpv(String videoPath) async {
+    try {
+      final platform = player.platform;
+      if (platform is! NativePlayer) return;
+      final target = await NativeBridge.thumbnailPathFor(videoPath);
+      if (target == null) return;
+      final thumb = File(target);
+      if (thumb.existsSync()) return; // scanner beat us to it meanwhile
+      final tmp = File('$target.capture');
+      if (tmp.existsSync()) await tmp.delete();
+      await platform.setProperty('screenshot-format', 'jpg');
+      await platform.setProperty('screenshot-jpeg-quality', '82');
+      await platform.command(['screenshot-to-file', tmp.path, 'video']);
+      // mpv encodes the shot asynchronously - wait briefly for the file.
+      for (var i = 0; i < 25; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        if (tmp.existsSync() && tmp.lengthSync() > 0) break;
+      }
+      if (!tmp.existsSync() || tmp.lengthSync() == 0) return;
+      // A 4K screenshot decodes to a ~33 MB bitmap; shrink to the same
+      // 320px width the native scanner writes, so scrolling the library
+      // never decodes a giant image.
+      final data = await tmp.readAsBytes();
+      final codec = await ui.instantiateImageCodec(data, targetWidth: 320);
+      final frame = await codec.getNextFrame();
+      final png = await frame.image.toByteData(format: ui.ImageByteFormat.png);
+      frame.image.dispose();
+      codec.dispose();
+      if (png == null) return;
+      await thumb.writeAsBytes(png.buffer.asUint8List(), flush: true);
+      await tmp.delete();
+      onThumbnailCaptured?.call(videoPath, target);
+    } catch (_) {
+      // Worst case: the tile keeps its movie-icon placeholder.
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -400,6 +600,17 @@ class MediaPlayerState extends ChangeNotifier {
     final left = at.difference(DateTime.now()).inSeconds;
     if (left <= 0) return null;
     return '${(left + 30) ~/ 60} min'; // rounded while counting down
+  }
+
+  /// v22: precise live countdown for the player top bar ("23:41" or
+  /// "end of video"); null when no timer runs. The state pulses every
+  /// 500 ms while a timer is active, so this ticks visibly.
+  String? get sleepTimerCountdown {
+    if (_sleepAtEndOfVideo) return 'end of video';
+    final at = _sleepFireAt;
+    if (at == null) return null;
+    final left = at.difference(DateTime.now());
+    return left.inSeconds <= 0 ? null : formatCountdown(left.inSeconds);
   }
 
   void setSleepTimer({Duration? forDuration, bool atEndOfVideo = false}) {
@@ -647,21 +858,45 @@ class MediaPlayerState extends ChangeNotifier {
   // ---------------------------------------------------------------------------
   // Volume leveling (v21) - mpv dynaudnorm: quiet dialogue and loud
   // explosions come out at a steady level.
+  // v22: merged with the equalizer into ONE mpv `af` chain (both used to
+  // overwrite the whole property, silently cancelling each other), the
+  // window was widened so the effect is actually audible, and the applied
+  // chain is read back once - if this engine build lacks dynaudnorm the
+  // user is told instead of the toggle doing nothing.
   // ---------------------------------------------------------------------------
 
-  static const String kLevelingFilter = 'dynaudnorm=f=250:g=12:p=0.95';
+  static const String kLevelingFilter = 'dynaudnorm=f=150:g=15:m=5:p=0.95';
   bool _levelingOn = false;
+  bool _levelingWarned = false;
   bool get volumeLeveling => _levelingOn;
 
   Future<void> setVolumeLeveling(bool on) async {
     _levelingOn = on;
-    final platform = player.platform;
-    if (platform is NativePlayer) {
-      try {
-        await platform.setProperty('af', on ? kLevelingFilter : '');
-      } catch (_) {}
-    }
     notifyListeners();
+    await _applyAudioFilters();
+  }
+
+  /// The single writer of mpv's `af` property: equalizer bands + leveling
+  /// combined. Replaces the old pair of writers that clobbered each other.
+  Future<void> _applyAudioFilters() async {
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    final chain = <String>[
+      if (eqEnabled) buildEqualizerFilter(eqGains),
+      if (_levelingOn) kLevelingFilter,
+    ].join(',');
+    try {
+      await platform.setProperty('af', chain);
+      if (_levelingOn && !_levelingWarned) {
+        final applied = await platform.getProperty('af');
+        if (!applied.contains('dynaudnorm')) {
+          _levelingWarned = true;
+          _notices.add(
+            'Volume leveling is not supported by this video engine build',
+          );
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> toggleMute() async {
@@ -778,17 +1013,7 @@ class MediaPlayerState extends ChangeNotifier {
     await _applyEqFilter();
   }
 
-  Future<void> _applyEqFilter() async {
-    final platform = player.platform;
-    if (platform is NativePlayer) {
-      try {
-        await platform.setProperty(
-          'af',
-          eqEnabled ? buildEqualizerFilter(eqGains) : '',
-        );
-      } catch (_) {}
-    }
-  }
+  Future<void> _applyEqFilter() => _applyAudioFilters(); // v22: shared chain
 
   // ---------------------------------------------------------------------------
   // Watch-time stats

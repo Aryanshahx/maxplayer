@@ -1,7 +1,7 @@
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+19
+version: 1.0.0+21
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

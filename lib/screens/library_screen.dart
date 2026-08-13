@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../app_info.dart';
 import '../models/video_track.dart';
 import '../state/media_player_state.dart';
@@ -126,7 +127,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   /// v21: long-press a video -> offer moving it into the Private folder.
-  void _offerHide(VideoTrack track, VideoLibraryState lib) {
+  Future<void> _offerHide(VideoTrack track, VideoLibraryState lib) async {
+    // v22: moving a file out of public storage needs the same "All files
+    // access" grant the scanner uses. Ask up-front instead of letting the
+    // move fail with a cryptic snackbar.
+    if (!await Permission.manageExternalStorage.isGranted) {
+      final status = await Permission.manageExternalStorage.request();
+      if (!mounted) return;
+      if (!status.isGranted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Private folder needs "All files access": allow it, then '
+              'long-press the video again',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -159,10 +179,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     const SnackBar(content: Text('Moved to Private folder')),
                   );
                 }
-              } catch (_) {
+              } catch (e) {
                 if (mounted) {
+                  // v22: show WHY it failed (was a bare "Could not hide")
+                  final why = e
+                      .toString()
+                      .replaceAll('FileSystemException: ', '')
+                      .replaceAll('Exception: ', '');
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Could not hide this video')),
+                    SnackBar(
+                      content:
+                          Text('Could not hide: $why'),
+                    ),
                   );
                 }
               }

@@ -263,6 +263,20 @@ class VideoLibraryState extends ChangeNotifier {
 
   Future<void> rescan() => scanAllStorage();
 
+  /// v22: swap in a thumbnail the PLAYER captured with mpv (Android's
+  /// metadata engine can't decode some 4K/HDR files, whose tiles stayed
+  /// grey). Updates the list in place - no rescan needed.
+  void setThumbnail(String videoPath, String thumbPath) {
+    var hit = false;
+    for (var i = 0; i < _videos.length; i++) {
+      if (_videos[i].path == videoPath) {
+        _videos[i] = _videos[i].copyWith(thumbnailPath: thumbPath);
+        hit = true;
+      }
+    }
+    if (hit) notifyListeners();
+  }
+
   Future<void> _scanDirectory(String dirPath) async {
     isScanning = true;
     _videos = [];

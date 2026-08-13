@@ -102,6 +102,34 @@ List<SrtCue> parseSrt(String doc) {
   return cues;
 }
 
+/// Picks the best subtitle file sitting next to a video from a directory
+/// listing ([fileNames] = basenames in the video's folder). These are the
+/// files mpv auto-loads, so parsing the same pick lets karaoke + skip-intro
+/// work on ordinary subtitled videos. Pure + unit-tested.
+///
+/// Ranking: exact "<name>.srt" first, then language-suffixed
+/// "<name>.<xx>.srt" (alphabetical). The AI sidecar ("<name>.maxai.srt")
+/// has its own pipeline and is always excluded.
+List<String> sidecarSrtCandidates(List<String> fileNames, String videoPath) {
+  final base = videoPath.replaceAll(r'\', '/').split('/').last;
+  final dot = base.lastIndexOf('.');
+  final stem = (dot > 0 ? base.substring(0, dot) : base).toLowerCase();
+  String? exact;
+  final langMatches = <String>[];
+  for (final raw in fileNames) {
+    final f = raw.toLowerCase();
+    if (!f.endsWith('.srt')) continue;
+    if (f == '$stem.srt') {
+      exact ??= raw;
+      continue;
+    }
+    if (f.endsWith('.maxai.srt')) continue;
+    if (f.startsWith('$stem.')) langMatches.add(raw);
+  }
+  langMatches.sort();
+  return [if (exact != null) exact, ...langMatches];
+}
+
 /// Whisper's music-only captions ("♪", "[Music]", "(upbeat music)") carry no
 /// dialogue - karaoke, skip-intro and transcript search skip them.
 bool isMusicOnlyText(String text) {
