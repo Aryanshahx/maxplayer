@@ -304,11 +304,18 @@ class NativeBridge {
     required String videoPath,
     String model = 'base',
     String language = 'auto',
+    // v21: whisper's translate task - any spoken language -> English subs.
+    bool translate = false,
   }) async {
     try {
       return await _channel.invokeMethod<int>(
         'aiSubtitleGenerate',
-        {'videoPath': videoPath, 'model': model, 'language': language},
+        {
+          'videoPath': videoPath,
+          'model': model,
+          'language': language,
+          'translate': translate,
+        },
       );
     } catch (_) {
       return null;

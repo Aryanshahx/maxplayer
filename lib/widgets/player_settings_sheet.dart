@@ -218,6 +218,40 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 value: _settings.lockButton,
                 onChanged: (v) => _update(_settings.copyWith(lockButton: v)),
               ),
+              const _SectionHeader('Sound & subtitles'),
+              _SwitchTile(
+                icon: Icons.volume_up,
+                label: 'Volume boost up to 200%',
+                subtitle: 'For quiet videos: swipe past 100% adds extra gain',
+                value: _settings.volumeBoost200,
+                onChanged: (v) =>
+                    _update(_settings.copyWith(volumeBoost200: v)),
+              ),
+              _SwitchTile(
+                icon: Icons.graphic_eq,
+                label: 'Volume leveling',
+                subtitle: 'Steady loudness: soft dialogue and loud '
+                    'explosions evened out',
+                value: _settings.volumeLeveling,
+                onChanged: (v) =>
+                    _update(_settings.copyWith(volumeLeveling: v)),
+              ),
+              _SwitchTile(
+                icon: Icons.lyrics_outlined,
+                label: 'Karaoke subtitle highlight',
+                subtitle: 'AI subtitle words light up as they are spoken',
+                value: _settings.karaokeSubs,
+                onChanged: (v) => _update(_settings.copyWith(karaokeSubs: v)),
+              ),
+              _SwitchTile(
+                icon: Icons.fast_forward,
+                label: 'Skip intro chip',
+                subtitle: 'Offer to jump when AI captions show the dialogue '
+                    'starts later',
+                value: _settings.skipIntroChip,
+                onChanged: (v) =>
+                    _update(_settings.copyWith(skipIntroChip: v)),
+              ),
             ],
             const SizedBox(height: 8),
           ],

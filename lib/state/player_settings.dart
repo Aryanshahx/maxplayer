@@ -35,6 +35,20 @@ class PlayerSettings {
   /// Show the screen-lock (kids mode) button on the video.
   final bool lockButton;
 
+  /// v21: playback extras.
+  /// Volume slider/drag may go past 100% up to 200% (mpv decoder gain).
+  final bool volumeBoost200;
+
+  /// mpv dynaudnorm: loud explosions and quiet dialogue evened out.
+  final bool volumeLeveling;
+
+  /// Karaoke-style word highlight for AI subtitles.
+  final bool karaokeSubs;
+
+  /// Offer a "Skip intro" chip when AI subtitles show the dialogue starts
+  /// noticeably after the video start.
+  final bool skipIntroChip;
+
   const PlayerSettings({
     this.doubleTapSeek = true,
     this.seekSeconds = 10,
@@ -50,6 +64,10 @@ class PlayerSettings {
     this.castButton = true,
     this.screenshotButton = true,
     this.lockButton = true,
+    this.volumeBoost200 = false,
+    this.volumeLeveling = false,
+    this.karaokeSubs = false,
+    this.skipIntroChip = true,
   });
 
   // Persisted keys (MediaPlayerState reads the resume key directly).
@@ -67,6 +85,10 @@ class PlayerSettings {
   static const String kCastButton = 'player.castButton';
   static const String kScreenshotButton = 'player.screenshotButton';
   static const String kLockButton = 'player.lockButton';
+  static const String kVolumeBoost200 = 'player.volumeBoost200';
+  static const String kVolumeLeveling = 'player.volumeLeveling';
+  static const String kKaraokeSubs = 'player.karaokeSubs';
+  static const String kSkipIntroChip = 'player.skipIntroChip';
 
   static Future<PlayerSettings> load() async {
     final s = await NativeBridge.loadSettings();
@@ -89,6 +111,10 @@ class PlayerSettings {
       castButton: s[kCastButton] != 'false',
       screenshotButton: s[kScreenshotButton] != 'false',
       lockButton: s[kLockButton] != 'false',
+      volumeBoost200: s[kVolumeBoost200] == 'true',
+      volumeLeveling: s[kVolumeLeveling] == 'true',
+      karaokeSubs: s[kKaraokeSubs] == 'true',
+      skipIntroChip: s[kSkipIntroChip] != 'false',
     );
   }
 
@@ -107,7 +133,11 @@ class PlayerSettings {
     NativeBridge.saveSetting(kHorizontalSeek, '$horizontalSeek');
     NativeBridge.saveSetting(kCastButton, '$castButton');
     NativeBridge.saveSetting(kScreenshotButton, '$screenshotButton');
-    return NativeBridge.saveSetting(kLockButton, '$lockButton');
+    NativeBridge.saveSetting(kLockButton, '$lockButton');
+    NativeBridge.saveSetting(kVolumeBoost200, '$volumeBoost200');
+    NativeBridge.saveSetting(kVolumeLeveling, '$volumeLeveling');
+    NativeBridge.saveSetting(kKaraokeSubs, '$karaokeSubs');
+    return NativeBridge.saveSetting(kSkipIntroChip, '$skipIntroChip');
   }
 
   PlayerSettings copyWith({
@@ -125,6 +155,10 @@ class PlayerSettings {
     bool? castButton,
     bool? screenshotButton,
     bool? lockButton,
+    bool? volumeBoost200,
+    bool? volumeLeveling,
+    bool? karaokeSubs,
+    bool? skipIntroChip,
   }) {
     return PlayerSettings(
       doubleTapSeek: doubleTapSeek ?? this.doubleTapSeek,
@@ -141,6 +175,10 @@ class PlayerSettings {
       castButton: castButton ?? this.castButton,
       screenshotButton: screenshotButton ?? this.screenshotButton,
       lockButton: lockButton ?? this.lockButton,
+      volumeBoost200: volumeBoost200 ?? this.volumeBoost200,
+      volumeLeveling: volumeLeveling ?? this.volumeLeveling,
+      karaokeSubs: karaokeSubs ?? this.karaokeSubs,
+      skipIntroChip: skipIntroChip ?? this.skipIntroChip,
     );
   }
 }

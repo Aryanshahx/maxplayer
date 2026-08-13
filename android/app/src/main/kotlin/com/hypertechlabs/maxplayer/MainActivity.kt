@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -313,13 +314,16 @@ class MainActivity : FlutterActivity() {
                     val videoPath = call.argument<String>("videoPath")
                     val model = call.argument<String>("model") ?: "base"
                     val language = call.argument<String>("language") ?: "auto"
+                    // v21: whisper translate task -> English subtitles from
+                    // any spoken language.
+                    val translate = call.argument<Boolean>("translate") ?: false
                     if (videoPath.isNullOrEmpty()) {
                         result.error("bad_args", "videoPath is required", null)
                     } else {
                         aiCancelled = false
                         val jobId = ++aiJobCounter
                         executor.execute {
-                            runAiPipeline(jobId, videoPath, model, language)
+                            runAiPipeline(jobId, videoPath, model, language, translate)
                         }
                         result.success(jobId)
                     }
@@ -652,6 +656,53 @@ class MainActivity : FlutterActivity() {
     // ---------------------------------------------------------------------------
 
     /**
+     * v21 4K/HDR-safe frame grab, least-risk first. The old code asked for a
+     * FULL-SIZE frame and scaled it afterwards - on 4K videos that bitmap is
+     * ~33 MB, which OOM-failed (or returned null on some 10-bit HEVC rips)
+     * and the tile silently kept the placeholder icon. Ladder:
+     *   1. getScaledFrameAtTime: decode directly at 320px wide (API 27+)
+     *   2. plain getFrameAtTime at the same timestamp
+     *   3. plain getFrameAtTime(0)  - some files only expose the first frame
+     *   4. embedded cover art
+     * Every step swallows Throwables (incl. OutOfMemoryError) and falls
+     * through to the next one.
+     */
+    private fun grabFrameSafely(
+        retriever: MediaMetadataRetriever,
+        seekUs: Long,
+        width: Int?,
+        height: Int?
+    ): Bitmap? {
+        if (Build.VERSION.SDK_INT >= 27 && width != null && height != null && width > 0 && height > 0) {
+            val dstW = 320
+            val dstH = (320.0 * height / width).toInt().coerceAtLeast(1)
+            try {
+                val f = retriever.getScaledFrameAtTime(
+                    seekUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, dstW, dstH
+                )
+                if (f != null) return f
+            } catch (_: Throwable) {
+            }
+        }
+        try {
+            val f = retriever.getFrameAtTime(seekUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            if (f != null) return f
+        } catch (_: Throwable) {
+        }
+        try {
+            val f = retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            if (f != null) return f
+        } catch (_: Throwable) {
+        }
+        try {
+            val art = retriever.embeddedPicture
+            if (art != null) return BitmapFactory.decodeByteArray(art, 0, art.size)
+        } catch (_: Throwable) {
+        }
+        return null
+    }
+
+    /**
      * Extracts duration/dimensions and writes a thumbnail JPEG into the app
      * cache dir. Thumbnails are cached per video path and re-used while the
      * source file's mtime is older than the cached image, so rescanning the
@@ -696,8 +747,10 @@ class MainActivity : FlutterActivity() {
             } else {
                 // Grab a frame ~1s in (or the very first frame for tiny clips).
                 val seekUs = if (durationMs != null && durationMs in 0..1500) 0L else 1_000_000L
-                val frame =
-                    retriever.getFrameAtTime(seekUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                val frame = grabFrameSafely(
+                    retriever, seekUs,
+                    out["width"] as? Int, out["height"] as? Int
+                )
                 if (frame != null) {
                     val scaled = scaleToWidth(frame, 320)
                     FileOutputStream(thumbFile).use { fos ->
@@ -843,7 +896,8 @@ class MainActivity : FlutterActivity() {
         jobId: Int,
         videoPath: String,
         modelName: String,
-        language: String
+        language: String,
+        translate: Boolean = false
     ) {
         try {
             // 1. Model file (one-time download).
@@ -916,7 +970,7 @@ class MainActivity : FlutterActivity() {
                             val res = Whisper.transcribe(
                                 model,
                                 spanWav.absolutePath,
-                                WhisperConfig(language = language)
+                                WhisperConfig(language = language, translate = translate)
                             )
                             val offsetMs = span[0] * 1000L / 16000
                             for (s in res.segments) {

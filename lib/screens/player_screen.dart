@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:media_kit/media_kit.dart' hide VideoTrack;
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../cast/cast_state.dart';
@@ -14,6 +15,7 @@ import '../utils/formatters.dart';
 import '../utils/srt.dart';
 import '../widgets/cast_sheet.dart';
 import '../widgets/equalizer_sheet.dart';
+import '../widgets/karaoke_subtitle.dart';
 import '../widgets/player_controls_overlay.dart';
 import '../widgets/player_settings_sheet.dart';
 import '../widgets/playlist_panel.dart';
@@ -192,7 +194,23 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _reloadSettings() async {
     final s = await PlayerSettings.load();
     if (mounted) setState(() => _settings = s);
+    // v21: push the playback-extras settings into the player state.
+    unawaited(widget.player.setVolumeBoost200(s.volumeBoost200));
+    unawaited(widget.player.setVolumeLeveling(s.volumeLeveling));
+    _applyKaraokeSubtitleVisibility(s);
     _startHideTimer();
+  }
+
+  /// Karaoke mode replaces mpv's own subtitle rendering with our
+  /// word-highlight overlay (mpv `sub-visibility` property, flipped directly
+  /// through the media_kit platform channel).
+  void _applyKaraokeSubtitleVisibility(PlayerSettings s) {
+    final hideNative = s.karaokeSubs && widget.player.aiCues != null;
+    final plat = widget.player.player.platform;
+    if (plat is NativePlayer) {
+      unawaited(
+          plat.setProperty('sub-visibility', hideNative ? 'no' : 'yes'));
+    }
   }
 
   Future<void> _openSettings() async {
@@ -363,6 +381,96 @@ class _PlayerScreenState extends State<PlayerScreen>
     setState(() {}); // remove the persistent badge
   }
 
+  /// Which intro chip the user dismissed (per dialogue-start time; a new
+  /// track recomputes it, so the chip auto-reappears for the next video).
+  Duration? _skipChipDismissedFor;
+
+  // ---------------------------------------------------------------------------
+  // Sleep timer (v21)
+  // ---------------------------------------------------------------------------
+
+  void _showSleepSheet() {
+    final player = widget.player;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a24),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        Widget item(IconData icon, String label,
+            {String? sub, bool active = false, VoidCallback? onTap}) {
+          return ListTile(
+            leading: Icon(icon,
+                color: active ? themeState.accent : Colors.white70),
+            title: Text(label,
+                style: TextStyle(
+                    color: active ? themeState.accent : Colors.white)),
+            subtitle: sub == null
+                ? null
+                : Text(sub,
+                    style: const TextStyle(
+                        color: Colors.white54, fontSize: 12)),
+            trailing: active
+                ? Icon(Icons.check, color: themeState.accent)
+                : null,
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              onTap?.call();
+              _onUserInteraction();
+            },
+          );
+        }
+
+        return SafeArea(
+          child: AnimatedBuilder(
+            animation: player,
+            builder: (context, _) {
+              final label = player.sleepTimerLabel;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    label == null
+                        ? 'Sleep timer'
+                        : 'Sleep timer: stops in $label',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  for (final mins in const [15, 30, 45, 60])
+                    item(Icons.bedtime_outlined, '$mins minutes',
+                        active: label == '$mins min',
+                        onTap: () => player.setSleepTimer(
+                            forDuration: Duration(minutes: mins))),
+                  item(Icons.movie_outlined, 'Until end of this video',
+                      active: label == 'end of video',
+                      onTap: () =>
+                          player.setSleepTimer(atEndOfVideo: true)),
+                  item(Icons.close, 'Off',
+                      onTap: player.cancelSleepTimer),
+                  const SizedBox(height: 8),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   void _cycleFit() {
     setState(() => _fitIndex = (_fitIndex + 1) % _fits.length);
     _showIndicator('Fit: ${_fitNames[_fitIndex]}', _fitIcons[_fitIndex]);
@@ -473,8 +581,10 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// Volume / brightness value from the accumulated vertical movement.
   void _applyLevelDrag() {
-    // Dragging up increases; a 300px sweep covers the full 0..100% range.
-    final v = (_dragStartValue - _dragAccum.dy / 300).clamp(0.0, 1.0);
+    // Dragging up increases; a 300px sweep covers the full range. v21: the
+    // volume range grows to 0..200% while the boost setting is on.
+    final cap = _scaleMode == _ScaleMode.volume ? widget.player.volumeCap : 1.0;
+    final v = (_dragStartValue - _dragAccum.dy / (300 * cap)).clamp(0.0, cap);
     if (_scaleMode == _ScaleMode.volume) {
       final pct = (v * 100).round();
       if (pct == _lastVolPct) return; // spare mpv from per-pixel IPC
@@ -816,14 +926,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                                         ? Container(
                                             key: const ValueKey('speedBadge'),
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 22,
-                                              vertical: 10,
+                                              horizontal: 14,
+                                              vertical: 7,
                                             ),
                                             decoration: BoxDecoration(
                                               color: themeState.accent
                                                   .withValues(alpha: 0.9),
                                               borderRadius:
-                                                  BorderRadius.circular(30),
+                                                  BorderRadius.circular(20),
                                             ),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
@@ -831,14 +941,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                                                 const Icon(
                                                   Icons.fast_forward,
                                                   color: Colors.white,
-                                                  size: 34,
+                                                  size: 19,
                                                 ),
-                                                const SizedBox(width: 8),
+                                                const SizedBox(width: 5),
                                                 Text(
                                                   '${_settings.longPressMultiplier}x',
                                                   style: const TextStyle(
                                                     color: Colors.white,
-                                                    fontSize: 28,
+                                                    fontSize: 15,
                                                     fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
@@ -974,6 +1084,89 @@ class _PlayerScreenState extends State<PlayerScreen>
                               ),
                             ),
                           ),
+                          // v21: karaoke word-highlight for AI subtitles
+                          // (replaces mpv's own subtitle rendering).
+                          if (_settings.karaokeSubs && !_isPip)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 120,
+                              child: KaraokeSubtitle(player: widget.player),
+                            ),
+                          // v21: "Skip intro" - offered while the AI captions
+                          // say the dialogue hasn't started yet.
+                          if (_settings.skipIntroChip && !_isPip)
+                            Positioned(
+                              right: 14,
+                              bottom: 132,
+                              child: AnimatedBuilder(
+                                animation: widget.player,
+                                builder: (context, _) {
+                                  final at = widget.player.skipIntroAt;
+                                  if (at == null) return const SizedBox.shrink();
+                                  final pos = widget.player.position;
+                                  final untimely = pos >=
+                                          at - const Duration(seconds: 1) ||
+                                      pos > const Duration(minutes: 10);
+                                  if (_skipChipDismissedFor == at || untimely) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(20),
+                                      onTap: () {
+                                        widget.player.seek(at);
+                                        setState(
+                                            () => _skipChipDismissedFor = at);
+                                        _onUserInteraction();
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.fromLTRB(
+                                            12, 8, 8, 8),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xF2152026),
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                          border: Border.all(
+                                            color: themeState.accent
+                                                .withValues(alpha: 0.65),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.fast_forward,
+                                                size: 16,
+                                                color: themeState.accent),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Skip to ${formatDuration(at)}',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            GestureDetector(
+                                              onTap: () => setState(() =>
+                                                  _skipChipDismissedFor = at),
+                                              child: const Padding(
+                                                padding: EdgeInsets.all(4),
+                                                child: Icon(Icons.close,
+                                                    size: 14,
+                                                    color: Colors.white54),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
                           // Controls slide up + fade in instead of snapping.
                           Positioned(
                             left: 0,
@@ -1058,6 +1251,18 @@ class _PlayerScreenState extends State<PlayerScreen>
             _openCast();
           case 'pip':
             NativeBridge.enterPip(playing: widget.player.isPlaying);
+          case 'sleep':
+            _showSleepSheet();
+          case 'karaoke':
+            final next = _settings.copyWith(
+                karaokeSubs: !_settings.karaokeSubs);
+            setState(() => _settings = next);
+            next.save();
+            _applyKaraokeSubtitleVisibility(next);
+            if (widget.player.aiCues == null) {
+              widget.player
+                  .refreshAiCues(widget.player.currentTrack?.path ?? '');
+            }
         }
       },
       itemBuilder: (context) => [
@@ -1069,6 +1274,20 @@ class _PlayerScreenState extends State<PlayerScreen>
           _topMenuItem('cast', Icons.cast_outlined, 'Cast to TV'),
         _topMenuItem('pip', Icons.picture_in_picture_alt_outlined,
             'Picture in picture'),
+        _topMenuItem(
+          'sleep',
+          Icons.bedtime_outlined,
+          widget.player.sleepTimerActive
+              ? 'Sleep timer (${widget.player.sleepTimerLabel})'
+              : 'Sleep timer',
+        ),
+        _topMenuItem(
+          'karaoke',
+          _settings.karaokeSubs
+              ? Icons.closed_caption
+              : Icons.closed_caption_off_outlined,
+          _settings.karaokeSubs ? 'Karaoke subtitles (on)' : 'Karaoke subtitles',
+        ),
       ],
     );
   }
@@ -1125,35 +1344,47 @@ class _MarqueeTitle extends StatefulWidget {
 
 class _MarqueeTitleState extends State<_MarqueeTitle> {
   final ScrollController _sc = ScrollController();
-  Timer? _timer;
+
+  /// v21: CONSTANT speed (the timer version restarted the animation
+  /// mid-flight for long titles, which made the speed visibly change).
+  static const double _pixelsPerSecond = 80;
+  static const Duration _holdAtStart = Duration(milliseconds: 700);
+  static const Duration _holdAtEnd = Duration(milliseconds: 1100);
 
   @override
   void initState() {
     super.initState();
-    _timer =
-        Timer.periodic(const Duration(milliseconds: 1400), (_) => _tick());
+    _loop();
   }
 
-  void _tick() {
-    if (!mounted || !_sc.hasClients) return;
-    final max = _sc.position.maxScrollExtent;
-    if (max <= 0) return; // fits on screen - nothing to scroll
-    if (_sc.offset >= max - 1) {
-      _sc.jumpTo(0); // hold at the end, then wrap around
-    } else {
-      _sc.animateTo(
-        max,
-        // v20: ~2.5x faster scroll ("move the title in more speed").
-        duration:
-            Duration(milliseconds: (max * 9).clamp(500, 5000).toInt()),
-        curve: Curves.linear,
-      );
+  Future<void> _loop() async {
+    while (mounted) {
+      await Future<void>.delayed(_holdAtStart);
+      if (!mounted || !_sc.hasClients) return;
+      final max = _sc.position.maxScrollExtent;
+      if (max <= 0) {
+        // Text fits on screen - nothing to scroll; keep waiting.
+        await Future<void>.delayed(const Duration(seconds: 2));
+        continue;
+      }
+      final ms = (max / _pixelsPerSecond * 1000).round().clamp(400, 60000);
+      try {
+        await _sc.animateTo(
+          max,
+          duration: Duration(milliseconds: ms),
+          curve: Curves.linear,
+        );
+      } catch (_) {
+        return; // controller detached mid-animation (screen closed)
+      }
+      await Future<void>.delayed(_holdAtEnd);
+      if (!mounted || !_sc.hasClients) return;
+      _sc.jumpTo(0);
     }
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
     _sc.dispose();
     super.dispose();
   }

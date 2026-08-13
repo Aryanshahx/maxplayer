@@ -87,6 +87,10 @@ class UserManualSheet extends StatelessWidget {
         _SectionTitle('Player buttons', accent),
         for (final item in _playerItems) _IconRow(item: item),
 
+        // --- Smart features ---------------------------------------------
+        _SectionTitle('Smart features', accent),
+        for (final item in _smartItems) _IconRow(item: item),
+
         // --- Tips & FAQ ---------------------------------------------------
         _SectionTitle('Tips & answers', accent),
         for (final item in _tipItems) _IconRow(item: item),
@@ -456,6 +460,56 @@ const List<_Item> _playerItems = [
         'swipe-to-seek), plus: seek step, auto-hide delay, speed-boost '
         'multiplier, resume playback, and which extra buttons (cast / '
         'screenshot / lock) show in the player.',
+  ),
+];
+
+/// v21: the feature list Max Player has that other players do not.
+const List<_Item> _smartItems = [
+  _Item(
+    Icons.translate,
+    'AI subtitles in English (translate)',
+    'Play a foreign-language video → subtitle button → AI subtitles → '
+        'choose "→ English" before generating. Any spoken language becomes '
+        'English subtitles, fully on-device.',
+  ),
+  _Item(
+    Icons.lyrics_outlined,
+    'Karaoke word highlight',
+    'Player ⋮ menu → Karaoke subtitles: the AI caption words light up one '
+        'by one as they are spoken.',
+  ),
+  _Item(
+    Icons.fast_forward,
+    'Skip intro chip',
+    'When AI captions show the dialogue starts late, a "Skip to …" chip '
+        'appears near the start of the video. Turn it off in Player '
+        'settings → Skip intro chip.',
+  ),
+  _Item(
+    Icons.volume_up,
+    'Volume boost up to 200%',
+    'Player settings → Sound & subtitles → Volume boost. The volume swipe '
+        'then continues past 100% for quiet videos.',
+  ),
+  _Item(
+    Icons.graphic_eq,
+    'Volume leveling',
+    'Player settings → Sound & subtitles → Volume leveling: soft dialogue '
+        'and loud explosions play at a steady loudness.',
+  ),
+  _Item(
+    Icons.bedtime_outlined,
+    'Sleep timer',
+    'Player ⋮ menu → Sleep timer: pauses playback after 15/30/45/60 '
+        'minutes, or exactly at the end of the current video.',
+  ),
+  _Item(
+    Icons.lock_outline,
+    'Private folder (PIN)',
+    'Long-press any video → "Move to Private folder". Hidden videos '
+        'disappear from Gallery and file managers. Open them from the 🔒 '
+        'icon in the library top bar after your PIN. Note: uninstalling '
+        'the app deletes hidden videos - move them out first.',
   ),
 ];
 

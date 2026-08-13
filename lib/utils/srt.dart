@@ -50,3 +50,85 @@ String _srtTime(int ms) {
   String two(int v) => v.toString().padLeft(2, '0');
   return '${two(h)}:${two(m)}:${two(s)},${milli.toString().padLeft(3, '0')}';
 }
+
+
+// ---------------------------------------------------------------------------
+// v21 additions: parsing + smart-caption helpers
+// ---------------------------------------------------------------------------
+
+final RegExp _srtTimeLine = RegExp(
+  r'(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})',
+);
+
+/// Parses an .srt document back into cues (inverse of [buildSrt]).
+///
+/// Deliberately tolerant: sequence numbers are ignored, blank lines end a
+/// cue, and timing lines that do not match the classic "HH:MM:SS,mmm -->
+/// HH:MM:SS,mmm" shape are skipped. Used by the karaoke overlay, the
+/// skip-intro chip and transcript search.
+List<SrtCue> parseSrt(String doc) {
+  final cues = <SrtCue>[];
+  final lines = doc.split(RegExp(r'\r?\n'));
+  var i = 0;
+  while (i < lines.length) {
+    final m = _srtTimeLine.firstMatch(lines[i]);
+    if (m == null) {
+      i++;
+      continue;
+    }
+    int ms(int h, int mm, int s, String frac) =>
+        ((h * 60 + mm) * 60 + s) * 1000 +
+        int.parse(frac.padRight(3, '0').substring(0, 3));
+    final start = ms(
+      int.parse(m.group(1)!),
+      int.parse(m.group(2)!),
+      int.parse(m.group(3)!),
+      m.group(4)!,
+    );
+    final end = ms(
+      int.parse(m.group(5)!),
+      int.parse(m.group(6)!),
+      int.parse(m.group(7)!),
+      m.group(8)!,
+    );
+    i++;
+    final textLines = <String>[];
+    while (i < lines.length && lines[i].trim().isNotEmpty) {
+      textLines.add(lines[i].trim());
+      i++;
+    }
+    cues.add(SrtCue(start, end, textLines.join(' ')));
+  }
+  return cues;
+}
+
+/// Whisper's music-only captions ("♪", "[Music]", "(upbeat music)") carry no
+/// dialogue - karaoke, skip-intro and transcript search skip them.
+bool isMusicOnlyText(String text) {
+  final t = text.trim();
+  if (t.isEmpty) return true;
+  if (t.contains('♪')) return true;
+  final t2 = t.toLowerCase();
+  final starts = t2.startsWith('[') || t2.startsWith('(') || t2.startsWith('*');
+  if (!starts) return false;
+  return t2.contains('music') ||
+      t2.contains('applause') ||
+      t2.contains('laughter') ||
+      t2.contains('silence') ||
+      t2.contains('noise');
+}
+
+/// Where the dialogue actually begins: start of the first spoken (non-music)
+/// cue, minus a 1 s margin. Returns null when speech starts almost right
+/// away (< 20 s - nothing to skip) or later than 10 minutes in (by then a
+/// chip no longer makes sense).
+Duration? computeSkipIntro(List<SrtCue> cues) {
+  for (final c in cues) {
+    if (isMusicOnlyText(c.text)) continue;
+    if (c.startMs < 20000) return null; // talking right away
+    if (c.startMs > 600000) return null; // 10+ min of silence: not an intro
+    final target = (c.startMs - 1000).clamp(0, 1 << 31);
+    return Duration(milliseconds: target);
+  }
+  return null;
+}

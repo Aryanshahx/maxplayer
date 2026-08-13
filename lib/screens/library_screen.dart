@@ -8,8 +8,10 @@ import '../state/video_library_state.dart';
 import '../utils/crash_log.dart';
 import '../widgets/about_sheet.dart';
 import '../widgets/display_settings_sheet.dart';
+import '../state/private_vault.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/user_manual_sheet.dart';
+import 'private_screen.dart';
 import '../widgets/video_list_item.dart';
 import '../widgets/video_tile.dart';
 import 'history_screen.dart';
@@ -120,6 +122,54 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => PlayerScreen(player: widget.player)),
+    );
+  }
+
+  /// v21: long-press a video -> offer moving it into the Private folder.
+  void _offerHide(VideoTrack track, VideoLibraryState lib) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a24),
+        title: const Text('Move to Private folder?',
+            style: TextStyle(color: Colors.white, fontSize: 17)),
+        content: Text(
+          '"${track.title}" moves into the app\'s private folder - invisible '
+          'to Gallery and file managers, visible here only after your PIN.\n\n'
+          'Warning: uninstalling the app deletes hidden videos.',
+          style:
+              const TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.lock_outline, size: 16),
+            label: const Text('Hide'),
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              try {
+                await PrivateVault().hide(track.path);
+                widget.player.removeHistoryEntry(track.path);
+                lib.rescan();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Moved to Private folder')),
+                  );
+                }
+              } catch (_) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Could not hide this video')),
+                  );
+                }
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -264,6 +314,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 builder: (_) => HistoryScreen(player: widget.player),
               ),
             ),
+          ),
+          // v21: Private folder (PIN). Rescan on return so hidden/unhidden
+          // videos appear/disappear immediately.
+          IconButton(
+            tooltip: 'Private folder',
+            icon: const Icon(Icons.lock_outline),
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PrivateScreen(player: widget.player),
+                ),
+              );
+              lib.rescan();
+            },
           ),
           PopupMenuButton<String>(
             tooltip: 'More',
@@ -439,11 +503,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
                 delegate: SliverChildBuilderDelegate((context, i) {
                   final track = group.videos[i];
-                  return VideoTile(
-                    track: track,
-                    isFavorite: lib.isFavorite(track),
-                    onTap: () => _playVideo(track),
-                    onFavorite: () => lib.toggleFavorite(track),
+                  return GestureDetector(
+                    // v21: long-press moves the video to the Private folder.
+                    onLongPress: () => _offerHide(track, lib),
+                    child: VideoTile(
+                      track: track,
+                      isFavorite: lib.isFavorite(track),
+                      onTap: () => _playVideo(track),
+                      onFavorite: () => lib.toggleFavorite(track),
+                    ),
                   );
                 }, childCount: group.videos.length),
               ),
@@ -454,11 +522,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate((context, i) {
                   final track = group.videos[i];
-                  return VideoListItem(
-                    track: track,
-                    isFavorite: lib.isFavorite(track),
-                    onTap: () => _playVideo(track),
-                    onFavorite: () => lib.toggleFavorite(track),
+                  return GestureDetector(
+                    // v21: long-press moves the video to the Private folder.
+                    onLongPress: () => _offerHide(track, lib),
+                    child: VideoListItem(
+                      track: track,
+                      isFavorite: lib.isFavorite(track),
+                      onTap: () => _playVideo(track),
+                      onFavorite: () => lib.toggleFavorite(track),
+                    ),
                   );
                 }, childCount: group.videos.length),
               ),

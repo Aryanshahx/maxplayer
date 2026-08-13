@@ -12,7 +12,9 @@ import 'package:maxplayer/state/video_library_state.dart';
 import 'package:maxplayer/utils/ai_subtitles.dart';
 import 'package:maxplayer/utils/formatters.dart';
 import 'package:maxplayer/utils/privacy_policy.dart';
+import 'package:maxplayer/utils/sha256.dart';
 import 'package:maxplayer/utils/srt.dart';
+import 'package:maxplayer/widgets/karaoke_subtitle.dart';
 import 'package:maxplayer/widgets/about_sheet.dart';
 import 'package:maxplayer/widgets/gesture_illustrations.dart';
 import 'package:maxplayer/widgets/user_manual_sheet.dart';
@@ -559,6 +561,89 @@ void main() {
       expect(find.textContaining('does not collect, store, transmit'),
           findsNothing);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v21: SRT parsing (karaoke / skip-intro / transcript groundwork)
+  // -------------------------------------------------------------------------
+  group('v21 srt parsing', () {
+    test('parseSrt round-trips buildSrt output', () {
+      final cues = [
+        const SrtCue(0, 1500, 'Hello world'),
+        const SrtCue(61000, 63500, 'Second caption line'),
+      ];
+      final parsed = parseSrt(buildSrt(cues));
+      expect(parsed.length, 2);
+      expect(parsed[0].startMs, 0);
+      expect(parsed[0].endMs, 1500);
+      expect(parsed[0].text, 'Hello world');
+      expect(parsed[1].startMs, 61000);
+      expect(parsed[1].text, 'Second caption line');
+    });
+
+    test('parseSrt tolerates missing indices and dot-millis', () {
+      final parsed = parseSrt(
+          '1\n00:00:01.000 --> 00:00:02.500\none two\n\n00:00:03,000 --> 00:00:04,000\nthree\n');
+      expect(parsed.length, 2);
+      expect(parsed[0].startMs, 1000);
+      expect(parsed[0].endMs, 2500);
+      expect(parsed[0].text, 'one two');
+      expect(parsed[1].startMs, 3000);
+    });
+
+    test('computeSkipIntro finds late dialogue start', () {
+      expect(
+        computeSkipIntro([
+          const SrtCue(0, 3000, '♪ opening theme ♪'),
+          const SrtCue(92000, 94000, 'Are you ready?'),
+        ]),
+        const Duration(milliseconds: 91000),
+      );
+      // Speech right away -> nothing to skip.
+      expect(computeSkipIntro([const SrtCue(3000, 5000, 'Hello')]), isNull);
+      // First speech after 10 minutes -> not an intro.
+      expect(
+          computeSkipIntro([const SrtCue(700000, 701000, 'Too late')]), isNull);
+      expect(computeSkipIntro(const []), isNull);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v21: SHA-256 for the Private-folder PIN (dependency-free implementation)
+  // -------------------------------------------------------------------------
+  group('v21 sha256', () {
+    test('standard test vectors', () {
+      expect(sha256Hex(''),
+          'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+      expect(sha256Hex('abc'),
+          'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+      expect(sha256Hex('1234'),
+          '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v21: karaoke timing helpers
+  // -------------------------------------------------------------------------
+  group('v21 karaoke timing', () {
+    test('karaokeWordIndex walks words proportionally to characters', () {
+      const cue = SrtCue(0, 2000, 'aa b');
+      expect(karaokeWordIndex(cue, 0), 0);
+      expect(karaokeWordIndex(cue, 500), 0);
+      expect(karaokeWordIndex(cue, 1900), 1);
+      expect(karaokeWordIndex(cue, 2000), 1);
+    });
+
+    test('karaokeActiveCue skips music-only cues and quiet gaps', () {
+      final cues = [
+        const SrtCue(0, 1000, '♪ music ♪'),
+        const SrtCue(2000, 3000, 'Hello there'),
+      ];
+      expect(karaokeActiveCue(cues, 500), isNull);
+      expect(karaokeActiveCue(cues, 2500)?.text, 'Hello there');
+      expect(karaokeActiveCue(cues, 3400)?.text, 'Hello there'); // grace
+      expect(karaokeActiveCue(cues, 5000), isNull);
     });
   });
 }

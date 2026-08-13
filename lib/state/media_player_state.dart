@@ -109,6 +109,7 @@ class MediaPlayerState extends ChangeNotifier {
         if (a != null && b != null && b > a && v >= b) {
           player.seek(a);
         }
+        _checkSleepAtEnd(v); // "sleep at end of video" timer
         notifyListeners();
       }),
       player.stream.duration.listen((v) {
@@ -317,8 +318,16 @@ class MediaPlayerState extends ChangeNotifier {
     // A new file invalidates any A-B loop points from the previous one.
     loopA = null;
     loopB = null;
+    final plat = player.platform;
+    if (plat is NativePlayer) {
+      // Head-room for the 200% volume boost + re-apply the current gain /
+      // leveling filter for the new file.
+      unawaited(plat.setProperty('volume-max', '200'));
+    }
     await player.open(Media(track.path), play: autoplay);
     await player.setRate(playbackRate);
+    await _applyMpvVolume();
+    if (_levelingOn) setVolumeLeveling(true);
     await _attachSidecarSubtitles(track.path);
     await _recordOpen(track);
     await _restoreBookmark(track);
@@ -327,7 +336,17 @@ class MediaPlayerState extends ChangeNotifier {
   /// Re-attaches previously generated AI subtitles ("<video>.maxai.srt"
   /// next to the video) so they survive closing/reopening the app - they
   /// are written to disk, only the player session forgot them.
+  /// v21: cues of the AI sidecar currently attached (null when none or the
+  /// file is a stream). Feeds the karaoke word-highlight overlay.
+  List<SrtCue>? aiCues;
+
+  /// v21 skip-intro chip: where the dialogue actually starts, when AI
+  /// subtitles exist and speech begins noticeably late (see computeSkipIntro).
+  Duration? skipIntroAt;
+
   Future<void> _attachSidecarSubtitles(String videoPath) async {
+    aiCues = null;
+    skipIntroAt = null;
     if (videoPath.contains('://')) return; // no sidecars for streams
     final platform = player.platform;
     if (platform is! NativePlayer) return;
@@ -336,9 +355,84 @@ class MediaPlayerState extends ChangeNotifier {
       if (File(srt).existsSync()) {
         // "select" makes it the active track right away.
         await platform.command(['sub-add', srt, 'select']);
+        await refreshAiCues(videoPath);
       }
     } catch (_) {
       // Missing/unreadable sidecar is not fatal.
+    }
+  }
+
+  /// (Re)parses the AI sidecar for karaoke + skip-intro. Called when a track
+  /// attaches its sidecar, and by the AI runner right after it finishes
+  /// writing new subtitles.
+  Future<void> refreshAiCues(String videoPath) async {
+    aiCues = null;
+    skipIntroAt = null;
+    if (videoPath.contains('://')) return;
+    try {
+      final srt = File(srtPathForVideo(videoPath));
+      if (!srt.existsSync()) return;
+      final cues = parseSrt(await srt.readAsString());
+      if (cues.isEmpty) return;
+      aiCues = cues;
+      skipIntroAt = computeSkipIntro(cues);
+    } catch (_) {
+      // A corrupt sidecar must never break playback.
+    }
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sleep timer (v21)
+  // ---------------------------------------------------------------------------
+
+  Timer? _sleepTimer;
+  DateTime? _sleepFireAt;
+  bool _sleepAtEndOfVideo = false;
+
+  bool get sleepTimerActive => _sleepFireAt != null || _sleepAtEndOfVideo;
+
+  /// Short label for menus ("12 min" / "end of video"); null when inactive.
+  String? get sleepTimerLabel {
+    if (_sleepAtEndOfVideo) return 'end of video';
+    final at = _sleepFireAt;
+    if (at == null) return null;
+    final left = at.difference(DateTime.now()).inSeconds;
+    if (left <= 0) return null;
+    return '${(left + 30) ~/ 60} min'; // rounded while counting down
+  }
+
+  void setSleepTimer({Duration? forDuration, bool atEndOfVideo = false}) {
+    cancelSleepTimer();
+    if (atEndOfVideo) {
+      _sleepAtEndOfVideo = true;
+    } else if (forDuration != null) {
+      _sleepFireAt = DateTime.now().add(forDuration);
+      _sleepTimer = Timer(forDuration, _fireSleepTimer);
+    }
+    notifyListeners();
+  }
+
+  void cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepFireAt = null;
+    _sleepAtEndOfVideo = false;
+    notifyListeners();
+  }
+
+  Future<void> _fireSleepTimer() async {
+    cancelSleepTimer();
+    _notices.add('Sleep timer paused playback');
+    await pause();
+  }
+
+  void _checkSleepAtEnd(Duration pos) {
+    if (!_sleepAtEndOfVideo || duration <= Duration.zero) return;
+    if (duration - pos <= const Duration(milliseconds: 1500)) {
+      cancelSleepTimer();
+      _notices.add('Sleep timer: stopped at end of video');
+      pause();
     }
   }
 
@@ -513,13 +607,60 @@ class MediaPlayerState extends ChangeNotifier {
     return volume;
   }
 
+  /// v21: when the setting is on, the volume range becomes 0..200%.
+  /// The device volume covers 0..100%; mpv's decoder gain (volume-max=200
+  /// is set when a track opens) covers the 100..200% boost region.
+  bool volumeBoost200 = false;
+
+  /// Current volume upper limit for the swipe gesture / slider math.
+  double get volumeCap => volumeBoost200 ? 2.0 : 1.0;
+
   Future<void> setVolume(double v) async {
-    volume = v.clamp(0.0, 1.0);
+    volume = v.clamp(0.0, volumeCap);
     if (volume > 0) {
       isMuted = false;
       _preMuteVolume = volume;
     }
-    await NativeBridge.setMediaVolume(isMuted ? 0 : volume);
+    await NativeBridge.setMediaVolume(isMuted ? 0 : volume.clamp(0.0, 1.0));
+    await _applyMpvVolume();
+    notifyListeners();
+  }
+
+  Future<void> _applyMpvVolume() async {
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    final pct = volume <= 1 ? 100.0 : volume * 100.0;
+    try {
+      await platform.setProperty('volume', pct.toStringAsFixed(0));
+    } catch (_) {}
+  }
+
+  /// Settings toggle: enable/disable the 200% boost region. Turning it off
+  /// while boosted pulls the volume back to 100%.
+  Future<void> setVolumeBoost200(bool on) async {
+    volumeBoost200 = on;
+    if (!on && volume > 1.0) await setVolume(1.0);
+    if (!on) await _applyMpvVolume();
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Volume leveling (v21) - mpv dynaudnorm: quiet dialogue and loud
+  // explosions come out at a steady level.
+  // ---------------------------------------------------------------------------
+
+  static const String kLevelingFilter = 'dynaudnorm=f=250:g=12:p=0.95';
+  bool _levelingOn = false;
+  bool get volumeLeveling => _levelingOn;
+
+  Future<void> setVolumeLeveling(bool on) async {
+    _levelingOn = on;
+    final platform = player.platform;
+    if (platform is NativePlayer) {
+      try {
+        await platform.setProperty('af', on ? kLevelingFilter : '');
+      } catch (_) {}
+    }
     notifyListeners();
   }
 

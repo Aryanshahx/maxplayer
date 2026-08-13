@@ -69,6 +69,7 @@ class AiSubtitleRunner {
   /// Persisted picker defaults (native settings store).
   static const String _kModelKey = 'ai.model';
   static const String _kLanguageKey = 'ai.language';
+  static const String _kTranslateKey = 'ai.translate';
 
   /// Model choices: id -> (label, detail with size). v18 removed "tiny"
   /// (~75 MB, "Fast") - it was the weakest link and produced most of the
@@ -122,19 +123,22 @@ class AiSubtitleRunner {
       return;
     }
 
-    // Ask for quality + language first (choices are remembered).
+    // Ask for quality + language + output mode first (choices are remembered).
     final stored = await NativeBridge.loadSettings();
     if (!context.mounted) return;
-    final options = await showDialog<({String model, String language})>(
+    final options =
+        await showDialog<({String model, String language, bool translate})>(
       context: context,
       builder: (_) => _AiOptionsDialog(
         initialModel: normalizeModelId(stored[_kModelKey]),
         initialLanguage: stored[_kLanguageKey] ?? 'auto',
+        initialTranslate: stored[_kTranslateKey] == 'true',
       ),
     );
     if (options == null || !context.mounted) return;
     unawaited(NativeBridge.saveSetting(_kModelKey, options.model));
     unawaited(NativeBridge.saveSetting(_kLanguageKey, options.language));
+    unawaited(NativeBridge.saveSetting(_kTranslateKey, '${options.translate}'));
 
     // One active job at a time; hook up the event callbacks first.
     final progress = ValueNotifier<(String, int)>(('starting', 0));
@@ -165,6 +169,7 @@ class AiSubtitleRunner {
       videoPath: track.path,
       model: options.model,
       language: options.language,
+      translate: options.translate,
     );
     if (!context.mounted) return;
     if (jobId == null) {
@@ -227,13 +232,15 @@ class AiSubtitleRunner {
     }
     if (!context.mounted) return;
 
-    // Hand it to mpv so the subtitle picker lists it immediately.
+    // Hand it to mpv so the subtitle picker lists it immediately, and let the
+    // karaoke overlay / skip-intro chip pick up the fresh cues.
     final platform = player.player.platform;
     if (platform is NativePlayer) {
       try {
         await platform.command(['sub-add', srtPath]);
       } catch (_) {}
     }
+    await player.refreshAiCues(track.path);
     if (context.mounted) {
       _snack(context, '✨ AI subtitles ready - pick them in the subtitle list');
     }
@@ -342,10 +349,12 @@ class _AiProgressDialog extends StatelessWidget {
 class _AiOptionsDialog extends StatefulWidget {
   final String initialModel;
   final String initialLanguage;
+  final bool initialTranslate;
 
   const _AiOptionsDialog({
     required this.initialModel,
     required this.initialLanguage,
+    required this.initialTranslate,
   });
 
   @override
@@ -355,6 +364,7 @@ class _AiOptionsDialog extends StatefulWidget {
 class _AiOptionsDialogState extends State<_AiOptionsDialog> {
   late String _model = widget.initialModel;
   late String _language = widget.initialLanguage;
+  late bool _translate = widget.initialTranslate;
 
   @override
   Widget build(BuildContext context) {
@@ -407,6 +417,44 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
             ],
             onChanged: (v) => setState(() => _model = v ?? 'base'),
           ),
+          const SizedBox(height: 16),
+          const Text(
+            'Output',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _modeChip(
+                  label: 'Same language',
+                  icon: Icons.record_voice_over_outlined,
+                  selected: !_translate,
+                  onTap: () => setState(() => _translate = false),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _modeChip(
+                  label: '→ English',
+                  icon: Icons.translate,
+                  selected: _translate,
+                  onTap: () => setState(() => _translate = true),
+                ),
+              ),
+            ],
+          ),
+          if (_translate)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'Foreign speech becomes ENGLISH subtitles (AI translate).',
+                style: TextStyle(color: Colors.white38, fontSize: 11.5),
+              ),
+            ),
           const SizedBox(height: 10),
           const Text(
             'Runs 100% offline after a one-time model download.',
@@ -426,12 +474,55 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton.icon(
-          onPressed: () => Navigator.of(context)
-              .pop((model: _model, language: _language)),
+          onPressed: () => Navigator.of(context).pop(
+              (model: _model, language: _language, translate: _translate)),
           icon: const Icon(Icons.auto_awesome, size: 16),
-          label: const Text('Generate'),
+          label: Text(_translate ? 'Translate' : 'Generate'),
         ),
       ],
+    );
+  }
+
+  Widget _modeChip({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? themeState.accent.withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? themeState.accent : Colors.white12,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                size: 16, color: selected ? themeState.accent : Colors.white54),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: selected ? Colors.white : Colors.white70,
+                  fontSize: 12.5,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

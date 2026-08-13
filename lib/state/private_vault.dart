@@ -1,0 +1,125 @@
+import 'dart:io';
+
+import '../services/native_bridge.dart';
+import '../utils/sha256.dart';
+
+/// Private folder ("vault"), v21.
+///
+/// Mechanism (same idea as MX Player / PlayIt): the video FILE IS MOVED into
+/// the app's own directory. Android blocks Gallery / Photos / Files from
+/// looking inside another app's private directory, so a hidden video
+/// disappears from the rest of the phone, and Max Player lists it only
+/// after the PIN.
+///
+/// The PIN protects the list; the file location is the real hiding. The PIN
+/// hash (never the PIN itself) is stored in the app's settings store.
+///
+/// ⚠ Uninstalling the app deletes the app's private directory - hidden
+/// videos along with it. The UI always offers "Move out of Private" first.
+class PrivateVault {
+  static const String _pinKey = 'vault.pinHash';
+
+  static const String vaultDirPath =
+      '/storage/emulated/0/Android/data/com.hypertechlabs.maxplayer/files/Private';
+
+  /// Videos moved OUT of the vault land here.
+  static const String unhideDirPath = '/storage/emulated/0/Movies';
+
+  static const Set<String> videoExts = {
+    '.mp4', '.mkv', '.webm', '.avi', '.mov', '.wmv', '.flv', '.ts', '.m2ts',
+    '.mpg', '.mpeg', '.3gp', '.vob', '.m4v',
+  };
+
+  /// True when [path] already lives inside the vault.
+  static bool isPrivatePath(String path) =>
+      path.startsWith(vaultDirPath);
+
+  String _hashPin(String pin) => sha256Hex('maxplayer.vault::$pin');
+
+  Future<bool> hasPin() async {
+    final s = await NativeBridge.loadSettings();
+    return (s[_pinKey] ?? '').isNotEmpty;
+  }
+
+  Future<bool> verifyPin(String pin) async {
+    final s = await NativeBridge.loadSettings();
+    final stored = s[_pinKey] ?? '';
+    return stored.isNotEmpty && stored == _hashPin(pin);
+  }
+
+  Future<void> setPin(String pin) =>
+      NativeBridge.saveSetting(_pinKey, _hashPin(pin));
+
+  Future<Directory> _dir() async {
+    final d = Directory(vaultDirPath);
+    if (!d.existsSync()) await d.create(recursive: true);
+    return d;
+  }
+
+  /// Video files currently inside the vault (name-sorted).
+  Future<List<File>> listVideos() async {
+    final d = await _dir();
+    final files = d
+        .listSync()
+        .whereType<File>()
+        .where((f) =>
+            videoExts.contains(f.path.toLowerCase().split('.').last.isEmpty
+                ? ''
+                : '.${f.path.toLowerCase().split('.').last}'))
+        .toList();
+    files.sort((a, b) => a.path.compareTo(b.path));
+    return files;
+  }
+
+  /// Moves [srcPath] into the vault and returns the new file. Same-filesystem
+  /// rename is instant; a cross-device fallback copies then deletes.
+  Future<File> hide(String srcPath) async {
+    final src = File(srcPath);
+    if (!src.existsSync()) {
+      throw const FileSystemException('Video file not found');
+    }
+    final target = await _uniqueIn(await _dir(), srcPath);
+    final moved = await _move(src, target);
+    // Refresh the gallery scan for the OLD location so it disappears.
+    await NativeBridge.scanFile(srcPath);
+    return moved;
+  }
+
+  /// Moves a vault file back to public storage (/storage/emulated/0/Movies).
+  Future<File> unhide(String hiddenPath) async {
+    final src = File(hiddenPath);
+    if (!src.existsSync()) {
+      throw const FileSystemException('Hidden video not found');
+    }
+    final destDir = Directory(unhideDirPath);
+    if (!destDir.existsSync()) await destDir.create(recursive: true);
+    final target = await _uniqueIn(destDir, hiddenPath);
+    final moved = await _move(src, target);
+    await NativeBridge.scanFile(moved.path); // visible to gallery again
+    return moved;
+  }
+
+  Future<String> _uniqueIn(Directory dir, String fromPath) async {
+    var name = fromPath.split('/').last;
+    var dot = name.lastIndexOf('.');
+    final stem = dot > 0 ? name.substring(0, dot) : name;
+    final ext = dot > 0 ? name.substring(dot) : '';
+    var candidate = '${dir.path}/$name';
+    var i = 2;
+    while (File(candidate).existsSync()) {
+      candidate = '${dir.path}/$stem ($i)$ext';
+      i++;
+    }
+    return candidate;
+  }
+
+  Future<File> _move(File src, String targetPath) async {
+    try {
+      return await src.rename(targetPath);
+    } on FileSystemException {
+      final copied = await src.copy(targetPath);
+      await src.delete();
+      return copied;
+    }
+  }
+}
