@@ -63,14 +63,35 @@ class _PlayerScreenState extends State<PlayerScreen>
   Timer? _indicatorTimer;
   StreamSubscription<String>? _noticeSub;
 
-  // Aspect-ratio fit cycle: contain -> cover -> fill.
-  static const List<BoxFit> _fits = [BoxFit.contain, BoxFit.cover, BoxFit.fill];
-  static const List<String> _fitNames = ['Contain', 'Cover', 'Fill'];
+  // v20 fit cycle with REAL size choices (the old contain/cover/fill trio
+  // looked identical for 16:9 videos, so it felt like "fit does nothing").
+  // aspectRatio forces the frame to that shape (stretch); null keeps the
+  // video's own aspect ratio.
+  static const List<BoxFit> _fits = [
+    BoxFit.contain, // Fit - whole frame visible
+    BoxFit.cover, // Crop - fill screen, edges cropped
+    BoxFit.fill, // Stretch - fill screen, ignores aspect
+    BoxFit.fill, // 16:9 - frame forced to widescreen
+    BoxFit.fill, // 4:3 - frame forced to classic TV
+    BoxFit.none, // Original - pixels 1:1, may overflow
+  ];
+  static const List<double?> _fitAspects = [null, null, null, 16 / 9, 4 / 3, null];
+  static const List<String> _fitNames = [
+    'Fit',
+    'Crop',
+    'Stretch',
+    '16:9',
+    '4:3',
+    'Original',
+  ];
   int _fitIndex = 0;
   static const List<IconData> _fitIcons = [
     Icons.fit_screen,
-    Icons.crop_free,
+    Icons.crop,
     Icons.open_in_full,
+    Icons.crop_16_9,
+    Icons.crop_landscape,
+    Icons.crop_original,
   ];
 
   // Pinch zoom (1x..4x), anchored at the fingers' focal point, with
@@ -637,8 +658,10 @@ class _PlayerScreenState extends State<PlayerScreen>
         // together (previously a tap surfaced only the bottom bar).
         body: SafeArea(
           top: !_isFullscreen,
-          // Lift controls above the gesture/nav bar in landscape fullscreen.
-          bottom: true,
+          // v20: in LANDSCAPE the controls sit flush with the bottom edge
+          // (requested - "one step down"); portrait keeps the gesture-bar
+          // clearance so the seek bar is not touched by the system bar.
+          bottom: MediaQuery.of(context).orientation == Orientation.portrait,
           child: Row(
             children: [
               Expanded(
@@ -678,6 +701,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                                             controller: _controller,
                                             controls: NoVideoControls,
                                             fit: _fits[_fitIndex],
+                                            // v20: forces the frame to 16:9 /
+                                            // 4:3 in those fit modes; null
+                                            // keeps the video's own ratio.
+                                            aspectRatio: _fitAspects[_fitIndex],
                                           ),
                                         )
                                       : const Text(
@@ -762,14 +789,12 @@ class _PlayerScreenState extends State<PlayerScreen>
                               ),
                             ),
                           ),
-                          // Persistent speed badge for the WHOLE long-press
-                          // boost. Follows the player state directly (so it
-                          // vanishes instantly if the video is paused during
-                          // a boost) and pops in/out.
-                          Positioned(
-                            top: 12,
-                            left: 0,
-                            right: 0,
+                          // v20: BIG centred "2x" sign in the MIDDLE of the
+                          // video for the WHOLE long-press boost (replaces the
+                          // small top badge). Follows the player state
+                          // directly, so it vanishes the moment the video is
+                          // paused during a boost.
+                          Positioned.fill(
                             child: IgnorePointer(
                               child: Center(
                                 child: AnimatedBuilder(
@@ -791,14 +816,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                                         ? Container(
                                             key: const ValueKey('speedBadge'),
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 6,
+                                              horizontal: 22,
+                                              vertical: 10,
                                             ),
                                             decoration: BoxDecoration(
                                               color: themeState.accent
                                                   .withValues(alpha: 0.9),
                                               borderRadius:
-                                                  BorderRadius.circular(18),
+                                                  BorderRadius.circular(30),
                                             ),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
@@ -806,14 +831,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                                                 const Icon(
                                                   Icons.fast_forward,
                                                   color: Colors.white,
-                                                  size: 15,
+                                                  size: 34,
                                                 ),
-                                                const SizedBox(width: 5),
+                                                const SizedBox(width: 8),
                                                 Text(
                                                   '${_settings.longPressMultiplier}x',
                                                   style: const TextStyle(
                                                     color: Colors.white,
-                                                    fontSize: 13,
+                                                    fontSize: 28,
                                                     fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
@@ -1106,7 +1131,7 @@ class _MarqueeTitleState extends State<_MarqueeTitle> {
   void initState() {
     super.initState();
     _timer =
-        Timer.periodic(const Duration(milliseconds: 2600), (_) => _tick());
+        Timer.periodic(const Duration(milliseconds: 1400), (_) => _tick());
   }
 
   void _tick() {
@@ -1118,8 +1143,9 @@ class _MarqueeTitleState extends State<_MarqueeTitle> {
     } else {
       _sc.animateTo(
         max,
+        // v20: ~2.5x faster scroll ("move the title in more speed").
         duration:
-            Duration(milliseconds: (max * 24).clamp(900, 9000).toInt()),
+            Duration(milliseconds: (max * 9).clamp(500, 5000).toInt()),
         curve: Curves.linear,
       );
     }

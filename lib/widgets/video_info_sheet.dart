@@ -13,16 +13,38 @@ import '../utils/formatters.dart';
 class VideoInfoSheet extends StatelessWidget {
   final MediaPlayerState player;
 
-  const VideoInfoSheet({super.key, required this.player});
+  /// Provided by the wrapping DraggableScrollableSheet so the info list can
+  /// be dragged/scrolled up to see every row (v20).
+  final ScrollController? scrollController;
+
+  const VideoInfoSheet({
+    super.key,
+    required this.player,
+    this.scrollController,
+  });
 
   static Future<void> show(BuildContext context, MediaPlayerState player) {
+    // v20: isScrollControlled + DraggableScrollableSheet - the old
+    // fixed-height sheet cropped the bottom rows on small screens and
+    // could not be dragged up ("video info is not sliding"). Now it drags
+    // between 30% and 90% of the screen and the rows scroll.
     return showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: const Color(0xFF1a1a24),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => VideoInfoSheet(player: player),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) => VideoInfoSheet(
+          player: player,
+          scrollController: scrollController,
+        ),
+      ),
     );
   }
 
@@ -33,9 +55,13 @@ class VideoInfoSheet extends StatelessWidget {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+        // v20: scrollable content - pairs with the DraggableScrollableSheet
+        // in show() so every row can be pulled up into view.
+        child: SingleChildScrollView(
+          controller: scrollController,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Center(
               child: Container(
@@ -101,7 +127,8 @@ class VideoInfoSheet extends StatelessWidget {
                   );
                 },
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );

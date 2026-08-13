@@ -141,66 +141,122 @@ class PlayerControlsOverlay extends StatelessWidget {
     );
   }
 
-  /// One menu for everything track-shaped: subtitles, audio tracks, and
-  /// the A-B loop (previously three separate buttons).
+  /// One button opening ONE bottom sheet for everything track-shaped:
+  /// subtitles, audio tracks, and the A-B loop (previously three separate
+  /// buttons). v20: switched from PopupMenuButton to a bottom sheet - the
+  /// popup glitched because this overlay rebuilds on every player tick
+  /// while the popup was open.
   Widget _tracksMenu(BuildContext context) {
-    final hasA = player.loopA != null;
-    final hasB = player.loopB != null;
-    final abLabel = hasA && hasB
-        ? 'A-B loop (${formatDuration(player.loopA)} - ${formatDuration(player.loopB)})'
-        : hasA
-            ? 'A-B loop (A set - next tap sets B)'
-            : 'A-B loop (off - tap to set A)';
-    return PopupMenuButton<String>(
+    final active = player.subtitlesActive ||
+        player.audioTracks.length > 1 ||
+        player.abLoopActive;
+    return IconButton(
       tooltip: 'Subtitles, audio tracks, A-B loop',
-      color: const Color(0xFF1a1a24),
       icon: Icon(
         Icons.tune,
         size: 20,
-        color: (player.subtitlesActive || player.audioTracks.length > 1)
-            ? themeState.accent
-            : Colors.white,
+        color: active ? themeState.accent : Colors.white,
       ),
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints.tightFor(width: 34, height: 40),
-      onSelected: (v) {
-        switch (v) {
-          case 'subs':
-            TrackSelectionSheet.show(context, player, isSubtitle: true);
-          case 'audio':
-            TrackSelectionSheet.show(context, player, isSubtitle: false);
-          case 'ab':
-            player.tapLoopPoint();
-        }
+      onPressed: () {
         onInteract();
+        _showTracksSheet(context);
       },
-      itemBuilder: (context) => [
-        _menuItem(
-          'subs',
-          player.subtitlesActive ? Icons.subtitles : Icons.subtitles_outlined,
-          player.subtitlesActive ? 'Subtitles (on)' : 'Subtitles',
-        ),
-        _menuItem(
-          'audio',
-          Icons.audiotrack_outlined,
-          player.audioTracks.length > 1
-              ? 'Audio track (${player.audioTracks.length} available)'
-              : 'Audio track',
-        ),
-        _menuItem('ab', Icons.repeat_one_outlined, abLabel),
-      ],
     );
   }
 
-  PopupMenuItem<String> _menuItem(String v, IconData icon, String label) {
-    return PopupMenuItem(
-      value: v,
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: Colors.white70),
-          const SizedBox(width: 10),
-          Text(label, style: const TextStyle(color: Colors.white)),
-        ],
+  void _showTracksSheet(BuildContext context) {
+    final hasA = player.loopA != null;
+    final hasB = player.loopB != null;
+    final abSubtitle = hasA && hasB
+        ? 'Looping ${formatDuration(player.loopA)} - ${formatDuration(player.loopB)} (tap to clear)'
+        : hasA
+            ? 'A set at ${formatDuration(player.loopA)} - tap to set B'
+            : 'Off - tap to mark point A';
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a24),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: Icon(
+                player.subtitlesActive
+                    ? Icons.subtitles
+                    : Icons.subtitles_outlined,
+                color: Colors.white70,
+              ),
+              title: Text(
+                player.subtitlesActive ? 'Subtitles (on)' : 'Subtitles',
+                style: const TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                TrackSelectionSheet.show(context, player, isSubtitle: true);
+              },
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.audiotrack_outlined,
+                color: Colors.white70,
+              ),
+              title: Text(
+                player.audioTracks.length > 1
+                    ? 'Audio track (${player.audioTracks.length} available)'
+                    : 'Audio track',
+                style: const TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                TrackSelectionSheet.show(context, player, isSubtitle: false);
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.repeat_one_outlined,
+                color: player.abLoopActive
+                    ? themeState.accent
+                    : Colors.white70,
+              ),
+              title: const Text(
+                'A-B loop',
+                style: TextStyle(color: Colors.white),
+              ),
+              subtitle: Text(
+                abSubtitle,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                final msg = player.tapLoopPoint();
+                ScaffoldMessenger.of(context)
+                  ..clearSnackBars()
+                  ..showSnackBar(
+                    SnackBar(
+                      content: Text(msg),
+                      duration: const Duration(milliseconds: 1400),
+                    ),
+                  );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }

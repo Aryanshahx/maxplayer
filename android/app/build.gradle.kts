@@ -74,6 +74,13 @@ android {
     }
 }
 
+// v20: name the build artifacts "MaxPlayer-release.apk" /
+// "MaxPlayer-release.aab" instead of the generic "app-release.*".
+// (Gradle 9 removed the old archivesBaseName; base.archivesName replaces it.)
+base {
+    archivesName.set("MaxPlayer")
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17

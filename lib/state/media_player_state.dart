@@ -474,10 +474,13 @@ class MediaPlayerState extends ChangeNotifier {
   }
 
   Future<void> pause() async {
+    // v20: pause FIRST so the video freezes instantly. The previous order
+    // (boost cleanup + bookmark disk write BEFORE pausing) added a visible
+    // delay between tapping pause and the video actually stopping.
+    await player.pause();
     // Pausing always ends an active long-press boost (and its badge).
     await stopSpeedBoost();
     _saveBookmark();
-    await player.pause();
   }
 
   Future<void> seek(Duration to) => player.seek(to);

@@ -27,6 +27,13 @@ Subtitle generation runs entirely **on your device** using the open-source whisp
 ## Children's privacy
 The app collects no data from anyone, including children.
 
+## Google Play Data Safety (short answers)
+This section matches the app's Play Console Data Safety form:
+- **Data collected:** none — there is nothing to list per category
+- **Data shared with third parties:** none
+- **Data sent off the device:** none (AI subtitle generation, history, bookmarks and settings are all local-only)
+- Because no data leaves the device, "encryption in transit" and "account/data deletion requests" are **not applicable** — nothing is transmitted and there is nothing on any server to delete.
+
 ## Changes
 Any change to this policy will be committed to this file in the public repository, with the new effective date above.
 
