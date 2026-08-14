@@ -791,8 +791,11 @@ class MainActivity : FlutterActivity() {
                 retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
             out["bitrate"] =
                 retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toLongOrNull()
-            // Video codec from the container's video track MIME (works on all API levels).
-            out["codec"] = detectVideoCodec(path)
+            // Track details from the container (one extractor pass, works
+            // on all API levels): video codec + frame rate, first audio
+            // track's codec/channels/sample-rate. v27: powers the advanced
+            // Video info sheet.
+            addTrackDetails(path, out)
 
             val thumbFile = thumbFileFor(path)
 
@@ -850,27 +853,54 @@ class MainActivity : FlutterActivity() {
      * friendly codec name (e.g. "video/hevc" -> "H.265 (HEVC)"). Returns null when
      * the file has no video track or cannot be parsed.
      */
-    private fun detectVideoCodec(path: String): String? {
+    /**
+     * v27: fills [out] with codec + technical track details in ONE
+     * MediaExtractor pass (cheap enough for the per-file library scan):
+     *  - "codec": friendly video codec name from the video track MIME
+     *  - "frameRate": video track fps (0 when the container omits it)
+     *  - "audioCodec": friendly name of the FIRST audio track
+     *  - "audioChannels" / "audioSampleRate": same track's layout/rate
+     */
+    private fun addTrackDetails(path: String, out: HashMap<String, Any?>) {
+        out["frameRate"] = 0
+        out["audioCodec"] = null
+        out["audioChannels"] = 0
+        out["audioSampleRate"] = 0
         val extractor = MediaExtractor()
-        return try {
+        try {
             extractor.setDataSource(path)
-            var mime: String? = null
+            var videoDone = false
+            var audioDone = false
             for (i in 0 until extractor.trackCount) {
                 val format = extractor.getTrackFormat(i)
-                val trackMime =
+                val mime =
                     if (format.containsKey(MediaFormat.KEY_MIME)) {
                         format.getString(MediaFormat.KEY_MIME)
                     } else {
                         null
+                    } ?: continue
+                if (!videoDone && mime.startsWith("video/")) {
+                    out["codec"] = friendlyCodec(mime)
+                    if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
+                        out["frameRate"] = format.getInteger(MediaFormat.KEY_FRAME_RATE)
                     }
-                if (trackMime != null && trackMime.startsWith("video/")) {
-                    mime = trackMime
-                    break
+                    videoDone = true
+                } else if (!audioDone && mime.startsWith("audio/")) {
+                    out["audioCodec"] = friendlyCodec(mime)
+                    if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                        out["audioChannels"] =
+                            format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                    }
+                    if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                        out["audioSampleRate"] =
+                            format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                    }
+                    audioDone = true
                 }
+                if (videoDone && audioDone) break
             }
-            mime?.let { friendlyCodec(it) }
         } catch (_: Exception) {
-            null
+            // Leave the defaults/nulls - Dart renders "Unknown".
         } finally {
             extractor.release()
         }
@@ -887,7 +917,19 @@ class MainActivity : FlutterActivity() {
             "video/3gpp" -> "H.263"
             "video/mpeg2" -> "MPEG-2"
             "video/x-msvideo" -> "AVI"
-            else -> mime.removePrefix("video/").uppercase()
+            // v27: audio track names for the advanced Video info sheet.
+            "audio/mp4a-latm" -> "AAC"
+            "audio/mpeg", "audio/mpeg-l1", "audio/mpeg-l2" -> "MP3"
+            "audio/opus" -> "Opus"
+            "audio/vorbis" -> "Vorbis"
+            "audio/flac" -> "FLAC"
+            "audio/ac3" -> "AC-3"
+            "audio/eac3", "audio/eac3-joc" -> "E-AC-3"
+            "audio/truehd" -> "TrueHD"
+            "audio/x-ms-wma" -> "WMA"
+            "audio/amr-nb", "audio/amr-wb" -> "AMR"
+            "audio/raw" -> "PCM"
+            else -> mime.substringAfter('/').uppercase()
         }
     }
 
@@ -1658,67 +1700,86 @@ class MainActivity : FlutterActivity() {
             result.success(true)
             return
         }
+        pendingCredentialResult = result
         if (Build.VERSION.SDK_INT >= 28) {
-            val promptExecutor = java.util.concurrent.Executor { command ->
-                mainHandler.post(command)
-            }
-            val builder = BiometricPrompt.Builder(this)
-                .setTitle(title)
-                .setNegativeButton("Cancel", promptExecutor) { _, _ ->
-                    finishCredentialPrompt(false)
-                }
-            if (Build.VERSION.SDK_INT >= 30) {
-                builder.setAllowedAuthenticators(
-                    BiometricManager.Authenticators.BIOMETRIC_WEAK or
-                        BiometricManager.Authenticators.DEVICE_CREDENTIAL
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                builder.setDeviceCredentialAllowed(true)
-            }
-            pendingCredentialResult = result
-            try {
-                builder.build().authenticate(
-                    CancellationSignal(),
-                    promptExecutor,
-                    object : BiometricPrompt.AuthenticationCallback() {
-                        override fun onAuthenticationSucceeded(
-                            authResult: BiometricPrompt.AuthenticationResult
-                        ) {
-                            finishCredentialPrompt(true)
-                        }
-
-                        override fun onAuthenticationError(
-                            errorCode: Int,
-                            errString: CharSequence
-                        ) {
-                            // Covers Cancel, outside-tap and any failure -
-                            // the vault stays locked (Dart shows a snackbar).
-                            finishCredentialPrompt(false)
-                        }
-                        // onAuthenticationFailed intentionally NOT handled:
-                        // the system prompt stays open for another attempt.
-                    },
-                )
-            } catch (e: Exception) {
-                pendingCredentialResult = null
-                result.success(false)
-            }
+            showBiometricCredentialPrompt(title)
         } else {
-            // API 24-27: the classic confirm-device-credential activity.
+            showKeyguardCredentialPrompt(title)
+        }
+    }
+
+    /** Platform BiometricPrompt (API 28+) including the DEVICE credential. */
+    private fun showBiometricCredentialPrompt(title: String) {
+        val promptExecutor = java.util.concurrent.Executor { command ->
+            mainHandler.post(command)
+        }
+        val builder = BiometricPrompt.Builder(this).setTitle(title)
+        if (Build.VERSION.SDK_INT >= 30) {
+            // v27 fix (real device report: instant "unlock failed" on a
+            // Samsung tab): on API 30+ a NEGATIVE BUTTON may NOT be combined
+            // with DEVICE_CREDENTIAL - the prompt throws before it can show.
+            // The system credential screen has its own cancel, and errors
+            // arrive in onAuthenticationError instead.
+            builder.setAllowedAuthenticators(
+                BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                    BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            )
+        } else {
             @Suppress("DEPRECATION")
-            val intent = km.createConfirmDeviceCredentialIntent(title, null)
-            if (intent == null) {
-                result.success(true)
-                return
+            builder.setDeviceCredentialAllowed(true)
+            builder.setNegativeButton("Cancel", promptExecutor) { _, _ ->
+                finishCredentialPrompt(false)
             }
-            pendingCredentialResult = result
-            try {
-                startActivityForResult(intent, REQ_CONFIRM_CREDENTIAL)
-            } catch (e: Exception) {
-                pendingCredentialResult = null
-                result.success(false)
-            }
+        }
+        try {
+            builder.build().authenticate(
+                CancellationSignal(),
+                promptExecutor,
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(
+                        authResult: BiometricPrompt.AuthenticationResult
+                    ) {
+                        finishCredentialPrompt(true)
+                    }
+
+                    override fun onAuthenticationError(
+                        errorCode: Int,
+                        errString: CharSequence
+                    ) {
+                        when (errorCode) {
+                            // 11 = no biometrics enrolled, 12 = no hardware,
+                            // 14 = no device credential: some builds report
+                            // these even with DEVICE_CREDENTIAL allowed -
+                            // retry via the classic confirm-credential screen.
+                            11, 12, 14 -> showKeyguardCredentialPrompt(title)
+                            // Everything else (cancel, lockout, hw busy...):
+                            // answer "not unlocked" - Dart shows a snackbar.
+                            else -> finishCredentialPrompt(false)
+                        }
+                    }
+                    // onAuthenticationFailed intentionally NOT handled:
+                    // the system prompt stays open for another attempt.
+                },
+            )
+        } catch (e: Exception) {
+            // Prompt could not even be constructed/shown -> classic fallback.
+            showKeyguardCredentialPrompt(title)
+        }
+    }
+
+    /** The classic "confirm your screen lock" activity (works on all APIs). */
+    private fun showKeyguardCredentialPrompt(title: String) {
+        val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        @Suppress("DEPRECATION")
+        val intent = km.createConfirmDeviceCredentialIntent(title, null)
+        if (intent == null) {
+            finishCredentialPrompt(true)
+            return
+        }
+        try {
+            startActivityForResult(intent, REQ_CONFIRM_CREDENTIAL)
+        } catch (e: Exception) {
+            finishCredentialPrompt(false)
         }
     }
 

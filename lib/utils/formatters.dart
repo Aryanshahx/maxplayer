@@ -93,3 +93,21 @@ String formatCountdown(int totalSeconds) {
   String two(int v) => v.toString().padLeft(2, '0');
   return h > 0 ? '$h:${two(m)}:${two(sec)}' : '$m:${two(sec)}';
 }
+
+/// v27: friendly aspect-ratio label for the advanced Video info sheet.
+/// Exact/simple ratios show as "16:9" style; awkward ones as "2.36:1".
+/// Pure + unit-tested.
+String formatAspectRatio(int w, int h) {
+  if (w <= 0 || h <= 0) return '';
+  int a = w;
+  int b = h;
+  while (b != 0) {
+    final t = a % b;
+    a = b;
+    b = t;
+  }
+  final num = w ~/ a;
+  final den = h ~/ a;
+  if (num <= 40 && den <= 40) return '$num:$den';
+  return '${(w / h).toStringAsFixed(2)}:1';
+}

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../services/native_bridge.dart';
 import '../state/media_player_state.dart';
@@ -97,17 +98,41 @@ class VideoInfoSheet extends StatelessWidget {
                   final h = meta?.height ?? track.height;
                   final sizeBytes =
                       track.sizeBytes ?? _fileSizeOrNull(track.path);
+                  // v27: container from the file extension (MKV, MP4...).
+                  final isStream = track.path.contains('://');
+                  final container = isStream
+                      ? null
+                      : (track.path.contains('.')
+                          ? track.path.split('.').last.toUpperCase()
+                          : null);
+                  final aspect =
+                      (w != null && h != null && w > 0 && h > 0)
+                          ? formatAspectRatio(w, h)
+                          : '';
+                  // v27: "AAC · 2 ch · 48 kHz" style audio summary.
+                  final audioParts = <String>[
+                    if (meta?.audioCodec != null) meta!.audioCodec!,
+                    if (meta?.audioChannels != null)
+                      '${meta!.audioChannels} ch',
+                    if (meta?.audioSampleRate != null)
+                      '${(meta!.audioSampleRate! / 1000).toStringAsFixed(0)} kHz',
+                  ];
+                  final modified = isStream ? null : _modifiedLabel(track.path);
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _Row('Name', track.title),
                       _Row('Location', track.path, small: true),
+                      if (container != null) _Row('Format', container),
                       _Row(
                         'Resolution',
                         (w != null && h != null && w > 0)
                             ? '$w × $h  ·  ${track.qualityLabel ?? ''}'
+                                '${aspect.isNotEmpty ? '  ·  $aspect' : ''}'
                             : 'Unknown',
                       ),
+                      if (meta?.frameRate != null)
+                        _Row('Frame rate', '${meta!.frameRate} fps'),
                       _Row(
                           'Duration',
                           formatDuration(
@@ -116,8 +141,12 @@ class VideoInfoSheet extends StatelessWidget {
                       _Row('File size', sizeBytes == null
                           ? 'Unknown'
                           : formatFileSize(sizeBytes)),
+                      if (modified != null)
+                        _Row('Modified', modified),
                       if (meta?.codec != null)
                         _Row('Video codec', meta!.codec!.toUpperCase()),
+                      if (audioParts.isNotEmpty)
+                        _Row('Audio', audioParts.join('  ·  ')),
                       if (meta?.bitrateBps != null && meta!.bitrateBps! > 0)
                         _Row('Bitrate',
                             '${(meta.bitrateBps! / 1000000).toStringAsFixed(1)} Mbps'),
@@ -138,6 +167,16 @@ class VideoInfoSheet extends StatelessWidget {
     try {
       if (path.contains('://')) return null;
       return File(path).lengthSync();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// v27: "14 Aug 2026 · 03:10" for the Modified row.
+  String? _modifiedLabel(String path) {
+    try {
+      final ts = File(path).lastModifiedSync();
+      return DateFormat('dd MMM yyyy · HH:mm').format(ts);
     } catch (_) {
       return null;
     }

@@ -295,8 +295,11 @@ const List<_Item> _homeItems = [
   _Item(
     Icons.bar_chart,
     'Statistics',
-    '⋮ → Statistics shows how much you watched each day of the last week as '
-        'a bar chart, plus totals.',
+    '⋮ → Statistics shows how much you watched each day of the last week '
+        'as a bar chart, plus advanced cards: today, daily average, best '
+        'day, last 30 days total and your day-by-day watching streak. '
+        'The "Most watched" list ranks the videos you have spent the '
+        'most time on.',
   ),
 ];
 
@@ -402,6 +405,14 @@ const List<_Item> _playerItems = [
         'last setting is remembered and applied to every video.',
   ),
   _Item(
+    Icons.info_outline,
+    'Video info (top ⋮ menu)',
+    'Player ⋮ menu → Video info: full technical card for the current '
+        'video - container format, resolution and aspect ratio, frame '
+        'rate, video codec, audio codec with channels and sample rate, '
+        'bitrate, file size and modified date.',
+  ),
+  _Item(
     Icons.timer_outlined,
     'A→B loop',
     'Tap at the start of the part you want to repeat (A lights up), tap '
@@ -481,7 +492,8 @@ const List<_Item> _smartItems = [
         'are spoken. Works with ANY subtitle - AI captions, the video\'s own '
         '.srt file, or subtitles embedded in the video. While karaoke is '
         'on, the normal subtitle display turns OFF so only the karaoke '
-        'line shows.',
+        'line shows; turning karaoke OFF brings the normal subtitles '
+        'straight back.',
   ),
   _Item(
     Icons.fast_forward,
@@ -521,8 +533,13 @@ const List<_Item> _smartItems = [
     'Private folder (PIN)',
     'Long-press any video → "Move to Private folder". Hidden videos '
         'disappear from Gallery and file managers. Open them from the 🔒 '
-        'icon in the library top bar after your PIN. Note: uninstalling '
-        'the app deletes hidden videos - move them out first.',
+        'icon in the library top bar after your PIN; simply opening and '
+        'closing the folder no longer reloads the library. '
+        'Forgot the PIN? Tap "Forgot PIN?" on the lock screen → unlock '
+        'your PHONE once (device password, pattern or fingerprint) → '
+        'set a new PIN - hidden videos are never wiped. '
+        'Note: uninstalling the app deletes hidden videos - move them '
+        'out first.',
   ),
 ];
 

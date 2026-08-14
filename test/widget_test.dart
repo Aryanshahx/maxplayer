@@ -756,4 +756,29 @@ void main() {
       expect(s.copyWith(karaokeSubs: true).karaokeSubs, isTrue);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // v27: advanced video info + statistics helpers
+  // -------------------------------------------------------------------------
+  group('v27 advanced info + stats', () {
+    test('formatAspectRatio simplifies common ratios', () {
+      expect(formatAspectRatio(1920, 1080), '16:9');
+      expect(formatAspectRatio(1280, 720), '16:9');
+      expect(formatAspectRatio(1440, 1080), '4:3');
+      expect(formatAspectRatio(3840, 2160), '16:9');
+    });
+
+    test('formatAspectRatio falls back for odd sizes and guards zero', () {
+      expect(formatAspectRatio(1000, 423), '2.36:1');
+      expect(formatAspectRatio(0, 1080), '');
+      expect(formatAspectRatio(1920, 0), '');
+    });
+
+    test('statsKeyFor day buckets stay stable', () {
+      expect(MediaPlayerState.statsKeyFor(DateTime(2026, 8, 14)),
+          'stats.20260814');
+      expect(MediaPlayerState.statsKeyFor(DateTime(2026, 1, 5)),
+          'stats.20260105');
+    });
+  });
 }

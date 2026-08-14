@@ -27,6 +27,8 @@ Subtitle generation runs entirely **on your device** using the open-source whisp
 ## Private folder
 Videos you hide are **moved into the app's own protected folder**, which Android blocks other apps from reading, and are unlocked with a PIN you choose. They never leave your device and are never uploaded. The PIN is stored only as a cryptographic hash inside the app's settings. Uninstalling the app deletes the protected folder — move videos out first.
 
+If the PIN is forgotten, resetting it requires passing the device's own screen lock (PIN, pattern, password or fingerprint). That unlock check is performed entirely by Android on your device — nothing is sent anywhere.
+
 ## Playback extras (karaoke, skip intro, thumbnails)
 Karaoke highlighting and skip-intro detection only *read* subtitle files already on your device (AI-generated .srt files or the video's own subtitle file) while you play a video. Library thumbnails are decoded from your own videos into the app's cache folder, which the system or you can clear at any time. None of this data leaves the device or is shared anywhere.
 

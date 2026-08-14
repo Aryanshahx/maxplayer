@@ -77,6 +77,13 @@ class MediaPlayerState extends ChangeNotifier {
   int _watchTodaySecs = 0;
   String _todayStatsKey = '';
 
+  /// v27: cumulative watch seconds PER VIDEO (path -> seconds), powering
+  /// the Statistics screen's "Most watched" list. Persisted as one small
+  /// JSON map, capped at the 60 heaviest entries so it never grows wild.
+  Map<String, int> _watchByVideo = const {};
+  static const String _kWatchByVideoKey = 'stats.video';
+  static const int _kWatchByVideoMax = 60;
+
   // --- Watch history (drives the home History screen + resume playback) ---
   final List<HistoryEntry> _history = [];
   bool _historyLoaded = false;
@@ -176,9 +183,23 @@ class MediaPlayerState extends ChangeNotifier {
   Future<void> _init() async {
     await _ensureHistoryLoaded();
     final s = await NativeBridge.loadSettings();
-    // Restore today's accumulated watch time.
+    // Restore today's accumulated watch time (+ the v27 per-video totals).
     _todayStatsKey = statsKeyFor(DateTime.now());
     _watchTodaySecs = int.tryParse(s[_todayStatsKey] ?? '') ?? 0;
+    try {
+      final raw = s[_kWatchByVideoKey] ?? '';
+      if (raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          _watchByVideo = {
+            for (final e in decoded.entries)
+              if (e.value is num) '${e.key}': (e.value as num).toInt(),
+          };
+        }
+      }
+    } catch (_) {
+      _watchByVideo = const {}; // corrupt payload -> start fresh
+    }
     // Restore equalizer.
     eqEnabled = s[_kEqEnabledKey] == 'true';
     final gainsRaw = (s[_kEqGainsKey] ?? '').split(',');
@@ -1048,6 +1069,22 @@ class MediaPlayerState extends ChangeNotifier {
     }
     _watchTodaySecs += 5;
     NativeBridge.saveSetting(key, '$_watchTodaySecs');
+    // v27: per-video totals for the "Most watched" list (same 5s tick,
+    // trimmed to the heaviest entries so the stored blob stays tiny).
+    final path = currentTrack?.path;
+    if (path != null) {
+      final map = Map<String, int>.of(_watchByVideo);
+      map[path] = (map[path] ?? 0) + 5;
+      if (map.length > _kWatchByVideoMax) {
+        final sorted = map.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+        map
+          ..clear()
+          ..addEntries(sorted.take(_kWatchByVideoMax));
+      }
+      _watchByVideo = map;
+      NativeBridge.saveSetting(_kWatchByVideoKey, jsonEncode(map));
+    }
   }
 
   /// Last 7 days of watch time (index 0 = 6 days ago, last = today).
@@ -1064,6 +1101,62 @@ class MediaPlayerState extends ChangeNotifier {
       days.add(WatchDay(d, secs));
     }
     return days;
+  }
+
+  /// v27 advanced stats: total watch seconds over the last [days] days
+  /// (including today's in-progress count).
+  Future<int> getWatchSecondsForLastDays(int days) async {
+    final s = await NativeBridge.loadSettings();
+    final now = DateTime.now();
+    final todayKey = statsKeyFor(now);
+    var total = 0;
+    for (var i = days - 1; i >= 0; i--) {
+      final key = statsKeyFor(now.subtract(Duration(days: i)));
+      var secs = int.tryParse(s[key] ?? '') ?? 0;
+      if (key == todayKey && _watchTodaySecs > secs) secs = _watchTodaySecs;
+      total += secs;
+    }
+    return total;
+  }
+
+  /// v27: how many days IN A ROW something was watched (today counts when
+  /// already non-zero; the chain may start yesterday and still count).
+  Future<int> getWatchStreakDays() async {
+    final s = await NativeBridge.loadSettings();
+    final now = DateTime.now();
+    final todayKey = statsKeyFor(now);
+    final todaySecs = _watchTodaySecs >
+            (int.tryParse(s[todayKey] ?? '') ?? 0)
+        ? _watchTodaySecs
+        : (int.tryParse(s[todayKey] ?? '') ?? 0);
+    var streak = 0;
+    var offset = todaySecs > 0 ? 0 : 1; // no watching today yet -> start yesterday
+    while (true) {
+      final key = statsKeyFor(now.subtract(Duration(days: offset)));
+      final secs = int.tryParse(s[key] ?? '') ?? 0;
+      if (secs <= 0) break;
+      streak++;
+      offset++;
+      if (offset > 3650) break; // paranoia guard
+    }
+    return streak;
+  }
+
+  /// v27: the [limit] most-watched videos (path -> total seconds),
+  /// heaviest first. Uses the in-memory map restored in [_init].
+  List<MapEntry<String, int>> getTopWatchedVideos({int limit = 5}) {
+    final entries = _watchByVideo.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entries.take(limit).toList();
+  }
+
+  /// Display title for a path: the history entry's title when known,
+  /// else the file name.
+  String titleForPath(String path) {
+    for (final e in _history) {
+      if (e.path == path) return e.title;
+    }
+    return path.split('/').last;
   }
 
   // ---------------------------------------------------------------------------

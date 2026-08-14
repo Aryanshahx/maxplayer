@@ -834,17 +834,23 @@ class _PlayerScreenState extends State<PlayerScreen>
                                             // 4:3 in those fit modes; null
                                             // keeps the video's own ratio.
                                             aspectRatio: _fitAspects[_fitIndex],
-                                            // v26: media_kit's OWN Flutter
-                                            // subtitle layer stays OFF. It
-                                            // ignores mpv's sub-visibility,
-                                            // so the default/AI line kept
-                                            // drawing next to the karaoke
-                                            // overlay. Normal subtitles are
-                                            // drawn by mpv itself; karaoke
-                                            // draws its own overlay.
+                                            // v26/v27: karaoke <=> normal
+                                            // subtitles. The engine's own
+                                            // Flutter subtitle layer IS the
+                                            // normal subtitle display on
+                                            // Android (this mpv build does
+                                            // not paint subs into the video
+                                            // frame) - so it must be ON for
+                                            // normal playback and OFF only
+                                            // while karaoke is on (v26: it
+                                            // ignored mpv's hide flag and
+                                            // drew next to karaoke; v27:
+                                            // fully hiding it also hid the
+                                            // normal subs).
                                             subtitleViewConfiguration:
-                                                const SubtitleViewConfiguration(
-                                              visible: false,
+                                                SubtitleViewConfiguration(
+                                              visible:
+                                                  !_settings.karaokeSubs,
                                             ),
                                           ),
                                         )

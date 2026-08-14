@@ -14,6 +14,13 @@ class VideoMetadata {
   /// Android version (read via MediaExtractor track MIME).
   final String? codec;
 
+  /// v27 advanced video info: video frame rate (0 = container omits it),
+  /// and the FIRST audio track's details (null/0 = none or unknown).
+  final int? frameRate;
+  final String? audioCodec;
+  final int? audioChannels;
+  final int? audioSampleRate;
+
   const VideoMetadata({
     this.duration,
     this.thumbnailPath,
@@ -21,6 +28,10 @@ class VideoMetadata {
     this.height,
     this.bitrateBps,
     this.codec,
+    this.frameRate,
+    this.audioCodec,
+    this.audioChannels,
+    this.audioSampleRate,
   });
 }
 
@@ -147,6 +158,9 @@ class NativeBridge {
       final width = res['width'];
       final height = res['height'];
       final bitrate = res['bitrate'];
+      final fps = res['frameRate'];
+      final aCh = res['audioChannels'];
+      final aRate = res['audioSampleRate'];
       return VideoMetadata(
         duration: durationMs is int ? Duration(milliseconds: durationMs) : null,
         thumbnailPath: res['thumbnailPath'] as String?,
@@ -154,6 +168,11 @@ class NativeBridge {
         height: height is int ? height : null,
         bitrateBps: bitrate is int ? bitrate : null,
         codec: res['codec'] as String?,
+        // v27: advanced track details (0 on the wire = unknown -> null).
+        frameRate: fps is int && fps > 0 ? fps : null,
+        audioCodec: res['audioCodec'] as String?,
+        audioChannels: aCh is int && aCh > 0 ? aCh : null,
+        audioSampleRate: aRate is int && aRate > 0 ? aRate : null,
       );
     } catch (_) {
       return const VideoMetadata();
