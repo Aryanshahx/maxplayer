@@ -181,8 +181,8 @@ class NativeBridge {
 
   static Future<Map<String, String>> loadSettings() async {
     try {
-      final Map<Object?, Object?>? res = await _channel
-          .invokeMethod<Map<Object?, Object?>>('settingsGetAll');
+      final Map<Object?, Object?>? res =
+          await _channel.invokeMethod<Map<Object?, Object?>>('settingsGetAll');
       if (res == null) return <String, String>{};
       return res.map((k, v) => MapEntry('$k', '$v'));
     } catch (_) {
@@ -306,8 +306,8 @@ class NativeBridge {
   /// small: MB}; 0 MB means "not downloaded yet".
   static Future<Map<String, int>> aiModelStatus() async {
     try {
-      final res = await _channel
-          .invokeMethod<Map<Object?, Object?>>('aiModelStatus');
+      final res =
+          await _channel.invokeMethod<Map<Object?, Object?>>('aiModelStatus');
       if (res == null) return const {};
       return res.map((k, v) => MapEntry('$k', (v as num?)?.toInt() ?? 0));
     } catch (_) {
@@ -384,8 +384,8 @@ class NativeBridge {
   /// ({thumbs, strips, temp, models}). Your videos are never included.
   static Future<Map<String, int>> storageReport() async {
     try {
-      final res = await _channel
-          .invokeMethod<Map<Object?, Object?>>('storageReport');
+      final res =
+          await _channel.invokeMethod<Map<Object?, Object?>>('storageReport');
       if (res == null) return const {};
       return res.map((k, v) => MapEntry('$k', (v as num?)?.toInt() ?? 0));
     } catch (_) {
@@ -402,6 +402,23 @@ class NativeBridge {
       return res ?? 0;
     } catch (_) {
       return 0;
+    }
+  }
+
+  /// v31 Cleaner: total/free bytes of the device's internal storage
+  /// (StatFs on the app files dir). Null when the platform side is
+  /// unavailable (desktop, tests) - the UI hides the graph then.
+  static Future<DeviceStorage?> storageTotals() async {
+    try {
+      final res =
+          await _channel.invokeMethod<Map<Object?, Object?>>('storageTotals');
+      if (res == null) return null;
+      final total = (res['total'] as num?)?.toInt() ?? 0;
+      final free = (res['free'] as num?)?.toInt() ?? 0;
+      if (total <= 0) return null;
+      return DeviceStorage(total: total, free: free);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -471,4 +488,16 @@ class NativeBridge {
       return null;
     }
   }
+}
+
+/// v31: device internal-storage totals for the cleaner's storage graph.
+class DeviceStorage {
+  final int total;
+  final int free;
+  const DeviceStorage({required this.total, required this.free});
+
+  int get used => total - free;
+
+  /// 0..1 fill of the usage bar (guarded against a bogus total).
+  double get usedFraction => total <= 0 ? 0 : (used.clamp(0, total)) / total;
 }

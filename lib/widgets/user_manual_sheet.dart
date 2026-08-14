@@ -265,8 +265,7 @@ const List<_Item> _homeItems = [
     '⋮ → Display settings lets you: switch between list and grid view, sort '
         'by name / length / date added / size (tap again to flip the '
         'direction), group by first letter or by folder, and change the app\'s '
-        'accent colour from seven swatches - white is the default, the '
-        'classic purple and five more stay selectable.',
+        'accent colour from seven swatches - white is the default.',
   ),
   _Item(
     Icons.grid_view_rounded,
@@ -274,13 +273,16 @@ const List<_Item> _homeItems = [
     'Four shortcuts sit under the library search bar: Private folder, '
         'Cleaner, Playlist and Folders. The grid slides away when you '
         'scroll down through your videos and returns when you scroll '
-        'back up. Cleaner is a device cleaner: it clears app caches and '
-        'the system gallery-cache, and lists your LARGEST videos and '
-        'DUPLICATE copies so you can delete them with one tap (deleting '
-        'a video always asks first). Playlist shows the current queue, '
-        'and "Build playlist" plays a queue made from videos you select. '
-        'Folders shows only the videos of one folder; clear the '
-        'chip under the search bar to see everything again.',
+        'back up. Cleaner scans every cache (app thumbnails, AI '
+        'leftovers, the gallery thumbnail cache), draws graphs of your '
+        'device storage and the reclaimable space, and Clean cache '
+        'frees all caches at once; the largest videos and duplicate '
+        'copies sit below - cache cleaning never touches your videos. '
+        'Playlist shows the current '
+        'playlist: tap + to add videos one by one, or "Build playlist" to '
+        'pick videos and play only them - previous/next then stay inside '
+        'your selection. Folders shows only the videos of one folder; '
+        'clear the chip under the search bar to see everything again.',
   ),
   _Item(
     Icons.open_in_new,
@@ -388,9 +390,10 @@ const List<_Item> _playerItems = [
   _Item(
     Icons.queue_music,
     'Playlist / queue',
-    'Opens the side panel with everything queued up. Tap any row to jump to '
-        'that video, the small ✕ to remove one, and the » button at the top '
-        'to collapse the panel again.',
+    'Opens the playlist panel. When you picked the videos yourself (home '
+        'screen → Playlist), the panel and the previous/next buttons use '
+        'only those videos - nothing else sneaks in. Tap a row to jump to '
+        'it, the small ✕ to remove one, and » at the top to collapse.',
   ),
   _Item(
     Icons.fullscreen,
@@ -550,9 +553,7 @@ const List<_Item> _smartItems = [
         'disappear from Gallery and file managers. Open them from the '
         '"Private folder" tile under the library search bar after your '
         'PIN; simply opening and '
-        'closing the folder no longer reloads the library. Inside the '
-        'folder, the + button (top bar) adds more videos from the '
-        'library. '
+        'closing the folder no longer reloads the library. '
         'Forgot the PIN? Tap "Forgot PIN?" on the lock screen → unlock '
         'your PHONE once (device password, pattern or fingerprint) → '
         'set a new PIN - hidden videos are never wiped. '

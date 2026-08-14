@@ -32,6 +32,7 @@ import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
+import android.os.StatFs
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.WindowManager
@@ -406,6 +407,15 @@ class MainActivity : FlutterActivity() {
                 "clearStorage" -> {
                     // Long (bytes freed); videos themselves are untouched.
                     result.success(clearStorageKind(call.argument<String>("kind") ?: ""))
+                }
+                "storageTotals" -> {
+                    // v31 Cleaner graph: total/free bytes of the internal
+                    // storage volume the app lives on.
+                    val stat = StatFs(filesDir.absolutePath)
+                    val out = HashMap<String, Long>()
+                    out["total"] = stat.blockSizeLong * stat.blockCountLong
+                    out["free"] = stat.blockSizeLong * stat.availableBlocksLong
+                    result.success(out)
                 }
                 "setMulticastLock" -> {
                     // DLNA casting: SSDP multicast discovery needs a Wi-Fi

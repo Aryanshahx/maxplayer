@@ -6,12 +6,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:maxplayer/app_info.dart';
 import 'package:maxplayer/cast/cast_support.dart';
 import 'package:maxplayer/models/video_track.dart';
+import 'package:maxplayer/services/native_bridge.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/player_settings.dart';
 import 'package:maxplayer/state/private_vault.dart';
 import 'package:maxplayer/state/theme_state.dart';
 import 'package:maxplayer/state/video_library_state.dart';
 import 'package:maxplayer/utils/ai_subtitles.dart';
+import 'package:maxplayer/utils/cleaner_stats.dart';
 import 'package:maxplayer/utils/formatters.dart';
 import 'package:maxplayer/utils/privacy_policy.dart';
 import 'package:maxplayer/utils/sha256.dart';
@@ -67,8 +69,10 @@ void main() {
     test('formats durations', () {
       expect(formatDuration(null), '--:--');
       expect(formatDuration(const Duration(seconds: 65)), '1:05');
-      expect(formatDuration(const Duration(hours: 1, minutes: 2, seconds: 3)),
-          '1:02:03');
+      expect(
+        formatDuration(const Duration(hours: 1, minutes: 2, seconds: 3)),
+        '1:02:03',
+      );
     });
 
     test('detects video extensions case-insensitively', () {
@@ -80,12 +84,32 @@ void main() {
     test('covers the extension set advertised in the manifest', () {
       // Keep in sync with the pathPatterns in AndroidManifest.xml.
       for (final ext in [
-        'mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'm4v', '3gp',
-        '3gpp', 'ogv', 'ts', 'mts', 'm2ts', 'vob', 'mpg', 'mpeg', 'rmvb',
-        'divx', 'f4v',
+        'mp4',
+        'webm',
+        'mkv',
+        'avi',
+        'mov',
+        'wmv',
+        'flv',
+        'm4v',
+        '3gp',
+        '3gpp',
+        'ogv',
+        'ts',
+        'mts',
+        'm2ts',
+        'vob',
+        'mpg',
+        'mpeg',
+        'rmvb',
+        'divx',
+        'f4v',
       ]) {
-        expect(isVideoFile('movie.$ext'), isTrue,
-            reason: '.$ext must scan into the library');
+        expect(
+          isVideoFile('movie.$ext'),
+          isTrue,
+          reason: '.$ext must scan into the library',
+        );
         expect(isVideoFile('movie.${ext.toUpperCase()}'), isTrue);
       }
     });
@@ -94,7 +118,9 @@ void main() {
       final now = DateTime.now().millisecondsSinceEpoch;
       expect(timeAgo(now), 'Just now');
       expect(
-          timeAgo(now - const Duration(minutes: 5).inMilliseconds), '5m ago');
+        timeAgo(now - const Duration(minutes: 5).inMilliseconds),
+        '5m ago',
+      );
       expect(timeAgo(now - const Duration(hours: 3).inMilliseconds), '3h ago');
       expect(timeAgo(now - const Duration(days: 2).inMilliseconds), '2d ago');
       expect(timeAgo(0), '');
@@ -103,7 +129,12 @@ void main() {
 
   group('quality label', () {
     String? q(int? w, int? h) => VideoTrack(
-        id: 'x', title: 'x', path: '/x.mp4', width: w, height: h).qualityLabel;
+          id: 'x',
+          title: 'x',
+          path: '/x.mp4',
+          width: w,
+          height: h,
+        ).qualityLabel;
 
     test('maps the SHORTER side to a resolution badge', () {
       expect(q(1920, 1080), '1080p');
@@ -127,19 +158,24 @@ void main() {
     });
 
     test('skips flat bands and formats the rest as lavfi', () {
-      final f =
-          MediaPlayerState.buildEqualizerFilter([6, 0, -2, 0, 3.5]);
-      expect(f,
-          'lavfi=[equalizer=f=60:t=q:w=1.0:g=6.0,equalizer=f=910:t=q:w=1.0:g=-2.0,equalizer=f=14000:t=q:w=1.0:g=3.5]');
+      final f = MediaPlayerState.buildEqualizerFilter([6, 0, -2, 0, 3.5]);
+      expect(
+        f,
+        'lavfi=[equalizer=f=60:t=q:w=1.0:g=6.0,equalizer=f=910:t=q:w=1.0:g=-2.0,equalizer=f=14000:t=q:w=1.0:g=3.5]',
+      );
     });
   });
 
   group('watch stats', () {
     test('stats key is a sortable YYYYMMDD bucket', () {
-      expect(MediaPlayerState.statsKeyFor(DateTime(2026, 8, 11)),
-          'stats.20260811');
-      expect(MediaPlayerState.statsKeyFor(DateTime(2026, 1, 5)),
-          'stats.20260105');
+      expect(
+        MediaPlayerState.statsKeyFor(DateTime(2026, 8, 11)),
+        'stats.20260811',
+      );
+      expect(
+        MediaPlayerState.statsKeyFor(DateTime(2026, 1, 5)),
+        'stats.20260105',
+      );
     });
 
     test('formatWatchTime', () {
@@ -151,8 +187,18 @@ void main() {
 
   group('library sorting', () {
     final videos = [
-      _track('banana', size: 300, modified: 100, duration: const Duration(minutes: 3)),
-      _track('apple', size: 100, modified: 300, duration: const Duration(minutes: 1)),
+      _track(
+        'banana',
+        size: 300,
+        modified: 100,
+        duration: const Duration(minutes: 3),
+      ),
+      _track(
+        'apple',
+        size: 100,
+        modified: 300,
+        duration: const Duration(minutes: 1),
+      ),
       _track('cherry', size: 200, modified: 200),
     ];
 
@@ -305,8 +351,10 @@ void main() {
           'location: http://other/x.xml\r\n' // duplicate -> first wins
           'ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n';
       expect(ssdpHeader(dg, 'location'), 'http://192.168.1.10:8080/dd.xml');
-      expect(ssdpHeader(dg, 'ST'),
-          'urn:schemas-upnp-org:device:MediaRenderer:1');
+      expect(
+        ssdpHeader(dg, 'ST'),
+        'urn:schemas-upnp-org:device:MediaRenderer:1',
+      );
       expect(ssdpHeader(dg, 'server'), isNull);
     });
 
@@ -317,8 +365,7 @@ void main() {
       expect(m.endsWith('\r\n\r\n'), isTrue);
     });
 
-    test('device description: finds AVTransport and resolves relative URL',
-        () {
+    test('device description: finds AVTransport and resolves relative URL', () {
       const xml = '''
 <root xmlns="urn:schemas-upnp-org:device-1-0">
   <device>
@@ -350,8 +397,7 @@ void main() {
       expect(parseDeviceDescription(xml, 'http://10.0.0.1/d.xml'), isNull);
     });
 
-    test('absolute controlURL kept as-is; xml entities unescaped in name',
-        () {
+    test('absolute controlURL kept as-is; xml entities unescaped in name', () {
       const xml = '<root><device><friendlyName>A &amp; B TV</friendlyName>'
           '<serviceList><service>'
           '<serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>'
@@ -363,15 +409,18 @@ void main() {
     });
 
     test('SOAP envelope carries InstanceID first and escapes args', () {
-      final env = buildSoapEnvelope('Play', const [
-        MapEntry('Speed', '1'),
-      ]);
-      expect(env, contains('<u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">'));
-      expect(env.indexOf('<InstanceID>0</InstanceID>'),
-          lessThan(env.indexOf('<Speed>1</Speed>')));
-      final esc = buildSoapEnvelope('X', const [
-        MapEntry('V', 'a & <b> "q"'),
-      ]);
+      final env = buildSoapEnvelope('Play', const [MapEntry('Speed', '1')]);
+      expect(
+        env,
+        contains(
+          '<u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">',
+        ),
+      );
+      expect(
+        env.indexOf('<InstanceID>0</InstanceID>'),
+        lessThan(env.indexOf('<Speed>1</Speed>')),
+      );
+      final esc = buildSoapEnvelope('X', const [MapEntry('V', 'a & <b> "q"')]);
       expect(esc, contains('a &amp; &lt;b&gt; &quot;q&quot;'));
     });
 
@@ -395,7 +444,10 @@ void main() {
       expect(didl, contains('protocolInfo="http-get:*:video/mp4:*"'));
       expect(didl, contains('<sec:CaptionInfoEx'));
       final noSubs = buildDidlMetadata(
-          title: 't', videoUrl: 'http://p/v.mp4', mime: 'video/mp4');
+        title: 't',
+        videoUrl: 'http://p/v.mp4',
+        mime: 'video/mp4',
+      );
       expect(noSubs.contains('CaptionInfoEx'), isFalse);
     });
 
@@ -412,12 +464,16 @@ void main() {
     });
 
     test('DLNA rel-time format/parse round-trips', () {
-      expect(formatRelTime(const Duration(hours: 1, minutes: 2, seconds: 3)),
-          '1:02:03');
+      expect(
+        formatRelTime(const Duration(hours: 1, minutes: 2, seconds: 3)),
+        '1:02:03',
+      );
       expect(formatRelTime(Duration.zero), '0:00:00');
       expect(parseRelTime('0:06:12'), const Duration(minutes: 6, seconds: 12));
-      expect(parseRelTime('1:02:03.500'),
-          const Duration(hours: 1, minutes: 2, seconds: 3, milliseconds: 500));
+      expect(
+        parseRelTime('1:02:03.500'),
+        const Duration(hours: 1, minutes: 2, seconds: 3, milliseconds: 500),
+      );
       expect(parseRelTime('NOT_IMPLEMENTED'), isNull);
       expect(parseRelTime(null), isNull);
       expect(parseRelTime('garbage'), isNull);
@@ -427,11 +483,20 @@ void main() {
   group('app version', () {
     test('kAppVersion matches the pubspec version name', () {
       final pub = File('pubspec.yaml').readAsStringSync();
-      final m = RegExp(r'^version:\s*([0-9][0-9.]*)\+', multiLine: true)
-          .firstMatch(pub);
-      expect(m, isNotNull, reason: 'pubspec.yaml must declare version: x.y.z+N');
-      expect(m!.group(1), kAppVersion,
-          reason: 'Keep kAppVersion in lib/app_info.dart in sync');
+      final m = RegExp(
+        r'^version:\s*([0-9][0-9.]*)\+',
+        multiLine: true,
+      ).firstMatch(pub);
+      expect(
+        m,
+        isNotNull,
+        reason: 'pubspec.yaml must declare version: x.y.z+N',
+      );
+      expect(
+        m!.group(1),
+        kAppVersion,
+        reason: 'Keep kAppVersion in lib/app_info.dart in sync',
+      );
     });
   });
 
@@ -440,11 +505,16 @@ void main() {
     // threading, and any stale "tiny" id from v22-v24 maps to base.
     test('only accurate models remain; stale tiny ids map to base', () {
       expect(AiSubtitleRunner.modelChoices.containsKey('tiny'), isFalse);
-      expect(AiSubtitleRunner.modelChoices.keys,
-          containsAll(<String>['base', 'small']));
+      expect(
+        AiSubtitleRunner.modelChoices.keys,
+        containsAll(<String>['base', 'small']),
+      );
       expect(AiSubtitleRunner.normalizeModelId(null), 'base');
-      expect(AiSubtitleRunner.normalizeModelId('tiny'), 'base',
-          reason: 'a stale v22-24 "tiny" pref must migrate to base');
+      expect(
+        AiSubtitleRunner.normalizeModelId('tiny'),
+        'base',
+        reason: 'a stale v22-24 "tiny" pref must migrate to base',
+      );
       expect(AiSubtitleRunner.normalizeModelId('small'), 'small');
       expect(AiSubtitleRunner.normalizeModelId('nonsense'), 'base');
       expect(AiSubtitleRunner.modelSizeLabel('base'), '~142 MB');
@@ -486,9 +556,12 @@ void main() {
         'github.com/Aryanshahx/maxplayer',
       ]) {
         expect(md, contains(anchor));
-        expect(kPrivacyPolicyText, contains(anchor),
-            reason: 'keep lib/utils/privacy_policy.dart in sync with '
-                'PRIVACY_POLICY.md');
+        expect(
+          kPrivacyPolicyText,
+          contains(anchor),
+          reason: 'keep lib/utils/privacy_policy.dart in sync with '
+              'PRIVACY_POLICY.md',
+        );
       }
     });
   });
@@ -502,8 +575,9 @@ void main() {
       addTearDown(tester.view.reset);
     }
 
-    testWidgets('every gesture illustration paints without errors',
-        (tester) async {
+    testWidgets('every gesture illustration paints without errors', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -522,7 +596,9 @@ void main() {
         ),
       );
       expect(
-          find.byType(GestureIllustration), findsNWidgets(GestureKind.values.length));
+        find.byType(GestureIllustration),
+        findsNWidgets(GestureKind.values.length),
+      );
       expect(tester.takeException(), isNull);
     });
 
@@ -533,10 +609,14 @@ void main() {
       );
       expect(find.text('User manual'), findsOneWidget);
       expect(find.text('GESTURE CONTROLS'), findsOneWidget);
-      expect(find.text('Max Player v$kAppVersion  ·  Hyper Tech Labs'),
-          findsOneWidget);
-      expect(find.byType(GestureIllustration),
-          findsNWidgets(GestureKind.values.length));
+      expect(
+        find.text('Max Player v$kAppVersion  ·  Hyper Tech Labs'),
+        findsOneWidget,
+      );
+      expect(
+        find.byType(GestureIllustration),
+        findsNWidgets(GestureKind.values.length),
+      );
       expect(tester.takeException(), isNull);
     });
 
@@ -551,20 +631,25 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('about sheet bundles the privacy policy offline',
-        (tester) async {
+    testWidgets('about sheet bundles the privacy policy offline', (
+      tester,
+    ) async {
       useTallViewport(tester);
       await tester.pumpWidget(
         const MaterialApp(home: Scaffold(body: AboutSheet())),
       );
       await tester.tap(find.text('Privacy policy'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('does not collect, store, transmit'),
-          findsOneWidget);
+      expect(
+        find.textContaining('does not collect, store, transmit'),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('does not collect, store, transmit'),
-          findsNothing);
+      expect(
+        find.textContaining('does not collect, store, transmit'),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
     });
   });
@@ -589,7 +674,8 @@ void main() {
 
     test('parseSrt tolerates missing indices and dot-millis', () {
       final parsed = parseSrt(
-          '1\n00:00:01.000 --> 00:00:02.500\none two\n\n00:00:03,000 --> 00:00:04,000\nthree\n');
+        '1\n00:00:01.000 --> 00:00:02.500\none two\n\n00:00:03,000 --> 00:00:04,000\nthree\n',
+      );
       expect(parsed.length, 2);
       expect(parsed[0].startMs, 1000);
       expect(parsed[0].endMs, 2500);
@@ -609,7 +695,9 @@ void main() {
       expect(computeSkipIntro([const SrtCue(3000, 5000, 'Hello')]), isNull);
       // First speech after 10 minutes -> not an intro.
       expect(
-          computeSkipIntro([const SrtCue(700000, 701000, 'Too late')]), isNull);
+        computeSkipIntro([const SrtCue(700000, 701000, 'Too late')]),
+        isNull,
+      );
       expect(computeSkipIntro(const []), isNull);
     });
   });
@@ -619,12 +707,18 @@ void main() {
   // -------------------------------------------------------------------------
   group('v21 sha256', () {
     test('standard test vectors', () {
-      expect(sha256Hex(''),
-          'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
-      expect(sha256Hex('abc'),
-          'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
-      expect(sha256Hex('1234'),
-          '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4');
+      expect(
+        sha256Hex(''),
+        'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      );
+      expect(
+        sha256Hex('abc'),
+        'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+      );
+      expect(
+        sha256Hex('1234'),
+        '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4',
+      );
     });
   });
 
@@ -675,10 +769,10 @@ void main() {
   group('v22 sidecar .srt picking', () {
     test('exact same-name match wins over language variants', () {
       final names = ['movie.eng.srt', 'Movie.SRT', 'movie.maxai.srt', 'x.srt'];
-      expect(
-        sidecarSrtCandidates(names, '/sdcard/Movies/Movie.mp4'),
-        ['Movie.SRT', 'movie.eng.srt'],
-      );
+      expect(sidecarSrtCandidates(names, '/sdcard/Movies/Movie.mp4'), [
+        'Movie.SRT',
+        'movie.eng.srt',
+      ]);
     });
     test('AI sidecar is never picked as a plain sidecar', () {
       final names = ['movie.maxai.srt'];
@@ -686,8 +780,10 @@ void main() {
     });
     test('language variants are sorted and kept in original case', () {
       final names = ['movie.hi.srt', 'movie.en.srt'];
-      expect(sidecarSrtCandidates(names, 'movie.mkv'),
-          ['movie.en.srt', 'movie.hi.srt']);
+      expect(sidecarSrtCandidates(names, 'movie.mkv'), [
+        'movie.en.srt',
+        'movie.hi.srt',
+      ]);
     });
     test('unrelated files and non-srt are ignored', () {
       final names = ['movie.srt.txt', 'other.srt', 'movie.txt', '.srt'];
@@ -775,10 +871,14 @@ void main() {
     });
 
     test('statsKeyFor day buckets stay stable', () {
-      expect(MediaPlayerState.statsKeyFor(DateTime(2026, 8, 14)),
-          'stats.20260814');
-      expect(MediaPlayerState.statsKeyFor(DateTime(2026, 1, 5)),
-          'stats.20260105');
+      expect(
+        MediaPlayerState.statsKeyFor(DateTime(2026, 8, 14)),
+        'stats.20260814',
+      );
+      expect(
+        MediaPlayerState.statsKeyFor(DateTime(2026, 1, 5)),
+        'stats.20260105',
+      );
     });
   });
 
@@ -881,6 +981,99 @@ void main() {
       expect(ThemeState.defaultAccent.toARGB32(), 0xFFFFFFFF);
       // purple and the others remain selectable
       expect(ThemeState.swatches.length, 7);
+    });
+  });
+
+  group('v30 playlist add-to-queue', () {
+    VideoTrack vt(String path) =>
+        VideoTrack(id: path, title: path.split('/').last, path: path);
+
+    test('mergeQueueVideos appends new, skips duplicates, keeps order', () {
+      final merged = mergeQueueVideos(
+        [vt('/s/a.mp4'), vt('/s/b.mp4')],
+        [vt('/s/b.mp4'), vt('/s/c.mp4'), vt('/s/a.mp4')],
+      );
+      expect(merged.map((v) => v.path).toList(), [
+        '/s/a.mp4',
+        '/s/b.mp4',
+        '/s/c.mp4',
+      ]);
+    });
+
+    test('mergeQueueVideos into an empty queue returns the picks', () {
+      final merged = mergeQueueVideos(const [], [vt('/s/x.mp4')]);
+      expect(merged.single.path, '/s/x.mp4');
+    });
+
+    test('mergeQueueVideos does not mutate the original queue', () {
+      final queue = [vt('/s/a.mp4')];
+      mergeQueueVideos(queue, [vt('/s/b.mp4')]);
+      expect(queue.length, 1);
+    });
+  });
+
+  group('v31 cleaner stats', () {
+    test('segments drop empty kinds and keep a stable order', () {
+      final segs = cleanerSegments(
+        thumbs: 100,
+        strips: 0,
+        temp: 50,
+        models: 0,
+        deviceCache: 25,
+      );
+      expect(segs.map((s) => s.label).toList(),
+          ['App thumbnails', 'Temporary AI files', 'Gallery cache']);
+    });
+
+    test('segment colours are stable per kind', () {
+      final segs = cleanerSegments(
+        thumbs: 1,
+        strips: 2,
+        temp: 3,
+        models: 4,
+        deviceCache: 5,
+      );
+      expect(segs[0].colorValue, cleanerKindColors['thumbs']);
+      expect(segs[3].colorValue, cleanerKindColors['models']);
+      // AI models keep their colour even when earlier kinds are empty.
+      final lonely = cleanerSegments(
+        thumbs: 0,
+        strips: 0,
+        temp: 0,
+        models: 9,
+        deviceCache: 0,
+      );
+      expect(lonely.single.colorValue, cleanerKindColors['models']);
+    });
+
+    test('clean cache total excludes models, grand total includes them', () {
+      final cache = cleanerCacheTotal(
+        thumbs: 10,
+        strips: 10,
+        temp: 10,
+        deviceCache: 10,
+      );
+      final grand = cleanerGrandTotal(
+        thumbs: 10,
+        strips: 10,
+        temp: 10,
+        models: 7,
+        deviceCache: 10,
+      );
+      expect(cache, 40);
+      expect(grand, 47);
+    });
+
+    test('fractionOf guards an empty graph', () {
+      const seg = CleanerSegment('x', 5, 0xFF000000);
+      expect(seg.fractionOf(0), 0);
+      expect(seg.fractionOf(20), 0.25);
+    });
+
+    test('DeviceStorage used + usedFraction are sane', () {
+      const s = DeviceStorage(total: 100, free: 25);
+      expect(s.used, 75);
+      expect(s.usedFraction, 0.75);
     });
   });
 }

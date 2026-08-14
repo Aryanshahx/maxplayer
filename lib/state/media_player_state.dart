@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' hide VideoTrack;
 import 'package:media_kit_video/media_kit_video.dart';
@@ -14,6 +15,20 @@ import '../services/native_bridge.dart';
 import '../utils/formatters.dart';
 import '../utils/srt.dart';
 import 'player_settings.dart';
+
+/// v30: merge picked videos into the play queue, skipping entries whose id
+/// is already queued. Pure so the playlist "+" logic is unit-testable.
+List<VideoTrack> mergeQueueVideos(
+  List<VideoTrack> queue,
+  List<VideoTrack> added,
+) {
+  final out = [...queue];
+  final have = queue.map((v) => v.id).toSet();
+  for (final v in added) {
+    if (have.add(v.id)) out.add(v);
+  }
+  return out;
+}
 
 /// Mirrors the web app's useMediaPlayer hook, backed by media_kit's Player.
 class MediaPlayerState extends ChangeNotifier {
@@ -336,6 +351,22 @@ class MediaPlayerState extends ChangeNotifier {
     await _loadCurrent(autoplay: true);
   }
 
+  /// v30: "+" in the playlist sheet - appends the picked videos to the
+  /// current queue without changing what is playing. Duplicates are
+  /// skipped. The player keeps showing only the playlist: previous/next
+  /// never leave these entries.
+  void addToPlaylist(List<VideoTrack> videos) {
+    final merged = mergeQueueVideos(playlist, videos);
+    if (merged.length == playlist.length) return;
+    playlist = merged;
+    // The shuffle order is keyed to queue positions - rebuild it so the
+    // new entries become reachable in shuffle mode too.
+    if (isShuffled) {
+      _shuffledOrder = _generateShuffledOrder(playlist.length, currentIndex);
+    }
+    notifyListeners();
+  }
+
   Future<void> playTrack(int index) async {
     if (index < 0 || index >= playlist.length) return;
     currentIndex = index;
@@ -378,8 +409,8 @@ class MediaPlayerState extends ChangeNotifier {
     // frame is captured through mpv instead (see _maybeCaptureThumb).
     _pendingThumbFor =
         (track.thumbnailPath == null && !track.path.contains('://'))
-            ? track.path
-            : null;
+        ? track.path
+        : null;
   }
 
   /// Re-attaches previously generated AI subtitles ("<video>.maxai.srt"
@@ -507,15 +538,13 @@ class MediaPlayerState extends ChangeNotifier {
         var startMs = 0;
         var endMs = 0;
         try {
-          startMs = ((double.tryParse(
-                          await plat.getProperty('sub-start')) ??
-                      0) *
-                  1000)
-              .round();
-          endMs = ((double.tryParse(await plat.getProperty('sub-end')) ??
-                      0) *
-                  1000)
-              .round();
+          startMs =
+              ((double.tryParse(await plat.getProperty('sub-start')) ?? 0) *
+                      1000)
+                  .round();
+          endMs =
+              ((double.tryParse(await plat.getProperty('sub-end')) ?? 0) * 1000)
+                  .round();
         } catch (_) {}
         if (endMs <= startMs) endMs = startMs + 2000; // sane fallback
         final clean = text.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -540,7 +569,8 @@ class MediaPlayerState extends ChangeNotifier {
   Future<void> _applySubVisibility() async {
     final platform = player.platform;
     if (platform is! NativePlayer) return;
-    final hide = karaokeMode &&
+    final hide =
+        karaokeMode &&
         (subtitlesActive || aiCues != null || sidecarCues != null);
     final want = hide ? 'no' : 'yes';
     if (want == _appliedSubVisibility) return;
@@ -1125,12 +1155,13 @@ class MediaPlayerState extends ChangeNotifier {
     final s = await NativeBridge.loadSettings();
     final now = DateTime.now();
     final todayKey = statsKeyFor(now);
-    final todaySecs = _watchTodaySecs >
-            (int.tryParse(s[todayKey] ?? '') ?? 0)
+    final todaySecs = _watchTodaySecs > (int.tryParse(s[todayKey] ?? '') ?? 0)
         ? _watchTodaySecs
         : (int.tryParse(s[todayKey] ?? '') ?? 0);
     var streak = 0;
-    var offset = todaySecs > 0 ? 0 : 1; // no watching today yet -> start yesterday
+    var offset = todaySecs > 0
+        ? 0
+        : 1; // no watching today yet -> start yesterday
     while (true) {
       final key = statsKeyFor(now.subtract(Duration(days: offset)));
       final secs = int.tryParse(s[key] ?? '') ?? 0;
