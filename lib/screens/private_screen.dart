@@ -33,6 +33,10 @@ class _PrivateScreenState extends State<PrivateScreen> {
   bool _busy = false;
   List<File>? _videos;
 
+  /// v24: a vault-storage failure (denied mkdir on some devices) is shown
+  /// here instead of crashing the app (was an unhandled zone error).
+  String? _loadError;
+
   @override
   void initState() {
     super.initState();
@@ -86,9 +90,21 @@ class _PrivateScreenState extends State<PrivateScreen> {
   }
 
   Future<void> _refresh() async {
-    final vids = await _vault.listVideos();
-    if (mounted) {
-      setState(() => _videos = vids);
+    try {
+      final vids = await _vault.listVideos();
+      if (mounted) {
+        setState(() {
+          _videos = vids;
+          _loadError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadError = e
+            .toString()
+            .replaceAll('FileSystemException: ', '')
+            .replaceAll('Exception: ', ''));
+      }
     }
   }
 
@@ -229,6 +245,34 @@ class _PrivateScreenState extends State<PrivateScreen> {
   }
 
   Widget _videoList(Color accent) {
+    final loadError = _loadError;
+    if (loadError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline,
+                  size: 40, color: accent.withValues(alpha: 0.7)),
+              const SizedBox(height: 12),
+              Text(
+                'Private folder could not open:\n$loadError',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: accent.withValues(alpha: 0.8), height: 1.5),
+              ),
+              const SizedBox(height: 14),
+              TextButton.icon(
+                onPressed: _refresh,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final vids = _videos;
     if (vids == null) {
       return const Center(child: CircularProgressIndicator());

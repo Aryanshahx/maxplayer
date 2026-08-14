@@ -349,6 +349,28 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "vaultDirPath" -> {
+                    // v24 private-folder crash fix: the vault lived at a
+                    // hardcoded /Android/data/<pkg> path, and creating the
+                    // package folder there via raw mkdir is EACCES-denied
+                    // on some devices when it is missing (real crash:
+                    // PathAccessException errno=13 right after PIN entry).
+                    // getExternalFilesDir lets the FRAMEWORK create/own it -
+                    // no storage permission involved at all. On most phones
+                    // this resolves to the exact same path as before, so
+                    // already-hidden files stay put (Dart also migrates).
+                    try {
+                        val base = getExternalFilesDir(null) ?: filesDir
+                        val dir = File(base, "Private")
+                        if (dir.exists() || dir.mkdirs()) {
+                            result.success(dir.absolutePath)
+                        } else {
+                            result.success(null)
+                        }
+                    } catch (e: Exception) {
+                        result.success(null)
+                    }
+                }
                 "thumbnailPathFor" -> {
                     // The Dart player's 4K/HDR thumbnail fallback (v22): when
                     // Android's metadata engine can't decode a frame from a

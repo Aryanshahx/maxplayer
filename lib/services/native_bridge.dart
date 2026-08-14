@@ -350,6 +350,17 @@ class NativeBridge {
     }
   }
 
+  /// v24: absolute path of the Private-folder vault directory, created and
+  /// owned through the Android framework (no storage permission needed).
+  /// Null = this build can't provide one.
+  static Future<String?> vaultDirPath() async {
+    try {
+      return await _channel.invokeMethod<String>('vaultDirPath');
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Holds/releases the Wi-Fi multicast lock used during DLNA (SSDP)
   /// device discovery. [hold] true = acquire, false = release.
   static Future<void> setMulticastLock(bool hold) async {

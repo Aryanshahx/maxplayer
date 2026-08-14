@@ -19,6 +19,11 @@ import '../utils/sha256.dart';
 class PrivateVault {
   static const String _pinKey = 'vault.pinHash';
 
+  /// v21-v23 vault location (hardcoded). v24 keeps it ONLY as a legacy
+  /// source: the vault now lives in the directory the Android framework
+  /// hands the app via getExternalFilesDir - on most phones that is the
+  /// exact same folder, on devices where mkdir-ing it by hand is denied
+  /// (errno 13 crash) the framework one always works.
   static const String vaultDirPath =
       '/storage/emulated/0/Android/data/com.hypertechlabs.maxplayer/files/Private';
 
@@ -30,9 +35,11 @@ class PrivateVault {
     '.mpg', '.mpeg', '.3gp', '.vob', '.m4v',
   };
 
-  /// True when [path] already lives inside the vault.
+  /// True when [path] already lives inside the vault (either the legacy
+  /// hardcoded location or any framework-provided one - both end in the
+  /// "/files/Private/" tail of the app's private directory).
   static bool isPrivatePath(String path) =>
-      path.startsWith(vaultDirPath);
+      path.startsWith(vaultDirPath) || path.contains('/files/Private/');
 
   String _hashPin(String pin) => sha256Hex('maxplayer.vault::$pin');
 
@@ -50,10 +57,68 @@ class PrivateVault {
   Future<void> setPin(String pin) =>
       NativeBridge.saveSetting(_pinKey, _hashPin(pin));
 
+  Directory? _dirCache;
+
+  /// The vault directory, resolved (and created) THROUGH THE FRAMEWORK.
+  /// v24: the old code did `Directory(hardcoded).create()` from Dart,
+  /// which some devices refuse with PathAccessException errno=13 when the
+  /// package folder inside Android/data is missing - the PIN screen could
+  /// crash the whole app (unhandled zone error). Native's
+  /// getExternalFilesDir creates it with the right ownership and needs NO
+  /// storage permission at all; then any v21-v23 leftovers are migrated in.
   Future<Directory> _dir() async {
+    final cached = _dirCache;
+    if (cached != null) return cached;
+
+    final fromNative = await NativeBridge.vaultDirPath();
+    if (fromNative != null) {
+      final d = Directory(fromNative);
+      if (!d.existsSync()) {
+        try {
+          await d.create(recursive: true);
+        } catch (_) {
+          throw FileSystemException(
+            'Vault storage is not available on this device',
+            fromNative,
+          );
+        }
+      }
+      if (fromNative != vaultDirPath) await _migrateLegacyTo(d);
+      return _dirCache = d;
+    }
+
+    // Native gave nothing (very old build) - legacy hardcoded path.
     final d = Directory(vaultDirPath);
-    if (!d.existsSync()) await d.create(recursive: true);
-    return d;
+    if (!d.existsSync()) {
+      try {
+        await d.create(recursive: true);
+      } catch (_) {
+        throw const FileSystemException(
+          'Vault storage is not available - allow "All files access" for '
+          'Max Player and try again',
+        );
+      }
+    }
+    return _dirCache = d;
+  }
+
+  /// Moves videos hidden by v21-v23 builds (legacy hardcoded path) into the
+  /// current vault directory. Best-effort: anything unreadable is left in
+  /// place rather than breaking the vault.
+  Future<void> _migrateLegacyTo(Directory target) async {
+    try {
+      final legacy = Directory(vaultDirPath);
+      if (!legacy.existsSync()) return;
+      await for (final e in legacy.list(followLinks: false)) {
+        if (e is! File) continue;
+        try {
+          final dest = await _uniqueIn(target, e.path);
+          await _move(e, dest);
+        } catch (_) {
+          // Leave this file; try the next one.
+        }
+      }
+    } catch (_) {}
   }
 
   /// Video files currently inside the vault (name-sorted).
