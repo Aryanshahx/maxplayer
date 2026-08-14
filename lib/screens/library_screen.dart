@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -14,6 +16,7 @@ import '../widgets/display_settings_sheet.dart';
 import '../state/private_vault.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/playlist_panel.dart';
+import '../widgets/video_picker_sheet.dart';
 import '../widgets/user_manual_sheet.dart';
 import 'private_screen.dart';
 import '../widgets/video_list_item.dart';
@@ -240,7 +243,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Future<void> _openPrivate(VideoLibraryState lib) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => PrivateScreen(player: widget.player),
+        // v29: the vault screen gets the library too (its "+" button
+        // moves selected videos into the vault).
+        builder: (_) =>
+            PrivateScreen(player: widget.player, library: lib),
       ),
     );
     final rev = PrivateVault.revision;
@@ -251,7 +257,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   /// v28 "Playlist" tile: the current play queue in a bottom sheet.
-  void _showQueueSheet() {
+  /// v29: "Build playlist" creates a queue from videos you SELECT.
+  void _showQueueSheet(VideoLibraryState lib) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: const Color(0xFF1a1a24),
@@ -262,41 +269,76 @@ class _LibraryScreenState extends State<LibraryScreen> {
         builder: (sheetContext, setSheetState) => SafeArea(
           child: SizedBox(
             height: 420,
-            child: widget.player.playlist.isEmpty
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(28),
-                      child: Text(
-                        'The queue is empty - play any video and it '
-                        'appears here.',
-                        textAlign: TextAlign.center,
-                        style:
-                            TextStyle(color: Colors.white54, height: 1.4),
-                      ),
-                    ),
-                  )
-                : PlaylistPanel(
-                    playlist: widget.player.playlist,
-                    currentIndex: widget.player.currentIndex,
-                    onPlay: (i) {
-                      widget.player.playTrack(i);
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () {
                       Navigator.of(sheetContext).pop();
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              PlayerScreen(player: widget.player),
-                        ),
-                      );
+                      _showPlaylistPicker(lib);
                     },
-                    onRemove: (i) {
-                      widget.player.removeFromPlaylist(i);
-                      setSheetState(() {});
-                    },
-                    onClose: () => Navigator.of(sheetContext).pop(),
+                    icon: Icon(Icons.playlist_add,
+                        color: themeState.accent),
+                    label: const Text('Build playlist'),
                   ),
+                ),
+                Expanded(
+                  child: widget.player.playlist.isEmpty
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(28),
+                            child: Text(
+                              'The queue is empty - play any video and it '
+                              'appears here, or tap "Build playlist" to '
+                              'select videos.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  color: Colors.white54, height: 1.4),
+                            ),
+                          ),
+                        )
+                      : PlaylistPanel(
+                          playlist: widget.player.playlist,
+                          currentIndex: widget.player.currentIndex,
+                          onPlay: (i) {
+                            widget.player.playTrack(i);
+                            Navigator.of(sheetContext).pop();
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    PlayerScreen(player: widget.player),
+                              ),
+                            );
+                          },
+                          onRemove: (i) {
+                            widget.player.removeFromPlaylist(i);
+                            setSheetState(() {});
+                          },
+                          onClose: () => Navigator.of(sheetContext).pop(),
+                        ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  /// v29: select videos -> they become the play queue and start playing.
+  Future<void> _showPlaylistPicker(VideoLibraryState lib) async {
+    final selected = await VideoPickerSheet.show(
+      context,
+      lib.videos,
+      title: 'Build a playlist',
+      actionLabel: 'Play',
+    );
+    if (selected == null || selected.isEmpty || !mounted) return;
+    widget.player.setPlaylistAndPlay(selected, 0);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+          builder: (_) => PlayerScreen(player: widget.player)),
     );
   }
 
@@ -371,28 +413,84 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  /// v28 "Cleaner" tile: frees the app's own reclaimable storage -
-  /// thumbnail/preview caches, leftover AI temp files and the downloaded
-  /// AI models. Your videos are never touched; everything rebuilds on
-  /// demand.
-  Future<void> _showCleaner() async {
+  /// v29: the Cleaner tile is a real device cleaner now - the app's own
+  /// caches, the system gallery thumbnail cache, your LARGEST videos and
+  /// DUPLICATE copies, each one tap away from freeing space. Deleting a
+  /// video is permanent (confirm dialog) and never touches hidden files.
+  Future<void> _showCleaner(VideoLibraryState lib) async {
     var report = await NativeBridge.storageReport();
+    var deviceCache = await _deviceThumbCacheSize();
     if (!mounted) return;
+
+    Future<void> deleteVideo(VideoTrack t) async {
+      try {
+        await File(t.path).delete();
+        await NativeBridge.scanFile(t.path);
+        widget.player.removeHistoryEntry(t.path);
+        lib.removeVideo(t.path);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not delete the file')),
+          );
+        }
+      }
+    }
+
+    Future<void> confirmDelete(
+        VideoTrack t, void Function() refresh) async {
+      final size = formatFileSize(t.sizeBytes);
+      final yes = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: const Color(0xFF1a1a24),
+          title: const Text('Delete this video?',
+              style: TextStyle(color: Colors.white, fontSize: 17)),
+          content: Text(
+            '"${t.title}" ($size) is deleted from the device storage - '
+            'this cannot be undone.',
+            style: const TextStyle(
+                color: Colors.white70, fontSize: 13, height: 1.45),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: Colors.redAccent.shade700),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      );
+      if (yes == true) {
+        await deleteVideo(t);
+        refresh();
+      }
+    }
+
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: const Color(0xFF1a1a24),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, setSheetState) {
+          final accent = themeState.accent;
           final thumbs =
               (report['thumbs'] ?? 0) + (report['strips'] ?? 0);
           final temp = report['temp'] ?? 0;
           final models = report['models'] ?? 0;
-          final total = thumbs + temp + models;
+          final auto = thumbs + temp + models + deviceCache;
+          final largest = lib.largestVideos(n: 8);
+          final dupes = lib.duplicateGroups;
 
-          Future<void> clear(String kind) async {
+          Future<void> clearApp(String kind) async {
             final freed = await NativeBridge.clearStorage(kind);
             final fresh = await NativeBridge.storageReport();
             setSheetState(() => report = fresh);
@@ -406,17 +504,32 @@ class _LibraryScreenState extends State<LibraryScreen> {
             }
           }
 
-          Widget row(IconData icon, String title, String note, int bytes,
-              String kind) {
+          Future<void> clearDeviceCache() async {
+            final freed = await _clearDeviceThumbCache();
+            setSheetState(() => deviceCache = 0);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Freed ${formatFileSize(freed)}'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          }
+
+          Widget cacheRow(IconData icon, String title, String note,
+              int bytes, VoidCallback onClear) {
             return ListTile(
-              leading: Icon(icon, color: themeState.accent),
+              dense: true,
+              leading: Icon(icon, color: accent),
               title: Text(title,
-                  style: const TextStyle(color: Colors.white)),
+                  style:
+                      const TextStyle(color: Colors.white, fontSize: 14)),
               subtitle: Text(note,
                   style: const TextStyle(
-                      color: Colors.white38, fontSize: 12)),
+                      color: Colors.white38, fontSize: 11.5)),
               trailing: TextButton(
-                onPressed: bytes > 0 ? () => clear(kind) : null,
+                onPressed: bytes > 0 ? onClear : null,
                 child: Text(
                   bytes > 0 ? 'Clear ${formatFileSize(bytes)}' : 'Empty',
                 ),
@@ -424,14 +537,25 @@ class _LibraryScreenState extends State<LibraryScreen> {
             );
           }
 
+          Widget section(String title) => Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 2),
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              );
+
           return SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 10),
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * 0.78,
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
@@ -439,51 +563,226 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 2),
-                  child: Text(
-                    total > 0
-                        ? 'Cleaner - ${formatFileSize(total)} reclaimable'
-                        : 'Cleaner - nothing to clean',
-                    style: TextStyle(
-                      color: themeState.accent,
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        auto > 0
+                            ? 'Cleaner - ${formatFileSize(auto)} reclaimable now'
+                            : 'Cleaner',
+                        style: TextStyle(
+                          color: accent,
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                row(
-                  Icons.image_outlined,
-                  'Thumbnails & previews',
-                  'Rebuild automatically as you browse and play',
-                  thumbs,
-                  'thumbs',
-                ),
-                row(
-                  Icons.mic_none_outlined,
-                  'Temporary AI files',
-                  'Leftovers from subtitle generation',
-                  temp,
-                  'temp',
-                ),
-                row(
-                  Icons.psychology_outlined,
-                  'AI subtitle models',
-                  'Downloaded again only when you generate subtitles',
-                  models,
-                  'models',
-                ),
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(20, 6, 20, 4),
-                  child: Text(
-                    'Everything here is recreated on demand - cleaning '
-                    'never touches your videos.',
-                    style: TextStyle(color: Colors.white38, fontSize: 12),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      children: [
+                        section('Cache & app data'),
+                        cacheRow(
+                          Icons.image_outlined,
+                          'App thumbnails & previews',
+                          'Rebuild automatically as you browse and play',
+                          thumbs,
+                          () => clearApp('thumbs'),
+                        ),
+                        cacheRow(
+                          Icons.mic_none_outlined,
+                          'Temporary AI files',
+                          'Leftovers from subtitle generation',
+                          temp,
+                          () => clearApp('temp'),
+                        ),
+                        cacheRow(
+                          Icons.psychology_outlined,
+                          'AI subtitle models',
+                          'Downloaded again only when you generate subtitles',
+                          models,
+                          () => clearApp('models'),
+                        ),
+                        cacheRow(
+                          Icons.cleaning_services_outlined,
+                          'Device gallery cache (.thumbnails)',
+                          'Android rebuilds it on its own - safe to clear',
+                          deviceCache,
+                          clearDeviceCache,
+                        ),
+                        if (largest.isNotEmpty) ...[
+                          section('Largest videos - tap to delete'),
+                          for (final t in largest)
+                            ListTile(
+                              dense: true,
+                              leading: Icon(
+                                  Icons.video_file_outlined,
+                                  color: accent),
+                              title: Text(
+                                t.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 14),
+                              ),
+                              subtitle: Text(
+                                '${formatFileSize(t.sizeBytes)}  ·  '
+                                '${t.folderName}',
+                                style: const TextStyle(
+                                    color: Colors.white38, fontSize: 11.5),
+                              ),
+                              trailing: IconButton(
+                                tooltip: 'Delete this video',
+                                icon: const Icon(Icons.delete_outline,
+                                    color: Colors.redAccent, size: 20),
+                                onPressed: () => confirmDelete(
+                                    t, () => setSheetState(() {})),
+                              ),
+                            ),
+                        ],
+                        if (dupes.isNotEmpty) ...[
+                          section(
+                              'Duplicate videos - same size & duration'),
+                          for (final g in dupes.take(6))
+                            ListTile(
+                              dense: true,
+                              leading: Icon(Icons.copy_all_outlined,
+                                  color: accent),
+                              title: Text(
+                                g.first.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 14),
+                              ),
+                              subtitle: Text(
+                                '${g.length} copies  ·  '
+                                '${formatFileSize(g.first.sizeBytes)} each',
+                                style: const TextStyle(
+                                    color: Colors.white38, fontSize: 11.5),
+                              ),
+                              trailing: Text(
+                                'open',
+                                style: TextStyle(
+                                    color: accent, fontSize: 12.5),
+                              ),
+                              onTap: () async {
+                                await _showDuplicateGroup(
+                                    g, (t) => confirmDelete(t, () {}));
+                                setSheetState(() {});
+                              },
+                            ),
+                        ],
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(20, 10, 20, 0),
+                          child: Text(
+                            'Video deletion asks first and is permanent. '
+                            'Cache cleaning never touches your videos.',
+                            style: TextStyle(
+                                color: Colors.white38, fontSize: 11.5),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-              ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// One duplicate group: every copy's location, each deletable; you keep
+  /// at least one copy.
+  Future<void> _showDuplicateGroup(
+    List<VideoTrack> group,
+    Future<void> Function(VideoTrack) deleteOne,
+  ) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1a1a24),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final remaining =
+              group.where((t) => File(t.path).existsSync()).toList();
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * 0.5,
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '${remaining.length} identical copies - keep one, '
+                        'delete the rest',
+                        style: TextStyle(
+                          color: themeState.accent,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: remaining.length < 2
+                        ? const Center(
+                            child: Text(
+                              'One copy left - nothing more to clean.',
+                              style:
+                                  TextStyle(color: Colors.white54),
+                            ),
+                          )
+                        : ListView(
+                            children: [
+                              for (final t in remaining)
+                                ListTile(
+                                  dense: true,
+                                  leading: Icon(Icons.movie_outlined,
+                                      color: themeState.accent),
+                                  title: Text(
+                                    t.path,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11.5),
+                                  ),
+                                  trailing: IconButton(
+                                    tooltip: 'Delete this copy',
+                                    icon: const Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.redAccent,
+                                        size: 20),
+                                    onPressed: () async {
+                                      await deleteOne(t);
+                                      setSheetState(() {});
+                                    },
+                                  ),
+                                ),
+                            ],
+                          ),
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -771,8 +1070,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
               child: _QuickTiles(
                 accent: themeState.accent,
                 onPrivate: () => _openPrivate(lib),
-                onCleaner: _showCleaner,
-                onPlaylist: _showQueueSheet,
+                onCleaner: () => _showCleaner(lib),
+                onPlaylist: () => _showQueueSheet(lib),
                 onFolders: () => _showFoldersSheet(lib),
               ),
             ),
@@ -1082,4 +1381,64 @@ class _EmptyState extends StatelessWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// v29 Cleaner: the system gallery thumbnail cache (safe to clear - Android
+// simply rebuilds it when a gallery app is opened again).
+// ---------------------------------------------------------------------------
+
+const List<String> _deviceThumbDirs = [
+  '/storage/emulated/0/DCIM/.thumbnails',
+  '/storage/emulated/0/.thumbnails',
+];
+
+Future<int> _pathSizeBytes(String path) async {
+  var total = 0;
+  try {
+    final dir = Directory(path);
+    if (!dir.existsSync()) return 0;
+    await for (final e in dir.list(recursive: true, followLinks: false)) {
+      if (e is File) {
+        try {
+          total += await e.length();
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+  return total;
+}
+
+Future<int> _deviceThumbCacheSize() async {
+  var total = 0;
+  for (final p in _deviceThumbDirs) {
+    total += await _pathSizeBytes(p);
+  }
+  return total;
+}
+
+/// Deletes the CONTENTS of the gallery-cache folders (the folders
+/// themselves stay). Returns freed bytes.
+Future<int> _clearDeviceThumbCache() async {
+  var freed = 0;
+  for (final p in _deviceThumbDirs) {
+    try {
+      final dir = Directory(p);
+      if (!dir.existsSync()) continue;
+      await for (final e in dir.list(followLinks: false)) {
+        try {
+          if (e is File) {
+            final len = await e.length();
+            await e.delete();
+            freed += len;
+          } else if (e is Directory) {
+            final size = await _pathSizeBytes(e.path);
+            await e.delete(recursive: true);
+            freed += size;
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+  return freed;
 }

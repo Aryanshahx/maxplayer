@@ -265,7 +265,8 @@ const List<_Item> _homeItems = [
     '⋮ → Display settings lets you: switch between list and grid view, sort '
         'by name / length / date added / size (tap again to flip the '
         'direction), group by first letter or by folder, and change the app\'s '
-        'accent colour from six swatches.',
+        'accent colour from seven swatches - white is the default, the '
+        'classic purple and five more stay selectable.',
   ),
   _Item(
     Icons.grid_view_rounded,
@@ -273,10 +274,12 @@ const List<_Item> _homeItems = [
     'Four shortcuts sit under the library search bar: Private folder, '
         'Cleaner, Playlist and Folders. The grid slides away when you '
         'scroll down through your videos and returns when you scroll '
-        'back up. Cleaner shows (and frees) the space used by '
-        'thumbnails, temporary AI files and the downloaded AI models - '
-        'your videos are never touched. Playlist shows the current play '
-        'queue. Folders shows only the videos of one folder; clear the '
+        'back up. Cleaner is a device cleaner: it clears app caches and '
+        'the system gallery-cache, and lists your LARGEST videos and '
+        'DUPLICATE copies so you can delete them with one tap (deleting '
+        'a video always asks first). Playlist shows the current queue, '
+        'and "Build playlist" plays a queue made from videos you select. '
+        'Folders shows only the videos of one folder; clear the '
         'chip under the search bar to see everything again.',
   ),
   _Item(
@@ -547,7 +550,9 @@ const List<_Item> _smartItems = [
         'disappear from Gallery and file managers. Open them from the '
         '"Private folder" tile under the library search bar after your '
         'PIN; simply opening and '
-        'closing the folder no longer reloads the library. '
+        'closing the folder no longer reloads the library. Inside the '
+        'folder, the + button (top bar) adds more videos from the '
+        'library. '
         'Forgot the PIN? Tap "Forgot PIN?" on the lock screen → unlock '
         'your PHONE once (device password, pattern or fingerprint) → '
         'set a new PIN - hidden videos are never wiped. '

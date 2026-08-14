@@ -822,4 +822,65 @@ void main() {
       expect(lib.videos.single.path, endsWith('/Movies/b.mp4'));
     });
   });
+
+  // -------------------------------------------------------------------------
+  // v29: device cleaner data + playlist/picker backing + white default theme
+  // -------------------------------------------------------------------------
+  group('v29 cleaner data + theme default', () {
+    VideoTrack sized(String path, int size, int secs) => VideoTrack(
+          id: path,
+          title: path.split('/').last,
+          path: path,
+          sizeBytes: size,
+          duration: Duration(seconds: secs),
+        );
+
+    test('largestVideos sorts biggest first and limits', () {
+      final lib = VideoLibraryState();
+      lib.debugSetVideos([
+        sized('/s/Movies/small.mp4', 100, 60),
+        sized('/s/Movies/big.mp4', 9000, 900),
+        sized('/s/DCIM/mid.mp4', 500, 120),
+      ]);
+      final top = lib.largestVideos(n: 2);
+      expect(top.length, 2);
+      expect(top.first.path, endsWith('big.mp4'));
+      expect(top.last.path, endsWith('mid.mp4'));
+    });
+
+    test('duplicateGroups finds same size+duration copies only', () {
+      final lib = VideoLibraryState();
+      lib.debugSetVideos([
+        sized('/s/Movies/a.mp4', 700, 300),
+        sized('/s/DCIM/a-copy.mp4', 700, 300), // same size+length = dupe
+        sized('/s/Movies/a-lookalike.mp4', 700, 301), // different length
+        sized('/s/Movies/unique.mp4', 42, 10),
+      ]);
+      final groups = lib.duplicateGroups;
+      expect(groups.length, 1);
+      expect(groups.single.length, 2);
+      expect(
+        groups.single.map((v) => v.path),
+        containsAll(['/s/Movies/a.mp4', '/s/DCIM/a-copy.mp4']),
+      );
+    });
+
+    test('removeVideo drops an entry in place', () {
+      final lib = VideoLibraryState();
+      lib.debugSetVideos([
+        sized('/s/Movies/a.mp4', 700, 300),
+        sized('/s/Movies/b.mp4', 500, 300),
+      ]);
+      lib.removeVideo('/s/Movies/a.mp4');
+      expect(lib.videos.length, 1);
+      expect(lib.videos.single.path, endsWith('b.mp4'));
+    });
+
+    test('white is the default theme colour (existing picks kept)', () {
+      expect(ThemeState().accent.toARGB32(), 0xFFFFFFFF);
+      expect(ThemeState.defaultAccent.toARGB32(), 0xFFFFFFFF);
+      // purple and the others remain selectable
+      expect(ThemeState.swatches.length, 7);
+    });
+  });
 }

@@ -2,23 +2,35 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../models/video_track.dart';
 import '../services/native_bridge.dart';
 import '../state/media_player_state.dart';
 import '../state/private_vault.dart';
 import '../state/theme_state.dart';
+import '../state/video_library_state.dart';
 import '../utils/formatters.dart';
 import '../widgets/fade_in_image.dart';
+import '../widgets/video_picker_sheet.dart';
 import 'player_screen.dart';
 
 /// Private folder screen (v21): PIN gate -> list of hidden videos with
 /// play / move-out actions. Files themselves live in the app's private
-/// directory (see [PrivateVault]).
+/// directory (see [PrivateVault]). v29: a "+" button moves selected
+/// library videos straight into the vault.
 class PrivateScreen extends StatefulWidget {
   final MediaPlayerState player;
 
-  const PrivateScreen({super.key, required this.player});
+  /// Source list for the v29 "+" picker (library videos only - hidden
+  /// files never appear in it since the scanner skips app-private dirs).
+  final VideoLibraryState library;
+
+  const PrivateScreen({
+    super.key,
+    required this.player,
+    required this.library,
+  });
 
   @override
   State<PrivateScreen> createState() => _PrivateScreenState();
@@ -192,6 +204,61 @@ class _PrivateScreenState extends State<PrivateScreen> {
     );
   }
 
+  /// v29: "+" - select library videos and move them into the vault.
+  /// Same "All files access" pre-check as the library's long-press flow.
+  Future<void> _addVideos() async {
+    if (!await Permission.manageExternalStorage.isGranted) {
+      final status = await Permission.manageExternalStorage.request();
+      if (!mounted) return;
+      if (!status.isGranted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Adding videos needs "All files access": allow it, then '
+              'tap + again',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
+    final selected = await VideoPickerSheet.show(
+      context,
+      widget.library.videos,
+      title: 'Add to Private folder',
+      actionLabel: 'Hide',
+    );
+    if (selected == null || selected.isEmpty || !mounted) return;
+    setState(() => _busy = true);
+    var moved = 0;
+    try {
+      for (final t in selected) {
+        try {
+          await _vault.hide(t.path);
+          widget.player.removeHistoryEntry(t.path);
+          moved++;
+        } catch (_) {
+          // Keep going with the rest of the selection.
+        }
+      }
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            moved > 0
+                ? 'Moved $moved video(s) to the Private folder'
+                : 'Could not hide the videos',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _unhide(File file) async {
     try {
       final moved = await _vault.unhide(file.path);
@@ -219,6 +286,15 @@ class _PrivateScreenState extends State<PrivateScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1a1a24),
         title: const Text('Private folder'),
+        actions: [
+          // v29: add videos to the vault from right here.
+          if (_unlocked)
+            IconButton(
+              tooltip: 'Add videos',
+              icon: const Icon(Icons.add),
+              onPressed: _busy ? null : _addVideos,
+            ),
+        ],
       ),
       body: _hasPin == null
           ? const Center(child: CircularProgressIndicator())
@@ -378,6 +454,13 @@ class _PrivateScreenState extends State<PrivateScreen> {
                 'Nothing is hidden yet.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white38, height: 1.5),
+              ),
+              const SizedBox(height: 14),
+              // v29: same as the "+" in the top bar.
+              FilledButton.icon(
+                onPressed: _busy ? null : _addVideos,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add videos'),
               ),
             ],
           ),

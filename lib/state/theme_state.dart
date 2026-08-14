@@ -7,9 +7,9 @@ import '../services/native_bridge.dart';
 /// refreshes every screen. Widgets read [ThemeState.accent] directly so
 /// no InheritedWidget plumbing is needed.
 class ThemeState extends ChangeNotifier {
-  /// Selectable accent colors (first = brand purple default).
+  /// Selectable accent colors (white added in v22).
   static const List<Color> swatches = [
-    Color(0xFFA855F7), // purple (default)
+    Color(0xFFA855F7), // purple
     Color(0xFF22D3EE), // cyan
     Color(0xFF34D399), // green
     Color(0xFFFB923C), // orange
@@ -18,9 +18,13 @@ class ThemeState extends ChangeNotifier {
     Color(0xFFFFFFFF), // white (v22)
   ];
 
+  /// v29: WHITE is the default theme colour (user request). Anyone who
+  /// already picked a colour keeps it - the saved choice loads on top.
+  static const Color defaultAccent = Color(0xFFFFFFFF);
+
   static const String _kAccentKey = 'theme.accent';
 
-  Color _accent = swatches.first;
+  Color _accent = defaultAccent;
   Color get accent => _accent;
 
   /// Text/icon color to paint ON TOP of the accent (light accents like

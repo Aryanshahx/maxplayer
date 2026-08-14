@@ -223,6 +223,38 @@ class VideoLibraryState extends ChangeNotifier {
     return {for (final k in keys) k: counts[k]!};
   }
 
+  /// v29 Cleaner: the [n] largest videos, biggest first (big files eat
+  /// storage fastest, so the cleaner surfaces them).
+  List<VideoTrack> largestVideos({int n = 10}) {
+    final withSize = _videos.where((v) => (v.sizeBytes ?? 0) > 0).toList()
+      ..sort((a, b) => (b.sizeBytes ?? 0).compareTo(a.sizeBytes ?? 0));
+    return withSize.take(n).toList();
+  }
+
+  /// v29 Cleaner: probable duplicates - videos with the SAME byte size
+  /// AND the SAME duration (two independent signals; hashing whole files
+  /// would make the cleaner crawl). Groups with 2+ copies, biggest first.
+  List<List<VideoTrack>> get duplicateGroups {
+    final bySig = <String, List<VideoTrack>>{};
+    for (final v in _videos) {
+      final size = v.sizeBytes ?? 0;
+      if (size <= 0) continue;
+      final dur = v.duration?.inMilliseconds ?? 0;
+      bySig.putIfAbsent('$size|$dur', () => []).add(v);
+    }
+    final groups = bySig.values.where((g) => g.length > 1).toList();
+    groups.sort((a, b) =>
+        (b.first.sizeBytes ?? 0).compareTo(a.first.sizeBytes ?? 0));
+    return groups;
+  }
+
+  /// v29: drop one entry in place (the Cleaner deletes files; a rescan
+  /// would rebuild everything and lose the scroll position).
+  void removeVideo(String path) {
+    _videos.removeWhere((v) => v.path == path);
+    notifyListeners();
+  }
+
   void toggleFavorite(VideoTrack track) {
     if (!_favoritePaths.remove(track.path)) {
       _favoritePaths.add(track.path);
