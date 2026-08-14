@@ -30,6 +30,11 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
+  /// v26: last known Private-vault change counter. Returning from the
+  /// Private folder rescans ONLY when this differs (see below) - a plain
+  /// look inside no longer reloads the library grid.
+  int _lastVaultRevision = PrivateVault.revision;
+
   @override
   void initState() {
     super.initState();
@@ -174,6 +179,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 await PrivateVault().hide(track.path);
                 widget.player.removeHistoryEntry(track.path);
                 lib.rescan();
+                // v26: the rescan above already reflects this move - keep
+                // the stamp in sync so closing the Private folder later
+                // doesn't rescan AGAIN for the same change.
+                _lastVaultRevision = PrivateVault.revision;
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Moved to Private folder')),
@@ -319,57 +328,65 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ),
         actions: [
+          // v26: all home-screen buttons follow the picked theme colour.
           // Prominent rescan button (new videos don't appear otherwise).
           IconButton(
             tooltip: 'Rescan library',
             onPressed: lib.isScanning ? null : () => _rescan(lib),
             icon: lib.isScanning
-                ? const SizedBox(
+                ? SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: Colors.white54,
+                      color: themeState.accent,
                     ),
                   )
-                : const Icon(Icons.sync),
+                : Icon(Icons.sync, color: themeState.accent),
           ),
           IconButton(
             tooltip: 'History',
-            icon: const Icon(Icons.history),
+            icon: Icon(Icons.history, color: themeState.accent),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => HistoryScreen(player: widget.player),
               ),
             ),
           ),
-          // v21: Private folder (PIN). Rescan on return so hidden/unhidden
-          // videos appear/disappear immediately.
+          // v21: Private folder (PIN). v26: rescan on return ONLY when
+          // something was actually hidden/unhidden inside (the revision
+          // counter moves on every vault file move) - a plain visit used
+          // to reload the whole grid every time.
           IconButton(
             tooltip: 'Private folder',
-            icon: const Icon(Icons.lock_outline),
+            icon: Icon(Icons.lock_outline, color: themeState.accent),
             onPressed: () async {
               await Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => PrivateScreen(player: widget.player),
                 ),
               );
-              lib.rescan();
+              final rev = PrivateVault.revision;
+              if (rev != _lastVaultRevision) {
+                _lastVaultRevision = rev;
+                lib.rescan();
+              }
             },
           ),
           PopupMenuButton<String>(
             tooltip: 'More',
-            icon: const Icon(Icons.more_vert),
+            icon: Icon(Icons.more_vert, color: themeState.accent),
             color: const Color(0xFF26262f),
             onSelected: (choice) => _onMenuChoice(choice, lib),
-            itemBuilder: (context) => const [
+            // v26: menu icons follow the picked theme colour.
+            itemBuilder: (context) => [
               PopupMenuItem(
                 value: 'stream',
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.link),
-                  title: Text('Open stream URL'),
+                  leading: Icon(Icons.link, color: themeState.accent),
+                  title: const Text('Open stream URL'),
                 ),
               ),
               PopupMenuItem(
@@ -377,8 +394,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.bar_chart),
-                  title: Text('Statistics'),
+                  leading: Icon(Icons.bar_chart, color: themeState.accent),
+                  title: const Text('Statistics'),
                 ),
               ),
               PopupMenuItem(
@@ -386,8 +403,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.refresh),
-                  title: Text('Rescan library'),
+                  leading: Icon(Icons.refresh, color: themeState.accent),
+                  title: const Text('Rescan library'),
                 ),
               ),
               PopupMenuItem(
@@ -395,8 +412,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.tune),
-                  title: Text('Display settings'),
+                  leading: Icon(Icons.tune, color: themeState.accent),
+                  title: const Text('Display settings'),
                 ),
               ),
               PopupMenuItem(
@@ -404,8 +421,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.menu_book_outlined),
-                  title: Text('User manual'),
+                  leading:
+                      Icon(Icons.menu_book_outlined, color: themeState.accent),
+                  title: const Text('User manual'),
                 ),
               ),
               PopupMenuItem(
@@ -413,12 +431,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.info_outline),
-                  title: Text('About'),
+                  leading: Icon(Icons.info_outline, color: themeState.accent),
+                  title: const Text('About'),
                 ),
               ),
               // Footer: app version (not selectable).
-              PopupMenuItem(
+              const PopupMenuItem(
                 value: 'version',
                 enabled: false,
                 height: 30,
@@ -446,7 +464,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
               decoration: InputDecoration(
                 hintText: 'Search ${lib.allVideosCount} videos...',
                 hintStyle: const TextStyle(color: Colors.white38),
-                prefixIcon: const Icon(Icons.search, color: Colors.white38),
+                // v26: theme-coloured like the other home buttons.
+                prefixIcon: Icon(Icons.search, color: themeState.accent),
                 filled: true,
                 fillColor: Colors.white.withValues(alpha: 0.05),
                 border: OutlineInputBorder(

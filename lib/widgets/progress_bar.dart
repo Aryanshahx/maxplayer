@@ -19,12 +19,18 @@ class VideoProgressBar extends StatefulWidget {
   /// that frame hasn't been generated yet (the bubble shows a placeholder).
   final String? Function(double fraction)? previewThumb;
 
+  /// v26: drag start(true) / end(false). The player pauses its auto-hide
+  /// countdown while the user scrubs - the controls used to fade away
+  /// mid-drag.
+  final ValueChanged<bool>? onScrubbing;
+
   const VideoProgressBar({
     super.key,
     required this.position,
     required this.duration,
     required this.onSeek,
     this.previewThumb,
+    this.onScrubbing,
   });
 
   @override
@@ -83,11 +89,13 @@ class _VideoProgressBarState extends State<VideoProgressBar> {
                     ),
                     child: Slider(
                       value: value,
+                      onChangeStart: (_) => widget.onScrubbing?.call(true),
                       onChanged: (v) => setState(() => _dragValue = v),
                       onChangeEnd: (v) {
                         widget.onSeek(
                             Duration(milliseconds: (v * totalMs).round()));
                         setState(() => _dragValue = null);
+                        widget.onScrubbing?.call(false);
                       },
                     ),
                   ),

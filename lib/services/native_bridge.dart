@@ -369,6 +369,25 @@ class NativeBridge {
     } catch (_) {}
   }
 
+  /// v26: asks for the PHONE's own unlock secret - device PIN / pattern /
+  /// password, or fingerprint/face - before the Private-folder PIN may be
+  /// reset (user request: a forgotten PIN must not be openable by anyone
+  /// holding the unlocked phone). True = the owner proved it; false =
+  /// cancelled / failed / unavailable. A device WITHOUT any screen lock
+  /// answers true (nothing exists to ask - the unlocked phone is the
+  /// proof of possession).
+  static Future<bool> confirmDeviceCredential({String? title}) async {
+    try {
+      final res = await _channel.invokeMethod<bool>(
+        'confirmDeviceCredential',
+        {'title': title ?? 'Unlock to continue'},
+      );
+      return res == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // v19: sensor-driven rotation + scrub thumbnail strip
   // ---------------------------------------------------------------------------

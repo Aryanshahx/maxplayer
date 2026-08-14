@@ -249,6 +249,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (_controlsVisible) _startHideTimer();
   }
 
+  /// v26: while the seek bar is being DRAGGED, the auto-hide countdown
+  /// pauses - the controls must never fade away mid-scrub.
+  void _onScrubChanged(bool scrubbing) {
+    if (scrubbing) {
+      _hideTimer?.cancel();
+    } else if (_controlsVisible) {
+      _startHideTimer();
+    }
+  }
+
   void _toggleControls() {
     setState(() => _controlsVisible = !_controlsVisible);
     if (_controlsVisible) {
@@ -824,6 +834,18 @@ class _PlayerScreenState extends State<PlayerScreen>
                                             // 4:3 in those fit modes; null
                                             // keeps the video's own ratio.
                                             aspectRatio: _fitAspects[_fitIndex],
+                                            // v26: media_kit's OWN Flutter
+                                            // subtitle layer stays OFF. It
+                                            // ignores mpv's sub-visibility,
+                                            // so the default/AI line kept
+                                            // drawing next to the karaoke
+                                            // overlay. Normal subtitles are
+                                            // drawn by mpv itself; karaoke
+                                            // draws its own overlay.
+                                            subtitleViewConfiguration:
+                                                const SubtitleViewConfiguration(
+                                              visible: false,
+                                            ),
                                           ),
                                         )
                                       : const Text(
@@ -1057,8 +1079,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                                       children: [
                                         IconButton(
                                           tooltip: 'Back',
-                                          icon: const Icon(Icons.arrow_back,
-                                              size: 22),
+                                          // v26: player buttons follow the
+                                          // picked theme colour.
+                                          icon: Icon(Icons.arrow_back,
+                                              size: 22,
+                                              color: themeState.accent),
                                           onPressed: () {
                                             _onUserInteraction();
                                             Navigator.of(context).maybePop();
@@ -1137,9 +1162,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                                         _topMenu(context),
                                         IconButton(
                                           tooltip: 'Player settings',
-                                          icon: const Icon(
+                                          icon: Icon(
                                               Icons.settings_outlined,
-                                              size: 22),
+                                              size: 22,
+                                              color: themeState.accent),
                                           onPressed: () {
                                             _onUserInteraction();
                                             _openSettings();
@@ -1260,6 +1286,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                       _onUserInteraction();
                                     },
                                     onInteract: _onUserInteraction,
+                                    onScrubbing: _onScrubChanged,
                                     onCycleFit: _cycleFit,
                                     orientationLocked: _orientationLocked,
                                     onToggleOrientationLock:
@@ -1306,7 +1333,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Widget _topMenu(BuildContext context) {
     return PopupMenuButton<String>(
       tooltip: 'More actions',
-      icon: const Icon(Icons.more_vert, size: 22),
+      icon: Icon(Icons.more_vert, size: 22, color: themeState.accent),
       color: const Color(0xFF1a1a24),
       onSelected: (v) {
         _onUserInteraction();
@@ -1353,7 +1380,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       value: v,
       child: Row(
         children: [
-          Icon(icon, size: 18, color: Colors.white70),
+          // v26: menu icons follow the picked theme colour.
+          Icon(icon, size: 18, color: themeState.accent),
           const SizedBox(width: 10),
           Text(label, style: const TextStyle(color: Colors.white)),
         ],
@@ -1378,7 +1406,8 @@ class _PlayerScreenState extends State<PlayerScreen>
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white24),
         ),
-        child: Icon(icon, color: Colors.white, size: 22),
+        // v26: the lock chip follows the picked theme colour too.
+        child: Icon(icon, color: themeState.accent, size: 22),
       ),
     );
   }

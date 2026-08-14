@@ -237,14 +237,9 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 onChanged: (v) =>
                     _update(_settings.copyWith(volumeLeveling: v)),
               ),
-              _SwitchTile(
-                icon: Icons.lyrics_outlined,
-                label: 'Karaoke subtitle highlight',
-                subtitle: 'Words light up as they are spoken - works with '
-                    'any subtitle (AI, embedded or .srt file)',
-                value: _settings.karaokeSubs,
-                onChanged: (v) => _update(_settings.copyWith(karaokeSubs: v)),
-              ),
+              // v26: the karaoke switch no longer lives in settings - it
+              // exists ONLY in the player's tracks sheet (the "tune"
+              // button beside play), per user request.
               _SwitchTile(
                 icon: Icons.fast_forward,
                 label: 'Skip intro chip',

@@ -1,5 +1,6 @@
 package com.hypertechlabs.maxplayer
 
+import android.app.KeyguardManager
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.app.RemoteAction
@@ -15,6 +16,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.Icon
+import android.hardware.biometrics.BiometricManager
+import android.hardware.biometrics.BiometricPrompt
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.MediaCodec
@@ -26,6 +29,7 @@ import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
+import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
@@ -106,6 +110,7 @@ class MainActivity : FlutterActivity() {
         private const val ACTION_PIP_TOGGLE = "com.hypertechlabs.maxplayer.action.PIP_TOGGLE"
         private const val REQ_PIP_TOGGLE = 42
         private const val REQ_PIP_OPEN = 43
+        private const val REQ_CONFIRM_CREDENTIAL = 44
         private val STREAM_SCHEMES = setOf("http", "https", "rtsp", "rtmp", "mms")
     }
 
@@ -370,6 +375,15 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         result.success(null)
                     }
+                }
+                "confirmDeviceCredential" -> {
+                    // v26: "Forgot PIN" for the Private folder must first
+                    // pass the PHONE's own lock (device password / pattern /
+                    // PIN or fingerprint) - pure platform APIs, no new deps.
+                    confirmDeviceCredential(
+                        call.argument<String>("title") ?: "Unlock to continue",
+                        result,
+                    )
                 }
                 "thumbnailPathFor" -> {
                     // The Dart player's 4K/HDR thumbnail fallback (v22): when
@@ -1612,6 +1626,112 @@ class MainActivity : FlutterActivity() {
             return dir.absolutePath
         } catch (t: Throwable) {
             return null
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // v26: device-credential check (Private-folder "Forgot PIN" gate)
+    // ------------------------------------------------------------------
+
+    /** Pending Dart reply while a device-unlock prompt is on screen. */
+    private var pendingCredentialResult: MethodChannel.Result? = null
+
+    /**
+     * Shows the phone's own unlock UI (device PIN / pattern / password, or
+     * fingerprint/face where enrolled) and answers true only when the owner
+     * passes it. A device WITHOUT any screen lock answers true at once -
+     * nothing exists to ask for there, and the unlocked phone itself is
+     * the proof of possession. Uses only platform classes (works back to
+     * the app's minSdk, no androidx.biometric dependency):
+     * BiometricPrompt on API 28+, the classic KeyguardManager confirm
+     * activity below that.
+     */
+    private fun confirmDeviceCredential(title: String, result: MethodChannel.Result) {
+        if (pendingCredentialResult != null) {
+            result.error("busy", "an unlock prompt is already showing", null)
+            return
+        }
+        val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        val secure =
+            if (Build.VERSION.SDK_INT >= 23) km.isDeviceSecure else km.isKeyguardSecure
+        if (!secure) {
+            result.success(true)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 28) {
+            val promptExecutor = java.util.concurrent.Executor { command ->
+                mainHandler.post(command)
+            }
+            val builder = BiometricPrompt.Builder(this)
+                .setTitle(title)
+                .setNegativeButton("Cancel", promptExecutor) { _, _ ->
+                    finishCredentialPrompt(false)
+                }
+            if (Build.VERSION.SDK_INT >= 30) {
+                builder.setAllowedAuthenticators(
+                    BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                        BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                builder.setDeviceCredentialAllowed(true)
+            }
+            pendingCredentialResult = result
+            try {
+                builder.build().authenticate(
+                    CancellationSignal(),
+                    promptExecutor,
+                    object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(
+                            authResult: BiometricPrompt.AuthenticationResult
+                        ) {
+                            finishCredentialPrompt(true)
+                        }
+
+                        override fun onAuthenticationError(
+                            errorCode: Int,
+                            errString: CharSequence
+                        ) {
+                            // Covers Cancel, outside-tap and any failure -
+                            // the vault stays locked (Dart shows a snackbar).
+                            finishCredentialPrompt(false)
+                        }
+                        // onAuthenticationFailed intentionally NOT handled:
+                        // the system prompt stays open for another attempt.
+                    },
+                )
+            } catch (e: Exception) {
+                pendingCredentialResult = null
+                result.success(false)
+            }
+        } else {
+            // API 24-27: the classic confirm-device-credential activity.
+            @Suppress("DEPRECATION")
+            val intent = km.createConfirmDeviceCredentialIntent(title, null)
+            if (intent == null) {
+                result.success(true)
+                return
+            }
+            pendingCredentialResult = result
+            try {
+                startActivityForResult(intent, REQ_CONFIRM_CREDENTIAL)
+            } catch (e: Exception) {
+                pendingCredentialResult = null
+                result.success(false)
+            }
+        }
+    }
+
+    private fun finishCredentialPrompt(ok: Boolean) {
+        val pending = pendingCredentialResult ?: return
+        pendingCredentialResult = null
+        mainHandler.post { pending.success(ok) }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_CONFIRM_CREDENTIAL) {
+            finishCredentialPrompt(resultCode == RESULT_OK)
         }
     }
 

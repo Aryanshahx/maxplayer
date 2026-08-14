@@ -6,12 +6,17 @@ import '../utils/formatters.dart';
 import 'progress_bar.dart';
 import 'track_selection_sheet.dart';
 
-/// Controls drawn on top of the video - v19 final-polish layout:
+/// Controls drawn on top of the video - v19 final-polish layout, v26 look:
 ///
 ///   [progress bar, with scrub thumbnail preview]
 ///   row 1:  previous  -  play/pause  -  next            (centered trio)
-///   row 2:  mute - speed - Tracks(subs/audio/A-B) - rotation lock
-///           ...  queue - fit
+///   row 2:  mute - speed - Tracks(subs/audio/A-B)
+///           ...  queue - fit - rotation lock
+///
+/// v26: every button follows the picked theme colour, EXCEPT the transport
+/// trio (prev/play/next), which stays white and only flashes the accent as
+/// a background effect WHILE pressed. The seek bar itself is untouched.
+/// The rotation lock moved next to the fit button (user request).
 ///
 /// Removed per the final polish pass: shuffle, repeat, the dedicated
 /// +/-10 s buttons (horizontal drag-seek covers them) and the fullscreen
@@ -29,6 +34,10 @@ class PlayerControlsOverlay extends StatelessWidget {
   /// auto-hide countdown.
   final VoidCallback onInteract;
 
+  /// v26: reports seek-bar drag start/end; the screen pauses its auto-hide
+  /// countdown while a scrub is in progress (controls faded mid-drag).
+  final ValueChanged<bool> onScrubbing;
+
   /// Cycles the video fit (contain -> cover -> fill).
   final VoidCallback onCycleFit;
 
@@ -41,6 +50,7 @@ class PlayerControlsOverlay extends StatelessWidget {
     required this.player,
     required this.onToggleQueue,
     required this.onInteract,
+    required this.onScrubbing,
     required this.onCycleFit,
     required this.orientationLocked,
     required this.onToggleOrientationLock,
@@ -82,14 +92,19 @@ class PlayerControlsOverlay extends StatelessWidget {
                   player.seek(d);
                   onInteract();
                 },
+                onScrubbing: onScrubbing,
               ),
               // Row 1: previous / play-pause / next - the transport trio.
+              // v26: these three STAY white; the theme colour appears only
+              // as the press flash behind them (accentPress).
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _iconBtn(
                     icon: Icons.skip_previous,
                     size: 30,
+                    accentPress: true,
+                    tooltip: 'Previous video',
                     onTap: player.prevTrack,
                   ),
                   const SizedBox(width: 22),
@@ -98,39 +113,37 @@ class PlayerControlsOverlay extends StatelessWidget {
                         ? Icons.pause_circle_filled
                         : Icons.play_circle_filled,
                     size: 46,
+                    accentPress: true,
                     onTap: player.togglePlay,
                   ),
                   const SizedBox(width: 22),
                   _iconBtn(
                     icon: Icons.skip_next,
                     size: 30,
+                    accentPress: true,
+                    tooltip: 'Next video',
                     onTap: player.nextTrack,
                   ),
                 ],
               ),
-              // Row 2 (compact): mute speed tracks rotate | queue fit
+              // Row 2 (compact): mute speed tracks | queue fit rotate
               Row(
                 children: [
                   _iconBtn(
                     icon: player.isMuted || player.volume == 0
                         ? Icons.volume_off
                         : Icons.volume_up,
+                    active: player.isMuted || player.volume == 0,
+                    tooltip: 'Mute',
                     onTap: player.toggleMute,
                     compact: true,
                   ),
                   _speedMenu(),
                   _tracksMenu(context),
-                  _iconBtn(
-                    icon: orientationLocked
-                        ? Icons.screen_lock_rotation
-                        : Icons.screen_rotation,
-                    active: orientationLocked,
-                    onTap: onToggleOrientationLock,
-                    compact: true,
-                  ),
                   const Spacer(),
                   _iconBtn(
                     icon: Icons.queue_music,
+                    tooltip: 'Queue',
                     onTap: onToggleQueue,
                     compact: true,
                   ),
@@ -138,6 +151,18 @@ class PlayerControlsOverlay extends StatelessWidget {
                     tooltip: 'Fit: contain / cover / fill',
                     icon: Icons.aspect_ratio,
                     onTap: onCycleFit,
+                    compact: true,
+                  ),
+                  // v26: rotation lock moved next to the fit button.
+                  _iconBtn(
+                    tooltip: orientationLocked
+                        ? 'Rotation locked - tap for auto'
+                        : 'Auto-rotate - tap to lock',
+                    icon: orientationLocked
+                        ? Icons.screen_lock_rotation
+                        : Icons.screen_rotation,
+                    active: orientationLocked,
+                    onTap: onToggleOrientationLock,
                     compact: true,
                   ),
                 ],
@@ -158,19 +183,14 @@ class PlayerControlsOverlay extends StatelessWidget {
     final active = player.subtitlesActive ||
         player.audioTracks.length > 1 ||
         player.abLoopActive;
-    return IconButton(
-      tooltip: 'Subtitles, audio tracks, A-B loop',
-      icon: Icon(
-        Icons.tune,
-        size: 20,
-        color: active ? themeState.accent : Colors.white,
-      ),
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints.tightFor(width: 34, height: 40),
-      onPressed: () {
-        onInteract();
-        _showTracksSheet(context);
-      },
+    // v26: theme-coloured like the other row buttons; an "active" chip
+    // background marks subtitles/audio/A-B in use.
+    return _iconBtn(
+      tooltip: 'Subtitles, audio tracks, A-B loop, karaoke',
+      icon: Icons.tune,
+      active: active,
+      compact: true,
+      onTap: () => _showTracksSheet(context),
     );
   }
 
@@ -310,8 +330,9 @@ class PlayerControlsOverlay extends StatelessWidget {
               .toList(),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+        // v26: the speed label follows the theme colour like the buttons.
         child: Text('${player.playbackRate}x',
-            style: const TextStyle(color: Colors.white70, fontSize: 11)),
+            style: TextStyle(color: themeState.accent, fontSize: 11)),
       ),
     );
   }
@@ -323,12 +344,35 @@ class PlayerControlsOverlay extends StatelessWidget {
     double size = 24,
     bool compact = false,
     String? tooltip,
+
+    /// v26: the transport trio (prev/play/next) is the ONLY exception to
+    /// the theme-coloured buttons: their icons stay white and the accent
+    /// shows purely as the press flash behind the icon.
+    bool accentPress = false,
   }) {
     final accent = themeState.accent;
     return IconButton(
       tooltip: tooltip,
-      icon: Icon(icon,
-          size: compact ? 20 : size, color: active ? accent : Colors.white),
+      icon: Icon(
+        icon,
+        size: compact ? 20 : size,
+        // v26: every player button follows the picked theme colour
+        // (accentPress buttons stay white - they flash it instead).
+        color: accentPress ? Colors.white : accent,
+      ),
+      // Press-only theme colour for the transport trio.
+      splashColor: accentPress ? accent.withValues(alpha: 0.45) : null,
+      highlightColor: accentPress ? accent.withValues(alpha: 0.28) : null,
+      // An "on" state (rotation locked, tracks in use, muted) sits on a
+      // translucent accent chip so it reads as active even though every
+      // icon is accent-coloured now.
+      style: active
+          ? ButtonStyle(
+              backgroundColor: WidgetStateProperty.all(
+                accent.withValues(alpha: 0.22),
+              ),
+            )
+          : null,
       // Compact rows must fit ~7 actions on a 320dp-wide phone.
       constraints:
           compact ? const BoxConstraints.tightFor(width: 34, height: 40) : null,

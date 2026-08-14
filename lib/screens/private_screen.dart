@@ -91,10 +91,32 @@ class _PrivateScreenState extends State<PrivateScreen> {
     }
   }
 
-  /// v25: user forgot their PIN. The hidden videos are NOT wiped (they
-  /// live in the app-private folder regardless of the PIN); only the door
-  /// code resets, then the normal "create PIN" flow re-secures it.
+  /// v25: user forgot their PIN. v26: FIRST the phone's own screen lock
+  /// (device password / pattern / PIN / fingerprint) must be passed -
+  /// only the phone's owner may reset the vault PIN.
+  ///
+  /// The hidden videos are NOT wiped either way (they live in the
+  /// app-private folder regardless of the PIN); only the door code
+  /// resets, then the normal "create PIN" flow re-secures it.
   Future<void> _forgotPin() async {
+    setState(() => _busy = true);
+    bool unlocked;
+    try {
+      unlocked = await NativeBridge.confirmDeviceCredential(
+        title: 'Unlock to reset the Private folder PIN',
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
+    if (!unlocked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Phone unlock failed or cancelled - PIN not reset'),
+        ),
+      );
+      return;
+    }
     final yes = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -104,8 +126,8 @@ class _PrivateScreenState extends State<PrivateScreen> {
         content: const Text(
           'Your hidden videos are SAFE - they stay in the app\'s private '
           'folder either way.\n\nResetting removes the old PIN so you can '
-          'create a new one. Anyone holding your unlocked phone can do '
-          'this, so keep your phone locked.',
+          'create a new one. You just unlocked the phone, so we know it\'s '
+          'really you.',
           style:
               TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
         ),

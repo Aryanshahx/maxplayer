@@ -475,13 +475,13 @@ const List<_Item> _smartItems = [
   _Item(
     Icons.lyrics_outlined,
     'Karaoke word highlight',
-    'Player → the "tune" button (beside play) → Karaoke subtitles: words '
+    'Player → the "tune" button (beside play, with Subtitles / Audio '
+        'track / A-B loop) → Karaoke subtitles: words '
         'light up one by one as they '
         'are spoken. Works with ANY subtitle - AI captions, the video\'s own '
         '.srt file, or subtitles embedded in the video. While karaoke is '
         'on, the normal subtitle display turns OFF so only the karaoke '
-        'line shows. The same switch also lives in Player settings → '
-        'Sound & subtitles.',
+        'line shows.',
   ),
   _Item(
     Icons.fast_forward,

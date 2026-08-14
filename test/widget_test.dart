@@ -8,6 +8,7 @@ import 'package:maxplayer/cast/cast_support.dart';
 import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/player_settings.dart';
+import 'package:maxplayer/state/private_vault.dart';
 import 'package:maxplayer/state/theme_state.dart';
 import 'package:maxplayer/state/video_library_state.dart';
 import 'package:maxplayer/utils/ai_subtitles.dart';
@@ -720,6 +721,39 @@ void main() {
         ThemeState.swatches.any((c) => c.toARGB32() == 0xFFFFFFFF),
         isTrue,
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v26: karaoke fix (media_kit's own subtitle layer is off), karaoke switch
+  // lives ONLY in the tracks sheet, vault change counter + device-unlock gate
+  // for the forgotten-PIN flow.
+  // -------------------------------------------------------------------------
+  group('v26 polish', () {
+    test('vault revision counter exists and starts clean in tests', () {
+      // hide()/unhide() do real file IO (not exercised here), so the
+      // in-process counter must still be zero.
+      expect(PrivateVault.revision, 0);
+    });
+
+    test('vault path helpers unchanged', () {
+      expect(
+        PrivateVault.isPrivatePath(
+          '/storage/emulated/0/Android/data/com.hypertechlabs.maxplayer/'
+          'files/Private/movie.mp4',
+        ),
+        isTrue,
+      );
+      expect(
+        PrivateVault.isPrivatePath('/storage/emulated/0/Movies/movie.mp4'),
+        isFalse,
+      );
+    });
+
+    test('karaoke setting survives copyWith (toggle kept, moved)', () {
+      const s = PlayerSettings();
+      expect(s.karaokeSubs, isFalse);
+      expect(s.copyWith(karaokeSubs: true).karaokeSubs, isTrue);
     });
   });
 }

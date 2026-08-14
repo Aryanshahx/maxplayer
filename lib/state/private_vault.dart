@@ -19,6 +19,12 @@ import '../utils/sha256.dart';
 class PrivateVault {
   static const String _pinKey = 'vault.pinHash';
 
+  /// v26: in-process change counter - hide()/unhide() bump it. The library
+  /// screen compares it when the Private folder closes and rescans ONLY
+  /// when something actually moved (a plain visit no longer reloads the
+  /// whole library - "refreshing every time when we return").
+  static int revision = 0;
+
   /// v21-v23 vault location (hardcoded). v24 keeps it ONLY as a legacy
   /// source: the vault now lives in the directory the Android framework
   /// hands the app via getExternalFilesDir - on most phones that is the
@@ -151,6 +157,7 @@ class PrivateVault {
     }
     final target = await _uniqueIn(await _dir(), srcPath);
     final moved = await _move(src, target);
+    revision++; // v26: vault contents changed
     // Refresh the gallery scan for the OLD location so it disappears.
     // v22: best-effort only - a failed rescan must NOT undo a good move.
     try {
@@ -169,6 +176,7 @@ class PrivateVault {
     if (!destDir.existsSync()) await destDir.create(recursive: true);
     final target = await _uniqueIn(destDir, hiddenPath);
     final moved = await _move(src, target);
+    revision++; // v26: vault contents changed
     try {
       await NativeBridge.scanFile(moved.path); // visible to gallery again
     } catch (_) {}
