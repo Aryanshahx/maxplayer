@@ -268,6 +268,18 @@ const List<_Item> _homeItems = [
         'accent colour from six swatches.',
   ),
   _Item(
+    Icons.grid_view_rounded,
+    'Quick tiles under the search bar',
+    'Four shortcuts sit under the library search bar: Private folder, '
+        'Cleaner, Playlist and Folders. The grid slides away when you '
+        'scroll down through your videos and returns when you scroll '
+        'back up. Cleaner shows (and frees) the space used by '
+        'thumbnails, temporary AI files and the downloaded AI models - '
+        'your videos are never touched. Playlist shows the current play '
+        'queue. Folders shows only the videos of one folder; clear the '
+        'chip under the search bar to see everything again.',
+  ),
+  _Item(
     Icons.open_in_new,
     'Playing videos from other apps',
     'In your Gallery or Files app, tap a video → "Open with" → Max Player. '
@@ -532,8 +544,9 @@ const List<_Item> _smartItems = [
     Icons.lock_outline,
     'Private folder (PIN)',
     'Long-press any video → "Move to Private folder". Hidden videos '
-        'disappear from Gallery and file managers. Open them from the 🔒 '
-        'icon in the library top bar after your PIN; simply opening and '
+        'disappear from Gallery and file managers. Open them from the '
+        '"Private folder" tile under the library search bar after your '
+        'PIN; simply opening and '
         'closing the folder no longer reloads the library. '
         'Forgot the PIN? Tap "Forgot PIN?" on the lock screen → unlock '
         'your PHONE once (device password, pattern or fingerprint) → '

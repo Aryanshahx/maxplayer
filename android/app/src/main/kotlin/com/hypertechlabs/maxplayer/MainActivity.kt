@@ -398,6 +398,15 @@ class MainActivity : FlutterActivity() {
                         result.success(thumbFileFor(path).absolutePath)
                     }
                 }
+                "storageReport" -> {
+                    // v28 Cleaner tile: sizes of the app's own reclaimable
+                    // storage (thumbs / preview strips / AI temp / models).
+                    result.success(storageReport())
+                }
+                "clearStorage" -> {
+                    // Long (bytes freed); videos themselves are untouched.
+                    result.success(clearStorageKind(call.argument<String>("kind") ?: ""))
+                }
                 "setMulticastLock" -> {
                     // DLNA casting: SSDP multicast discovery needs a Wi-Fi
                     // multicast lock on many devices; Dart holds it while a
@@ -759,6 +768,81 @@ class MainActivity : FlutterActivity() {
     private fun thumbFileFor(path: String): File {
         val thumbsDir = File(cacheDir, "thumbs").apply { mkdirs() }
         return File(thumbsDir, md5(path) + ".jpg")
+    }
+
+    // ------------------------------------------------------------------
+    // v28: Cleaner tile - reclaimable app storage report + freeing
+    // ------------------------------------------------------------------
+
+    private fun dirSizeBytes(f: File): Long {
+        try {
+            if (!f.exists()) return 0L
+            if (f.isFile) return f.length()
+            var total = 0L
+            val list = f.listFiles() ?: return 0L
+            for (c in list) total += dirSizeBytes(c)
+            return total
+        } catch (_: Exception) {
+            return 0L
+        }
+    }
+
+    private fun thumbStripDirs(): List<File> {
+        val list = cacheDir.listFiles() ?: return emptyList()
+        return list.filter { it.isDirectory && it.name.startsWith("thumbstrip_") }
+    }
+
+    /** Leftover AI wav chunks / abandoned capture temp files in the cache root. */
+    private fun tempAiFiles(): List<File> {
+        val list = cacheDir.listFiles() ?: return emptyList()
+        return list.filter {
+            it.isFile && (
+                it.name.startsWith("ai_audio_") ||
+                    it.name.startsWith("ai_span_") ||
+                    it.name.endsWith(".capture")
+                )
+        }
+    }
+
+    private fun storageReport(): HashMap<String, Long> {
+        val out = HashMap<String, Long>()
+        var strips = 0L
+        for (d in thumbStripDirs()) strips += dirSizeBytes(d)
+        var temp = 0L
+        for (f in tempAiFiles()) temp += f.length()
+        out["thumbs"] = dirSizeBytes(File(cacheDir, "thumbs"))
+        out["strips"] = strips
+        out["temp"] = temp
+        out["models"] = dirSizeBytes(File(filesDir, "models"))
+        return out
+    }
+
+    private fun clearStorageKind(kind: String): Long {
+        var freed = 0L
+        when (kind) {
+            "thumbs" -> {
+                val d = File(cacheDir, "thumbs")
+                freed += dirSizeBytes(d)
+                d.deleteRecursively()
+                d.mkdirs()
+                for (s in thumbStripDirs()) {
+                    freed += dirSizeBytes(s)
+                    s.deleteRecursively()
+                }
+            }
+            "temp" -> {
+                for (f in tempAiFiles()) {
+                    val len = f.length()
+                    if (f.delete()) freed += len
+                }
+            }
+            "models" -> {
+                val d = File(filesDir, "models")
+                freed += dirSizeBytes(d)
+                d.deleteRecursively()
+            }
+        }
+        return freed
     }
 
     /**

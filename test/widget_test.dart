@@ -781,4 +781,45 @@ void main() {
           'stats.20260105');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // v28: home quick tiles - the Folders tile filters the library
+  // -------------------------------------------------------------------------
+  group('v28 folders tile', () {
+    VideoTrack t(String path) =>
+        VideoTrack(id: path, title: path.split('/').last, path: path);
+
+    List<VideoTrack> threeVideos() => [
+          t('/storage/emulated/0/Movies/a.mp4'),
+          t('/storage/emulated/0/Movies/b.mp4'),
+          t('/storage/emulated/0/DCIM/c.mp4'),
+        ];
+
+    test('folderFilter narrows the visible list and clears again', () {
+      final lib = VideoLibraryState();
+      lib.debugSetVideos(threeVideos());
+      expect(lib.videos.length, 3);
+      lib.setFolderFilter('Movies');
+      expect(lib.videos.length, 2);
+      expect(lib.videos.map((v) => v.folderName).toSet(), {'Movies'});
+      lib.setFolderFilter(null);
+      expect(lib.videos.length, 3);
+    });
+
+    test('folderCounts lists every folder, name-sorted', () {
+      final lib = VideoLibraryState();
+      lib.debugSetVideos(threeVideos());
+      expect(lib.folderCounts, {'DCIM': 1, 'Movies': 2});
+      expect(lib.folderCounts.keys.toList(), ['DCIM', 'Movies']);
+    });
+
+    test('folder filter composes with search', () {
+      final lib = VideoLibraryState();
+      lib.debugSetVideos(threeVideos());
+      lib.setFolderFilter('Movies');
+      lib.setSearchQuery('b.mp4');
+      expect(lib.videos.length, 1);
+      expect(lib.videos.single.path, endsWith('/Movies/b.mp4'));
+    });
+  });
 }

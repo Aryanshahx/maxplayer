@@ -47,6 +47,11 @@ class VideoLibraryState extends ChangeNotifier {
   SortMode sortMode = SortMode.name;
   bool sortAscending = true;
 
+  /// v28: the Folders quick-tile restricts the list to ONE folder.
+  /// Session-only (never persisted) so a leftover filter can never hide
+  /// someone's videos after an app restart.
+  String? folderFilter;
+
   // --- VLC-style display settings (persisted) ---
   ViewMode viewMode = ViewMode.grid;
   GroupMode groupMode = GroupMode.none;
@@ -78,6 +83,7 @@ class VideoLibraryState extends ChangeNotifier {
 
   List<VideoTrack> get videos {
     final filtered = _videos.where((v) {
+      if (folderFilter != null && v.folderName != folderFilter) return false;
       if (favoritesOnly && !_favoritePaths.contains(v.path)) return false;
       if (searchQuery.isEmpty) return true;
       return v.title.toLowerCase().contains(searchQuery.toLowerCase());
@@ -198,6 +204,23 @@ class VideoLibraryState extends ChangeNotifier {
     favoritesOnly = value;
     _persist();
     notifyListeners();
+  }
+
+  /// v28 Folders tile: show only one folder (null = everything again).
+  void setFolderFilter(String? folder) {
+    folderFilter = folder;
+    notifyListeners();
+  }
+
+  /// v28: every folder containing videos -> how many, name-sorted.
+  Map<String, int> get folderCounts {
+    final counts = <String, int>{};
+    for (final v in _videos) {
+      counts[v.folderName] = (counts[v.folderName] ?? 0) + 1;
+    }
+    final keys = counts.keys.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return {for (final k in keys) k: counts[k]!};
   }
 
   void toggleFavorite(VideoTrack track) {

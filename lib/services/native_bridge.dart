@@ -380,6 +380,31 @@ class NativeBridge {
     }
   }
 
+  /// v28 Cleaner tile: reclaimable app storage in bytes, split by kind
+  /// ({thumbs, strips, temp, models}). Your videos are never included.
+  static Future<Map<String, int>> storageReport() async {
+    try {
+      final res = await _channel
+          .invokeMethod<Map<Object?, Object?>>('storageReport');
+      if (res == null) return const {};
+      return res.map((k, v) => MapEntry('$k', (v as num?)?.toInt() ?? 0));
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// v28: deletes one storage kind ('thumbs' | 'temp' | 'models') and
+  /// returns the freed bytes. Everything is recreated on demand.
+  static Future<int> clearStorage(String kind) async {
+    try {
+      final res =
+          await _channel.invokeMethod<int>('clearStorage', {'kind': kind});
+      return res ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// Holds/releases the Wi-Fi multicast lock used during DLNA (SSDP)
   /// device discovery. [hold] true = acquire, false = release.
   static Future<void> setMulticastLock(bool hold) async {

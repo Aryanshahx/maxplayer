@@ -3,14 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../app_info.dart';
 import '../models/video_track.dart';
+import '../services/native_bridge.dart';
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
 import '../state/video_library_state.dart';
 import '../utils/crash_log.dart';
+import '../utils/formatters.dart';
 import '../widgets/about_sheet.dart';
 import '../widgets/display_settings_sheet.dart';
 import '../state/private_vault.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/playlist_panel.dart';
 import '../widgets/user_manual_sheet.dart';
 import 'private_screen.dart';
 import '../widgets/video_list_item.dart';
@@ -35,9 +38,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
   /// look inside no longer reloads the library grid.
   int _lastVaultRevision = PrivateVault.revision;
 
+  /// v28: the quick-tiles grid tucks away while scrolling DOWN through
+  /// the videos and slides back when scrolling up / reaching the top.
+  final ScrollController _listScroll = ScrollController();
+  double _lastListOffset = 0;
+  bool _tilesVisible = true;
+
+  void _onListScroll() {
+    final offset = _listScroll.offset;
+    final goingDown = offset > _lastListOffset + 6;
+    final goingUp = offset < _lastListOffset - 6;
+    if (_tilesVisible && goingDown && offset > 24) {
+      setState(() => _tilesVisible = false);
+    } else if (!_tilesVisible && (goingUp || offset <= 24)) {
+      setState(() => _tilesVisible = true);
+    }
+    _lastListOffset = offset;
+  }
+
   @override
   void initState() {
     super.initState();
+    _listScroll.addListener(_onListScroll);
     widget.library.addListener(_onChange);
     // Automatically ask for storage permission and scan the whole device
     // the first time this screen opens.
@@ -109,6 +131,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   void dispose() {
+    _listScroll.dispose();
     widget.library.removeListener(_onChange);
     super.dispose();
   }
@@ -206,6 +229,264 @@ class _LibraryScreenState extends State<LibraryScreen> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  /// v28: the Private folder moved from the top bar into the quick-tiles
+  /// grid. v26: rescan on return ONLY when something was actually
+  /// hidden/unhidden inside (the revision counter moves on every vault
+  /// file move) - a plain visit no longer reloads the grid.
+  Future<void> _openPrivate(VideoLibraryState lib) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PrivateScreen(player: widget.player),
+      ),
+    );
+    final rev = PrivateVault.revision;
+    if (rev != _lastVaultRevision) {
+      _lastVaultRevision = rev;
+      lib.rescan();
+    }
+  }
+
+  /// v28 "Playlist" tile: the current play queue in a bottom sheet.
+  void _showQueueSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a24),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => SafeArea(
+          child: SizedBox(
+            height: 420,
+            child: widget.player.playlist.isEmpty
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(28),
+                      child: Text(
+                        'The queue is empty - play any video and it '
+                        'appears here.',
+                        textAlign: TextAlign.center,
+                        style:
+                            TextStyle(color: Colors.white54, height: 1.4),
+                      ),
+                    ),
+                  )
+                : PlaylistPanel(
+                    playlist: widget.player.playlist,
+                    currentIndex: widget.player.currentIndex,
+                    onPlay: (i) {
+                      widget.player.playTrack(i);
+                      Navigator.of(sheetContext).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              PlayerScreen(player: widget.player),
+                        ),
+                      );
+                    },
+                    onRemove: (i) {
+                      widget.player.removeFromPlaylist(i);
+                      setSheetState(() {});
+                    },
+                    onClose: () => Navigator.of(sheetContext).pop(),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// v28 "Folders" tile: show only one folder's videos (or everything).
+  void _showFoldersSheet(VideoLibraryState lib) {
+    final counts = lib.folderCounts;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a24),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 6),
+            ListTile(
+              leading: Icon(Icons.video_library_outlined,
+                  color: themeState.accent),
+              title: const Text('All videos',
+                  style: TextStyle(color: Colors.white)),
+              trailing: lib.folderFilter == null
+                  ? Icon(Icons.check, color: themeState.accent)
+                  : Text('${lib.allVideosCount}',
+                      style: const TextStyle(color: Colors.white38)),
+              onTap: () {
+                lib.setFolderFilter(null);
+                Navigator.of(sheetContext).pop();
+              },
+            ),
+            const Divider(height: 1, color: Colors.white12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 340),
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final e in counts.entries)
+                    ListTile(
+                      leading: Icon(Icons.folder_outlined,
+                          color: themeState.accent),
+                      title: Text(e.key,
+                          style: const TextStyle(color: Colors.white)),
+                      subtitle: Text(
+                          '${e.value} ${e.value == 1 ? 'video' : 'videos'}',
+                          style: const TextStyle(
+                              color: Colors.white38, fontSize: 12)),
+                      trailing: lib.folderFilter == e.key
+                          ? Icon(Icons.check, color: themeState.accent)
+                          : null,
+                      onTap: () {
+                        lib.setFolderFilter(e.key);
+                        Navigator.of(sheetContext).pop();
+                      },
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// v28 "Cleaner" tile: frees the app's own reclaimable storage -
+  /// thumbnail/preview caches, leftover AI temp files and the downloaded
+  /// AI models. Your videos are never touched; everything rebuilds on
+  /// demand.
+  Future<void> _showCleaner() async {
+    var report = await NativeBridge.storageReport();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a24),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final thumbs =
+              (report['thumbs'] ?? 0) + (report['strips'] ?? 0);
+          final temp = report['temp'] ?? 0;
+          final models = report['models'] ?? 0;
+          final total = thumbs + temp + models;
+
+          Future<void> clear(String kind) async {
+            final freed = await NativeBridge.clearStorage(kind);
+            final fresh = await NativeBridge.storageReport();
+            setSheetState(() => report = fresh);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Freed ${formatFileSize(freed)}'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          }
+
+          Widget row(IconData icon, String title, String note, int bytes,
+              String kind) {
+            return ListTile(
+              leading: Icon(icon, color: themeState.accent),
+              title: Text(title,
+                  style: const TextStyle(color: Colors.white)),
+              subtitle: Text(note,
+                  style: const TextStyle(
+                      color: Colors.white38, fontSize: 12)),
+              trailing: TextButton(
+                onPressed: bytes > 0 ? () => clear(kind) : null,
+                child: Text(
+                  bytes > 0 ? 'Clear ${formatFileSize(bytes)}' : 'Empty',
+                ),
+              ),
+            );
+          }
+
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 10),
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 2),
+                  child: Text(
+                    total > 0
+                        ? 'Cleaner - ${formatFileSize(total)} reclaimable'
+                        : 'Cleaner - nothing to clean',
+                    style: TextStyle(
+                      color: themeState.accent,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                row(
+                  Icons.image_outlined,
+                  'Thumbnails & previews',
+                  'Rebuild automatically as you browse and play',
+                  thumbs,
+                  'thumbs',
+                ),
+                row(
+                  Icons.mic_none_outlined,
+                  'Temporary AI files',
+                  'Leftovers from subtitle generation',
+                  temp,
+                  'temp',
+                ),
+                row(
+                  Icons.psychology_outlined,
+                  'AI subtitle models',
+                  'Downloaded again only when you generate subtitles',
+                  models,
+                  'models',
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 6, 20, 4),
+                  child: Text(
+                    'Everything here is recreated on demand - cleaning '
+                    'never touches your videos.',
+                    style: TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -353,26 +634,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
           ),
-          // v21: Private folder (PIN). v26: rescan on return ONLY when
-          // something was actually hidden/unhidden inside (the revision
-          // counter moves on every vault file move) - a plain visit used
-          // to reload the whole grid every time.
-          IconButton(
-            tooltip: 'Private folder',
-            icon: Icon(Icons.lock_outline, color: themeState.accent),
-            onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => PrivateScreen(player: widget.player),
-                ),
-              );
-              final rev = PrivateVault.revision;
-              if (rev != _lastVaultRevision) {
-                _lastVaultRevision = rev;
-                lib.rescan();
-              }
-            },
-          ),
+
           PopupMenuButton<String>(
             tooltip: 'More',
             icon: Icon(Icons.more_vert, color: themeState.accent),
@@ -475,6 +737,46 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
           ),
+          // v28: active folder filter chip (set from the Folders tile).
+          if (lib.folderFilter != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: InputChip(
+                  avatar: Icon(Icons.folder_outlined,
+                      size: 16, color: themeState.accent),
+                  label: Text('Folder: ${lib.folderFilter}'),
+                  labelStyle:
+                      const TextStyle(color: Colors.white, fontSize: 13),
+                  onDeleted: () => lib.setFolderFilter(null),
+                  deleteIconColor: Colors.white54,
+                  backgroundColor: Colors.white.withValues(alpha: 0.06),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(
+                      color: themeState.accent.withValues(alpha: 0.4),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          // v28: the 2x2 quick-tiles grid - slides away on scroll-down.
+          ClipRect(
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              heightFactor: _tilesVisible ? 1.0 : 0.0,
+              alignment: Alignment.topCenter,
+              child: _QuickTiles(
+                accent: themeState.accent,
+                onPrivate: () => _openPrivate(lib),
+                onCleaner: _showCleaner,
+                onPlaylist: _showQueueSheet,
+                onFolders: () => _showFoldersSheet(lib),
+              ),
+            ),
+          ),
           if (lib.isScanning)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -526,9 +828,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
 
     // Keyed by view mode so grid <-> list crossfades through the
-    // AnimatedSwitcher above.
+    // AnimatedSwitcher above. v28: the controller drives the quick-tiles
+    // auto-hide on downward scrolls.
     return CustomScrollView(
       key: ValueKey(lib.viewMode),
+      controller: _listScroll,
       slivers: [
         for (final group in groups) ...[
           if (lib.groupMode != GroupMode.none)
@@ -584,6 +888,107 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
         ],
       ],
+    );
+  }
+}
+
+/// v28: the 2x2 quick-tiles grid under the search bar. Tucks away while
+/// scrolling down through the videos (see [_LibraryScreenState]) and
+/// returns on scroll-up. Private folder lives here now (was a top-bar
+/// icon).
+class _QuickTiles extends StatelessWidget {
+  final Color accent;
+  final VoidCallback onPrivate;
+  final VoidCallback onCleaner;
+  final VoidCallback onPlaylist;
+  final VoidCallback onFolders;
+
+  const _QuickTiles({
+    required this.accent,
+    required this.onPrivate,
+    required this.onCleaner,
+    required this.onPlaylist,
+    required this.onFolders,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _Tile(
+                    Icons.lock_outline, 'Private folder', accent, onPrivate),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _Tile(Icons.cleaning_services_outlined, 'Cleaner',
+                    accent, onCleaner),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _Tile(
+                    Icons.queue_music_outlined, 'Playlist', accent, onPlaylist),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _Tile(
+                    Icons.folder_outlined, 'Folders', accent, onFolders),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Tile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _Tile(this.icon, this.label, this.accent, this.onTap);
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.05),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        splashColor: accent.withValues(alpha: 0.25),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          child: Row(
+            children: [
+              Icon(icon, color: accent, size: 20),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
