@@ -71,19 +71,18 @@ class AiSubtitleRunner {
   static const String _kLanguageKey = 'ai.language';
   static const String _kTranslateKey = 'ai.translate';
 
-  /// Model choices: id -> (label, detail with size). v22 brought "tiny"
-  /// back as the explicit speed pick (v18's removal stopped being right
-  /// once "generation takes too much time" became the complaint) - plus
-  /// the engine now uses all CPU cores, so every choice is faster.
+  /// Model choices: id -> (label, detail with size). v25: tiny is gone for
+  /// good (user call: keep only the accurate models). The SPEED upgrade now
+  /// comes from the engine using every CPU core (threads), which makes even
+  /// "Best" markedly faster without accuracy loss.
   static const Map<String, (String, String)> modelChoices = {
-    'tiny': ('Fast', '~75 MB · ~4x quicker, more mistakes'),
     'base': ('Balanced', '~142 MB · good for most videos'),
-    'small': ('Best', '~466 MB · strongest on music & noise, slower'),
+    'small': ('Best', '~466 MB · strongest on music & noise'),
   };
 
-  /// Unknown ids (from older/future app versions) fall back to "base".
-  static String normalizeModelId(String? id) =>
-      modelChoices.containsKey(id) ? id! : 'base';
+  /// Anything unknown (including a "tiny" id saved by v22-v24 builds)
+  /// falls back to the default model.
+  static String normalizeModelId(String? id) => id == 'small' ? 'small' : 'base';
 
   /// Language choices: whisper code -> label; 'auto' = detect.
   static const Map<String, String> languageChoices = {
@@ -107,7 +106,6 @@ class AiSubtitleRunner {
 
     /// Approximate download size label per model (for the progress dialog).
   static String modelSizeLabel(String model) => switch (model) {
-        'tiny' => '~75 MB',
         'small' => '~466 MB',
         _ => '~142 MB',
       };
@@ -465,9 +463,9 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Tip: "Fast" finishes roughly 4x sooner (more mistakes). For '
-            'videos with loud background music, pin the spoken language '
-            'above and choose "Best".',
+            'v25: the engine now uses all CPU cores - much faster than '
+            'before. Tip: pinning the spoken language above (instead of '
+            'Auto-detect) is quicker AND more accurate.',
             style: TextStyle(color: Colors.white38, fontSize: 11.5),
           ),
         ],

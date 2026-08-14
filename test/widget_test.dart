@@ -435,18 +435,19 @@ void main() {
   });
 
   group('AI subtitle options & caption filter (v18)', () {
-    // v22: "tiny" returned as the explicit Fast pick (speed complaint).
-    test('the fast/tiny model is back as an explicit pick; defaults sane',
-        () {
-      expect(AiSubtitleRunner.modelChoices.containsKey('tiny'), isTrue);
+    // v25: only accurate models (user call); speed comes from all-core
+    // threading, and any stale "tiny" id from v22-v24 maps to base.
+    test('only accurate models remain; stale tiny ids map to base', () {
+      expect(AiSubtitleRunner.modelChoices.containsKey('tiny'), isFalse);
       expect(AiSubtitleRunner.modelChoices.keys,
-          containsAll(<String>['tiny', 'base', 'small']));
+          containsAll(<String>['base', 'small']));
       expect(AiSubtitleRunner.normalizeModelId(null), 'base');
-      expect(AiSubtitleRunner.normalizeModelId('tiny'), 'tiny');
+      expect(AiSubtitleRunner.normalizeModelId('tiny'), 'base',
+          reason: 'a stale v22-24 "tiny" pref must migrate to base');
       expect(AiSubtitleRunner.normalizeModelId('small'), 'small');
       expect(AiSubtitleRunner.normalizeModelId('nonsense'), 'base');
-      expect(AiSubtitleRunner.modelSizeLabel('tiny'), '~75 MB');
       expect(AiSubtitleRunner.modelSizeLabel('base'), '~142 MB');
+      expect(AiSubtitleRunner.modelSizeLabel('small'), '~466 MB');
     });
 
     test('music-only decoration captions are dropped, speech is kept', () {

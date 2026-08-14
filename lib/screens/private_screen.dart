@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/video_track.dart';
+import '../services/native_bridge.dart';
 import '../state/media_player_state.dart';
 import '../state/private_vault.dart';
 import '../state/theme_state.dart';
 import '../utils/formatters.dart';
+import '../widgets/fade_in_image.dart';
 import 'player_screen.dart';
 
 /// Private folder screen (v21): PIN gate -> list of hidden videos with
@@ -86,6 +88,48 @@ class _PrivateScreenState extends State<PrivateScreen> {
       await _refresh();
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// v25: user forgot their PIN. The hidden videos are NOT wiped (they
+  /// live in the app-private folder regardless of the PIN); only the door
+  /// code resets, then the normal "create PIN" flow re-secures it.
+  Future<void> _forgotPin() async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a24),
+        title: const Text('Forgot your PIN?',
+            style: TextStyle(color: Colors.white, fontSize: 17)),
+        content: const Text(
+          'Your hidden videos are SAFE - they stay in the app\'s private '
+          'folder either way.\n\nResetting removes the old PIN so you can '
+          'create a new one. Anyone holding your unlocked phone can do '
+          'this, so keep your phone locked.',
+          style:
+              TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep trying'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Reset PIN'),
+          ),
+        ],
+      ),
+    );
+    if (yes == true && mounted) {
+      await _vault.resetPin();
+      setState(() {
+        _hasPin = false;
+        _unlocked = false;
+        _error = null;
+        _pinCtrl.clear();
+        _pin2Ctrl.clear();
+      });
     }
   }
 
@@ -209,6 +253,19 @@ class _PrivateScreenState extends State<PrivateScreen> {
                 label: Text(creating ? 'Create & open' : 'Unlock'),
               ),
             ),
+            if (!creating) ...[
+              const SizedBox(height: 6),
+              // v25: forgotten PIN path - keeps the videos, only clears
+              // the door code (the folder location is the real hiding).
+              TextButton(
+                onPressed: _busy ? null : _forgotPin,
+                child: Text(
+                  'Forgot PIN?',
+                  style: TextStyle(
+                      color: accent.withValues(alpha: 0.6), fontSize: 12.5),
+                ),
+              ),
+            ],
             if (creating) ...[
               const SizedBox(height: 14),
               const Text(
@@ -314,17 +371,20 @@ class _PrivateScreenState extends State<PrivateScreen> {
           final name = f.path.split('/').last;
           final size = f.lengthSync();
           return ListTile(
-            leading: Icon(Icons.lock, color: accent, size: 20),
+            // v25: real thumbnails (generated via the same native pipeline
+            // the library uses) instead of a bare lock icon.
+            leading: _VaultThumb(path: f.path, accent: accent),
             title: Text(
               name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white),
+              // v25: the private screen follows the picked theme colour.
+              style: TextStyle(color: accent),
             ),
             subtitle: Text(
               formatFileSize(size),
-              style:
-                  const TextStyle(color: Colors.white38, fontSize: 12),
+              style: TextStyle(
+                  color: accent.withValues(alpha: 0.5), fontSize: 12),
             ),
             onTap: () => _play(f),
             trailing: TextButton.icon(
@@ -367,4 +427,71 @@ class _PrivateScreenState extends State<PrivateScreen> {
       ),
     );
   }
+}
+
+/// v25: thumbnail for a hidden video. Hidden files skip the library scan,
+/// so the tile resolves the cached image itself - and if the cache has no
+/// entry (video hidden before it had a thumb), it asks the native metadata
+/// pipeline to build one into the shared thumbs cache.
+class _VaultThumb extends StatefulWidget {
+  final String path;
+  final Color accent;
+  const _VaultThumb({required this.path, required this.accent});
+
+  @override
+  State<_VaultThumb> createState() => _VaultThumbState();
+}
+
+class _VaultThumbState extends State<_VaultThumb> {
+  String? _thumbPath;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  Future<void> _resolve() async {
+    try {
+      final cached = await NativeBridge.thumbnailPathFor(widget.path);
+      if (cached != null && File(cached).existsSync()) {
+        if (mounted) setState(() => _thumbPath = cached);
+        return;
+      }
+      // Not cached: build one through the native pipeline.
+      final meta = await NativeBridge.fetchMetadata(widget.path);
+      final made = meta.thumbnailPath;
+      if (made != null && File(made).existsSync() && mounted) {
+        setState(() => _thumbPath = made);
+      }
+    } catch (_) {
+      // No thumbnail - the lock fallback shows.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final thumb = _thumbPath;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        width: 56,
+        height: 34,
+        child: thumb != null
+            ? Image.file(
+                File(thumb),
+                fit: BoxFit.cover,
+                cacheWidth: 160,
+                frameBuilder: fadeInImageFrame,
+                errorBuilder: (_, __, ___) => _fallback(),
+              )
+            : _fallback(),
+      ),
+    );
+  }
+
+  Widget _fallback() => Container(
+        color: widget.accent.withValues(alpha: 0.12),
+        child: Icon(Icons.lock, size: 15, color: widget.accent),
+      );
 }

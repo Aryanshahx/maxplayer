@@ -68,7 +68,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: themeState.accent.withValues(alpha: 0.35),
+                  color: Colors.white24,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -306,9 +306,7 @@ class _SwitchTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       child: Row(
         children: [
-          // v23: the whole player UI rides the picked theme colour.
-          Icon(icon,
-              color: themeState.accent.withValues(alpha: 0.75), size: 22),
+          Icon(icon, color: Colors.white70, size: 22),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -316,12 +314,11 @@ class _SwitchTile extends StatelessWidget {
               children: [
                 Text(label,
                     style:
-                        TextStyle(color: themeState.accent, fontSize: 15)),
+                        const TextStyle(color: Colors.white, fontSize: 15)),
                 if (subtitle != null)
                   Text(subtitle!,
-                      style: TextStyle(
-                          color: themeState.accent.withValues(alpha: 0.5),
-                          fontSize: 12)),
+                      style: const TextStyle(
+                          color: Colors.white38, fontSize: 12)),
               ],
             ),
           ),
@@ -355,8 +352,7 @@ class _MiniDropdown<T> extends StatelessWidget {
       dropdownColor: const Color(0xFF26262f),
       underline: const SizedBox.shrink(),
       isDense: true,
-      style: TextStyle(
-          color: themeState.accent.withValues(alpha: 0.75), fontSize: 13),
+      style: const TextStyle(color: Colors.white70, fontSize: 13),
       items: [
         for (final e in entries.entries)
           DropdownMenuItem(value: e.key, child: Text(e.value)),

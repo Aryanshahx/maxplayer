@@ -49,7 +49,7 @@ class TrackSelectionSheet extends StatelessWidget {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: themeState.accent.withValues(alpha: 0.35),
+                color: Colors.white24,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -83,10 +83,10 @@ class TrackSelectionSheet extends StatelessWidget {
     }
     final list = tracks.values.toList();
     if (list.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(20),
+      return const Padding(
+        padding: EdgeInsets.all(20),
         child: Text('No audio tracks found',
-            style: TextStyle(color: themeState.accent.withValues(alpha: 0.5))),
+            style: TextStyle(color: Colors.white38)),
       );
     }
     return ListView(
@@ -127,28 +127,24 @@ class TrackSelectionSheet extends StatelessWidget {
               Navigator.of(context).pop();
             },
           ),
-        Divider(
-            height: 16,
-            color: themeState.accent.withValues(alpha: 0.18)),
+        const Divider(height: 16, color: Colors.white12),
         // Offline AI subtitle generation (whisper.cpp) - free, no internet
         // after the one-time model download.
         ListTile(
           dense: true,
           leading: Icon(Icons.auto_awesome,
               size: 20, color: TrackSelectionSheet._accent),
-          title: Text(
+          title: const Text(
             'Generate with AI ✨',
             style: TextStyle(
-              color: themeState.accent,
+              color: Colors.white,
               fontSize: 15,
               fontWeight: FontWeight.w600,
             ),
           ),
-          subtitle: Text(
+          subtitle: const Text(
             'Offline & free · the AI writes subtitles for this video',
-            style: TextStyle(
-                color: themeState.accent.withValues(alpha: 0.5),
-                fontSize: 12),
+            style: TextStyle(color: Colors.white38, fontSize: 12),
           ),
           onTap: () {
             final rootCtx =
@@ -207,19 +203,14 @@ class _TrackTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          // v23: theme colour everywhere (full strength when selected).
-          color: selected
-              ? themeState.accent
-              : themeState.accent.withValues(alpha: 0.75),
+          color: selected ? Colors.white : Colors.white70,
           fontSize: 15,
           fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
         ),
       ),
       subtitle: (detail != null && detail!.isNotEmpty)
           ? Text(detail!,
-              style: TextStyle(
-                  color: themeState.accent.withValues(alpha: 0.5),
-                  fontSize: 12))
+              style: const TextStyle(color: Colors.white38, fontSize: 12))
           : null,
     );
   }

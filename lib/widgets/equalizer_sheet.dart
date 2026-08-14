@@ -70,7 +70,7 @@ class _EqualizerSheetState extends State<EqualizerSheet> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: themeState.accent.withValues(alpha: 0.35),
+                  color: Colors.white24,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -112,8 +112,7 @@ class _EqualizerSheetState extends State<EqualizerSheet> {
                       padding: const EdgeInsets.only(right: 8),
                       child: ActionChip(
                         label: Text(p.key),
-                        labelStyle: TextStyle(
-                            color: themeState.accent.withValues(alpha: 0.75)),
+                        labelStyle: const TextStyle(color: Colors.white70),
                         backgroundColor: Colors.white.withValues(alpha: 0.06),
                         side: BorderSide.none,
                         onPressed: () {
@@ -177,9 +176,7 @@ class _BandSlider extends StatelessWidget {
     return Column(
       children: [
         Text(value.toStringAsFixed(0),
-            style: TextStyle(
-                color: themeState.accent.withValues(alpha: 0.5),
-                fontSize: 11)),
+            style: const TextStyle(color: Colors.white38, fontSize: 11)),
         SizedBox(
           height: 140,
           child: RotatedBox(
@@ -189,7 +186,7 @@ class _BandSlider extends StatelessWidget {
                 trackHeight: 2.5,
                 activeTrackColor: accent,
                 thumbColor: accent,
-                inactiveTrackColor: accent.withValues(alpha: 0.18),
+                inactiveTrackColor: Colors.white12,
                 thumbShape:
                     const RoundSliderThumbShape(enabledThumbRadius: 6),
               ),
@@ -204,9 +201,7 @@ class _BandSlider extends StatelessWidget {
           ),
         ),
         Text(label,
-            style: TextStyle(
-                color: themeState.accent.withValues(alpha: 0.6),
-                fontSize: 11)),
+            style: const TextStyle(color: Colors.white54, fontSize: 11)),
       ],
     );
   }

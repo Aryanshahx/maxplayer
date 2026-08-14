@@ -209,6 +209,19 @@ class _PlayerScreenState extends State<PlayerScreen>
     unawaited(widget.player.setKaraokeMode(s.karaokeSubs));
   }
 
+  /// v25: one karaoke switch used by the tracks sheet tile (the setting
+  /// persists like before).
+  void _toggleKaraoke() {
+    final next = _settings.copyWith(karaokeSubs: !_settings.karaokeSubs);
+    setState(() => _settings = next);
+    next.save();
+    _applyKaraokeSubtitleVisibility(next);
+    if (next.karaokeSubs && widget.player.aiCues == null) {
+      widget.player.refreshAiCues(widget.player.currentTrack?.path ?? '');
+    }
+    _onUserInteraction();
+  }
+
   Future<void> _openSettings() async {
     await PlayerSettingsSheet.show(context);
     await _reloadSettings(); // apply changes immediately
@@ -398,18 +411,15 @@ class _PlayerScreenState extends State<PlayerScreen>
             {String? sub, bool active = false, VoidCallback? onTap}) {
           return ListTile(
             leading: Icon(icon,
-                // v23: the whole player UI rides the picked theme colour.
-                color: active
-                    ? themeState.accent
-                    : themeState.accent.withValues(alpha: 0.75)),
+                color: active ? themeState.accent : Colors.white70),
             title: Text(label,
-                style: TextStyle(color: themeState.accent)),
+                style: TextStyle(
+                    color: active ? themeState.accent : Colors.white)),
             subtitle: sub == null
                 ? null
                 : Text(sub,
-                    style: TextStyle(
-                        color: themeState.accent.withValues(alpha: 0.5),
-                        fontSize: 12)),
+                    style: const TextStyle(
+                        color: Colors.white54, fontSize: 12)),
             trailing: active
                 ? Icon(Icons.check, color: themeState.accent)
                 : null,
@@ -434,7 +444,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: themeState.accent.withValues(alpha: 0.35),
+                      color: Colors.white24,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -443,8 +453,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                     label == null
                         ? 'Sleep timer'
                         : 'Sleep timer: stops in $label',
-                    style: TextStyle(
-                        color: themeState.accent,
+                    style: const TextStyle(
+                        color: Colors.white,
                         fontSize: 16,
                         fontWeight: FontWeight.w600),
                   ),
@@ -816,11 +826,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                                             aspectRatio: _fitAspects[_fitIndex],
                                           ),
                                         )
-                                      : Text(
+                                      : const Text(
                                           'No video loaded',
                                           style: TextStyle(
-                                            color: themeState.accent.withValues(
-                                                alpha: 0.5),
+                                            color: Colors.white38,
                                           ),
                                         ),
                                 ),
@@ -879,15 +888,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                                         if (_indicatorIcon != null) ...[
                                           Icon(
                                             _indicatorIcon,
-                                            color: themeState.accent,
+                                            color: Colors.white,
                                             size: 20,
                                           ),
                                           const SizedBox(width: 8),
                                         ],
                                         Text(
                                           _indicatorText ?? '',
-                                          style: TextStyle(
-                                            color: themeState.accent,
+                                          style: const TextStyle(
+                                            color: Colors.white,
                                             fontSize: 15,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -1048,9 +1057,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                                       children: [
                                         IconButton(
                                           tooltip: 'Back',
-                                          icon: Icon(Icons.arrow_back,
-                                              size: 22,
-                                              color: themeState.accent),
+                                          icon: const Icon(Icons.arrow_back,
+                                              size: 22),
                                           onPressed: () {
                                             _onUserInteraction();
                                             Navigator.of(context).maybePop();
@@ -1129,10 +1137,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                                         _topMenu(context),
                                         IconButton(
                                           tooltip: 'Player settings',
-                                          icon: Icon(
+                                          icon: const Icon(
                                               Icons.settings_outlined,
-                                              size: 22,
-                                              color: themeState.accent),
+                                              size: 22),
                                           onPressed: () {
                                             _onUserInteraction();
                                             _openSettings();
@@ -1203,8 +1210,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                                             const SizedBox(width: 6),
                                             Text(
                                               'Skip to ${formatDuration(at)}',
-                                              style: TextStyle(
-                                                color: themeState.accent,
+                                              style: const TextStyle(
+                                                color: Colors.white,
                                                 fontSize: 12.5,
                                                 fontWeight: FontWeight.w600,
                                               ),
@@ -1213,14 +1220,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                                             GestureDetector(
                                               onTap: () => setState(() =>
                                                   _skipChipDismissedFor = at),
-                                              child: Padding(
-                                                padding:
-                                                    const EdgeInsets.all(4),
+                                              child: const Padding(
+                                                padding: EdgeInsets.all(4),
                                                 child: Icon(Icons.close,
                                                     size: 14,
-                                                    color: themeState.accent
-                                                        .withValues(
-                                                            alpha: 0.5)),
+                                                    color: Colors.white54),
                                               ),
                                             ),
                                           ],
@@ -1260,6 +1264,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                                     orientationLocked: _orientationLocked,
                                     onToggleOrientationLock:
                                         _toggleOrientationLock,
+                                    karaokeOn: _settings.karaokeSubs,
+                                    onToggleKaraoke: _toggleKaraoke,
                                   ),
                                 ),
                               ),
@@ -1317,16 +1323,8 @@ class _PlayerScreenState extends State<PlayerScreen>
             NativeBridge.enterPip(playing: widget.player.isPlaying);
           case 'sleep':
             _showSleepSheet();
-          case 'karaoke':
-            final next = _settings.copyWith(
-                karaokeSubs: !_settings.karaokeSubs);
-            setState(() => _settings = next);
-            next.save();
-            _applyKaraokeSubtitleVisibility(next);
-            if (widget.player.aiCues == null) {
-              widget.player
-                  .refreshAiCues(widget.player.currentTrack?.path ?? '');
-            }
+          // v25: karaoke toggle moved into the tracks sheet (the "tune"
+          // button next to play) - see _toggleKaraoke.
         }
       },
       itemBuilder: (context) => [
@@ -1345,13 +1343,6 @@ class _PlayerScreenState extends State<PlayerScreen>
               ? 'Sleep timer (${widget.player.sleepTimerLabel})'
               : 'Sleep timer',
         ),
-        _topMenuItem(
-          'karaoke',
-          _settings.karaokeSubs
-              ? Icons.closed_caption
-              : Icons.closed_caption_off_outlined,
-          _settings.karaokeSubs ? 'Karaoke subtitles (on)' : 'Karaoke subtitles',
-        ),
       ],
     );
   }
@@ -1362,9 +1353,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       value: v,
       child: Row(
         children: [
-          Icon(icon, size: 18, color: themeState.accent),
+          Icon(icon, size: 18, color: Colors.white70),
           const SizedBox(width: 10),
-          Text(label, style: TextStyle(color: themeState.accent)),
+          Text(label, style: const TextStyle(color: Colors.white)),
         ],
       ),
     );
@@ -1385,10 +1376,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.55),
           shape: BoxShape.circle,
-          border:
-              Border.all(color: themeState.accent.withValues(alpha: 0.35)),
+          border: Border.all(color: Colors.white24),
         ),
-        child: Icon(icon, color: themeState.accent, size: 22),
+        child: Icon(icon, color: Colors.white, size: 22),
       ),
     );
   }
@@ -1464,9 +1454,8 @@ class _MarqueeTitleState extends State<_MarqueeTitle> {
         widget.text,
         maxLines: 1,
         softWrap: false,
-        // v23: title rides the picked theme colour too.
-        style: TextStyle(
-          color: themeState.accent,
+        style: const TextStyle(
+          color: Colors.white,
           fontSize: 15.5,
           fontWeight: FontWeight.w600,
         ),

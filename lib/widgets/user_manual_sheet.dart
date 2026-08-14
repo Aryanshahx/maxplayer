@@ -475,7 +475,8 @@ const List<_Item> _smartItems = [
   _Item(
     Icons.lyrics_outlined,
     'Karaoke word highlight',
-    'Player ⋮ menu → Karaoke subtitles: words light up one by one as they '
+    'Player → the "tune" button (beside play) → Karaoke subtitles: words '
+        'light up one by one as they '
         'are spoken. Works with ANY subtitle - AI captions, the video\'s own '
         '.srt file, or subtitles embedded in the video. While karaoke is '
         'on, the normal subtitle display turns OFF so only the karaoke '

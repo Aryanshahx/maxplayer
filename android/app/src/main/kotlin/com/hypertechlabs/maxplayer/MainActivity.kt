@@ -888,13 +888,12 @@ class MainActivity : FlutterActivity() {
     // base / ~466 MB small); after that everything is offline & free.
     // ---------------------------------------------------------------------------
 
-    // v22: "tiny" (~75 MB) returns as the explicit "Fast" choice - roughly
-    // 4x quicker than base at some accuracy cost (the user picks it, eyes
-    // open). Unknown ids still fall back to "base" (also covers stale ids
-    // saved by older versions).
+    // v25: only the accurate models stay ("tiny" removed for good). Speed
+    // comes from all-core threading instead of a weaker model. Unknown ids
+    // (including a "tiny" id saved by v22-v24 builds) fall back to "base".
     private fun modelFileFor(name: String): File {
         val safe = when (name) {
-            "tiny", "base", "small" -> name
+            "base", "small" -> name
             else -> "base"
         }
         return File(filesDir, "models/ggml-$safe.bin")
@@ -902,8 +901,6 @@ class MainActivity : FlutterActivity() {
 
     private fun modelUrlFor(name: String): String {
         return when (name) {
-            "tiny" ->
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"
             "small" ->
                 "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
             else ->

@@ -344,6 +344,14 @@ class MediaPlayerState extends ChangeNotifier {
     await _attachSidecarSubtitles(track.path);
     await _recordOpen(track);
     await _restoreBookmark(track);
+    // v25: re-verify karaoke's subtitle hiding after the demuxer settles -
+    // the track listener can fire before the subtitle selection is known.
+    if (karaokeMode) {
+      Future<void>.delayed(const Duration(milliseconds: 800), () {
+        _appliedSubVisibility = null; // force a fresh push (engine may reset)
+        _applySubVisibility();
+      });
+    }
     // v22: if this file has no cached thumbnail AND Android's metadata
     // engine could not make one, remember it - after ~1.5 s of playback a
     // frame is captured through mpv instead (see _maybeCaptureThumb).
@@ -516,8 +524,15 @@ class MediaPlayerState extends ChangeNotifier {
     final want = hide ? 'no' : 'yes';
     if (want == _appliedSubVisibility) return;
     _appliedSubVisibility = want;
+    // v25 hardening (user report: the normal subtitle line stayed visible
+    // next to karaoke): verify the property actually flipped; on engines
+    // where setProperty silently no-ops, issue the raw mpv command too.
     try {
       await platform.setProperty('sub-visibility', want);
+      final applied = await platform.getProperty('sub-visibility');
+      if (applied != want) {
+        await platform.command(['set', 'sub-visibility', want]);
+      }
     } catch (_) {}
   }
 

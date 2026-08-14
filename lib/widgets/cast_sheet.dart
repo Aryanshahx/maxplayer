@@ -108,7 +108,7 @@ class _CastSheetState extends State<CastSheet> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: _accent.withValues(alpha: 0.35),
+                      color: Colors.white24,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -119,11 +119,11 @@ class _CastSheetState extends State<CastSheet> {
                     children: [
                       Icon(Icons.cast_connected, color: _accent, size: 22),
                       const SizedBox(width: 10),
-                      Expanded(
+                      const Expanded(
                         child: Text(
                           'Cast to TV',
                           style: TextStyle(
-                            color: _accent,
+                            color: Colors.white,
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
@@ -215,17 +215,14 @@ class _CastSheetState extends State<CastSheet> {
           children: [
             for (final d in widget.cast.devices)
               ListTile(
-                leading: Icon(Icons.tv,
-                    color: themeState.accent.withValues(alpha: 0.75)),
+                leading: const Icon(Icons.tv, color: Colors.white70),
                 title: Text(
                   d.name,
-                  style: TextStyle(color: themeState.accent, fontSize: 15),
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
                 ),
-                subtitle: Text(
+                subtitle: const Text(
                   'Tap to start casting',
-                  style: TextStyle(
-                      color: themeState.accent.withValues(alpha: 0.5),
-                      fontSize: 12),
+                  style: TextStyle(color: Colors.white38, fontSize: 12),
                 ),
                 onTap: () => _connect(d),
               ),
@@ -273,17 +270,15 @@ class _CastSheetState extends State<CastSheet> {
                   children: [
                     Text(
                       cast.current?.name ?? 'TV',
-                      style: TextStyle(
-                        color: themeState.accent,
+                      style: const TextStyle(
+                        color: Colors.white,
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    Text(
+                    const Text(
                       'Playing on your TV - this phone is the remote',
-                      style: TextStyle(
-                          color: themeState.accent.withValues(alpha: 0.5),
-                          fontSize: 12),
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
                     ),
                   ],
                 ),
@@ -297,9 +292,8 @@ class _CastSheetState extends State<CastSheet> {
             children: [
               Text(
                 formatDuration(pos),
-                style: TextStyle(
-                    color: themeState.accent.withValues(alpha: 0.75),
-                    fontSize: 12),
+                style:
+                    const TextStyle(color: Colors.white70, fontSize: 12),
               ),
               Expanded(
                 child: Slider(
@@ -309,14 +303,13 @@ class _CastSheetState extends State<CastSheet> {
                   onChangeEnd: (v) =>
                       cast.seekTo(Duration(milliseconds: v.round())),
                   activeColor: _accent,
-                  inactiveColor: _accent.withValues(alpha: 0.18),
+                  inactiveColor: Colors.white12,
                 ),
               ),
               Text(
                 formatDuration(total),
-                style: TextStyle(
-                    color: themeState.accent.withValues(alpha: 0.75),
-                    fontSize: 12),
+                style:
+                    const TextStyle(color: Colors.white70, fontSize: 12),
               ),
             ],
           ),
@@ -330,7 +323,7 @@ class _CastSheetState extends State<CastSheet> {
                 cast.tvPlaying
                     ? Icons.pause_circle_filled
                     : Icons.play_circle_filled,
-                color: themeState.accent,
+                color: Colors.white,
               ),
               onPressed: cast.togglePlayPause,
             ),
@@ -354,14 +347,13 @@ class _CastSheetState extends State<CastSheet> {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Column(
         children: [
-          Icon(icon,
-              color: themeState.accent.withValues(alpha: 0.5), size: 42),
+          Icon(icon, color: Colors.white38, size: 42),
           const SizedBox(height: 10),
           Text(
             title,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: themeState.accent,
+            style: const TextStyle(
+              color: Colors.white,
               fontSize: 16,
               fontWeight: FontWeight.bold,
             ),
@@ -371,8 +363,8 @@ class _CastSheetState extends State<CastSheet> {
             Text(
               body,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: themeState.accent.withValues(alpha: 0.6),
+              style: const TextStyle(
+                color: Colors.white54,
                 fontSize: 13,
                 height: 1.4,
               ),

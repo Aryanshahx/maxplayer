@@ -57,6 +57,12 @@ class PrivateVault {
   Future<void> setPin(String pin) =>
       NativeBridge.saveSetting(_pinKey, _hashPin(pin));
 
+  /// v25 "Forgot PIN": deletes the stored hash. The VIDEOS ARE SAFE - the
+  /// PIN only guards the door, the hiding is the folder itself; after a
+  /// reset the user simply creates a fresh PIN and the same videos appear.
+  /// (Some other players wipe everything on a forgotten PIN - we don't.)
+  Future<void> resetPin() => NativeBridge.saveSetting(_pinKey, '');
+
   Directory? _dirCache;
 
   /// The vault directory, resolved (and created) THROUGH THE FRAMEWORK.

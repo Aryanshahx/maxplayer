@@ -44,7 +44,15 @@ class PlayerControlsOverlay extends StatelessWidget {
     required this.onCycleFit,
     required this.orientationLocked,
     required this.onToggleOrientationLock,
+    // v25: karaoke toggle moved INTO the tracks sheet (was the ⋮ menu).
+    required this.karaokeOn,
+    required this.onToggleKaraoke,
   });
+
+  /// v25: karaoke state + toggle, so the tracks sheet can host the switch
+  /// next to Subtitles / Audio track / A-B loop.
+  final bool karaokeOn;
+  final VoidCallback onToggleKaraoke;
 
   @override
   Widget build(BuildContext context) {
@@ -155,11 +163,7 @@ class PlayerControlsOverlay extends StatelessWidget {
       icon: Icon(
         Icons.tune,
         size: 20,
-        // v23: whole player rides the theme colour; "active" states keep
-        // full strength, idle states dim to 75% of the same colour.
-        color: active
-            ? themeState.accent
-            : themeState.accent.withValues(alpha: 0.75),
+        color: active ? themeState.accent : Colors.white,
       ),
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints.tightFor(width: 34, height: 40),
@@ -193,7 +197,7 @@ class PlayerControlsOverlay extends StatelessWidget {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: themeState.accent.withValues(alpha: 0.35),
+                color: Colors.white24,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -203,11 +207,11 @@ class PlayerControlsOverlay extends StatelessWidget {
                 player.subtitlesActive
                     ? Icons.subtitles
                     : Icons.subtitles_outlined,
-                color: themeState.accent.withValues(alpha: 0.75),
+                color: Colors.white70,
               ),
               title: Text(
                 player.subtitlesActive ? 'Subtitles (on)' : 'Subtitles',
-                style: TextStyle(color: themeState.accent),
+                style: const TextStyle(color: Colors.white),
               ),
               onTap: () {
                 Navigator.of(sheetContext).pop();
@@ -215,15 +219,15 @@ class PlayerControlsOverlay extends StatelessWidget {
               },
             ),
             ListTile(
-              leading: Icon(
+              leading: const Icon(
                 Icons.audiotrack_outlined,
-                color: themeState.accent.withValues(alpha: 0.75),
+                color: Colors.white70,
               ),
               title: Text(
                 player.audioTracks.length > 1
                     ? 'Audio track (${player.audioTracks.length} available)'
                     : 'Audio track',
-                style: TextStyle(color: themeState.accent),
+                style: const TextStyle(color: Colors.white),
               ),
               onTap: () {
                 Navigator.of(sheetContext).pop();
@@ -235,17 +239,15 @@ class PlayerControlsOverlay extends StatelessWidget {
                 Icons.repeat_one_outlined,
                 color: player.abLoopActive
                     ? themeState.accent
-                    : themeState.accent.withValues(alpha: 0.75),
+                    : Colors.white70,
               ),
-              title: Text(
+              title: const Text(
                 'A-B loop',
-                style: TextStyle(color: themeState.accent),
+                style: TextStyle(color: Colors.white),
               ),
               subtitle: Text(
                 abSubtitle,
-                style: TextStyle(
-                    color: themeState.accent.withValues(alpha: 0.5),
-                    fontSize: 12),
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
               ),
               onTap: () {
                 Navigator.of(sheetContext).pop();
@@ -258,6 +260,29 @@ class PlayerControlsOverlay extends StatelessWidget {
                       duration: const Duration(milliseconds: 1400),
                     ),
                   );
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                karaokeOn
+                    ? Icons.closed_caption
+                    : Icons.closed_caption_off_outlined,
+                color: karaokeOn ? themeState.accent : Colors.white70,
+              ),
+              title: Text(
+                // v25: karaoke moved here from the ⋮ menu.
+                karaokeOn ? 'Karaoke subtitles (on)' : 'Karaoke subtitles',
+                style: TextStyle(
+                    color:
+                        karaokeOn ? themeState.accent : Colors.white),
+              ),
+              subtitle: const Text(
+                'Words light up - other subtitles hide while on',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                onToggleKaraoke();
               },
             ),
             const SizedBox(height: 8),
@@ -280,15 +305,13 @@ class PlayerControlsOverlay extends StatelessWidget {
               .map((r) => PopupMenuItem(
                     value: r,
                     child: Text('${r}x',
-                        style: TextStyle(color: themeState.accent)),
+                        style: const TextStyle(color: Colors.white)),
                   ))
               .toList(),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
         child: Text('${player.playbackRate}x',
-            style: TextStyle(
-                color: themeState.accent.withValues(alpha: 0.75),
-                fontSize: 11)),
+            style: const TextStyle(color: Colors.white70, fontSize: 11)),
       ),
     );
   }
@@ -305,8 +328,7 @@ class PlayerControlsOverlay extends StatelessWidget {
     return IconButton(
       tooltip: tooltip,
       icon: Icon(icon,
-          size: compact ? 20 : size,
-          color: active ? accent : accent.withValues(alpha: 0.75)),
+          size: compact ? 20 : size, color: active ? accent : Colors.white),
       // Compact rows must fit ~7 actions on a 320dp-wide phone.
       constraints:
           compact ? const BoxConstraints.tightFor(width: 34, height: 40) : null,
