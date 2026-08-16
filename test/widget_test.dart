@@ -15,12 +15,14 @@ import 'package:maxplayer/state/theme_state.dart';
 import 'package:maxplayer/state/video_library_state.dart';
 import 'package:maxplayer/utils/ai_subtitles.dart';
 import 'package:maxplayer/utils/cleaner_stats.dart';
+import 'package:maxplayer/utils/crash_log.dart';
 import 'package:maxplayer/utils/formatters.dart';
 import 'package:maxplayer/utils/privacy_policy.dart';
 import 'package:maxplayer/utils/sha256.dart';
 import 'package:maxplayer/utils/srt.dart';
 import 'package:maxplayer/widgets/karaoke_subtitle.dart';
 import 'package:maxplayer/widgets/about_sheet.dart';
+import 'package:maxplayer/widgets/track_selection_sheet.dart';
 import 'package:maxplayer/widgets/gesture_illustrations.dart';
 import 'package:maxplayer/widgets/user_manual_sheet.dart';
 
@@ -1134,6 +1136,37 @@ void main() {
       final list = addSavedServer(addSavedServer(const [], a), dup);
       expect(list.length, 1);
       expect(list.single.name, 'a');
+    });
+  });
+
+  group('v34 native crash reporter and track sheet sizing', () {
+    test('trackSheetInitialSize never leaves the safe 0.4..0.8 band', () {
+      for (final h in [320.0, 640.0, 800.0, 1280.0, 2400.0]) {
+        for (var rows = 0; rows <= 40; rows++) {
+          final f = trackSheetInitialSize(rows, h);
+          expect(f, greaterThanOrEqualTo(0.4));
+          expect(f, lessThanOrEqualTo(0.8));
+        }
+      }
+    });
+
+    test('trackSheetInitialSize grows with rows, guards bad heights', () {
+      // Few rows on a tall screen -> the 40% floor (compact sheet).
+      expect(trackSheetInitialSize(2, 2400), 0.4);
+      // Many rows on a small/old phone -> the 80% cap; the sheet then
+      // scrolls and can still be dragged up to 92%.
+      expect(trackSheetInitialSize(30, 640), 0.8);
+      // Degenerate heights can never produce NaN / Infinity.
+      expect(trackSheetInitialSize(5, 0), 0.6);
+      expect(trackSheetInitialSize(5, -1), 0.6);
+    });
+
+    test('takeLastIncludingNative simply finds nothing without a device',
+        () async {
+      // Unit tests have no method-channel native side: nativeCrashGet and
+      // the settings store both guard, so the result is null - and it can
+      // never throw, which is what matters at app start.
+      expect(await CrashLog.takeLastIncludingNative(), isNull);
     });
   });
 }

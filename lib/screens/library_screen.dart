@@ -72,7 +72,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       }
       // If the previous session died with an error, offer the recorded
       // crash report (copyable) so it can be sent for analysis.
-      CrashLog.takeLast().then((report) {
+      CrashLog.takeLastIncludingNative().then((report) {
         if (report != null && mounted) _showCrashReport(report);
       });
     });

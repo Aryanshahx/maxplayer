@@ -26,6 +26,8 @@ Made by **Hyper Tech Labs** (Aryan Shah), Deoria, Uttar Pradesh, India.
 - **Cleaner library** - folder views, sort/group, list/grid, themes
   (7 accent colours), network streams (http/rtsp/rtmp), DLNA casting.
 - **Open with / Share to** from any gallery or file manager.
+- **Self-diagnosing** - if the app ever closes unexpectedly ("has stopped"),
+  the next launch shows a copyable crash report - no PC or logcat needed.
 
 ## Building
 

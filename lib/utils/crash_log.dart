@@ -51,4 +51,21 @@ class CrashLog {
       return null;
     }
   }
+
+  /// v34: an Android-layer crash ("Max Player has stopped" - e.g. at app
+  /// start, before Dart even runs) is recorded to a file by the native
+  /// Application class. Prefer that report over the Dart journal; either
+  /// source is cleared when taken, so it is shown exactly once.
+  static Future<String?> takeLastIncludingNative() async {
+    try {
+      final nativeReport = await NativeBridge.nativeCrashGet();
+      if (nativeReport != null && nativeReport.isNotEmpty) {
+        await NativeBridge.nativeCrashClear();
+        return nativeReport;
+      }
+    } catch (_) {
+      // fall through to the Dart journal
+    }
+    return takeLast();
+  }
 }

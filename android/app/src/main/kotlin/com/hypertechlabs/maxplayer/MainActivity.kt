@@ -440,6 +440,28 @@ class MainActivity : FlutterActivity() {
                         result.success(false)
                     }
                 }
+                "nativeCrashGet" -> {
+                    // v34: read the JVM crash report the Application-level
+                    // catcher (MaxPlayerApp) wrote after a "has stopped".
+                    // null when there is none.
+                    val text = try {
+                        val f = File(filesDir, MaxPlayerApp.CRASH_FILE)
+                        if (f.exists()) f.readText() else null
+                    } catch (_: Exception) {
+                        null
+                    }
+                    result.success(text)
+                }
+                "nativeCrashClear" -> {
+                    // Called once the report was shown to the user.
+                    try {
+                        val f = File(filesDir, MaxPlayerApp.CRASH_FILE)
+                        if (f.exists()) f.delete()
+                    } catch (_: Exception) {
+                        // best effort only
+                    }
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }

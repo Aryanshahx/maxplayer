@@ -500,6 +500,28 @@ class NativeBridge {
       return null;
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // v34: Android-layer crash reporter ("Max Player has stopped")
+  // ---------------------------------------------------------------------------
+
+  /// Reads the JVM crash report the native Application class recorded
+  /// after an uncaught Android-layer exception; null when there is none.
+  /// (Dart-side errors are journaled separately by CrashLog.)
+  static Future<String?> nativeCrashGet() async {
+    try {
+      return await _channel.invokeMethod<String>('nativeCrashGet');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Wipes the stored Android-layer crash report (after it was shown).
+  static Future<void> nativeCrashClear() async {
+    try {
+      await _channel.invokeMethod('nativeCrashClear');
+    } catch (_) {}
+  }
 }
 
 /// v31: device internal-storage totals for the cleaner's storage graph.
