@@ -186,6 +186,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- v33: Force the legacy Skia renderer instead of Impeller.
+             Impeller (default since Flutter 3.29) crashes / shows black
+             video with libmpv on many older GPUs - older Androids keep
+             playing fine through the Skia path. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

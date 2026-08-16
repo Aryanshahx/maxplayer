@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:maxplayer/app_info.dart';
 import 'package:maxplayer/cast/cast_support.dart';
+import 'package:maxplayer/models/saved_server.dart';
 import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/services/native_bridge.dart';
 import 'package:maxplayer/state/media_player_state.dart';
@@ -129,12 +130,12 @@ void main() {
 
   group('quality label', () {
     String? q(int? w, int? h) => VideoTrack(
-          id: 'x',
-          title: 'x',
-          path: '/x.mp4',
-          width: w,
-          height: h,
-        ).qualityLabel;
+      id: 'x',
+      title: 'x',
+      path: '/x.mp4',
+      width: w,
+      height: h,
+    ).qualityLabel;
 
     test('maps the SHORTER side to a resolution badge', () {
       expect(q(1920, 1080), '1080p');
@@ -345,7 +346,8 @@ void main() {
 
   group('DLNA cast helpers', () {
     test('SSDP header lookup is case-insensitive and trims', () {
-      const dg = 'HTTP/1.1 200 OK\r\n'
+      const dg =
+          'HTTP/1.1 200 OK\r\n'
           'CACHE-CONTROL: max-age=1800\r\n'
           'LOCATION: http://192.168.1.10:8080/dd.xml\r\n'
           'location: http://other/x.xml\r\n' // duplicate -> first wins
@@ -389,7 +391,8 @@ void main() {
     });
 
     test('device description: rejects devices without AVTransport', () {
-      const xml = '<root><device><friendlyName>Router</friendlyName>'
+      const xml =
+          '<root><device><friendlyName>Router</friendlyName>'
           '<serviceList><service>'
           '<serviceType>urn:schemas-upnp-org:service:WANIPConnection:1</serviceType>'
           '<controlURL>/wan/control</controlURL>'
@@ -398,7 +401,8 @@ void main() {
     });
 
     test('absolute controlURL kept as-is; xml entities unescaped in name', () {
-      const xml = '<root><device><friendlyName>A &amp; B TV</friendlyName>'
+      const xml =
+          '<root><device><friendlyName>A &amp; B TV</friendlyName>'
           '<serviceList><service>'
           '<serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>'
           '<controlURL>http://192.168.1.5:81/avt</controlURL>'
@@ -425,7 +429,8 @@ void main() {
     });
 
     test('soapTag digs values out of responses', () {
-      const body = '<s:Envelope><s:Body><u:GetPositionInfoResponse>'
+      const body =
+          '<s:Envelope><s:Body><u:GetPositionInfoResponse>'
           '<Track>1</Track><RelTime>0:06:12</RelTime>'
           '</u:GetPositionInfoResponse></s:Body></s:Envelope>';
       expect(soapTag(body, 'RelTime'), '0:06:12');
@@ -559,7 +564,8 @@ void main() {
         expect(
           kPrivacyPolicyText,
           contains(anchor),
-          reason: 'keep lib/utils/privacy_policy.dart in sync with '
+          reason:
+              'keep lib/utils/privacy_policy.dart in sync with '
               'PRIVACY_POLICY.md',
         );
       }
@@ -890,10 +896,10 @@ void main() {
         VideoTrack(id: path, title: path.split('/').last, path: path);
 
     List<VideoTrack> threeVideos() => [
-          t('/storage/emulated/0/Movies/a.mp4'),
-          t('/storage/emulated/0/Movies/b.mp4'),
-          t('/storage/emulated/0/DCIM/c.mp4'),
-        ];
+      t('/storage/emulated/0/Movies/a.mp4'),
+      t('/storage/emulated/0/Movies/b.mp4'),
+      t('/storage/emulated/0/DCIM/c.mp4'),
+    ];
 
     test('folderFilter narrows the visible list and clears again', () {
       final lib = VideoLibraryState();
@@ -928,12 +934,12 @@ void main() {
   // -------------------------------------------------------------------------
   group('v29 cleaner data + theme default', () {
     VideoTrack sized(String path, int size, int secs) => VideoTrack(
-          id: path,
-          title: path.split('/').last,
-          path: path,
-          sizeBytes: size,
-          duration: Duration(seconds: secs),
-        );
+      id: path,
+      title: path.split('/').last,
+      path: path,
+      sizeBytes: size,
+      duration: Duration(seconds: secs),
+    );
 
     test('largestVideos sorts biggest first and limits', () {
       final lib = VideoLibraryState();
@@ -1021,8 +1027,11 @@ void main() {
         models: 0,
         deviceCache: 25,
       );
-      expect(segs.map((s) => s.label).toList(),
-          ['App thumbnails', 'Temporary AI files', 'Gallery cache']);
+      expect(segs.map((s) => s.label).toList(), [
+        'App thumbnails',
+        'Temporary AI files',
+        'Gallery cache',
+      ]);
     });
 
     test('segment colours are stable per kind', () {
@@ -1074,6 +1083,57 @@ void main() {
       const s = DeviceStorage(total: 100, free: 25);
       expect(s.used, 75);
       expect(s.usedFraction, 0.75);
+    });
+  });
+
+  group('v32 picture settings, HDR labels and saved servers', () {
+    test('hdrLabelFor maps known formats, hides SDR/unknown', () {
+      expect(hdrLabelFor('hdr10'), 'HDR10');
+      expect(hdrLabelFor('hdr10+'), 'HDR10+');
+      expect(hdrLabelFor('hlg'), 'HLG');
+      expect(hdrLabelFor('dolby-vision'), 'Dolby Vision (HDR mode)');
+      expect(hdrLabelFor('sdr'), isNull);
+      expect(hdrLabelFor(null), isNull);
+      expect(hdrLabelFor('nonsense'), isNull);
+    });
+
+    test('picture settings default to off/auto and survive copyWith', () {
+      const s = PlayerSettings();
+      expect(s.enhanceVideo, isFalse);
+      expect(s.toneMapping, 'auto');
+      expect(PlayerSettings.kToneMappingModes, contains('bt.2390'));
+      final on = s.copyWith(enhanceVideo: true, toneMapping: 'mobius');
+      expect(on.enhanceVideo, isTrue);
+      expect(on.toneMapping, 'mobius');
+      expect(on.doubleTapSeek, isTrue); // untouched keys preserved
+    });
+
+    test('saved servers parse, round-trip, and junk is dropped', () {
+      expect(parseServersJson(null), isEmpty);
+      expect(parseServersJson(''), isEmpty);
+      expect(parseServersJson('not json'), isEmpty);
+      expect(parseServersJson('{"oops":true}'), isEmpty);
+      const s = SavedServer(
+        name: 'nas.local:5005',
+        url: 'http://nas.local:5005/film.mkv',
+      );
+      final raw = serversToJson([s]);
+      final back = parseServersJson(raw);
+      expect(back.single.name, s.name);
+      expect(back.single.url, s.url);
+      // entries without a url are skipped, good ones kept
+      final messy = parseServersJson(
+        '[{"name":"x"},{"url":"rtsp://cam.local/live"}]',
+      );
+      expect(messy.single.url, 'rtsp://cam.local/live');
+    });
+
+    test('addSavedServer dedupes by url', () {
+      const a = SavedServer(name: 'a', url: 'http://n.local/a.mkv');
+      const dup = SavedServer(name: 'a2', url: 'http://n.local/a.mkv');
+      final list = addSavedServer(addSavedServer(const [], a), dup);
+      expect(list.length, 1);
+      expect(list.single.name, 'a');
     });
   });
 }

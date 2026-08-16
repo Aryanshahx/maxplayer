@@ -49,6 +49,14 @@ class PlayerSettings {
   /// noticeably after the video start.
   final bool skipIntroChip;
 
+  /// v32: real-time picture enhancement (GPU sharpen + contrast + vibrance
+  /// shader, assets/shaders/mx_enhance.glsl).
+  final bool enhanceVideo;
+
+  /// v32: mpv tone-mapping curve for HDR sources ('auto' | 'clip' |
+  /// 'mobius' | 'hable' | 'bt.2390').
+  final String toneMapping;
+
   const PlayerSettings({
     this.doubleTapSeek = true,
     this.seekSeconds = 10,
@@ -70,6 +78,8 @@ class PlayerSettings {
     this.volumeLeveling = false,
     this.karaokeSubs = false,
     this.skipIntroChip = true,
+    this.enhanceVideo = false,
+    this.toneMapping = 'auto',
   });
 
   // Persisted keys (MediaPlayerState reads the resume key directly).
@@ -91,6 +101,8 @@ class PlayerSettings {
   static const String kVolumeLeveling = 'player.volumeLeveling';
   static const String kKaraokeSubs = 'player.karaokeSubs';
   static const String kSkipIntroChip = 'player.skipIntroChip';
+  static const String kEnhanceVideo = 'player.enhanceVideo';
+  static const String kToneMapping = 'player.toneMapping';
 
   static Future<PlayerSettings> load() async {
     final s = await NativeBridge.loadSettings();
@@ -105,7 +117,7 @@ class PlayerSettings {
       longPressSpeed: s[kLongPressSpeed] != 'false',
       longPressMultiplier:
           double.tryParse(s[kLongPressMultiplier] ?? '') ??
-              d.longPressMultiplier,
+          d.longPressMultiplier,
       autoHideSeconds:
           int.tryParse(s[kAutoHideSeconds] ?? '') ?? d.autoHideSeconds,
       resumePlayback: s[kResumePlayback] != 'false',
@@ -117,8 +129,22 @@ class PlayerSettings {
       volumeLeveling: s[kVolumeLeveling] == 'true',
       karaokeSubs: s[kKaraokeSubs] == 'true',
       skipIntroChip: s[kSkipIntroChip] != 'false',
+      enhanceVideo: s[kEnhanceVideo] == 'true',
+      toneMapping: kToneMappingModes.contains(s[kToneMapping])
+          ? s[kToneMapping]!
+          : d.toneMapping,
     );
   }
+
+  /// mpv accepts more algorithms, but these four+auto cover SDR phones to
+  /// HDR TVs without overwhelming the settings sheet.
+  static const List<String> kToneMappingModes = [
+    'auto',
+    'clip',
+    'mobius',
+    'hable',
+    'bt.2390',
+  ];
 
   Future<void> save() {
     NativeBridge.saveSetting(kDoubleTapSeek, '$doubleTapSeek');
@@ -129,7 +155,9 @@ class PlayerSettings {
     NativeBridge.saveSetting(kPinchZoom, '$pinchZoom');
     NativeBridge.saveSetting(kLongPressSpeed, '$longPressSpeed');
     NativeBridge.saveSetting(
-        kLongPressMultiplier, longPressMultiplier.toStringAsFixed(1));
+      kLongPressMultiplier,
+      longPressMultiplier.toStringAsFixed(1),
+    );
     NativeBridge.saveSetting(kAutoHideSeconds, '$autoHideSeconds');
     NativeBridge.saveSetting(kResumePlayback, '$resumePlayback');
     NativeBridge.saveSetting(kHorizontalSeek, '$horizontalSeek');
@@ -139,7 +167,9 @@ class PlayerSettings {
     NativeBridge.saveSetting(kVolumeBoost200, '$volumeBoost200');
     NativeBridge.saveSetting(kVolumeLeveling, '$volumeLeveling');
     NativeBridge.saveSetting(kKaraokeSubs, '$karaokeSubs');
-    return NativeBridge.saveSetting(kSkipIntroChip, '$skipIntroChip');
+    NativeBridge.saveSetting(kSkipIntroChip, '$skipIntroChip');
+    NativeBridge.saveSetting(kEnhanceVideo, '$enhanceVideo');
+    return NativeBridge.saveSetting(kToneMapping, toneMapping);
   }
 
   PlayerSettings copyWith({
@@ -161,6 +191,8 @@ class PlayerSettings {
     bool? volumeLeveling,
     bool? karaokeSubs,
     bool? skipIntroChip,
+    bool? enhanceVideo,
+    String? toneMapping,
   }) {
     return PlayerSettings(
       doubleTapSeek: doubleTapSeek ?? this.doubleTapSeek,
@@ -181,6 +213,8 @@ class PlayerSettings {
       volumeLeveling: volumeLeveling ?? this.volumeLeveling,
       karaokeSubs: karaokeSubs ?? this.karaokeSubs,
       skipIntroChip: skipIntroChip ?? this.skipIntroChip,
+      enhanceVideo: enhanceVideo ?? this.enhanceVideo,
+      toneMapping: toneMapping ?? this.toneMapping,
     );
   }
 }

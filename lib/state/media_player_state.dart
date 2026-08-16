@@ -5,6 +5,7 @@ import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:media_kit/media_kit.dart' hide VideoTrack;
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
@@ -940,6 +941,40 @@ class MediaPlayerState extends ChangeNotifier {
     _levelingOn = on;
     notifyListeners();
     await _applyAudioFilters();
+  }
+
+  /// v32: mpv tone-mapping curve for HDR sources ("How does an HDR10 or
+  /// Dolby Vision file render on this screen"). Values validated in
+  /// PlayerSettings - anything unknown becomes 'auto' upstream.
+  Future<void> setToneMapping(String mode) async {
+    final plat = player.platform;
+    if (plat is! NativePlayer) return;
+    try {
+      await plat.setProperty('tone-mapping', mode);
+    } catch (_) {}
+  }
+
+  /// v32: real-time picture enhancement. The shader is a tiny one-pass
+  /// sharpen+contrast+vibrance GLSL hook (assets/shaders/mx_enhance.glsl)
+  /// written to a cache file and given to mpv via glsl-shaders. Off simply
+  /// clears the list. Any failure (missing shader, old output driver) is
+  /// silent - playback continues untouched.
+  Future<void> setEnhanceVideo(bool on) async {
+    final plat = player.platform;
+    if (plat is! NativePlayer) return;
+    try {
+      if (!on) {
+        await plat.setProperty('glsl-shaders', '');
+        return;
+      }
+      const asset = 'assets/shaders/mx_enhance.glsl';
+      final src = await rootBundle.loadString(asset);
+      final f = File('${Directory.systemTemp.path}/mx_enhance.glsl');
+      if (!f.existsSync() || await f.readAsString() != src) {
+        await f.writeAsString(src, flush: true);
+      }
+      await plat.setProperty('glsl-shaders', f.path);
+    } catch (_) {}
   }
 
   /// The single writer of mpv's `af` property: equalizer bands + leveling

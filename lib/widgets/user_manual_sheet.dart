@@ -295,11 +295,12 @@ const List<_Item> _homeItems = [
   ),
   _Item(
     Icons.link,
-    'Network streams',
-    '⋮ → Open stream URL: paste a direct video link (http/https) or a live '
-        'stream (rtsp/rtmp/mms) and it plays immediately. Links opened in a '
-        'browser can also be handed to Max Player directly from the "Open '
-        'with" dialog.',
+    'Network streams & saved servers',
+    '⋮ → Open stream / server: paste a direct video link (http/https), a '
+        'live stream (rtsp/rtmp/mms) or a NAS / WebDAV link and it plays '
+        'immediately. Tap Save to keep it in the list - your storage, our '
+        'player. Links opened in a browser can also be handed to Max '
+        'Player directly from the "Open with" dialog.',
   ),
   _Item(
     Icons.history,
@@ -394,6 +395,15 @@ const List<_Item> _playerItems = [
         'screen → Playlist), the panel and the previous/next buttons use '
         'only those videos - nothing else sneaks in. Tap a row to jump to '
         'it, the small ✕ to remove one, and » at the top to collapse.',
+  ),
+  _Item(
+    Icons.auto_fix_high_outlined,
+    'Enhance & HDR',
+    'Settings (⚙) → Picture: "Enhance video" switches on a real-time GPU '
+        'boost (sharpen + contrast + colour) that makes ordinary videos '
+        'look crisper. The HDR tone-mapping choice controls how HDR10, '
+        'HDR10+ and Dolby Vision videos (they play via their HDR layer) '
+        'fit your screen - Auto suits most phones.',
   ),
   _Item(
     Icons.fullscreen,

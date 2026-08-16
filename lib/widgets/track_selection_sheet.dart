@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart' hide VideoTrack;
+
 import '../state/theme_state.dart';
 import '../utils/ai_subtitles.dart';
 
@@ -27,6 +28,10 @@ class TrackSelectionSheet extends StatelessWidget {
   }) {
     return showModalBottomSheet(
       context: context,
+      // v33: without isScrollControlled the sheet is capped at half the
+      // screen - on small/old phones the subtitle list (with the karaoke
+      // and Generate-AI rows) was cut off ("does not fully open").
+      isScrollControlled: true,
       backgroundColor: _surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -39,37 +44,42 @@ class TrackSelectionSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 10),
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
-            child: Text(
-              isSubtitle ? 'Subtitles' : 'Audio track',
-              style: TextStyle(
-                color: _accent,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+              child: Text(
+                isSubtitle ? 'Subtitles' : 'Audio track',
+                style: TextStyle(
+                  color: _accent,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-          ),
-          Flexible(
-            child: isSubtitle ? _subtitleList(context) : _audioList(context),
-          ),
-          const SizedBox(height: 8),
-        ],
+            Flexible(
+              child: isSubtitle ? _subtitleList(context) : _audioList(context),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
@@ -85,8 +95,10 @@ class TrackSelectionSheet extends StatelessWidget {
     if (list.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(20),
-        child: Text('No audio tracks found',
-            style: TextStyle(color: Colors.white38)),
+        child: Text(
+          'No audio tracks found',
+          style: TextStyle(color: Colors.white38),
+        ),
       );
     }
     return ListView(
@@ -132,8 +144,11 @@ class TrackSelectionSheet extends StatelessWidget {
         // after the one-time model download.
         ListTile(
           dense: true,
-          leading: Icon(Icons.auto_awesome,
-              size: 20, color: TrackSelectionSheet._accent),
+          leading: Icon(
+            Icons.auto_awesome,
+            size: 20,
+            color: TrackSelectionSheet._accent,
+          ),
           title: const Text(
             'Generate with AI ✨',
             style: TextStyle(
@@ -147,8 +162,7 @@ class TrackSelectionSheet extends StatelessWidget {
             style: TextStyle(color: Colors.white38, fontSize: 12),
           ),
           onTap: () {
-            final rootCtx =
-                Navigator.of(context, rootNavigator: true).context;
+            final rootCtx = Navigator.of(context, rootNavigator: true).context;
             Navigator.of(context).pop();
             AiSubtitleRunner.start(rootCtx, player);
           },
@@ -194,8 +208,7 @@ class _TrackTile extends StatelessWidget {
       leading: SizedBox(
         width: 24,
         child: selected
-            ? Icon(Icons.check,
-                size: 18, color: TrackSelectionSheet._accent)
+            ? Icon(Icons.check, size: 18, color: TrackSelectionSheet._accent)
             : null,
       ),
       title: Text(
@@ -209,8 +222,10 @@ class _TrackTile extends StatelessWidget {
         ),
       ),
       subtitle: (detail != null && detail!.isNotEmpty)
-          ? Text(detail!,
-              style: const TextStyle(color: Colors.white38, fontSize: 12))
+          ? Text(
+              detail!,
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
+            )
           : null,
     );
   }

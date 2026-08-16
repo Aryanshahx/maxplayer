@@ -960,6 +960,7 @@ class MainActivity : FlutterActivity() {
         out["audioCodec"] = null
         out["audioChannels"] = 0
         out["audioSampleRate"] = 0
+        out["hdr"] = "sdr"
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(path)
@@ -977,6 +978,23 @@ class MainActivity : FlutterActivity() {
                     out["codec"] = friendlyCodec(mime)
                     if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
                         out["frameRate"] = format.getInteger(MediaFormat.KEY_FRAME_RATE)
+                    }
+                    // v32: dynamic-range detection for the info sheet.
+                    // Dolby Vision has no licensed pipeline here - mpv plays
+                    // its HDR10-compatible fallback, which the Dart label
+                    // communicates. Dolby files report mime
+                    // "video/dolby-vision" (dvhe/dvav) via MediaExtractor.
+                    out["hdr"] = when {
+                        mime == "video/dolby-vision" -> "dolby-vision"
+                        format.containsKey("hdr10-plus-info") -> "hdr10+"
+                        format.containsKey("hdr-static-info") -> "hdr10"
+                        format.containsKey(MediaFormat.KEY_COLOR_TRANSFER) ->
+                            when (format.getInteger(MediaFormat.KEY_COLOR_TRANSFER)) {
+                                6 -> "hdr10" // MediaFormat.COLOR_TRANSFER_ST2084 (PQ)
+                                7 -> "hlg"   // MediaFormat.COLOR_TRANSFER_HLG
+                                else -> "sdr"
+                            }
+                        else -> "sdr"
                     }
                     videoDone = true
                 } else if (!audioDone && mime.startsWith("audio/")) {

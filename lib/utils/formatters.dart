@@ -20,6 +20,18 @@ String formatDuration(Duration? d) {
   return '$m:${s.toString().padLeft(2, '0')}';
 }
 
+/// v32: human label for the HDR format detected natively. Returns null for
+/// SDR/unknown so the info sheet can stay quiet on plain files. Dolby
+/// Vision is rendered through its HDR10-compatible base layer - there is
+/// no licensed DV pipeline on this engine, so the label says so honestly.
+String? hdrLabelFor(String? hdr) => switch (hdr) {
+  'hdr10' => 'HDR10',
+  'hdr10+' => 'HDR10+',
+  'hlg' => 'HLG',
+  'dolby-vision' => 'Dolby Vision (HDR mode)',
+  _ => null,
+};
+
 /// Compact watch-time totals for the stats screen ("2h 15m", "45m", "30s").
 String formatWatchTime(int seconds) {
   if (seconds < 60) return '${seconds}s';

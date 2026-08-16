@@ -76,7 +76,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     BoxFit.fill, // 4:3 - frame forced to classic TV
     BoxFit.none, // Original - pixels 1:1, may overflow
   ];
-  static const List<double?> _fitAspects = [null, null, null, 16 / 9, 4 / 3, null];
+  static const List<double?> _fitAspects = [
+    null,
+    null,
+    null,
+    16 / 9,
+    4 / 3,
+    null,
+  ];
   static const List<String> _fitNames = [
     'Fit',
     'Crop',
@@ -196,6 +203,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     // v21: push the playback-extras settings into the player state.
     unawaited(widget.player.setVolumeBoost200(s.volumeBoost200));
     unawaited(widget.player.setVolumeLeveling(s.volumeLeveling));
+    // v32: picture settings - HDR tone-mapping curve + Enhance shader.
+    unawaited(widget.player.setToneMapping(s.toneMapping));
+    unawaited(widget.player.setEnhanceVideo(s.enhanceVideo));
     _applyKaraokeSubtitleVisibility(s);
     _startHideTimer();
   }
@@ -417,19 +427,30 @@ class _PlayerScreenState extends State<PlayerScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetContext) {
-        Widget item(IconData icon, String label,
-            {String? sub, bool active = false, VoidCallback? onTap}) {
+        Widget item(
+          IconData icon,
+          String label, {
+          String? sub,
+          bool active = false,
+          VoidCallback? onTap,
+        }) {
           return ListTile(
-            leading: Icon(icon,
-                color: active ? themeState.accent : Colors.white70),
-            title: Text(label,
-                style: TextStyle(
-                    color: active ? themeState.accent : Colors.white)),
+            leading: Icon(
+              icon,
+              color: active ? themeState.accent : Colors.white70,
+            ),
+            title: Text(
+              label,
+              style: TextStyle(
+                color: active ? themeState.accent : Colors.white,
+              ),
+            ),
             subtitle: sub == null
                 ? null
-                : Text(sub,
-                    style: const TextStyle(
-                        color: Colors.white54, fontSize: 12)),
+                : Text(
+                    sub,
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
             trailing: active
                 ? Icon(Icons.check, color: themeState.accent)
                 : null,
@@ -464,22 +485,28 @@ class _PlayerScreenState extends State<PlayerScreen>
                         ? 'Sleep timer'
                         : 'Sleep timer: stops in $label',
                     style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600),
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   for (final mins in const [15, 30, 45, 60])
-                    item(Icons.bedtime_outlined, '$mins minutes',
-                        active: label == '$mins min',
-                        onTap: () => player.setSleepTimer(
-                            forDuration: Duration(minutes: mins))),
-                  item(Icons.movie_outlined, 'Until end of this video',
-                      active: label == 'end of video',
-                      onTap: () =>
-                          player.setSleepTimer(atEndOfVideo: true)),
-                  item(Icons.close, 'Off',
-                      onTap: player.cancelSleepTimer),
+                    item(
+                      Icons.bedtime_outlined,
+                      '$mins minutes',
+                      active: label == '$mins min',
+                      onTap: () => player.setSleepTimer(
+                        forDuration: Duration(minutes: mins),
+                      ),
+                    ),
+                  item(
+                    Icons.movie_outlined,
+                    'Until end of this video',
+                    active: label == 'end of video',
+                    onTap: () => player.setSleepTimer(atEndOfVideo: true),
+                  ),
+                  item(Icons.close, 'Off', onTap: player.cancelSleepTimer),
                   const SizedBox(height: 8),
                 ],
               );
@@ -579,12 +606,12 @@ class _PlayerScreenState extends State<PlayerScreen>
           final rightHalf = _focalStart.dx > _gestureWidth / 2;
           if (rightHalf && _settings.volumeSwipe) {
             _scaleMode = _ScaleMode.volume;
-            _lastVolPct = (widget.player.isMuted
-                    ? 0.0
-                    : widget.player.volume * 100)
-                .round();
-            _dragStartValue =
-                widget.player.isMuted ? 0.0 : widget.player.volume;
+            _lastVolPct =
+                (widget.player.isMuted ? 0.0 : widget.player.volume * 100)
+                    .round();
+            _dragStartValue = widget.player.isMuted
+                ? 0.0
+                : widget.player.volume;
           } else if (!rightHalf && _settings.brightnessSwipe) {
             _scaleMode = _ScaleMode.brightness;
             _dragStartValue = widget.player.brightness;
@@ -628,9 +655,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final dur = widget.player.duration;
     if (dur <= Duration.zero) return;
     final offsetSec = _dragAccum.dx / _gestureWidth * 90.0;
-    final targetMs =
-        (_seekBasePos.inMilliseconds + (offsetSec * 1000).round())
-            .clamp(0, dur.inMilliseconds);
+    final targetMs = (_seekBasePos.inMilliseconds + (offsetSec * 1000).round())
+        .clamp(0, dur.inMilliseconds);
     final target = Duration(milliseconds: targetMs);
     _seekTarget = target;
     final diffMs = targetMs - _seekBasePos.inMilliseconds;
@@ -732,8 +758,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _openCast() async {
     final track = widget.player.currentTrack;
     if (track == null) {
-      _showIndicator('Nothing to cast - open a video first',
-          Icons.videocam_off_outlined);
+      _showIndicator(
+        'Nothing to cast - open a video first',
+        Icons.videocam_off_outlined,
+      );
       return;
     }
     // Offer AI-generated subtitles to the TV when they exist on disk.
@@ -807,8 +835,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                       onDoubleTap: _locked ? null : _onDoubleTap,
                       onLongPressStart: _locked ? null : _onLongPressStart,
                       onLongPressEnd: _locked ? null : _onLongPressEnd,
-                      onScaleStart:
-                          _locked ? (_) => _showLockHint() : _onScaleStart,
+                      onScaleStart: _locked
+                          ? (_) => _showLockHint()
+                          : _onScaleStart,
                       onScaleUpdate: _locked ? null : _onScaleUpdate,
                       onScaleEnd: _locked ? null : _onScaleEnd,
                       child: Stack(
@@ -849,9 +878,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                                             // normal subs).
                                             subtitleViewConfiguration:
                                                 SubtitleViewConfiguration(
-                                              visible:
-                                                  !_settings.karaokeSubs,
-                                            ),
+                                                  visible:
+                                                      !_settings.karaokeSubs,
+                                                ),
                                           ),
                                         )
                                       : const Text(
@@ -906,9 +935,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                       color: Colors.black.withValues(
                                         alpha: 0.72,
                                       ),
-                                      borderRadius: BorderRadius.circular(
-                                        12,
-                                      ),
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
@@ -1009,13 +1036,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                             top: 0,
                             bottom: 0,
                             child: IgnorePointer(
-                              ignoring: !(_controlsVisible &&
-                                  !_isPip &&
-                                  !_locked &&
-                                  _settings.lockButton &&
-                                  player.currentTrack != null),
+                              ignoring:
+                                  !(_controlsVisible &&
+                                      !_isPip &&
+                                      !_locked &&
+                                      _settings.lockButton &&
+                                      player.currentTrack != null),
                               child: AnimatedOpacity(
-                                opacity: (_controlsVisible &&
+                                opacity:
+                                    (_controlsVisible &&
                                         !_isPip &&
                                         !_locked &&
                                         _settings.lockButton &&
@@ -1080,16 +1109,22 @@ class _PlayerScreenState extends State<PlayerScreen>
                                       ),
                                     ),
                                     padding: const EdgeInsets.fromLTRB(
-                                        2, 2, 2, 14),
+                                      2,
+                                      2,
+                                      2,
+                                      14,
+                                    ),
                                     child: Row(
                                       children: [
                                         IconButton(
                                           tooltip: 'Back',
                                           // v26: player buttons follow the
                                           // picked theme colour.
-                                          icon: Icon(Icons.arrow_back,
-                                              size: 22,
-                                              color: themeState.accent),
+                                          icon: Icon(
+                                            Icons.arrow_back,
+                                            size: 22,
+                                            color: themeState.accent,
+                                          ),
                                           onPressed: () {
                                             _onUserInteraction();
                                             Navigator.of(context).maybePop();
@@ -1102,59 +1137,53 @@ class _PlayerScreenState extends State<PlayerScreen>
                                               // v22: while a sleep timer
                                               // runs, show the remaining
                                               // time right under the title.
-                                              final countdown = player
-                                                  .sleepTimerCountdown;
+                                              final countdown =
+                                                  player.sleepTimerCountdown;
                                               return Column(
-                                                mainAxisSize:
-                                                    MainAxisSize.min,
+                                                mainAxisSize: MainAxisSize.min,
                                                 crossAxisAlignment:
-                                                    CrossAxisAlignment
-                                                        .start,
+                                                    CrossAxisAlignment.start,
                                                 children: [
                                                   _MarqueeTitle(
-                                                    player.currentTrack
+                                                    player
+                                                            .currentTrack
                                                             ?.title ??
                                                         'Max Player',
                                                     key: ValueKey(
-                                                      player.currentTrack
-                                                          ?.path,
+                                                      player.currentTrack?.path,
                                                     ),
                                                   ),
                                                   if (countdown != null)
                                                     Padding(
                                                       padding:
-                                                          const EdgeInsets
-                                                              .only(top: 2),
+                                                          const EdgeInsets.only(
+                                                            top: 2,
+                                                          ),
                                                       child: Row(
                                                         mainAxisSize:
-                                                            MainAxisSize
-                                                                .min,
+                                                            MainAxisSize.min,
                                                         children: [
                                                           Icon(
                                                             Icons
                                                                 .bedtime_outlined,
                                                             size: 11,
-                                                            color:
-                                                                themeState
-                                                                    .accent,
+                                                            color: themeState
+                                                                .accent,
                                                           ),
                                                           const SizedBox(
-                                                              width: 4),
+                                                            width: 4,
+                                                          ),
                                                           Text(
-                                                            countdown ==
-                                                                    'end of video'
+                                                            countdown == 'end of video'
                                                                 ? 'Sleep: stops at end of video'
                                                                 : 'Sleep in $countdown',
-                                                            style:
-                                                                TextStyle(
-                                                              fontSize:
-                                                                  10.5,
+                                                            style: TextStyle(
+                                                              fontSize: 10.5,
                                                               fontWeight:
                                                                   FontWeight
                                                                       .w600,
-                                                              color:
-                                                                  themeState
-                                                                      .accent,
+                                                              color: themeState
+                                                                  .accent,
                                                             ),
                                                           ),
                                                         ],
@@ -1169,9 +1198,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                                         IconButton(
                                           tooltip: 'Player settings',
                                           icon: Icon(
-                                              Icons.settings_outlined,
-                                              size: 22,
-                                              color: themeState.accent),
+                                            Icons.settings_outlined,
+                                            size: 22,
+                                            color: themeState.accent,
+                                          ),
                                           onPressed: () {
                                             _onUserInteraction();
                                             _openSettings();
@@ -1203,10 +1233,12 @@ class _PlayerScreenState extends State<PlayerScreen>
                                 animation: widget.player,
                                 builder: (context, _) {
                                   final at = widget.player.skipIntroAt;
-                                  if (at == null) return const SizedBox.shrink();
+                                  if (at == null) {
+                                    return const SizedBox.shrink();
+                                  }
                                   final pos = widget.player.position;
-                                  final untimely = pos >=
-                                          at - const Duration(seconds: 1) ||
+                                  final untimely =
+                                      pos >= at - const Duration(seconds: 1) ||
                                       pos > const Duration(minutes: 10);
                                   if (_skipChipDismissedFor == at || untimely) {
                                     return const SizedBox.shrink();
@@ -1218,27 +1250,36 @@ class _PlayerScreenState extends State<PlayerScreen>
                                       onTap: () {
                                         widget.player.seek(at);
                                         setState(
-                                            () => _skipChipDismissedFor = at);
+                                          () => _skipChipDismissedFor = at,
+                                        );
                                         _onUserInteraction();
                                       },
                                       child: Container(
                                         padding: const EdgeInsets.fromLTRB(
-                                            12, 8, 8, 8),
+                                          12,
+                                          8,
+                                          8,
+                                          8,
+                                        ),
                                         decoration: BoxDecoration(
                                           color: const Color(0xF2152026),
-                                          borderRadius:
-                                              BorderRadius.circular(20),
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
                                           border: Border.all(
-                                            color: themeState.accent
-                                                .withValues(alpha: 0.65),
+                                            color: themeState.accent.withValues(
+                                              alpha: 0.65,
+                                            ),
                                           ),
                                         ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Icon(Icons.fast_forward,
-                                                size: 16,
-                                                color: themeState.accent),
+                                            Icon(
+                                              Icons.fast_forward,
+                                              size: 16,
+                                              color: themeState.accent,
+                                            ),
                                             const SizedBox(width: 6),
                                             Text(
                                               'Skip to ${formatDuration(at)}',
@@ -1250,13 +1291,17 @@ class _PlayerScreenState extends State<PlayerScreen>
                                             ),
                                             const SizedBox(width: 4),
                                             GestureDetector(
-                                              onTap: () => setState(() =>
-                                                  _skipChipDismissedFor = at),
+                                              onTap: () => setState(
+                                                () =>
+                                                    _skipChipDismissedFor = at,
+                                              ),
                                               child: const Padding(
                                                 padding: EdgeInsets.all(4),
-                                                child: Icon(Icons.close,
-                                                    size: 14,
-                                                    color: Colors.white54),
+                                                child: Icon(
+                                                  Icons.close,
+                                                  size: 14,
+                                                  color: Colors.white54,
+                                                ),
                                               ),
                                             ),
                                           ],
@@ -1367,8 +1412,11 @@ class _PlayerScreenState extends State<PlayerScreen>
           _topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot'),
         if (_settings.castButton)
           _topMenuItem('cast', Icons.cast_outlined, 'Cast to TV'),
-        _topMenuItem('pip', Icons.picture_in_picture_alt_outlined,
-            'Picture in picture'),
+        _topMenuItem(
+          'pip',
+          Icons.picture_in_picture_alt_outlined,
+          'Picture in picture',
+        ),
         _topMenuItem(
           'sleep',
           Icons.bedtime_outlined,
@@ -1380,8 +1428,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  PopupMenuItem<String> _topMenuItem(
-      String v, IconData icon, String label) {
+  PopupMenuItem<String> _topMenuItem(String v, IconData icon, String label) {
     return PopupMenuItem(
       value: v,
       child: Row(

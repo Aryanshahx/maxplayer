@@ -21,6 +21,11 @@ class VideoMetadata {
   final int? audioChannels;
   final int? audioSampleRate;
 
+  /// v32: detected dynamic range of the video track:
+  /// 'sdr' | 'hdr10' | 'hdr10+' | 'hlg' | 'dolby-vision'.
+  /// Dolby Vision plays via its HDR10-compatible fallback layer.
+  final String? hdr;
+
   const VideoMetadata({
     this.duration,
     this.thumbnailPath,
@@ -32,6 +37,7 @@ class VideoMetadata {
     this.audioCodec,
     this.audioChannels,
     this.audioSampleRate,
+    this.hdr,
   });
 }
 
@@ -173,6 +179,8 @@ class NativeBridge {
         audioCodec: res['audioCodec'] as String?,
         audioChannels: aCh is int && aCh > 0 ? aCh : null,
         audioSampleRate: aRate is int && aRate > 0 ? aRate : null,
+        // v32: 'sdr' | 'hdr10' | 'hdr10+' | 'hlg' | 'dolby-vision'.
+        hdr: res['hdr'] as String?,
       );
     } catch (_) {
       return const VideoMetadata();
@@ -181,8 +189,8 @@ class NativeBridge {
 
   static Future<Map<String, String>> loadSettings() async {
     try {
-      final Map<Object?, Object?>? res =
-          await _channel.invokeMethod<Map<Object?, Object?>>('settingsGetAll');
+      final Map<Object?, Object?>? res = await _channel
+          .invokeMethod<Map<Object?, Object?>>('settingsGetAll');
       if (res == null) return <String, String>{};
       return res.map((k, v) => MapEntry('$k', '$v'));
     } catch (_) {
@@ -226,8 +234,9 @@ class NativeBridge {
   /// Current media volume as 0..1. Falls back to 1.0 when unavailable.
   static Future<double> getMediaVolume() async {
     try {
-      final res =
-          await _channel.invokeMethod<Map<Object?, Object?>>('getMediaVolume');
+      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'getMediaVolume',
+      );
       final level = (res?['level'] as num?)?.toDouble() ?? 1.0;
       final max = (res?['max'] as num?)?.toDouble() ?? 1.0;
       if (max <= 0) return 1.0;
@@ -242,8 +251,9 @@ class NativeBridge {
   /// always reach the phone's true maximum.
   static Future<void> setMediaVolume(double value) async {
     try {
-      await _channel
-          .invokeMethod('setMediaVolume', {'value': value.clamp(0.0, 1.0)});
+      await _channel.invokeMethod('setMediaVolume', {
+        'value': value.clamp(0.0, 1.0),
+      });
     } catch (_) {}
   }
 
@@ -306,8 +316,9 @@ class NativeBridge {
   /// small: MB}; 0 MB means "not downloaded yet".
   static Future<Map<String, int>> aiModelStatus() async {
     try {
-      final res =
-          await _channel.invokeMethod<Map<Object?, Object?>>('aiModelStatus');
+      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'aiModelStatus',
+      );
       if (res == null) return const {};
       return res.map((k, v) => MapEntry('$k', (v as num?)?.toInt() ?? 0));
     } catch (_) {
@@ -327,15 +338,12 @@ class NativeBridge {
     bool translate = false,
   }) async {
     try {
-      return await _channel.invokeMethod<int>(
-        'aiSubtitleGenerate',
-        {
-          'videoPath': videoPath,
-          'model': model,
-          'language': language,
-          'translate': translate,
-        },
-      );
+      return await _channel.invokeMethod<int>('aiSubtitleGenerate', {
+        'videoPath': videoPath,
+        'model': model,
+        'language': language,
+        'translate': translate,
+      });
     } catch (_) {
       return null;
     }
@@ -362,8 +370,9 @@ class NativeBridge {
   /// mpv-captured frame there when Android can't decode one itself.
   static Future<String?> thumbnailPathFor(String path) async {
     try {
-      return await _channel
-          .invokeMethod<String>('thumbnailPathFor', {'path': path});
+      return await _channel.invokeMethod<String>('thumbnailPathFor', {
+        'path': path,
+      });
     } catch (_) {
       return null;
     }
@@ -384,8 +393,9 @@ class NativeBridge {
   /// ({thumbs, strips, temp, models}). Your videos are never included.
   static Future<Map<String, int>> storageReport() async {
     try {
-      final res =
-          await _channel.invokeMethod<Map<Object?, Object?>>('storageReport');
+      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'storageReport',
+      );
       if (res == null) return const {};
       return res.map((k, v) => MapEntry('$k', (v as num?)?.toInt() ?? 0));
     } catch (_) {
@@ -397,8 +407,9 @@ class NativeBridge {
   /// returns the freed bytes. Everything is recreated on demand.
   static Future<int> clearStorage(String kind) async {
     try {
-      final res =
-          await _channel.invokeMethod<int>('clearStorage', {'kind': kind});
+      final res = await _channel.invokeMethod<int>('clearStorage', {
+        'kind': kind,
+      });
       return res ?? 0;
     } catch (_) {
       return 0;
@@ -410,8 +421,9 @@ class NativeBridge {
   /// unavailable (desktop, tests) - the UI hides the graph then.
   static Future<DeviceStorage?> storageTotals() async {
     try {
-      final res =
-          await _channel.invokeMethod<Map<Object?, Object?>>('storageTotals');
+      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'storageTotals',
+      );
       if (res == null) return null;
       final total = (res['total'] as num?)?.toInt() ?? 0;
       final free = (res['free'] as num?)?.toInt() ?? 0;
@@ -439,10 +451,9 @@ class NativeBridge {
   /// proof of possession).
   static Future<bool> confirmDeviceCredential({String? title}) async {
     try {
-      final res = await _channel.invokeMethod<bool>(
-        'confirmDeviceCredential',
-        {'title': title ?? 'Unlock to continue'},
-      );
+      final res = await _channel.invokeMethod<bool>('confirmDeviceCredential', {
+        'title': title ?? 'Unlock to continue',
+      });
       return res == true;
     } catch (_) {
       return false;
@@ -482,8 +493,9 @@ class NativeBridge {
   /// a strip is generated once per file and reused after that.
   static Future<String?> thumbStripEnsure(String path) async {
     try {
-      return await _channel
-          .invokeMethod<String>('thumbStripEnsure', {'path': path});
+      return await _channel.invokeMethod<String>('thumbStripEnsure', {
+        'path': path,
+      });
     } catch (_) {
       return null;
     }

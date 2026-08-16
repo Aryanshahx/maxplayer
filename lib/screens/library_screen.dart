@@ -12,6 +12,8 @@ import '../widgets/about_sheet.dart';
 import '../widgets/display_settings_sheet.dart';
 import '../state/private_vault.dart';
 import '../widgets/mini_player.dart';
+import '../models/saved_server.dart';
+import '../services/native_bridge.dart';
 import '../widgets/cleaner_sheet.dart';
 import '../widgets/playlist_panel.dart';
 import '../widgets/video_picker_sheet.dart';
@@ -517,59 +519,175 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   /// Lets the user paste an http(s)/rtsp/rtmp URL and play it directly.
+  /// v32 BYOS phase A: the stream dialog doubles as the "saved servers"
+  /// list - NAS boxes over WebDAV/HTTP, public share links, IP cameras...
+  /// stored as JSON in the native settings store (no account, no cloud
+  /// lock-in: the user brings the storage, we are the player).
   Future<void> _openStreamDialog() async {
     final controller = TextEditingController();
+    final all = await NativeBridge.loadSettings();
+    var servers = parseServersJson(all[kServersSettingKey]);
+    if (!mounted) return;
+
+    Future<void> persist() =>
+        NativeBridge.saveSetting(kServersSettingKey, serversToJson(servers));
+
+    void snack(String message) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+      );
+    }
+
     final url = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a24),
-        title: const Text(
-          'Open stream URL',
-          style: TextStyle(color: Colors.white),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1a1a24),
+          title: const Text(
+            'Open stream / server',
+            style: TextStyle(color: Colors.white, fontSize: 17),
+          ),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    hintText: 'https:// or rtsp:// ... (WebDAV/NAS links work)',
+                    hintStyle: TextStyle(color: Colors.white38),
+                  ),
+                ),
+                if (servers.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Saved servers',
+                    style: TextStyle(
+                      color: themeState.accent,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 150),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (var i = 0; i < servers.length; i++)
+                          ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              Icons.dns_outlined,
+                              color: themeState.accent,
+                              size: 20,
+                            ),
+                            title: Text(
+                              servers[i].name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13.5,
+                              ),
+                            ),
+                            subtitle: Text(
+                              servers[i].url,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white38,
+                                fontSize: 11,
+                              ),
+                            ),
+                            trailing: IconButton(
+                              tooltip: 'Remove server',
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.white38,
+                                size: 18,
+                              ),
+                              onPressed: () async {
+                                servers = [...servers]..removeAt(i);
+                                await persist();
+                                setDialogState(() {});
+                              },
+                            ),
+                            onTap: () =>
+                                Navigator.of(dialogContext).pop(servers[i].url),
+                          ),
+                      ],
+                    ),
+                  ),
+                ] else
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: Text(
+                      'Tip: press Save to keep a link (NAS, camera, share '
+                      'URL) in this list.',
+                      style: TextStyle(color: Colors.white38, fontSize: 11.5),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton.icon(
+              icon: Icon(
+                Icons.bookmark_add_outlined,
+                size: 18,
+                color: themeState.accent,
+              ),
+              label: const Text('Save'),
+              onPressed: () async {
+                final u = controller.text.trim();
+                if (!_isStreamUrl(u)) {
+                  snack('Enter a valid URL first');
+                  return;
+                }
+                final before = servers.length;
+                servers = addSavedServer(
+                  servers,
+                  SavedServer(name: _serverNameFor(u), url: u),
+                );
+                await persist();
+                setDialogState(() {});
+                snack(
+                  servers.length > before
+                      ? 'Server saved - tap it here any time'
+                      : 'That link is already saved',
+                );
+              },
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: themeState.accent),
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              child: const Text('Play'),
+            ),
+          ],
         ),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: 'https:// or rtsp:// ...',
-            hintStyle: TextStyle(color: Colors.white38),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: themeState.accent),
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(controller.text.trim()),
-            child: const Text('Play'),
-          ),
-        ],
       ),
     );
     if (url == null || url.isEmpty) return;
-    final uri = Uri.tryParse(url);
-    const schemes = {'http', 'https', 'rtsp', 'rtmp', 'mms'};
-    if (uri == null ||
-        !schemes.contains(uri.scheme.toLowerCase()) ||
-        uri.host.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('That does not look like a stream URL'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+    if (!_isStreamUrl(url)) {
+      snack('That does not look like a stream URL');
       return;
     }
+    final uri = Uri.parse(url);
     final title =
         uri.pathSegments.isNotEmpty && uri.pathSegments.last.isNotEmpty
-            ? Uri.decodeComponent(uri.pathSegments.last)
-            : uri.host;
+        ? Uri.decodeComponent(uri.pathSegments.last)
+        : uri.host;
     await widget.player.playStream(url, title);
     if (!mounted) return;
     Navigator.of(context).push(
@@ -1095,4 +1213,24 @@ class _EmptyState extends StatelessWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// v32 BYOS: stream/server URL helpers for the Open stream dialog.
+// ---------------------------------------------------------------------------
+
+bool _isStreamUrl(String url) {
+  final uri = Uri.tryParse(url);
+  const schemes = {'http', 'https', 'rtsp', 'rtmp', 'mms'};
+  return uri != null &&
+      schemes.contains(uri.scheme.toLowerCase()) &&
+      uri.host.isNotEmpty;
+}
+
+String _serverNameFor(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return url;
+  return uri.hasPort && uri.port != 80 && uri.port != 443
+      ? '${uri.host}:${uri.port}'
+      : uri.host;
 }

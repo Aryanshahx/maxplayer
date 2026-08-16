@@ -1,7 +1,7 @@
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+29
+version: 1.0.0+31
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -32,3 +32,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    # Real-time Enhance shader loaded into mpv at runtime (v32).
+    - assets/shaders/
