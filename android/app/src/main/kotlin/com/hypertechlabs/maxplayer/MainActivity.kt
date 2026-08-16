@@ -116,7 +116,9 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        CrashCrumbs.mark(this, "activity_create_begin")
         super.onCreate(savedInstanceState)
+        CrashCrumbs.mark(this, "activity_create_ok")
         handleIncomingIntent(intent)
     }
 
@@ -440,6 +442,13 @@ class MainActivity : FlutterActivity() {
                         result.success(false)
                     }
                 }
+                "crumb" -> {
+                    // v37: startup breadcrumb from Dart - append a stage
+                    // mark to maxplayer_start.log (internal + the
+                    // Android/data folder), survives a dead Dart/engine.
+                    CrashCrumbs.mark(this, call.argument<String>("stage") ?: "unknown")
+                    result.success(true)
+                }
                 "nativeCrashGet" -> {
                     // v34: read the JVM crash report the Application-level
                     // catcher (MaxPlayerApp) wrote after a "has stopped".
@@ -465,6 +474,7 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        CrashCrumbs.mark(this, "channel_ready")
         // Channel is ready: deliver anything that arrived before Dart attached.
         pendingOpenPath?.let {
             channel?.invokeMethod("onOpenVideo", it)

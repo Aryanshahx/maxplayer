@@ -265,7 +265,7 @@ const List<_Item> _homeItems = [
     '⋮ → Display settings lets you: switch between list and grid view, sort '
         'by name / length / date added / size (tap again to flip the '
         'direction), group by first letter or by folder, and change the app\'s '
-        'accent colour from seven swatches - white is the default.',
+        'accent colour from six swatches.',
   ),
   _Item(
     Icons.grid_view_rounded,
@@ -273,16 +273,11 @@ const List<_Item> _homeItems = [
     'Four shortcuts sit under the library search bar: Private folder, '
         'Cleaner, Playlist and Folders. The grid slides away when you '
         'scroll down through your videos and returns when you scroll '
-        'back up. Cleaner scans every cache (app thumbnails, AI '
-        'leftovers, the gallery thumbnail cache), draws graphs of your '
-        'device storage and the reclaimable space, and Clean cache '
-        'frees all caches at once; the largest videos and duplicate '
-        'copies sit below - cache cleaning never touches your videos. '
-        'Playlist shows the current '
-        'playlist: tap + to add videos one by one, or "Build playlist" to '
-        'pick videos and play only them - previous/next then stay inside '
-        'your selection. Folders shows only the videos of one folder; '
-        'clear the chip under the search bar to see everything again.',
+        'back up. Cleaner shows (and frees) the space used by '
+        'thumbnails, temporary AI files and the downloaded AI models - '
+        'your videos are never touched. Playlist shows the current play '
+        'queue. Folders shows only the videos of one folder; clear the '
+        'chip under the search bar to see everything again.',
   ),
   _Item(
     Icons.open_in_new,
@@ -295,12 +290,11 @@ const List<_Item> _homeItems = [
   ),
   _Item(
     Icons.link,
-    'Network streams & saved servers',
-    '⋮ → Open stream / server: paste a direct video link (http/https), a '
-        'live stream (rtsp/rtmp/mms) or a NAS / WebDAV link and it plays '
-        'immediately. Tap Save to keep it in the list - your storage, our '
-        'player. Links opened in a browser can also be handed to Max '
-        'Player directly from the "Open with" dialog.',
+    'Network streams',
+    '⋮ → Open stream URL: paste a direct video link (http/https) or a live '
+        'stream (rtsp/rtmp/mms) and it plays immediately. Links opened in a '
+        'browser can also be handed to Max Player directly from the "Open '
+        'with" dialog.',
   ),
   _Item(
     Icons.history,
@@ -391,19 +385,9 @@ const List<_Item> _playerItems = [
   _Item(
     Icons.queue_music,
     'Playlist / queue',
-    'Opens the playlist panel. When you picked the videos yourself (home '
-        'screen → Playlist), the panel and the previous/next buttons use '
-        'only those videos - nothing else sneaks in. Tap a row to jump to '
-        'it, the small ✕ to remove one, and » at the top to collapse.',
-  ),
-  _Item(
-    Icons.auto_fix_high_outlined,
-    'Enhance & HDR',
-    'Settings (⚙) → Picture: "Enhance video" switches on a real-time GPU '
-        'boost (sharpen + contrast + colour) that makes ordinary videos '
-        'look crisper. The HDR tone-mapping choice controls how HDR10, '
-        'HDR10+ and Dolby Vision videos (they play via their HDR layer) '
-        'fit your screen - Auto suits most phones.',
+    'Opens the side panel with everything queued up. Tap any row to jump to '
+        'that video, the small ✕ to remove one, and the » button at the top '
+        'to collapse the panel again.',
   ),
   _Item(
     Icons.fullscreen,

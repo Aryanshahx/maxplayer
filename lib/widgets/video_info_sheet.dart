@@ -63,102 +63,99 @@ class VideoInfoSheet extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(height: 14),
-              Text(
-                'Video info',
-                style: TextStyle(
-                  color: accent,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Video info',
+              style: TextStyle(
+                color: accent,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
               ),
-              const SizedBox(height: 10),
-              if (track == null)
-                const Text('Nothing is loaded right now',
-                    style: TextStyle(color: Colors.white38))
-              else
-                FutureBuilder<VideoMetadata>(
-                  future: track.path.contains('://')
+            ),
+            const SizedBox(height: 10),
+            if (track == null)
+              const Text('Nothing is loaded right now',
+                  style: TextStyle(color: Colors.white38))
+            else
+              FutureBuilder<VideoMetadata>(
+                future: track.path.contains('://')
+                    ? null
+                    : NativeBridge.fetchMetadata(track.path),
+                builder: (context, snap) {
+                  final meta = snap.data;
+                  final w = meta?.width ?? track.width;
+                  final h = meta?.height ?? track.height;
+                  final sizeBytes =
+                      track.sizeBytes ?? _fileSizeOrNull(track.path);
+                  // v27: container from the file extension (MKV, MP4...).
+                  final isStream = track.path.contains('://');
+                  final container = isStream
                       ? null
-                      : NativeBridge.fetchMetadata(track.path),
-                  builder: (context, snap) {
-                    final meta = snap.data;
-                    final w = meta?.width ?? track.width;
-                    final h = meta?.height ?? track.height;
-                    final sizeBytes =
-                        track.sizeBytes ?? _fileSizeOrNull(track.path);
-                    // v27: container from the file extension (MKV, MP4...).
-                    final isStream = track.path.contains('://');
-                    final container = isStream
-                        ? null
-                        : (track.path.contains('.')
-                            ? track.path.split('.').last.toUpperCase()
-                            : null);
-                    final aspect = (w != null && h != null && w > 0 && h > 0)
-                        ? formatAspectRatio(w, h)
-                        : '';
-                    // v27: "AAC · 2 ch · 48 kHz" style audio summary.
-                    final audioParts = <String>[
-                      if (meta?.audioCodec != null) meta!.audioCodec!,
-                      if (meta?.audioChannels != null)
-                        '${meta!.audioChannels} ch',
-                      if (meta?.audioSampleRate != null)
-                        '${(meta!.audioSampleRate! / 1000).toStringAsFixed(0)} kHz',
-                    ];
-                    final modified =
-                        isStream ? null : _modifiedLabel(track.path);
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _Row('Name', track.title),
-                        _Row('Location', track.path, small: true),
-                        if (container != null) _Row('Format', container),
-                        _Row(
-                          'Resolution',
-                          (w != null && h != null && w > 0)
-                              ? '$w × $h  ·  ${track.qualityLabel ?? ''}'
-                                  '${aspect.isNotEmpty ? '  ·  $aspect' : ''}'
-                              : 'Unknown',
-                        ),
-                        if (meta?.frameRate != null)
-                          _Row('Frame rate', '${meta!.frameRate} fps'),
-                        _Row(
-                            'Duration',
-                            formatDuration(meta?.duration ??
-                                track.duration ??
-                                player.duration)),
-                        _Row(
-                            'File size',
-                            sizeBytes == null
-                                ? 'Unknown'
-                                : formatFileSize(sizeBytes)),
-                        if (modified != null) _Row('Modified', modified),
-                        if (meta?.codec != null)
-                          _Row('Video codec', meta!.codec!.toUpperCase()),
-                        if (hdrLabelFor(meta?.hdr) != null)
-                          _Row('Video range', hdrLabelFor(meta!.hdr)!),
-                        if (audioParts.isNotEmpty)
-                          _Row('Audio', audioParts.join('  ·  ')),
-                        if (meta?.bitrateBps != null && meta!.bitrateBps! > 0)
-                          _Row('Bitrate',
-                              '${(meta.bitrateBps! / 1000000).toStringAsFixed(1)} Mbps'),
-                        _Row('Queue position',
-                            '${player.currentIndex + 1} of ${player.playlist.length}'),
-                      ],
-                    );
-                  },
-                ),
+                      : (track.path.contains('.')
+                          ? track.path.split('.').last.toUpperCase()
+                          : null);
+                  final aspect =
+                      (w != null && h != null && w > 0 && h > 0)
+                          ? formatAspectRatio(w, h)
+                          : '';
+                  // v27: "AAC · 2 ch · 48 kHz" style audio summary.
+                  final audioParts = <String>[
+                    if (meta?.audioCodec != null) meta!.audioCodec!,
+                    if (meta?.audioChannels != null)
+                      '${meta!.audioChannels} ch',
+                    if (meta?.audioSampleRate != null)
+                      '${(meta!.audioSampleRate! / 1000).toStringAsFixed(0)} kHz',
+                  ];
+                  final modified = isStream ? null : _modifiedLabel(track.path);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _Row('Name', track.title),
+                      _Row('Location', track.path, small: true),
+                      if (container != null) _Row('Format', container),
+                      _Row(
+                        'Resolution',
+                        (w != null && h != null && w > 0)
+                            ? '$w × $h  ·  ${track.qualityLabel ?? ''}'
+                                '${aspect.isNotEmpty ? '  ·  $aspect' : ''}'
+                            : 'Unknown',
+                      ),
+                      if (meta?.frameRate != null)
+                        _Row('Frame rate', '${meta!.frameRate} fps'),
+                      _Row(
+                          'Duration',
+                          formatDuration(
+                              meta?.duration ?? track.duration ??
+                                  player.duration)),
+                      _Row('File size', sizeBytes == null
+                          ? 'Unknown'
+                          : formatFileSize(sizeBytes)),
+                      if (modified != null)
+                        _Row('Modified', modified),
+                      if (meta?.codec != null)
+                        _Row('Video codec', meta!.codec!.toUpperCase()),
+                      if (audioParts.isNotEmpty)
+                        _Row('Audio', audioParts.join('  ·  ')),
+                      if (meta?.bitrateBps != null && meta!.bitrateBps! > 0)
+                        _Row('Bitrate',
+                            '${(meta.bitrateBps! / 1000000).toStringAsFixed(1)} Mbps'),
+                      _Row('Queue position',
+                          '${player.currentIndex + 1} of ${player.playlist.length}'),
+                    ],
+                  );
+                },
+              ),
             ],
           ),
         ),

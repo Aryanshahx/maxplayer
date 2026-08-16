@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -304,14 +305,28 @@ class VideoLibraryState extends ChangeNotifier {
     if (isScanning) return;
     permissionDenied = false;
     notifyListeners();
+    unawaited(NativeBridge.crumb('scan_start'));
 
-    final status = await Permission.manageExternalStorage.request();
+    PermissionStatus status;
+    try {
+      status = await Permission.manageExternalStorage.request();
+    } catch (_) {
+      // v37: some skins/builds (Tecno/Infinix/MIUI, Go editions) lack the
+      // "All files access" settings screen entirely, and the request can
+      // blow up instead of returning 'denied'. Never die at app start:
+      // fall back to the existing denied-state UI with a retry button.
+      unawaited(NativeBridge.crumb('scan_permission_threw'));
+      permissionDenied = true;
+      notifyListeners();
+      return;
+    }
     if (!status.isGranted) {
       permissionDenied = true;
       notifyListeners();
       return;
     }
 
+    unawaited(NativeBridge.crumb('scan_granted'));
     folderName = 'Internal storage';
     await _scanDirectory(_internalStorageRoot);
   }

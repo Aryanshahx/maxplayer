@@ -89,8 +89,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 padding: const EdgeInsets.all(32),
                 child: Center(
                   child: CircularProgressIndicator(
-                    color: PlayerSettingsSheet._accent,
-                  ),
+                      color: PlayerSettingsSheet._accent),
                 ),
               )
             else ...[
@@ -100,7 +99,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 label: 'Double-tap sides to seek',
                 subtitle: 'Double-tap left/right edge',
                 value: _settings.doubleTapSeek,
-                onChanged: (v) => _update(_settings.copyWith(doubleTapSeek: v)),
+                onChanged: (v) =>
+                    _update(_settings.copyWith(doubleTapSeek: v)),
                 trailing: _settings.doubleTapSeek
                     ? _MiniDropdown<int>(
                         value: _settings.seekSeconds,
@@ -110,8 +110,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                           15: '15s',
                           30: '30s',
                         },
-                        onChanged: (v) =>
-                            _update(_settings.copyWith(seekSeconds: v ?? 10)),
+                        onChanged: (v) => _update(
+                            _settings.copyWith(seekSeconds: v ?? 10)),
                       )
                     : null,
               ),
@@ -165,9 +165,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                           2.5: '2.5x',
                           3.0: '3x',
                         },
-                        onChanged: (v) => _update(
-                          _settings.copyWith(longPressMultiplier: v ?? 2.0),
-                        ),
+                        onChanged: (v) => _update(_settings.copyWith(
+                            longPressMultiplier: v ?? 2.0)),
                       )
                     : null,
               ),
@@ -184,8 +183,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                         value: _settings.autoHideSeconds,
                         entries: const {3: '3s', 4: '4s', 5: '5s', 6: '6s'},
                         onChanged: (v) => _update(
-                          _settings.copyWith(autoHideSeconds: v ?? 4),
-                        ),
+                            _settings.copyWith(autoHideSeconds: v ?? 4)),
                       )
                     : null,
               ),
@@ -196,59 +194,6 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 value: _settings.resumePlayback,
                 onChanged: (v) =>
                     _update(_settings.copyWith(resumePlayback: v)),
-              ),
-              const _SectionHeader('Picture'),
-              _SwitchTile(
-                icon: Icons.auto_fix_high_outlined,
-                label: 'Enhance video (real-time)',
-                subtitle: 'GPU sharpen + contrast + colour boost',
-                value: _settings.enhanceVideo,
-                onChanged: (v) => _update(_settings.copyWith(enhanceVideo: v)),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 2,
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.hdr_on_outlined,
-                      color: Colors.white70,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 16),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'HDR tone-mapping',
-                            style: TextStyle(color: Colors.white, fontSize: 15),
-                          ),
-                          Text(
-                            'How HDR10/Dolby sources fit your screen',
-                            style: TextStyle(
-                              color: Colors.white38,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    _MiniDropdown<String>(
-                      value: _settings.toneMapping,
-                      entries: const {
-                        'auto': 'Auto',
-                        'mobius': 'Mobius',
-                        'hable': 'Hable',
-                        'bt.2390': 'BT.2390',
-                      },
-                      onChanged: (v) =>
-                          _update(_settings.copyWith(toneMapping: v ?? 'auto')),
-                    ),
-                  ],
-                ),
               ),
               const _SectionHeader('Player buttons'),
               _SwitchTile(
@@ -277,8 +222,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               _SwitchTile(
                 icon: Icons.volume_up,
                 label: 'Volume boost up to 200%',
-                subtitle:
-                    'ON by default - the swipe just continues past '
+                subtitle: 'ON by default - the swipe just continues past '
                     '100% for quiet videos',
                 value: _settings.volumeBoost200,
                 onChanged: (v) =>
@@ -287,8 +231,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               _SwitchTile(
                 icon: Icons.graphic_eq,
                 label: 'Volume leveling',
-                subtitle:
-                    'Steady loudness: soft dialogue and loud '
+                subtitle: 'Steady loudness: soft dialogue and loud '
                     'explosions evened out',
                 value: _settings.volumeLeveling,
                 onChanged: (v) =>
@@ -300,11 +243,11 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               _SwitchTile(
                 icon: Icons.fast_forward,
                 label: 'Skip intro chip',
-                subtitle:
-                    'Offer to jump when subtitles (AI or the video\'s '
+                subtitle: 'Offer to jump when subtitles (AI or the video\'s '
                     'own .srt file) show the dialogue starts later',
                 value: _settings.skipIntroChip,
-                onChanged: (v) => _update(_settings.copyWith(skipIntroChip: v)),
+                onChanged: (v) =>
+                    _update(_settings.copyWith(skipIntroChip: v)),
               ),
             ],
             const SizedBox(height: 8),
@@ -364,15 +307,13 @@ class _SwitchTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
-                ),
+                Text(label,
+                    style:
+                        const TextStyle(color: Colors.white, fontSize: 15)),
                 if (subtitle != null)
-                  Text(
-                    subtitle!,
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
-                  ),
+                  Text(subtitle!,
+                      style: const TextStyle(
+                          color: Colors.white38, fontSize: 12)),
               ],
             ),
           ),

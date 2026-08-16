@@ -522,6 +522,15 @@ class NativeBridge {
       await _channel.invokeMethod('nativeCrashClear');
     } catch (_) {}
   }
+
+  /// v37: startup breadcrumb - appends a stage mark to
+  /// maxplayer_start.log (internal + Android/data). If the app dies early
+  /// on some phone, that file shows the last stage it reached.
+  static Future<void> crumb(String stage) async {
+    try {
+      await _channel.invokeMethod('crumb', {'stage': stage});
+    } catch (_) {}
+  }
 }
 
 /// v31: device internal-storage totals for the cleaner's storage graph.

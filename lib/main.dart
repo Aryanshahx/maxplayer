@@ -28,8 +28,12 @@ void main() {
   // "app closed unexpectedly" becomes debuggable without a PC/logcat.
   runZonedGuarded(() {
     WidgetsFlutterBinding.ensureInitialized();
+    // v37: startup breadcrumbs - maxplayer_start.log (also in Android/
+    // data/...) shows how far a phone gets before dying.
+    unawaited(NativeBridge.crumb('dart_main'));
     // Must be called before any media_kit Player is created.
     MediaKit.ensureInitialized();
+    unawaited(NativeBridge.crumb('mediakit_ok'));
     FlutterError.onError = (details) {
       CrashLog.record(
           'flutter', details.exceptionAsString(), details.stack);
@@ -57,40 +61,57 @@ class MaxPlayerApp extends StatefulWidget {
 
 class _MaxPlayerAppState extends State<MaxPlayerApp> {
   final library = VideoLibraryState();
-  final player = MediaPlayerState();
+
+  // v37: created inside initState under a guard - if the playback engine's
+  // native library can't load on this device, show a readable error screen
+  // instead of dying with "Max Player has stopped" at startup.
+  MediaPlayerState? _player;
+  Object? _playerError;
 
   @override
   void initState() {
     super.initState();
+    try {
+      _player = MediaPlayerState();
+      unawaited(NativeBridge.crumb('player_ok'));
+    } catch (e) {
+      _playerError = e;
+      unawaited(NativeBridge.crumb('player_FAIL: $e'));
+    }
     // App-wide accent color (persisted).
     themeState.load();
-    // v22: the player's fallback for 4K/HDR thumbnails writes the cached
-    // image itself - swap it into the already-built library list so the
-    // tile updates without a rescan.
-    player.onThumbnailCaptured =
-        (videoPath, thumbPath) => library.setThumbnail(videoPath, thumbPath);
-    // "Open with Max Player" from other apps: warm delivery ...
-    NativeBridge.configureCallbacks(
-      onOpenVideo: _openExternalVideo,
-      onOpenVideoFailed: _externalOpenFailed,
-    );
-    // ... and the cold-start case (app launched BY a VIEW intent).
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final initial = await NativeBridge.getInitialOpenVideo();
-      final path = initial['path'];
-      final failed = initial['failed'];
-      if (path != null) {
-        _openExternalVideo(path);
-      } else if (failed != null) {
-        _externalOpenFailed(failed);
-      }
-    });
+    final mp = _player;
+    if (mp != null) {
+      // v22: the player's fallback for 4K/HDR thumbnails writes the cached
+      // image itself - swap it into the already-built library list so the
+      // tile updates without a rescan.
+      mp.onThumbnailCaptured =
+          (videoPath, thumbPath) => library.setThumbnail(videoPath, thumbPath);
+      // "Open with Max Player" from other apps: warm delivery ...
+      NativeBridge.configureCallbacks(
+        onOpenVideo: _openExternalVideo,
+        onOpenVideoFailed: _externalOpenFailed,
+      );
+      // ... and the cold-start case (app launched BY a VIEW intent).
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final initial = await NativeBridge.getInitialOpenVideo();
+        final path = initial['path'];
+        final failed = initial['failed'];
+        if (path != null) {
+          _openExternalVideo(path);
+        } else if (failed != null) {
+          _externalOpenFailed(failed);
+        }
+      });
+    }
   }
 
   /// Plays a video that another app sent us. Local files arrive as real
   /// filesystem paths (resolved natively); http/rtsp-style links are treated
   /// as network streams and handed to libmpv directly.
   Future<void> _openExternalVideo(String path) async {
+    final mp = _player;
+    if (mp == null) return;
     const streamSchemes = {'http', 'https', 'rtsp', 'rtmp', 'mms'};
     final uri = Uri.tryParse(path);
     if (uri != null && streamSchemes.contains(uri.scheme.toLowerCase())) {
@@ -98,7 +119,7 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
           uri.pathSegments.isNotEmpty && uri.pathSegments.last.isNotEmpty
               ? Uri.decodeComponent(uri.pathSegments.last)
               : uri.host;
-      await player.playStream(path, title);
+      await mp.playStream(path, title);
       _navigateToPlayer();
       return;
     }
@@ -118,16 +139,17 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
       width: meta.width,
       height: meta.height,
     );
-    await player.setPlaylistAndPlay([track], 0);
+    await mp.setPlaylistAndPlay([track], 0);
     _navigateToPlayer();
   }
 
   /// Jump straight into the player, replacing an already-open one.
   void _navigateToPlayer() {
     final nav = _navigatorKey.currentState;
-    if (nav == null) return;
+    final mp = _player;
+    if (nav == null || mp == null) return;
     nav.popUntil((route) => route.isFirst);
-    nav.push(MaterialPageRoute(builder: (_) => PlayerScreen(player: player)));
+    nav.push(MaterialPageRoute(builder: (_) => PlayerScreen(player: mp)));
   }
 
   void _externalOpenFailed(String target) {
@@ -142,13 +164,14 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
 
   @override
   void dispose() {
-    player.dispose();
+    _player?.dispose();
     library.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final mp = _player;
     // Rebuild the whole app when the accent color changes.
     return AnimatedBuilder(
       animation: themeState,
@@ -167,9 +190,72 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
               brightness: Brightness.dark,
             ),
           ),
-          home: LibraryScreen(library: library, player: player),
+          home: mp == null
+              ? _StartupFailureScreen(error: _playerError)
+              : LibraryScreen(library: library, player: mp),
         );
       },
+    );
+  }
+}
+
+/// v37: shown if the playback engine itself failed to initialise (e.g. its
+/// native library could not load on this device). Much better than a silent
+/// "has stopped": the reason is visible + copyable, and the startup trace
+/// file pinpoints the exact stage.
+class _StartupFailureScreen extends StatelessWidget {
+  final Object? error;
+
+  const _StartupFailureScreen({this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    final detail = error?.toString() ?? 'unknown error';
+    return Scaffold(
+      backgroundColor: const Color(0xFF0a0a0f),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline,
+                  color: Colors.redAccent, size: 56),
+              const SizedBox(height: 16),
+              const Text(
+                'The video engine failed to start on this phone',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SelectableText(
+                detail,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Please send this text + the file\n'
+                'Android/data/com.hypertechlabs.maxplayer/files/maxplayer_start.log\n'
+                'to the developer.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white38, fontSize: 12.5),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () =>
+                    Clipboard.setData(ClipboardData(text: detail)),
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text('Copy error'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
