@@ -1169,4 +1169,18 @@ void main() {
       expect(await CrashLog.takeLastIncludingNative(), isNull);
     });
   });
+
+  group('v35 tune sheet (subtitles/audio/A-B/karaoke) opens fully', () {
+    test('four rows size sanely in portrait AND landscape', () {
+      // Small portrait phone: compact ~46% open, rows all visible.
+      final portrait = trackSheetInitialSize(4, 800);
+      expect(portrait, greaterThan(0.4));
+      expect(portrait, lessThan(0.6));
+      // Landscape/short screens (where the old half-height sheet cut the
+      // A-B loop and karaoke rows): clamps to 80%, and everything stays
+      // reachable because the sheet scrolls + drags up to 92%.
+      expect(trackSheetInitialSize(4, 380), 0.8);
+      expect(trackSheetInitialSize(4, 320), 0.8);
+    });
+  });
 }

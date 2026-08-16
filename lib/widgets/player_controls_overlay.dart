@@ -204,109 +204,128 @@ class PlayerControlsOverlay extends StatelessWidget {
             : 'Off - tap to mark point A';
     showModalBottomSheet<void>(
       context: context,
+      // v35: THIS is the button that was reported broken ("subtitles,
+      // audio tracks, A-B loop, karaoke - not fully opens in phone"):
+      // without isScrollControlled a bottom sheet is capped at HALF the
+      // screen height, so in landscape (and on small phones) the A-B
+      // loop and karaoke rows were clipped with no way to reach them.
+      // A DraggableScrollableSheet sizes to content, always scrolls,
+      // and drags up to 92% of the screen.
+      isScrollControlled: true,
       backgroundColor: const Color(0xFF1a1a24),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
+      builder: (sheetContext) => DraggableScrollableSheet(
+        initialChildSize: trackSheetInitialSize(
+          4, // handle + subtitles + audio + A-B loop + karaoke rows
+          MediaQuery.of(sheetContext).size.height,
+        ),
+        minChildSize: 0.3,
+        maxChildSize: 0.92,
+        expand: false,
+        builder: (_, scrollController) => SafeArea(
+          top: false,
+          child: ListView(
+            controller: scrollController,
+            children: [
+              const SizedBox(height: 10),
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            ListTile(
-              leading: Icon(
-                player.subtitlesActive
-                    ? Icons.subtitles
-                    : Icons.subtitles_outlined,
-                color: Colors.white70,
+              const SizedBox(height: 8),
+              ListTile(
+                leading: Icon(
+                  player.subtitlesActive
+                      ? Icons.subtitles
+                      : Icons.subtitles_outlined,
+                  color: Colors.white70,
+                ),
+                title: Text(
+                  player.subtitlesActive ? 'Subtitles (on)' : 'Subtitles',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  TrackSelectionSheet.show(context, player, isSubtitle: true);
+                },
               ),
-              title: Text(
-                player.subtitlesActive ? 'Subtitles (on)' : 'Subtitles',
-                style: const TextStyle(color: Colors.white),
+              ListTile(
+                leading: const Icon(
+                  Icons.audiotrack_outlined,
+                  color: Colors.white70,
+                ),
+                title: Text(
+                  player.audioTracks.length > 1
+                      ? 'Audio track (${player.audioTracks.length} available)'
+                      : 'Audio track',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  TrackSelectionSheet.show(context, player, isSubtitle: false);
+                },
               ),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                TrackSelectionSheet.show(context, player, isSubtitle: true);
-              },
-            ),
-            ListTile(
-              leading: const Icon(
-                Icons.audiotrack_outlined,
-                color: Colors.white70,
+              ListTile(
+                leading: Icon(
+                  Icons.repeat_one_outlined,
+                  color: player.abLoopActive
+                      ? themeState.accent
+                      : Colors.white70,
+                ),
+                title: const Text(
+                  'A-B loop',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: Text(
+                  abSubtitle,
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  final msg = player.tapLoopPoint();
+                  ScaffoldMessenger.of(context)
+                    ..clearSnackBars()
+                    ..showSnackBar(
+                      SnackBar(
+                        content: Text(msg),
+                        duration: const Duration(milliseconds: 1400),
+                      ),
+                    );
+                },
               ),
-              title: Text(
-                player.audioTracks.length > 1
-                    ? 'Audio track (${player.audioTracks.length} available)'
-                    : 'Audio track',
-                style: const TextStyle(color: Colors.white),
+              ListTile(
+                leading: Icon(
+                  karaokeOn
+                      ? Icons.closed_caption
+                      : Icons.closed_caption_off_outlined,
+                  color: karaokeOn ? themeState.accent : Colors.white70,
+                ),
+                title: Text(
+                  karaokeOn ? 'Karaoke subtitles (on)' : 'Karaoke subtitles',
+                  style: TextStyle(
+                      color:
+                          karaokeOn ? themeState.accent : Colors.white),
+                ),
+                subtitle: const Text(
+                  'Words light up - other subtitles hide while on',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  onToggleKaraoke();
+                },
               ),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                TrackSelectionSheet.show(context, player, isSubtitle: false);
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.repeat_one_outlined,
-                color: player.abLoopActive
-                    ? themeState.accent
-                    : Colors.white70,
-              ),
-              title: const Text(
-                'A-B loop',
-                style: TextStyle(color: Colors.white),
-              ),
-              subtitle: Text(
-                abSubtitle,
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                final msg = player.tapLoopPoint();
-                ScaffoldMessenger.of(context)
-                  ..clearSnackBars()
-                  ..showSnackBar(
-                    SnackBar(
-                      content: Text(msg),
-                      duration: const Duration(milliseconds: 1400),
-                    ),
-                  );
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                karaokeOn
-                    ? Icons.closed_caption
-                    : Icons.closed_caption_off_outlined,
-                color: karaokeOn ? themeState.accent : Colors.white70,
-              ),
-              title: Text(
-                // v25: karaoke moved here from the ⋮ menu.
-                karaokeOn ? 'Karaoke subtitles (on)' : 'Karaoke subtitles',
-                style: TextStyle(
-                    color:
-                        karaokeOn ? themeState.accent : Colors.white),
-              ),
-              subtitle: const Text(
-                'Words light up - other subtitles hide while on',
-                style: TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                onToggleKaraoke();
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
