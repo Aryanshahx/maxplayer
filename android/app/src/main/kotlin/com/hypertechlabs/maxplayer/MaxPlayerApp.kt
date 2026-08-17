@@ -156,7 +156,8 @@ internal object CrashCrumbs {
         write(context, "  CRASH: ${single.take(300)}\n", append = true)
     }
 
-    private fun write(context: Context, text: String, append: Boolean) {
+    private fun write(context: Context?, text: String, append: Boolean) {
+        if (context == null) return
         try {
             val f = File(context.filesDir, START_FILE)
             if (append) f.appendText(text) else f.writeText(text)
