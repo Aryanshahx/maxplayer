@@ -299,8 +299,10 @@ class VideoLibraryState extends ChangeNotifier {
   // Scanning
   // ---------------------------------------------------------------------------
 
-  /// Requests "All files access", then scans the whole of internal storage
-  /// for videos. Call this again any time to retry after a denial.
+  /// Requests "All files access" (Android 11+) or the classic Storage
+  /// runtime permission (Android 10 and older), then scans the whole of
+  /// internal storage for videos. Call again any time to retry after a
+  /// denial.
   Future<void> scanAllStorage() async {
     if (isScanning) return;
     permissionDenied = false;
@@ -319,6 +321,15 @@ class VideoLibraryState extends ChangeNotifier {
       permissionDenied = true;
       notifyListeners();
       return;
+    }
+    if (!status.isGranted && (await NativeBridge.sdkInt()) < 30) {
+      // v38: Android 10 and older (API < 30) have no "All files access" at
+      // all - the request above resolves to denied FOREVER there (the real
+      // API 27 log: scan_start twice, never scan_granted, even after the
+      // user granted Storage manually). The classic Storage runtime
+      // permission is the correct ask on those versions.
+      unawaited(NativeBridge.crumb('scan_legacy_perm'));
+      status = await Permission.storage.request();
     }
     if (!status.isGranted) {
       permissionDenied = true;

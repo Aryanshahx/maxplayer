@@ -531,6 +531,16 @@ class NativeBridge {
       await _channel.invokeMethod('crumb', {'stage': stage});
     } catch (_) {}
   }
+
+  /// v38: Android API level of the device (0 when unknown - treated as
+  /// "old" by callers so they take the maximally-compatible path).
+  static Future<int> sdkInt() async {
+    try {
+      return await _channel.invokeMethod<int>('sdkInt') ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
 }
 
 /// v31: device internal-storage totals for the cleaner's storage graph.

@@ -1183,4 +1183,20 @@ void main() {
       expect(trackSheetInitialSize(4, 320), 0.8);
     });
   });
+
+  group('v38 enhance decode mode + legacy storage permission', () {
+    test('enhance ON switches to copy-back decode, OFF restores auto', () {
+      // Direct hardware rendering silently skips user shaders (the "not
+      // effective" bug); copy-back routes frames through the shader.
+      expect(MediaPlayerState.enhanceHwdecFor(true), 'mediacodec-copy');
+      expect(MediaPlayerState.enhanceHwdecFor(false), 'auto');
+    });
+
+    test('enhance hwdec constant matches the preference function', () {
+      expect(
+        MediaPlayerState.enhanceHwdecFor(true),
+        MediaPlayerState.kEnhanceHwdec,
+      );
+    });
+  });
 }

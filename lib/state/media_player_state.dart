@@ -386,6 +386,11 @@ class MediaPlayerState extends ChangeNotifier {
       // Head-room for the 200% volume boost + re-apply the current gain /
       // leveling filter for the new file.
       unawaited(plat.setProperty('volume-max', '200'));
+      // v38: keep the Enhance pipeline asserted for every new file.
+      if (_enhanceApplied && _enhanceShaderPath != null) {
+        unawaited(plat.setProperty('glsl-shaders', _enhanceShaderPath!));
+        unawaited(plat.setProperty('hwdec', MediaPlayerState.kEnhanceHwdec));
+      }
       // Force the sub-visibility to be re-pushed for the new file (mpv may
       // reset it at open, while our cache would think it's still applied).
       _appliedSubVisibility = null;
@@ -954,27 +959,59 @@ class MediaPlayerState extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// v32: real-time picture enhancement. The shader is a tiny one-pass
+  /// v32/v38: real-time picture enhancement. The shader is a tiny one-pass
   /// sharpen+contrast+vibrance GLSL hook (assets/shaders/mx_enhance.glsl)
   /// written to a cache file and given to mpv via glsl-shaders. Off simply
   /// clears the list. Any failure (missing shader, old output driver) is
   /// silent - playback continues untouched.
+  ///
+  /// v38 reality check ("video enhance is not effective"): with hardware
+  /// DIRECT rendering the decoder pushes frames straight to the screen and
+  /// user shaders are skipped completely - the toggle did nothing visible.
+  /// Switching to copy-back decode routes every frame through the shader
+  /// pipeline, so the effect is real. mpv itself falls back to software
+  /// decode when a codec cannot copy back, so nothing breaks.
+  static const String kEnhanceHwdec = 'mediacodec-copy';
+
+  /// Pure so tests can pin the decode-mode switch.
+  static String enhanceHwdecFor(bool on) => on ? kEnhanceHwdec : 'auto';
+
+  bool _enhanceApplied = false;
+  String? _enhanceShaderPath;
+
   Future<void> setEnhanceVideo(bool on) async {
     final plat = player.platform;
     if (plat is! NativePlayer) return;
     try {
-      if (!on) {
-        await plat.setProperty('glsl-shaders', '');
-        return;
-      }
-      const asset = 'assets/shaders/mx_enhance.glsl';
-      final src = await rootBundle.loadString(asset);
       final f = File('${Directory.systemTemp.path}/mx_enhance.glsl');
-      if (!f.existsSync() || await f.readAsString() != src) {
-        await f.writeAsString(src, flush: true);
+      if (on) {
+        const asset = 'assets/shaders/mx_enhance.glsl';
+        final src = await rootBundle.loadString(asset);
+        if (!f.existsSync() || await f.readAsString() != src) {
+          await f.writeAsString(src, flush: true);
+        }
+        _enhanceShaderPath = f.path;
       }
-      await plat.setProperty('glsl-shaders', f.path);
-    } catch (_) {}
+      await plat.setProperty('glsl-shaders', on ? (_enhanceShaderPath ?? '') : '');
+      await plat.setProperty('hwdec', enhanceHwdecFor(on));
+    } catch (_) {
+      return;
+    }
+    if (on == _enhanceApplied) return;
+    _enhanceApplied = on;
+    // v38: the decode mode only changes for the NEXT opened file - reload
+    // the current video in place (position + play/pause kept) so toggling
+    // Enhance is visible immediately, not just on the next video.
+    if (playlist.isEmpty || currentTrack == null) return;
+    final pos = player.state.position;
+    final wasPlaying = player.state.playing;
+    await _loadCurrent(autoplay: wasPlaying);
+    if (pos > Duration.zero) {
+      // mpv finishes opening asynchronously; pin the position shortly after.
+      Future<void>.delayed(const Duration(milliseconds: 350), () {
+        player.seek(pos);
+      });
+    }
   }
 
   /// The single writer of mpv's `af` property: equalizer bands + leveling

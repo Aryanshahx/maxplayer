@@ -327,6 +327,12 @@ class MainActivity : FlutterActivity() {
                     val translate = call.argument<Boolean>("translate") ?: false
                     if (videoPath.isNullOrEmpty()) {
                         result.error("bad_args", "videoPath is required", null)
+                    } else if (!Build.SUPPORTED_ABIS.contains("arm64-v8a")) {
+                        // v39: the whisper engine ships arm64-only native
+                        // libraries. On 32-bit phones (POCO C51 & friends)
+                        // decline cleanly BEFORE any model download - Dart
+                        // turns the null job id into the friendly snack.
+                        result.success(null)
                     } else {
                         aiCancelled = false
                         val jobId = ++aiJobCounter
@@ -442,6 +448,7 @@ class MainActivity : FlutterActivity() {
                         result.success(false)
                     }
                 }
+                "sdkInt" -> result.success(Build.VERSION.SDK_INT)
                 "crumb" -> {
                     // v37: startup breadcrumb from Dart - append a stage
                     // mark to maxplayer_start.log (internal + the

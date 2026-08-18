@@ -174,7 +174,11 @@ class AiSubtitleRunner {
     );
     if (!context.mounted) return;
     if (jobId == null) {
-      _snack(context, 'AI engine is not available in this build');
+      _snack(
+        context,
+        'AI subtitles are not available on this phone '
+        '(they need a 64-bit chip)',
+      );
       return;
     }
 

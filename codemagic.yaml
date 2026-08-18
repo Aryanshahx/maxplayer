@@ -40,13 +40,18 @@ workflows:
         script: flutter clean
       - name: Get Flutter packages
         script: flutter pub get
-      - name: Build APK (release, arm64 only)
-        # --target-platform makes the Flutter TOOL package only arm64 engine
-        # + plugin libs (ndk.abiFilters alone doesn't strip the Flutter
-        # artefacts). This is what cut the APK from ~93 MB to ~62 MB.
-        script: flutter build apk --release --target-platform=android-arm64
-      - name: Build AAB for the Play Store (release, arm64 only)
-        script: flutter build appbundle --release --target-platform=android-arm64
+      - name: Build APK (release, ALL CPUs - sideload/WhatsApp build)
+        # v39: universal APK (arm64-v8a + armeabi-v7a + x86_64). A fat APK
+        # is bigger, but sideloaded installs skip Android's ABI check, so
+        # 32-bit-only phones installed the old arm64-only APK fine and then
+        # crashed at start (real log: POCO C51, Android 13). A fat APK just
+        # works everywhere.
+        script: flutter build apk --release
+      - name: Build AAB for the Play Store (release, ALL CPUs)
+        # Play generates per-ABI download splits from the universal bundle,
+        # so every phone still downloads only its own architecture - and
+        # 32-bit devices stop seeing "device isn't compatible".
+        script: flutter build appbundle --release
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
       - build/app/outputs/bundle/release/*.aab

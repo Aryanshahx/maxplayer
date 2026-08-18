@@ -51,13 +51,18 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // APK SIZE: the default Flutter/media_kit build bundles native libs
-        // for FOUR CPU architectures (arm64-v8a, armeabi-v7a, x86, x86_64) -
-        // that alone was ~60 MB of the ~93 MB APK. Every phone from ~2017
-        // onward is arm64-v8a, so shipping just that cuts the APK to ~1/3.
-        // (Also matches the whisper-android AAR, which is arm64-only.)
+        // CPU architectures: arm64 (modern) + armeabi-v7a + x86_64.
+        // v39: a 32-bit-only USERSPACE still exists in 2026 - Android Go
+        // phones (POCO C51/C65, Redmi A-series, even Android 14 Go
+        // devices) plus every Android 7-10 budget phone. The startup
+        // trace from a POCO C51 (Android 13!) showed the arm64-only APK
+        // dying with: Could not find 'libflutter.so'. Looked for:
+        // [armeabi-v7a, armeabi], but only found: [arm64-v8a].
+        // (AI subtitles still need 64-bit - the whisper engine ships an
+        //  arm64-only library; on 32-bit devices playback works normally
+        //  and the AI feature declines gracefully instead of crashing.)
         ndk {
-            abiFilters += "arm64-v8a"
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
     }
 
