@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../app_info.dart';
 import '../models/video_track.dart';
@@ -8,6 +7,7 @@ import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
 import '../state/video_library_state.dart';
 import '../utils/crash_log.dart';
+import '../utils/storage_permission.dart';
 import '../widgets/about_sheet.dart';
 import '../widgets/display_settings_sheet.dart';
 import '../state/private_vault.dart';
@@ -15,8 +15,7 @@ import '../widgets/mini_player.dart';
 import '../models/saved_server.dart';
 import '../services/native_bridge.dart';
 import '../widgets/cleaner_sheet.dart';
-import '../widgets/playlist_panel.dart';
-import '../widgets/video_picker_sheet.dart';
+import '../widgets/playlists_sheet.dart';
 import '../widgets/user_manual_sheet.dart';
 import 'private_screen.dart';
 import '../widgets/video_list_item.dart';
@@ -160,23 +159,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   /// v21: long-press a video -> offer moving it into the Private folder.
   Future<void> _offerHide(VideoTrack track, VideoLibraryState lib) async {
-    // v22: moving a file out of public storage needs the same "All files
-    // access" grant the scanner uses. Ask up-front instead of letting the
-    // move fail with a cryptic snackbar.
-    if (!await Permission.manageExternalStorage.isGranted) {
-      final status = await Permission.manageExternalStorage.request();
+    // v22: moving a file out of public storage needs the same grant the
+    // scanner uses. Ask up-front instead of letting the move fail with a
+    // cryptic snackbar. v40: version-aware via the shared helper - asking
+    // ONLY "All files access" resolved denied FOREVER on Android 10 and
+    // older, so those phones kept re-asking a permission already granted.
+    if (!await ensureStorageAccess()) {
       if (!mounted) return;
-      if (!status.isGranted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Private folder needs "All files access": allow it, then '
-              'long-press the video again',
-            ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Private folder needs storage permission: allow it, then '
+            'long-press the video again',
           ),
-        );
-        return;
-      }
+        ),
+      );
+      return;
     }
     if (!mounted) return;
     showDialog<void>(
@@ -258,141 +256,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
   }
 
-  /// v28 "Playlist" tile: the current play queue in a bottom sheet.
-  /// v29: "Build playlist" creates a queue from videos you SELECT.
-  /// v30: "+" appends videos to the queue; the player shows ONLY these.
-  void _showQueueSheet(VideoLibraryState lib) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: const Color(0xFF1a1a24),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (sheetContext, setSheetState) => SafeArea(
-          child: SizedBox(
-            height: 420,
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    const SizedBox(width: 20),
-                    Expanded(
-                      child: Text(
-                        'Playlist - ${widget.player.playlist.length}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    // v30: "+" appends picked videos to the current queue.
-                    IconButton(
-                      tooltip: 'Add videos',
-                      onPressed: () {
-                        Navigator.of(sheetContext).pop();
-                        _showAppendPicker(lib);
-                      },
-                      icon: Icon(Icons.add, color: themeState.accent),
-                    ),
-                    // Replaces the whole queue and starts playing it now.
-                    TextButton.icon(
-                      onPressed: () {
-                        Navigator.of(sheetContext).pop();
-                        _showPlaylistPicker(lib);
-                      },
-                      icon: Icon(Icons.playlist_add, color: themeState.accent),
-                      label: const Text('Build playlist'),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                ),
-                Expanded(
-                  child: widget.player.playlist.isEmpty
-                      ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(28),
-                            child: Text(
-                              'The playlist is empty - tap + to add videos '
-                              'one by one, or "Build playlist" to pick some '
-                              'and play them right away. The player then '
-                              'shows only these videos.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white54,
-                                height: 1.4,
-                              ),
-                            ),
-                          ),
-                        )
-                      : PlaylistPanel(
-                          playlist: widget.player.playlist,
-                          currentIndex: widget.player.currentIndex,
-                          onPlay: (i) {
-                            widget.player.playTrack(i);
-                            Navigator.of(sheetContext).pop();
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    PlayerScreen(player: widget.player),
-                              ),
-                            );
-                          },
-                          onRemove: (i) {
-                            widget.player.removeFromPlaylist(i);
-                            setSheetState(() {});
-                          },
-                          onClose: () => Navigator.of(sheetContext).pop(),
-                        ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// v29: select videos -> they become the play queue and start playing.
-  Future<void> _showPlaylistPicker(VideoLibraryState lib) async {
-    final selected = await VideoPickerSheet.show(
-      context,
-      lib.videos,
-      title: 'Build a playlist',
-      actionLabel: 'Play',
-    );
-    if (selected == null || selected.isEmpty || !mounted) return;
-    widget.player.setPlaylistAndPlay(selected, 0);
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PlayerScreen(player: widget.player)),
-    );
-  }
-
-  /// v30: "+" in the playlist sheet - appends the picked videos to the
-  /// current queue (duplicates skipped), then reopens the sheet so the
-  /// user sees the new entries; tapping one plays only the playlist.
-  Future<void> _showAppendPicker(VideoLibraryState lib) async {
-    final selected = await VideoPickerSheet.show(
-      context,
-      lib.videos,
-      title: 'Add to playlist',
-      actionLabel: 'Add',
-    );
-    if (selected == null || selected.isEmpty || !mounted) return;
-    final before = widget.player.playlist.length;
-    widget.player.addToPlaylist(selected);
-    final added = widget.player.playlist.length - before;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          added == 0
-              ? 'Those videos are already in the playlist'
-              : 'Added $added video${added == 1 ? '' : 's'} to the playlist',
-        ),
-      ),
-    );
-    _showQueueSheet(lib);
+  /// v40 "Playlists" tile: NAMED, persistent playlists (create by name,
+  /// add videos, play, rename, delete) - they survive app restarts.
+  ///
+  /// Replaces the v28-v30 design: one anonymous in-memory queue shown in a
+  /// sheet with a Build-playlist button. That queue vanished on every
+  /// restart ("playlists are not saving, they disappear after reopening"),
+  /// and the button is gone now (requested: "remove build playlist button,
+  /// add multiple playlists by names"). The player's own side panel still
+  /// shows the now-playing queue inside the player screen.
+  void _showPlaylists(VideoLibraryState lib) {
+    PlaylistsSheet.show(context, library: lib, player: widget.player);
   }
 
   /// v28 "Folders" tile: show only one folder's videos (or everything).
@@ -887,7 +761,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   player: widget.player,
                   library: lib,
                 ),
-                onPlaylist: () => _showQueueSheet(lib),
+                onPlaylist: () => _showPlaylists(lib),
                 onFolders: () => _showFoldersSheet(lib),
               ),
             ),
@@ -1059,7 +933,7 @@ class _QuickTiles extends StatelessWidget {
               Expanded(
                 child: _Tile(
                   Icons.queue_music_outlined,
-                  'Playlist',
+                  'Playlists',
                   accent,
                   onPlaylist,
                 ),

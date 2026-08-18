@@ -855,32 +855,62 @@ class _PlayerScreenState extends State<PlayerScreen>
                                 child: Center(
                                   child: player.currentTrack != null
                                       ? RepaintBoundary(
-                                          child: Video(
-                                            controller: _controller,
-                                            controls: NoVideoControls,
-                                            fit: _fits[_fitIndex],
-                                            // v20: forces the frame to 16:9 /
-                                            // 4:3 in those fit modes; null
-                                            // keeps the video's own ratio.
-                                            aspectRatio: _fitAspects[_fitIndex],
-                                            // v26/v27: karaoke <=> normal
-                                            // subtitles. The engine's own
-                                            // Flutter subtitle layer IS the
-                                            // normal subtitle display on
-                                            // Android (this mpv build does
-                                            // not paint subs into the video
-                                            // frame) - so it must be ON for
-                                            // normal playback and OFF only
-                                            // while karaoke is on (v26: it
-                                            // ignored mpv's hide flag and
-                                            // drew next to karaoke; v27:
-                                            // fully hiding it also hid the
-                                            // normal subs).
-                                            subtitleViewConfiguration:
-                                                SubtitleViewConfiguration(
-                                                  visible:
-                                                      !_settings.karaokeSubs,
+                                          // v40: karaoke now lives INSIDE a
+                                          // Stack sized to the video's own
+                                          // box, at the exact spot mpv's
+                                          // subtitle renderer uses
+                                          // (SubtitleView: bottom-center,
+                                          // 24px above the video edge) -
+                                          // requested: "when we enable
+                                          // karaoke subtitle then show it at
+                                          // the exact place of default or AI
+                                          // generated subtitle". Before, it
+                                          // floated 120px above the SCREEN
+                                          // bottom, near the seek bar.
+                                          child: Stack(
+                                            children: [
+                                              Video(
+                                                controller: _controller,
+                                                controls: NoVideoControls,
+                                                fit: _fits[_fitIndex],
+                                                // v20: forces the frame to
+                                                // 16:9 / 4:3 in those fit
+                                                // modes; null keeps the
+                                                // video's own ratio.
+                                                aspectRatio:
+                                                    _fitAspects[_fitIndex],
+                                                // v26/v27: karaoke <=>
+                                                // normal subtitles. The
+                                                // engine's own Flutter
+                                                // subtitle layer IS the
+                                                // normal subtitle display on
+                                                // Android (this mpv build
+                                                // does not paint subs into
+                                                // the video frame) - so it
+                                                // must be ON for normal
+                                                // playback and OFF only
+                                                // while karaoke is on (v26:
+                                                // it ignored mpv's hide flag
+                                                // and drew next to karaoke;
+                                                // v27: fully hiding it also
+                                                // hid the normal subs).
+                                                subtitleViewConfiguration:
+                                                    SubtitleViewConfiguration(
+                                                      visible: !_settings
+                                                          .karaokeSubs,
+                                                    ),
+                                              ),
+                                              if (_settings.karaokeSubs &&
+                                                  !_isPip)
+                                                Positioned(
+                                                  left: 0,
+                                                  right: 0,
+                                                  bottom: 24,
+                                                  child: KaraokeSubtitle(
+                                                    player: widget.player,
+                                                  ),
                                                 ),
+                                            ],
                                           ),
                                         )
                                       : const Text(
@@ -1214,15 +1244,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                               ),
                             ),
                           ),
-                          // v21: karaoke word-highlight for AI subtitles
-                          // (replaces mpv's own subtitle rendering).
-                          if (_settings.karaokeSubs && !_isPip)
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: 120,
-                              child: KaraokeSubtitle(player: widget.player),
-                            ),
+                          // v21-v39 the karaoke overlay lived here, pinned
+                          // 120px above the screen bottom. v40 moved it
+                          // INTO the video's own box at the exact subtitle
+                          // spot (see the Stack around the Video widget).
                           // v21: "Skip intro" - offered while the AI captions
                           // say the dialogue hasn't started yet.
                           if (_settings.skipIntroChip && !_isPip)

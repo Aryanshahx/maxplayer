@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../models/video_track.dart';
 import '../services/native_bridge.dart';
@@ -11,6 +10,7 @@ import '../state/private_vault.dart';
 import '../state/theme_state.dart';
 import '../state/video_library_state.dart';
 import '../utils/formatters.dart';
+import '../utils/storage_permission.dart';
 import '../widgets/fade_in_image.dart';
 import '../widgets/video_picker_sheet.dart';
 import 'player_screen.dart';
@@ -205,22 +205,22 @@ class _PrivateScreenState extends State<PrivateScreen> {
   }
 
   /// v29: "+" - select library videos and move them into the vault.
-  /// Same "All files access" pre-check as the library's long-press flow.
+  /// v40: the pre-check asked ONLY "All files access", which resolves
+  /// denied FOREVER on Android 10 and older (vivo 1908 API 27) - the
+  /// private folder kept "asking storage permission even though enabled".
+  /// One version-aware ask now, shared with the library scan (v38 logic).
   Future<void> _addVideos() async {
-    if (!await Permission.manageExternalStorage.isGranted) {
-      final status = await Permission.manageExternalStorage.request();
+    if (!await ensureStorageAccess()) {
       if (!mounted) return;
-      if (!status.isGranted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Adding videos needs "All files access": allow it, then '
-              'tap + again',
-            ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Adding videos needs storage permission: allow it, then '
+            'tap + again',
           ),
-        );
-        return;
-      }
+        ),
+      );
+      return;
     }
     if (!mounted) return;
     final selected = await VideoPickerSheet.show(

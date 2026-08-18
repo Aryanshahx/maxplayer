@@ -5,11 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:maxplayer/app_info.dart';
 import 'package:maxplayer/cast/cast_support.dart';
+import 'package:maxplayer/models/playlist.dart';
 import 'package:maxplayer/models/saved_server.dart';
 import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/services/native_bridge.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/player_settings.dart';
+import 'package:maxplayer/state/playlist_store.dart';
 import 'package:maxplayer/state/private_vault.dart';
 import 'package:maxplayer/state/theme_state.dart';
 import 'package:maxplayer/state/video_library_state.dart';
@@ -1197,6 +1199,72 @@ void main() {
         MediaPlayerState.enhanceHwdecFor(true),
         MediaPlayerState.kEnhanceHwdec,
       );
+    });
+  });
+
+  group('v40 named playlists + SD-card scanning', () {
+    test('Playlist json round-trips (persistence format)', () {
+      const pl = Playlist(
+        id: '1712345678901234',
+        name: 'Movies',
+        videoPaths: ['/s/a.mp4', '/s/b.mkv'],
+      );
+      final back = Playlist.fromJson(pl.toJson());
+      expect(back.id, pl.id);
+      expect(back.name, pl.name);
+      expect(back.videoPaths, ['/s/a.mp4', '/s/b.mkv']);
+    });
+
+    test('Playlist json survives junk (missing fields, garbage list)', () {
+      final back = Playlist.fromJson(const {'name': 'Songs'});
+      expect(back.name, 'Songs');
+      expect(back.videoPaths, isEmpty);
+      final withJunk = Playlist.fromJson(const {
+        'id': 'x',
+        'name': 'N',
+        'videoPaths': ['/ok.mp4', 7, null],
+      });
+      expect(withJunk.videoPaths.first, '/ok.mp4');
+      expect(withJunk.videoPaths.length, 3); // garbage stringifies, never throws
+    });
+
+    test('mergePlaylistPaths appends new, skips duplicates, keeps order', () {
+      final merged = mergePlaylistPaths(
+        ['/s/a.mp4', '/s/b.mp4'],
+        ['/s/b.mp4', '/card/c.mp4', '/s/a.mp4'],
+      );
+      expect(merged, ['/s/a.mp4', '/s/b.mp4', '/card/c.mp4']);
+    });
+
+    test('mergePlaylistPaths does not mutate the input list', () {
+      final existing = ['/s/a.mp4'];
+      mergePlaylistPaths(existing, ['/s/b.mp4']);
+      expect(existing.length, 1);
+    });
+
+    test('validatePlaylistName trims, rejects blank/too long, accepts names', () {
+      expect(validatePlaylistName('   '), isNotNull);
+      expect(validatePlaylistName(''), isNotNull);
+      expect(validatePlaylistName('x' * 41), isNotNull);
+      expect(validatePlaylistName('  Movies  '), isNull);
+      expect(validatePlaylistName('Bhakti Songs'), isNull);
+    });
+
+    test('normalizeStorageRoots dedupes, strips slashes, keeps order', () {
+      final roots = normalizeStorageRoots([
+        '/storage/emulated/0/',
+        '/storage/1C4B-9A2F',
+        '/storage/emulated/0', // same as first after slash-strip
+        '',
+        '/',
+        '  /storage/1C4B-9A2F  ', // same as second after trim
+      ]);
+      expect(roots, ['/storage/emulated/0', '/storage/1C4B-9A2F']);
+    });
+
+    test('normalizeStorageRoots falls back to internal storage when empty', () {
+      expect(normalizeStorageRoots(const []), ['/storage/emulated/0']);
+      expect(normalizeStorageRoots(const ['', '/']), ['/storage/emulated/0']);
     });
   });
 }

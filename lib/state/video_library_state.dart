@@ -30,8 +30,29 @@ T _parseEnum<T extends Enum>(List<T> values, String? name, T fallback) {
   return fallback;
 }
 
+/// v40: normalizes the native storage-root list (internal + SD card) for
+/// the scanner: trims, strips trailing slashes, drops blanks/duplicates
+/// and guarantees at least the internal root. Top-level + pure so the
+/// widget test can pin the behavior.
+List<String> normalizeStorageRoots(List<String> raw) {
+  final seen = <String>{};
+  final out = <String>[];
+  for (final r in raw) {
+    var p = r.trim();
+    while (p.endsWith('/') && p.length > 1) {
+      p = p.substring(0, p.length - 1);
+    }
+    if (p.isEmpty || p == '/') continue;
+    if (seen.add(p)) out.add(p);
+  }
+  if (out.isEmpty) out.add('/storage/emulated/0');
+  return out;
+}
+
 /// Mirrors the web app's useVideoLibrary hook, simplified to a single flow:
-/// request storage permission, then scan all of internal storage for videos.
+/// request storage permission, then scan EVERY mounted storage volume for
+/// videos - internal storage AND any SD card (v40; before, only
+/// "/storage/emulated/0/" was walked, so SD-card videos never appeared).
 /// No folder picker - file_picker's Android implementation proved
 /// incompatible with the current AGP 9 / Kotlin 2.3 / Flutter 3.44 toolchain.
 ///
@@ -62,9 +83,7 @@ class VideoLibraryState extends ChangeNotifier {
 
   bool _disposed = false;
 
-  static const String _internalStorageRoot = '/storage/emulated/0/';
-
-  /// Folders under internal storage that are never worth scanning for videos
+  /// Folders under a storage volume that are never worth scanning for videos
   /// (app-private caches, thumbnails, etc) - skipping these keeps the
   /// whole-device scan fast and avoids permission-denied noise.
   static const List<String> _skipDirNames = [
@@ -114,6 +133,20 @@ class VideoLibraryState extends ChangeNotifier {
   int get allVideosCount => _videos.length;
   int get favoriteCount => _favoritePaths.length;
   bool isFavorite(VideoTrack track) => _favoritePaths.contains(track.path);
+
+  /// v40: the UNFILTERED scanned list. The [videos] getter applies
+  /// search/favorites/folder filters, which must never hide videos from a
+  /// picker (Playlists sheet "add videos").
+  List<VideoTrack> get allVideos => List.unmodifiable(_videos);
+
+  /// v40: exact-path lookup in the scanned list (Playlists resolve their
+  /// saved paths here first, gaining durations/thumbnails for free).
+  VideoTrack? findByPath(String path) {
+    for (final v in _videos) {
+      if (v.path == path) return v;
+    }
+    return null;
+  }
 
   int _compareTracks(VideoTrack a, VideoTrack b) {
     int cmp;
@@ -338,8 +371,14 @@ class VideoLibraryState extends ChangeNotifier {
     }
 
     unawaited(NativeBridge.crumb('scan_granted'));
-    folderName = 'Internal storage';
-    await _scanDirectory(_internalStorageRoot);
+    folderName = 'Device storage';
+    // v40: scan EVERY mounted storage volume (internal + SD card, e.g.
+    // "/storage/1C4B-9A2F"). The old code walked only
+    // "/storage/emulated/0/", so videos on SD cards never appeared
+    // ("does not show external storage added on phone like sd cards").
+    await _scanDirectories(
+      normalizeStorageRoots(await NativeBridge.storageRoots()),
+    );
   }
 
   Future<void> rescan() => scanAllStorage();
@@ -358,16 +397,22 @@ class VideoLibraryState extends ChangeNotifier {
     if (hit) notifyListeners();
   }
 
-  Future<void> _scanDirectory(String dirPath) async {
+  /// v40: walks every storage-volume root in [roots] (internal + SD card).
+  /// The same file can surface twice (e.g. an SD card that is ALSO mounted
+  /// under "/storage/emulated/0/..." on some phones) - [seenPaths] dedupes.
+  Future<void> _scanDirectories(List<String> roots) async {
     isScanning = true;
     _videos = [];
     scanProgress = const ScanProgress();
     notifyListeners();
 
-    final dir = Directory(dirPath);
     final foundFiles = <File>[];
-    await for (final entity in _listVideosSkippingJunk(dir)) {
-      foundFiles.add(entity);
+    final seenPaths = <String>{};
+    for (final root in roots) {
+      await for (final entity
+          in _listVideosSkippingJunk(Directory(root))) {
+        if (seenPaths.add(entity.path)) foundFiles.add(entity);
+      }
     }
 
     scanProgress =

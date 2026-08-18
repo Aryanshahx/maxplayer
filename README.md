@@ -20,8 +20,11 @@ Made by **Hyper Tech Labs** (Aryan Shah), Deoria, Uttar Pradesh, India.
   preview strips, AI temp files, gallery cache), draws device-storage
   and reclaimable-space graphs, and frees everything with one
   **Clean cache** button. Largest videos & duplicate copies included.
-- **Playlists** - build a queue from picked videos; the player then
-  stays inside your selection. Append more with the + button.
+- **Playlists** - create any number of named playlists ("Movies",
+  "Songs", ...), add videos to them and play them in order. Saved on the
+  phone - still there when you reopen the app.
+- **Scans every storage** - internal storage AND SD cards (any mounted
+  volume), on Android 7 through 15.
 - **Statistics** - watch-time graphs, day streaks, most-watched videos.
 - **Cleaner library** - folder views, sort/group, list/grid, themes
   (7 accent colours), network streams (http/rtsp/rtmp), DLNA casting.

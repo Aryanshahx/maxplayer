@@ -30,6 +30,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.CancellationSignal
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.StatFs
@@ -125,6 +126,34 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIncomingIntent(intent)
+    }
+
+    /**
+     * v40: absolute roots of EVERY mounted storage volume (internal storage
+     * AND any SD card). The Dart scanner used to walk only
+     * "/storage/emulated/0/", so videos on SD cards never appeared in the
+     * library ("does not show external storage added on phone like sd
+     * cards"). getExternalFilesDirs returns one app folder per volume
+     * ("<root>/Android/data/<pkg>/files"); stripping the app suffix yields
+     * the volume root. Needs no permission and never throws.
+     */
+    private fun storageRoots(): List<String> {
+        val roots = LinkedHashSet<String>()
+        try {
+            @Suppress("DEPRECATION")
+            roots.add(Environment.getExternalStorageDirectory().absolutePath)
+        } catch (_: Throwable) {
+        }
+        try {
+            for (dir in getExternalFilesDirs(null)) {
+                val p = dir?.absolutePath ?: continue
+                val i = p.indexOf("/Android/data/")
+                roots.add(if (i > 0) p.substring(0, i) else p)
+            }
+        } catch (_: Throwable) {
+        }
+        if (roots.isEmpty()) roots.add("/storage/emulated/0")
+        return roots.toList()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -449,6 +478,9 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "sdkInt" -> result.success(Build.VERSION.SDK_INT)
+                // v40: every mounted storage volume root, for the library
+                // scanner (SD cards were invisible before).
+                "storageRoots" -> result.success(storageRoots())
                 "crumb" -> {
                     // v37: startup breadcrumb from Dart - append a stage
                     // mark to maxplayer_start.log (internal + the

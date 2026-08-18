@@ -541,6 +541,23 @@ class NativeBridge {
       return 0;
     }
   }
+
+  /// v40: absolute roots of every mounted storage volume (internal storage
+  /// AND any SD card), so the library scanner can cover all of them. The
+  /// old scanner walked only "/storage/emulated/0/" - videos on SD cards
+  /// never appeared. Falls back to internal storage when the channel is
+  /// missing (tests, very old builds).
+  static Future<List<String>> storageRoots() async {
+    try {
+      final List<Object?>? res =
+          await _channel.invokeMethod<List<Object?>>('storageRoots');
+      if (res == null) return const ['/storage/emulated/0'];
+      final roots = [for (final r in res) if (r != null) '$r'];
+      return roots.isEmpty ? const ['/storage/emulated/0'] : roots;
+    } catch (_) {
+      return const ['/storage/emulated/0'];
+    }
+  }
 }
 
 /// v31: device internal-storage totals for the cleaner's storage graph.

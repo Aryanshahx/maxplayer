@@ -109,7 +109,11 @@ class KaraokeSubtitle extends StatelessWidget {
         ];
         return IgnorePointer(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            // v40: 16px side padding - exactly what media_kit's
+            // SubtitleView uses, so karaoke text wraps at the same width
+            // as default / AI subtitles (the overlay itself is positioned
+            // at the SubtitleView spot by PlayerScreen).
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text.rich(
               TextSpan(children: spans),
               textAlign: TextAlign.center,
