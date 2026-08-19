@@ -436,6 +436,11 @@ class MainActivity : FlutterActivity() {
                         result.success(thumbFileFor(path).absolutePath)
                     }
                 }
+                "cacheDirPath" -> {
+                    // v43 Discover: Dart writes the movie catalogue cache
+                    // (JSON + posters) under <cache>/movies/.
+                    result.success(cacheDir.absolutePath)
+                }
                 "storageReport" -> {
                     // v28 Cleaner tile: sizes of the app's own reclaimable
                     // storage (thumbs / preview strips / AI temp / models).
@@ -895,6 +900,8 @@ class MainActivity : FlutterActivity() {
         out["strips"] = strips
         out["temp"] = temp
         out["models"] = dirSizeBytes(File(filesDir, "models"))
+        // v43: cached movie posters + catalogue JSON (Discover tab).
+        out["movies"] = dirSizeBytes(File(cacheDir, "movies"))
         return out
     }
 
@@ -921,6 +928,14 @@ class MainActivity : FlutterActivity() {
                 val d = File(filesDir, "models")
                 freed += dirSizeBytes(d)
                 d.deleteRecursively()
+            }
+            "movies" -> {
+                // v43: Discover posters + catalogue JSON. Everything is
+                // re-downloaded on demand; nothing of the user's is here.
+                val d = File(cacheDir, "movies")
+                freed += dirSizeBytes(d)
+                d.deleteRecursively()
+                d.mkdirs()
             }
         }
         return freed

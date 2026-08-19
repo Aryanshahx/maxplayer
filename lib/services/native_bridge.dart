@@ -389,6 +389,19 @@ class NativeBridge {
     }
   }
 
+  /// v43 Discover: absolute path of the app's cache directory. The movie
+  /// catalogue (JSON + posters) is stored under `<cache>/movies/`, so
+  /// Android can evict it under storage pressure and the Cleaner can wipe
+  /// it. Null = platform side unavailable (tests/desktop) - Discover then
+  /// runs without a disk cache instead of failing.
+  static Future<String?> cacheDirPath() async {
+    try {
+      return await _channel.invokeMethod<String>('cacheDirPath');
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// v28 Cleaner tile: reclaimable app storage in bytes, split by kind
   /// ({thumbs, strips, temp, models}). Your videos are never included.
   static Future<Map<String, int>> storageReport() async {

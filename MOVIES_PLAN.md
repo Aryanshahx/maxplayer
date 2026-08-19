@@ -217,15 +217,88 @@ file writes, prints `OK` per file.
 
 ---
 
-## 8. Open questions for you
+## 8. How new movies arrive automatically (no app update, no server)
 
-1. **Ratings source** — TMDB only (recommended), or TMDB + IMDb via OMDb on
-   the detail screen (needs a second free key, 1,000/day)?
-2. **TV shows too**, or movies only in v43?
-3. **Discover as an opt-in tab** (recommended, protects the offline identity)
-   or always on?
-4. **Language of the catalogue** — English titles with Indian region defaults
-   (`region=IN`, `language=en-IN`), or Hindi titles for the Bollywood rails?
+Your question: *"how will it automatically fetch new movies?"* — nothing in
+the app is a hardcoded list. Four mechanisms do the work:
+
+**1. Every rail is a live query, not a stored list.**
+`/trending/movie/week`, `/movie/now_playing`, `/discover/movie?...` are
+answered by TMDB at the moment of the call. TMDB's editors and studio feeds
+add new titles, posters and trailers continuously, so the same query returns
+`Coolie` today and whatever releases in October in October. The app ships
+*questions*, not *answers*.
+
+**2. Date windows slide with the calendar.**
+The "New releases" and "Coming soon" rails build their filter from
+`DateTime.now()` on every call:
+
+```dart
+DateWindow recentWindow(DateTime now, {int days = 75}) =>
+    DateWindow(tmdbDate(now.subtract(Duration(days: days))), tmdbDate(now));
+```
+
+So on 19 Aug 2026 that rail asks for `2026-06-05 … 2026-08-19`, and on
+19 Sep 2026 the very same code asks for `2026-07-06 … 2026-09-19`. A phone
+that never updates the app still shows this month's films. (Unit-tested — see
+`v43 discover: new movies arrive without an app update`.)
+
+**3. Stale-while-revalidate caching — instant screen, quiet refresh.**
+Each rail has a TTL (Trending 6 h, releases/cinema 12 h, evergreen rails
+24 h, Top rated 3 days, movie details 7 days). Opening Discover:
+
+```
+read <cache>/movies/json/<hash>.json  →  paint immediately (even offline)
+        │
+        └── older than the TTL?  →  fetch in the background  →  swap in + re-cache
+```
+
+Result: no spinner on a repeat visit, at most one request per rail per TTL no
+matter how often the app is opened, and a working catalogue with the Wi-Fi
+off. Pull-to-refresh sets `force: true` and re-fetches everything.
+
+**4. "NEW" ribbons without any push server.**
+Ids returned by a rail are compared against a persisted `movies.seen.v1` set
+(capped at 800 ids). Anything unseen gets a ribbon; the set updates after the
+fetch. First-ever run marks nothing new. No FCM, no background service, no
+battery cost — the check rides along with the normal refresh.
+
+**When does the refresh run?** On opening the Discover tab, on pull-to-refresh
+and when a rail's TTL expires while you are in the tab. Deliberately *not* a
+periodic `WorkManager` job: background data on a metered Indian connection is
+exactly the kind of thing that gets a "battery drain" one-star, and it buys
+nothing for a screen the user only sees when they open it.
+
+### Status: shipped in this branch (data layer, step v43a)
+
+| File | What it does |
+|---|---|
+| `lib/models/movie.dart` | `Movie`, `MovieDetails`, `MovieVideo`, `CastMember` + tolerant parsers, trailer ranking |
+| `lib/services/tmdb_api.dart` | `dart:io` TMDB client, sliding date windows, `--dart-define` key, readable errors |
+| `lib/services/movie_cache.dart` | `<cache>/movies/` JSON + poster cache, 4-at-a-time downloads, 80 MB LRU cap |
+| `lib/state/movies_state.dart` | rail catalogue, stale-while-revalidate, paging, NEW ribbons, watchlist, opt-in flag |
+| `MainActivity.kt` | new `cacheDirPath`; Cleaner now reports/clears the `movies` bucket |
+| `test/widget_test.dart` | +20 pure-Dart tests (parsing, windows, URI building, cache policy) |
+
+Next steps are the UI (`movies_screen`, `movie_detail_screen`) and the in-app
+YouTube trailer player.
+
+## 9. Decisions taken
+
+* Ratings: **TMDB only** (labelled "TMDB"), no OMDb, no IMDb scraping.
+* **Movies only** — no TV shows in v43.
+* Discover is an **opt-in tab** with a one-time consent card.
+* Catalogue language: **`language=en-IN`, `region=IN`** — English titles and
+  descriptions with Indian release dates and cinema listings, so Bollywood
+  rows read "Jawan" rather than "जवान" and "In cinemas now" means *here*. One
+  constant (`TmdbApi.language`) flips it later if you want Hindi text.
+
+## 10. Open questions for you
+
+1. ~~Ratings source~~ — decided: TMDB only.
+2. ~~TV shows~~ — decided: movies only.
+3. ~~Opt-in tab~~ — decided: yes.
+4. ~~Catalogue language~~ — decided for you: `en-IN` + `region=IN` (see §9).
 5. Do you want the **"In your library — Play"** match, and should Discover
    also be able to **fetch posters/metadata for the local files** you already
    have (Plex-style library artwork)? That is the biggest win in this whole

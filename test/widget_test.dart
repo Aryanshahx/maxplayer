@@ -23,6 +23,10 @@ import 'package:maxplayer/utils/crash_log.dart';
 import 'package:maxplayer/utils/formatters.dart';
 import 'package:maxplayer/utils/privacy_policy.dart';
 import 'package:maxplayer/utils/sha256.dart';
+import 'package:maxplayer/models/movie.dart';
+import 'package:maxplayer/services/movie_cache.dart';
+import 'package:maxplayer/services/tmdb_api.dart';
+import 'package:maxplayer/state/movies_state.dart';
 import 'package:maxplayer/utils/srt.dart';
 import 'package:maxplayer/widgets/karaoke_subtitle.dart';
 import 'package:maxplayer/widgets/about_sheet.dart';
@@ -1326,6 +1330,258 @@ void main() {
     test('installable on Android TV / non-touch devices', () {
       expect(manifest.contains('android.hardware.touchscreen'), isTrue);
       expect(manifest.contains('android:required="false"'), isTrue);
+    });
+  });
+
+  group('v43 discover: TMDB catalogue parsing', () {
+    test('a half-filled list row still parses', () {
+      final m = Movie.fromJson(<String, Object?>{
+        'id': 27205,
+        'title': 'Inception',
+        'vote_average': 8, // int where a double is documented
+        'vote_count': 36000,
+        'release_date': '2010-07-15',
+        'genre_ids': [28, 878],
+        'poster_path': '/abc.jpg',
+        'backdrop_path': null,
+        'original_language': 'en',
+      });
+      expect(m.id, 27205);
+      expect(m.title, 'Inception');
+      expect(m.year, '2010');
+      expect(m.voteAverage, 8.0);
+      expect(m.genreIds, [28, 878]);
+      expect(m.posterPath, '/abc.jpg');
+      expect(m.backdropPath, isNull);
+      expect(m.overview, '');
+    });
+
+    test('ratings hide until enough votes exist', () {
+      const shaky = Movie(id: 1, title: 'x', voteAverage: 10, voteCount: 1);
+      const solid = Movie(id: 2, title: 'y', voteAverage: 8.44, voteCount: 900);
+      expect(shaky.hasRating, isFalse);
+      expect(shaky.ratingText, '-');
+      expect(solid.hasRating, isTrue);
+      expect(solid.ratingText, '8.4');
+    });
+
+    test('vote counts shorten for the badge', () {
+      expect(formatVotes(742), '742');
+      expect(formatVotes(1200), '1.2K');
+      expect(formatVotes(36000), '36K');
+      expect(formatVotes(2400000), '2.4M');
+    });
+
+    test('movie survives a cache round trip', () {
+      const before = Movie(
+        id: 9,
+        title: 'Round Trip',
+        voteAverage: 7.25,
+        voteCount: 120,
+        releaseDate: '2024-01-02',
+        genreIds: [35],
+        posterPath: '/p.jpg',
+      );
+      final after = Movie.fromJson(before.toJson());
+      expect(after.id, before.id);
+      expect(after.title, before.title);
+      expect(after.voteAverage, before.voteAverage);
+      expect(after.genreIds, before.genreIds);
+      expect(after.posterPath, before.posterPath);
+    });
+
+    test('the official trailer wins over teasers and non-YouTube clips', () {
+      final videos = <MovieVideo>[
+        const MovieVideo(key: 'a', site: 'YouTube', type: 'Teaser', official: true),
+        const MovieVideo(key: 'b', site: 'Vimeo', type: 'Trailer', official: true),
+        const MovieVideo(key: 'c', site: 'YouTube', type: 'Trailer', official: true),
+        const MovieVideo(key: 'd', site: 'YouTube', type: 'Clip'),
+      ];
+      final best = pickBestTrailer(videos);
+      expect(best, isNotNull);
+      expect(best!.key, 'c');
+      // Vimeo is never playable in our in-app YouTube player.
+      expect(sortedTrailers(videos).map((v) => v.key), ['c', 'a', 'd']);
+      expect(pickBestTrailer(const <MovieVideo>[]), isNull);
+    });
+
+    test('append_to_response detail payload parses in one go', () {
+      final d = MovieDetails.fromJson(<String, Object?>{
+        'id': 155,
+        'title': 'The Dark Knight',
+        'runtime': 152,
+        'tagline': 'Why so serious?',
+        'genres': [
+          {'id': 18, 'name': 'Drama'},
+          {'id': 28, 'name': 'Action'},
+        ],
+        'videos': {
+          'results': [
+            {'key': 'yt1', 'site': 'YouTube', 'type': 'Trailer', 'official': true},
+          ],
+        },
+        'credits': {
+          'cast': [
+            {'id': 3894, 'name': 'Christian Bale', 'character': 'Bruce Wayne'},
+          ],
+          'crew': [
+            {'id': 525, 'name': 'Christopher Nolan', 'job': 'Director'},
+            {'id': 1, 'name': 'Someone', 'job': 'Gaffer'},
+          ],
+        },
+        'external_ids': {'imdb_id': 'tt0468569'},
+        'similar': {
+          'results': [
+            {'id': 272, 'title': 'Batman Begins'},
+          ],
+        },
+      });
+      expect(d.movie.title, 'The Dark Knight');
+      expect(d.runtimeMinutes, 152);
+      expect(d.runtimeText, '2h 32m');
+      expect(d.genres, ['Drama', 'Action']);
+      expect(d.imdbId, 'tt0468569');
+      expect(d.bestTrailer?.key, 'yt1');
+      expect(d.cast.single.name, 'Christian Bale');
+      expect(d.directors, ['Christopher Nolan']);
+      expect(d.similar.single.id, 272);
+    });
+
+    test('runtime text handles short and unknown runtimes', () {
+      const none = MovieDetails(movie: Movie(id: 1, title: 'x'));
+      expect(none.runtimeText, '');
+      const short = MovieDetails(movie: Movie(id: 1, title: 'x'), runtimeMinutes: 48);
+      expect(short.runtimeText, '48m');
+      const round = MovieDetails(movie: Movie(id: 1, title: 'x'), runtimeMinutes: 120);
+      expect(round.runtimeText, '2h');
+    });
+
+    test('a page knows whether more pages exist', () {
+      final p = MoviePage.fromJson(<String, Object?>{
+        'page': 2,
+        'total_pages': 9,
+        'total_results': 170,
+        'results': [
+          {'id': 1, 'title': 'a'},
+          {'id': 0, 'title': 'broken row'},
+        ],
+      });
+      expect(p.page, 2);
+      expect(p.hasMore, isTrue);
+      // Rows without an id are dropped, not crashed on.
+      expect(p.movies.length, 1);
+    });
+  });
+
+  group('v43 discover: new movies arrive without an app update', () {
+    test('release-date windows slide with the calendar', () {
+      final august = recentWindow(DateTime(2026, 8, 19));
+      expect(august.to, '2026-08-19');
+      expect(august.from, '2026-06-05');
+
+      // Same code, one month later => a different set of "new releases".
+      final september = recentWindow(DateTime(2026, 9, 19));
+      expect(september.to, '2026-09-19');
+      expect(september.from.compareTo(august.from) > 0, isTrue);
+
+      final soon = upcomingWindow(DateTime(2026, 8, 19), days: 30);
+      expect(soon.from, '2026-08-20');
+      expect(soon.to, '2026-09-18');
+    });
+
+    test('dates are zero padded the way TMDB wants them', () {
+      expect(tmdbDate(DateTime(2026, 1, 5)), '2026-01-05');
+      expect(tmdbDate(DateTime(2026, 12, 31)), '2026-12-31');
+    });
+
+    test('every request carries the key, the language and no adult content', () {
+      const api = TmdbApi(apiKey: 'KEY123', language: 'en-IN', region: 'IN');
+      final uri = api.buildUri('/discover/movie', {
+        'with_original_language': 'hi',
+        'sort_by': 'popularity.desc',
+      });
+      expect(uri.host, 'api.themoviedb.org');
+      expect(uri.path, '/3/discover/movie');
+      expect(uri.queryParameters['api_key'], 'KEY123');
+      expect(uri.queryParameters['language'], 'en-IN');
+      expect(uri.queryParameters['include_adult'], 'false');
+      expect(uri.queryParameters['with_original_language'], 'hi');
+      expect(uri.scheme, 'https');
+    });
+
+    test('image URLs use small sizes for cheap phones', () {
+      expect(TmdbApi.imageUrl('/x.jpg'), 'https://image.tmdb.org/t/p/w342/x.jpg');
+      expect(
+        TmdbApi.imageUrl('x.jpg', size: 'w780'),
+        'https://image.tmdb.org/t/p/w780/x.jpg',
+      );
+      expect(TmdbApi.imageUrl(null), isNull);
+      expect(TmdbApi.imageUrl(''), isNull);
+    });
+
+    test('a build without a key degrades instead of failing requests', () {
+      const unset = TmdbApi(apiKey: '');
+      expect(unset.configured, isFalse);
+      expect(const TmdbApi(apiKey: 'k').configured, isTrue);
+    });
+
+    test('stale-while-revalidate decides when to hit the network', () {
+      const ttl = Duration(hours: 6);
+      // Nothing cached yet.
+      expect(shouldRefresh(age: null, ttl: ttl), isTrue);
+      // Cached an hour ago: reuse it, no request.
+      expect(shouldRefresh(age: const Duration(hours: 1), ttl: ttl), isFalse);
+      // Older than the TTL: refresh in the background.
+      expect(shouldRefresh(age: const Duration(hours: 7), ttl: ttl), isTrue);
+      // Pull-to-refresh always wins.
+      expect(
+        shouldRefresh(age: const Duration(minutes: 1), ttl: ttl, force: true),
+        isTrue,
+      );
+    });
+
+    test('cache file names are stable and collision free', () {
+      final a = MovieCache.fileNameFor('rail:trending:p1:en-IN:IN');
+      final b = MovieCache.fileNameFor('rail:trending:p1:en-IN:IN');
+      final c = MovieCache.fileNameFor('rail:bollywood:p1:en-IN:IN');
+      expect(a, b);
+      expect(a == c, isFalse);
+      expect(a.endsWith('.json'), isTrue);
+    });
+
+    test('the Discover line-up is well formed', () {
+      final rails = buildMovieRails();
+      final ids = <String>{for (final r in rails) r.id};
+      expect(ids.length, rails.length, reason: 'rail ids must be unique');
+      expect(ids.contains('hollywood'), isTrue);
+      expect(ids.contains('bollywood'), isTrue);
+      expect(ids.contains('new_releases'), isTrue);
+      expect(ids.contains('in_cinemas'), isTrue);
+      for (final r in rails) {
+        expect(r.title.isNotEmpty, isTrue);
+        expect(r.ttl > Duration.zero, isTrue);
+      }
+      // Trending is the freshest rail on the screen.
+      final trending = rails.firstWhere((r) => r.id == 'trending');
+      expect(trending.ttl <= const Duration(hours: 6), isTrue);
+    });
+
+    test('state exposes an independent RailState per rail', () {
+      final state = MoviesState(
+        api: const TmdbApi(apiKey: 'k'),
+        clock: () => DateTime(2026, 8, 19),
+      );
+      final a = state.railState('trending');
+      final b = state.railState('bollywood');
+      expect(identical(a, b), isFalse);
+      expect(identical(a, state.railState('trending')), isTrue);
+      expect(a.movies, isEmpty);
+      expect(a.hasMore, isFalse);
+      expect(state.railById('hollywood')?.title, 'Hollywood');
+      expect(state.railById('nope'), isNull);
+      // Opt-in: nothing goes online until the user says yes.
+      expect(state.enabled, isFalse);
+      state.dispose();
     });
   });
 }
