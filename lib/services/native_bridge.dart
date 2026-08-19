@@ -558,6 +558,30 @@ class NativeBridge {
       return const ['/storage/emulated/0'];
     }
   }
+
+  /// v43: the app's private cache directory (Discover's TMDB responses +
+  /// poster images are cached here without any permission).
+  static Future<String?> cacheDirPath() async {
+    try {
+      return await _channel.invokeMethod<String>('cacheDirPath');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// v43: opens a trailer in the official YouTube app (or browser
+  /// fallback). This is the Play-policy-safe way to show trailers -
+  /// playing a YouTube stream through our own player would violate
+  /// YouTube's terms and get the app banned.
+  static Future<bool> openYouTube(String videoKey) async {
+    try {
+      return await _channel
+              .invokeMethod<bool>('openYouTube', {'key': videoKey}) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 /// v31: device internal-storage totals for the cleaner's storage graph.

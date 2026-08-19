@@ -31,6 +31,12 @@ Made by **Hyper Tech Labs** (Aryan Shah), Deoria, Uttar Pradesh, India.
 - **True full-screen video** - the status bar and the back/home buttons
   auto-hide the moment the phone turns sideways (and with the fullscreen
   button), VLC-style; they return in portrait.
+- **Discover movies (TMDB)** - trending Hollywood/Bollywood posters with
+  ⭐ ratings and stories, refreshed automatically every day and cached
+  for offline use; trailers open in the YouTube app (Play-policy-safe),
+  and when the movie is already on your phone, "In my library" plays it
+  instantly. Legal by design: TMDB data with credit - no IMDb copying,
+  no YouTube stream ripper.
 - **Statistics** - watch-time graphs, day streaks, most-watched videos.
 - **Cleaner library** - folder views, sort/group, list/grid, themes
   (7 accent colours), network streams (http/rtsp/rtmp), DLNA casting.
@@ -58,3 +64,12 @@ permission requirement for playback. See [PRIVACY_POLICY.md](PRIVACY_POLICY.md).
 ## Source
 
 <https://github.com/Aryanshahx/maxplayer>
+
+## Credits
+
+Movie data and ratings in the Discover section come from
+[TMDB](https://www.themoviedb.org). This product uses the TMDB API but is
+not endorsed or certified by TMDB. (Developer note: Discover needs a free
+TMDB key passed as `--dart-define=TMDB_API_KEY=...`; in Codemagic it is an
+environment variable so the key never enters this repo. Everything else in
+the app works without it.)

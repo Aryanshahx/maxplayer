@@ -20,6 +20,7 @@ import '../widgets/user_manual_sheet.dart';
 import 'private_screen.dart';
 import '../widgets/video_list_item.dart';
 import '../widgets/video_tile.dart';
+import 'discover_screen.dart';
 import 'history_screen.dart';
 import 'player_screen.dart';
 import 'stats_screen.dart';
@@ -763,6 +764,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
                 onPlaylist: () => _showPlaylists(lib),
                 onFolders: () => _showFoldersSheet(lib),
+                onDiscover: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        DiscoverScreen(library: lib, player: widget.player),
+                  ),
+                ),
               ),
             ),
           ),
@@ -892,12 +899,16 @@ class _QuickTiles extends StatelessWidget {
   final VoidCallback onPlaylist;
   final VoidCallback onFolders;
 
+  /// v43: opens the TMDB Discover screen (movie posters + ratings).
+  final VoidCallback onDiscover;
+
   const _QuickTiles({
     required this.accent,
     required this.onPrivate,
     required this.onCleaner,
     required this.onPlaylist,
     required this.onFolders,
+    required this.onDiscover,
   });
 
   @override
@@ -945,6 +956,22 @@ class _QuickTiles extends StatelessWidget {
                   'Folders',
                   accent,
                   onFolders,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // v43: legal movie discovery (TMDB data + YouTube-app trailers);
+          // "In my library" on the detail sheet plays a movie you ALREADY
+          // have on the phone, offline, in Max Player.
+          Row(
+            children: [
+              Expanded(
+                child: _Tile(
+                  Icons.movie_filter,
+                  'Discover movies',
+                  accent,
+                  onDiscover,
                 ),
               ),
             ],

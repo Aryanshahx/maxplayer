@@ -156,6 +156,26 @@ class MainActivity : FlutterActivity() {
         return roots.toList()
     }
 
+    /**
+     * v43: opens a YouTube video in the official YouTube app / browser via
+     * an ACTION_VIEW intent. Needs no query permissions on modern Android
+     * and returns false instead of throwing when nothing can handle it.
+     */
+    private fun openYouTube(key: String): Boolean {
+        if (key.isEmpty()) return false
+        return try {
+            val intent = Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("https://www.youtube.com/watch?v=$key")
+            )
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
@@ -481,6 +501,15 @@ class MainActivity : FlutterActivity() {
                 // v40: every mounted storage volume root, for the library
                 // scanner (SD cards were invisible before).
                 "storageRoots" -> result.success(storageRoots())
+                // v43: Discover's cache dir (TMDB json + posters).
+                "cacheDirPath" -> result.success(cacheDir.absolutePath)
+                // v43: trailers open in the official YouTube app - the
+                // Play-policy-safe path (streaming them through our own
+                // player would violate YouTube's terms).
+                "openYouTube" -> {
+                    val key = call.argument<String>("key").orEmpty()
+                    result.success(openYouTube(key))
+                }
                 "crumb" -> {
                     // v37: startup breadcrumb from Dart - append a stage
                     // mark to maxplayer_start.log (internal + the

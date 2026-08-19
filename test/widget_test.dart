@@ -11,9 +11,11 @@ import 'package:maxplayer/models/playlist.dart';
 import 'package:maxplayer/models/saved_server.dart';
 import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/services/native_bridge.dart';
+import 'package:maxplayer/services/tmdb_client.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/player_settings.dart';
 import 'package:maxplayer/state/playlist_store.dart';
+import 'package:maxplayer/utils/movie_match.dart';
 import 'package:maxplayer/state/private_vault.dart';
 import 'package:maxplayer/state/theme_state.dart';
 import 'package:maxplayer/state/video_library_state.dart';
@@ -1326,6 +1328,103 @@ void main() {
     test('installable on Android TV / non-touch devices', () {
       expect(manifest.contains('android.hardware.touchscreen'), isTrue);
       expect(manifest.contains('android:required="false"'), isTrue);
+    });
+  });
+
+  group('v43 Discover (TMDB) - legal movie discovery', () {
+    const trendingJson = '{"results":['
+        '{"id":27205,"title":"Inception","release_date":"2010-07-15",'
+        '"vote_average":8.365,"poster_path":"/abc.jpg","overview":"Dreams."},'
+        '{"id":"bad","title":"","vote_average":"x"},'
+        '{"id":603,"title":"The Matrix","release_date":"1999-03-30",'
+        '"vote_average":8.2,"poster_path":null,"overview":"Neo."}'
+        ']}';
+
+    test('parseTmdbList keeps good rows, skips junk, never throws', () {
+      final movies = parseTmdbList(trendingJson);
+      expect(movies.length, 2);
+      expect(movies.first.title, 'Inception');
+      expect(movies.first.year, 2010);
+      expect(movies.first.rating, closeTo(8.365, 0.001));
+      expect(movies.last.posterPath, isNull);
+      expect(parseTmdbList('not json at all'), isEmpty);
+      expect(parseTmdbList('{"results": 42}'), isEmpty);
+    });
+
+    test('pickTrailerKey prefers official YouTube trailer, falls back well',
+        () {
+      final videos = {
+        'results': [
+          {'site': 'Vimeo', 'type': 'Trailer', 'key': 'vimeo1'},
+          {'site': 'YouTube', 'type': 'Teaser', 'key': 'teaser1'},
+          {
+            'site': 'YouTube',
+            'type': 'Trailer',
+            'official': true,
+            'key': 'official1'
+          },
+        ]
+      };
+      expect(pickTrailerKey(videos), 'official1');
+      expect(
+        pickTrailerKey({
+          'results': [
+            {'site': 'YouTube', 'type': 'Clip', 'key': 'clip1'}
+          ]
+        }),
+        'clip1',
+      );
+      expect(pickTrailerKey({'results': []}), isNull);
+      expect(pickTrailerKey('garbage'), isNull);
+    });
+
+    test('rating badge + poster url formatting', () {
+      expect(tmdbRatingText(8.365), '8.4');
+      expect(tmdbRatingText(7.0), '7.0');
+      expect(
+        tmdbPosterUrl('/abc.jpg'),
+        'https://image.tmdb.org/t/p/w342/abc.jpg',
+      );
+      expect(
+        tmdbPosterUrl('/abc.jpg', big: true),
+        'https://image.tmdb.org/t/p/w500/abc.jpg',
+      );
+      expect(tmdbPosterUrl(null), isEmpty);
+    });
+
+    test('normalizeMovieTitle strips quality/codec junk and years', () {
+      expect(
+        normalizeMovieTitle('Interstellar.2014.1080p.BluRay.x265'),
+        'interstellar',
+      );
+      expect(normalizeMovieTitle('3_Idiots_2009_HD'), '3 idiots');
+      expect(normalizeMovieTitle('The Dark Knight (2008) [1080p]'),
+          'the dark knight');
+    });
+
+    test('findLocalMovie prefers the year-matching copy, falls back by title',
+        () {
+      VideoTrack vt(String path) => VideoTrack(
+            id: path,
+            title: path.split('/').last.replaceAll('.mkv', ''),
+            path: path,
+          );
+      final lib = [
+        vt('/s/Dune.Part.One.1080p.WEB-DL.mkv'),
+        vt('/s/Interstellar.2014.1080p.BluRay.x265.mkv'),
+      ];
+      expect(
+        findLocalMovie('Interstellar', 2014, lib)?.path,
+        '/s/Interstellar.2014.1080p.BluRay.x265.mkv',
+      );
+      // Year mismatch / unknown year still falls back to the title hit.
+      expect(findLocalMovie('Interstellar', null, lib), isNotNull);
+      expect(findLocalMovie('Dune Part One', null, lib)?.path,
+          '/s/Dune.Part.One.1080p.WEB-DL.mkv');
+      // STRICT title match: "Dune" must NOT match "Dune Part One" (they are
+      // different movies - false positives would be worse than no match).
+      expect(findLocalMovie('Dune', 2021, lib), isNull);
+      expect(findLocalMovie('Titanic', 1997, lib), isNull);
     });
   });
 }
