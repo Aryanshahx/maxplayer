@@ -12,11 +12,36 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- DLNA/UPnP casting: SSDP device discovery needs the multicast lock -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
+    <!-- v42 COMPAT AUDIT:
+         1) WRITE_EXTERNAL_STORAGE (Android 10 and older only): READ alone is
+            not enough for raw-path WRITES - moving a video into/out of the
+            Private folder, deleting via some flows, etc. It auto-rides along
+            with the classic Storage runtime request (v38/v40 helper).
+         2) requestLegacyExternalStorage: Android 10 (API 29) sandboxes raw
+            file paths EVEN with the Storage permission; our library scanner
+            walks /storage with real paths (dart:io), and without this flag
+            the scan finds NOTHING on Android 10 specifically. Restores the
+            pre-Android-10 raw-path behavior there (ignored elsewhere).
+         3) usesCleartextTraffic: plain http:// video streams are an
+            advertised feature; for targetSdk 28+ cleartext defaults to
+            BLOCKED, and OEM enforcement around native sockets varies -
+            declare it allowed explicitly (standard for local players). -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+
+    <!-- v42: Play would otherwise infer "touchscreen required" and hide the
+         app from Android TV boxes and other non-touch devices. -->
+    <uses-feature android:name="android.hardware.touchscreen"
+        android:required="false" />
+
     <application
         android:label="Max Player"
         android:name=".MaxPlayerApp"
         android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round">
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:requestLegacyExternalStorage="true"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

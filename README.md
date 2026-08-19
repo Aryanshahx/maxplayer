@@ -25,6 +25,12 @@ Made by **Hyper Tech Labs** (Aryan Shah), Deoria, Uttar Pradesh, India.
   phone - still there when you reopen the app.
 - **Scans every storage** - internal storage AND SD cards (any mounted
   volume), on Android 7 through 15.
+- **Every device welcome** - Android 7.0+ (minSdk 24) on arm64, 32-bit
+  ARM and x86_64; every bundled native library is verified 16KB
+  page-size ready; Android TV/non-touch devices can install it too.
+- **True full-screen video** - the status bar and the back/home buttons
+  auto-hide the moment the phone turns sideways (and with the fullscreen
+  button), VLC-style; they return in portrait.
 - **Statistics** - watch-time graphs, day streaks, most-watched videos.
 - **Cleaner library** - folder views, sort/group, list/grid, themes
   (7 accent colours), network streams (http/rtsp/rtmp), DLNA casting.

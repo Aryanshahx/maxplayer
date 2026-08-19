@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:maxplayer/app_info.dart';
 import 'package:maxplayer/cast/cast_support.dart';
+import 'package:maxplayer/screens/player_screen.dart';
 import 'package:maxplayer/models/playlist.dart';
 import 'package:maxplayer/models/saved_server.dart';
 import 'package:maxplayer/models/video_track.dart';
@@ -1265,6 +1267,65 @@ void main() {
     test('normalizeStorageRoots falls back to internal storage when empty', () {
       expect(normalizeStorageRoots(const []), ['/storage/emulated/0']);
       expect(normalizeStorageRoots(const ['', '/']), ['/storage/emulated/0']);
+    });
+  });
+
+  group('v41 system bars follow the video', () {
+    test('landscape hides the bars even when fullscreen was never pressed', () {
+      expect(
+        playerSystemUiModeFor(fullscreen: false, landscape: true),
+        SystemUiMode.immersiveSticky,
+      );
+    });
+
+    test('manual fullscreen hides the bars in any orientation', () {
+      expect(
+        playerSystemUiModeFor(fullscreen: true, landscape: false),
+        SystemUiMode.immersiveSticky,
+      );
+      expect(
+        playerSystemUiModeFor(fullscreen: true, landscape: true),
+        SystemUiMode.immersiveSticky,
+      );
+    });
+
+    test('portrait without fullscreen keeps the bars (time, notifications)',
+        () {
+      expect(
+        playerSystemUiModeFor(fullscreen: false, landscape: false),
+        SystemUiMode.edgeToEdge,
+      );
+    });
+  });
+
+  group('v42 compatibility manifest', () {
+    // These guards read the REAL AndroidManifest.xml (test CWD = package
+    // root) so a future edit can never silently drop the compatibility
+    // fixes again.
+    final manifest =
+        File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+
+    test('Android 10 raw-path storage: legacy flag + WRITE permission', () {
+      expect(
+        manifest.contains('android:requestLegacyExternalStorage="true"'),
+        isTrue,
+      );
+      expect(
+        manifest.contains('android.permission.WRITE_EXTERNAL_STORAGE'),
+        isTrue,
+      );
+      // WRITE applies to Android 10 and older; newer versions use
+      // All-files-access / per-app dirs instead.
+      expect(manifest.contains('android:maxSdkVersion="29"'), isTrue);
+    });
+
+    test('http video streams: cleartext traffic explicitly allowed', () {
+      expect(manifest.contains('android:usesCleartextTraffic="true"'), isTrue);
+    });
+
+    test('installable on Android TV / non-touch devices', () {
+      expect(manifest.contains('android.hardware.touchscreen'), isTrue);
+      expect(manifest.contains('android:required="false"'), isTrue);
     });
   });
 }

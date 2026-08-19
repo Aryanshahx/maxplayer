@@ -29,6 +29,27 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
+/// v41: which Android system-UI mode the player should show right now.
+///
+/// Report: "when we play video the upper side time, notification bar and
+/// on the right side back, home, buttons are showing as black bar - these
+/// are not removed". The bars were only hidden when the user pressed the
+/// fullscreen BUTTON; simply ROTATING the phone (the normal way people
+/// watch) left the status bar and the back/home navigation buttons
+/// painted as black bars.
+///
+/// New rule (VLC / MX Player behavior): the video gets the whole screen
+/// whenever it has real room - MANUAL fullscreen OR landscape; portrait
+/// portrait keeps the bars so the time and notifications stay visible.
+/// Top-level + pure so the widget test can pin all four combinations.
+SystemUiMode playerSystemUiModeFor({
+  required bool fullscreen,
+  required bool landscape,
+}) =>
+    (fullscreen || landscape)
+        ? SystemUiMode.immersiveSticky
+        : SystemUiMode.edgeToEdge;
+
 class _PlayerScreenState extends State<PlayerScreen>
     with WidgetsBindingObserver {
   // Shared, app-lifetime controller owned by MediaPlayerState (this media_kit
@@ -154,7 +175,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
     NativeBridge.configureCallbacks(
       onPipChanged: (isPip) {
-        if (mounted) setState(() => _isPip = isPip);
+        if (!mounted) return;
+        setState(() => _isPip = isPip);
+        // v41: re-assert the bars after a PiP round-trip (while in PiP the
+        // OS owns the system UI; coming back must not leave bars stuck on
+        // top of a landscape video).
+        _syncSystemUiMode();
       },
     );
     _reloadSettings();
@@ -164,12 +190,41 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // v41: MediaQuery changes - in particular the phone ROTATING - land
+    // here because build() reads MediaQuery.of(context).orientation. This
+    // is the fix for "black bars are not removed when playing video":
+    // hiding the bars was wired ONLY to the fullscreen button, never to
+    // simply holding the phone sideways.
+    _syncSystemUiMode();
+  }
+
+  /// v41: THE one spot that decides the bars (status bar + back/home
+  /// buttons): hidden while the video has real room (manual fullscreen OR
+  /// landscape), restored in portrait so the time/notifications stay
+  /// visible. Idempotent, so every lifecycle hook can re-assert it.
+  void _syncSystemUiMode() {
+    if (!mounted) return;
+    final landscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    SystemChrome.setEnabledSystemUIMode(
+      playerSystemUiModeFor(fullscreen: _isFullscreen, landscape: landscape),
+    );
+  }
+
+  @override
   void dispose() {
     _castState.dispose(); // stops casting + the embedded file server
     WidgetsBinding.instance.removeObserver(this);
     _hideTimer?.cancel();
     _indicatorTimer?.cancel();
     _noticeSub?.cancel();
+    // v41: ALWAYS bring the bars back on the way out - landscape playback
+    // now hides them even when manual fullscreen was never pressed, so the
+    // old `if (_isFullscreen)` guard could leave the LIBRARY screen
+    // without a status bar / back button after just rotating the phone.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     if (_isFullscreen) _exitFullscreen();
     // Hand rotation control back to the system; never leave a lock behind.
     unawaited(NativeBridge.disableSensorRotate());
@@ -344,11 +399,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _toggleFullscreen() {
     setState(() => _isFullscreen = !_isFullscreen);
     if (_isFullscreen) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
       ]);
+      _syncSystemUiMode(); // v41: one decision point for the bars
     } else {
       _exitFullscreen();
     }
@@ -356,7 +411,16 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _exitFullscreen() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    // v41: restore the bars per the CURRENT orientation (leaving fullscreen
+    // while the phone is still sideways keeps them hidden - landscape is
+    // full-bleed now; rotating back to portrait brings them back via
+    // didChangeDependencies). From dispose() `context` is off-limits, so
+    // restore them unconditionally there.
+    if (mounted) {
+      _syncSystemUiMode();
+    } else {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
     // Respect an active rotation lock when leaving fullscreen.
     SystemChrome.setPreferredOrientations(
       _orientationLocked ? _lockedOrientations : DeviceOrientation.values,
