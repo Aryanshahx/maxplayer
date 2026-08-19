@@ -15,6 +15,8 @@ import '../widgets/mini_player.dart';
 import '../models/saved_server.dart';
 import '../services/native_bridge.dart';
 import '../widgets/cleaner_sheet.dart';
+import '../widgets/discover_banner.dart';
+import '../widgets/video_search_delegate.dart';
 import '../widgets/playlists_sheet.dart';
 import '../widgets/user_manual_sheet.dart';
 import 'private_screen.dart';
@@ -588,6 +590,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ),
         actions: [
+          // v44: library search moved HERE - a full-screen search page,
+          // so the home screen keeps room for the Discover banner.
+          IconButton(
+            tooltip: 'Search videos',
+            icon: Icon(Icons.search, color: themeState.accent),
+            onPressed: () => showSearch<void>(
+              context: context,
+              delegate: VideoSearchDelegate(
+                videos: lib.allVideos,
+                onOpen: _playVideo,
+              ),
+            ),
+          ),
           // v26: all home-screen buttons follow the picked theme colour.
           // Prominent rescan button (new videos don't appear otherwise).
           IconButton(
@@ -699,21 +714,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
       bottomNavigationBar: MiniPlayer(player: widget.player),
       body: Column(
         children: [
+          // v44: the search BOX became an app-bar icon (full-screen
+          // search page). Its place now holds the Discover banner -
+          // latest trending posters shine through behind the title.
           Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              onChanged: lib.setSearchQuery,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Search ${lib.allVideosCount} videos...',
-                hintStyle: const TextStyle(color: Colors.white38),
-                // v26: theme-coloured like the other home buttons.
-                prefixIcon: Icon(Icons.search, color: themeState.accent),
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.05),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+            child: DiscoverBanner(
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      DiscoverScreen(library: lib, player: widget.player),
                 ),
               ),
             ),
@@ -764,12 +774,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
                 onPlaylist: () => _showPlaylists(lib),
                 onFolders: () => _showFoldersSheet(lib),
-                onDiscover: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        DiscoverScreen(library: lib, player: widget.player),
-                  ),
-                ),
               ),
             ),
           ),
@@ -899,16 +903,12 @@ class _QuickTiles extends StatelessWidget {
   final VoidCallback onPlaylist;
   final VoidCallback onFolders;
 
-  /// v43: opens the TMDB Discover screen (movie posters + ratings).
-  final VoidCallback onDiscover;
-
   const _QuickTiles({
     required this.accent,
     required this.onPrivate,
     required this.onCleaner,
     required this.onPlaylist,
     required this.onFolders,
-    required this.onDiscover,
   });
 
   @override
@@ -956,22 +956,6 @@ class _QuickTiles extends StatelessWidget {
                   'Folders',
                   accent,
                   onFolders,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          // v43: legal movie discovery (TMDB data + YouTube-app trailers);
-          // "In my library" on the detail sheet plays a movie you ALREADY
-          // have on the phone, offline, in Max Player.
-          Row(
-            children: [
-              Expanded(
-                child: _Tile(
-                  Icons.movie_filter,
-                  'Discover movies',
-                  accent,
-                  onDiscover,
                 ),
               ),
             ],

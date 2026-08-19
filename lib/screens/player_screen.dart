@@ -50,6 +50,16 @@ SystemUiMode playerSystemUiModeFor({
         ? SystemUiMode.immersiveSticky
         : SystemUiMode.edgeToEdge;
 
+/// v44: what to restore when LEAVING the player. v41 restored
+/// edgeToEdge, which keeps the window laid out UNDER the status bar -
+/// back in the library the status bar sat ON TOP of the app content
+/// (the overlap bug). Manual mode with both overlays = the normal,
+/// never-overlapping Android layout.
+const SystemUiMode playerRestoreSystemUiMode = SystemUiMode.manual;
+
+/// v44: both bars (status + navigation) must be back after the player.
+const List<SystemUiOverlay> playerRestoreOverlays = SystemUiOverlay.values;
+
 class _PlayerScreenState extends State<PlayerScreen>
     with WidgetsBindingObserver {
   // Shared, app-lifetime controller owned by MediaPlayerState (this media_kit
@@ -224,7 +234,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     // now hides them even when manual fullscreen was never pressed, so the
     // old `if (_isFullscreen)` guard could leave the LIBRARY screen
     // without a status bar / back button after just rotating the phone.
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    // v44: manual overlays (edgeToEdge overlapped the library's
+    // status bar when coming back from the player).
+    SystemChrome.setEnabledSystemUIMode(
+      playerRestoreSystemUiMode,
+      overlays: playerRestoreOverlays,
+    );
     if (_isFullscreen) _exitFullscreen();
     // Hand rotation control back to the system; never leave a lock behind.
     unawaited(NativeBridge.disableSensorRotate());
@@ -419,7 +434,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (mounted) {
       _syncSystemUiMode();
     } else {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      // v44: from dispose() - manual overlays, never edgeToEdge.
+      SystemChrome.setEnabledSystemUIMode(
+        playerRestoreSystemUiMode,
+        overlays: playerRestoreOverlays,
+      );
     }
     // Respect an active rotation lock when leaving fullscreen.
     SystemChrome.setPreferredOrientations(

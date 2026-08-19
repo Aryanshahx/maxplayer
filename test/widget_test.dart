@@ -12,6 +12,8 @@ import 'package:maxplayer/models/saved_server.dart';
 import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/services/native_bridge.dart';
 import 'package:maxplayer/services/tmdb_client.dart';
+import 'package:maxplayer/widgets/tmdb_image.dart';
+import 'package:maxplayer/widgets/video_search_delegate.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/player_settings.dart';
 import 'package:maxplayer/state/playlist_store.dart';
@@ -1425,6 +1427,114 @@ void main() {
       // different movies - false positives would be worse than no match).
       expect(findLocalMovie('Dune', 2021, lib), isNull);
       expect(findLocalMovie('Titanic', 1997, lib), isNull);
+    });
+  });
+
+  group('v44 Discover upgrades + status-bar overlap fix', () {
+    test('tmdbImageCacheName is deterministic and collision-safe', () {
+      const a = 'https://image.tmdb.org/t/p/w342/abc123.jpg';
+      final name = tmdbImageCacheName(a);
+      expect(tmdbImageCacheName(a), name); // stable across calls
+      // Same photo, different SIZE folder -> different cache entry.
+      expect(tmdbImageCacheName('https://image.tmdb.org/t/p/w500/abc123.jpg'),
+          isNot(name));
+      // Different photo -> different cache entry.
+      expect(tmdbImageCacheName('https://image.tmdb.org/t/p/w342/xyz999.jpg'),
+          isNot(name));
+      expect(name.contains('abc123.jpg'), isTrue); // human-readable
+    });
+
+    test('kDiscoverFilters: many more filters than v43 (3 -> 12)', () {
+      expect(kDiscoverFilters.length, greaterThan(10));
+      expect(kDiscoverFilters.first.trending, isTrue);
+      expect(
+          kDiscoverFilters
+              .any((f) => f.key == 'hollywood' && f.language == 'en'),
+          isTrue);
+      expect(
+          kDiscoverFilters
+              .any((f) => f.key == 'bollywood' && f.language == 'hi'),
+          isTrue);
+      expect(kDiscoverFilters.where((f) => f.genreId != null).length,
+          greaterThanOrEqualTo(7));
+    });
+
+    test('tmdbDiscoverQuery: language filter vs genre filter, with paging', () {
+      final hw = kDiscoverFilters.firstWhere((f) => f.key == 'hollywood');
+      final q1 = tmdbDiscoverQuery(hw, 2);
+      expect(q1['with_original_language'], 'en');
+      expect(q1['page'], '2');
+      expect(q1.containsKey('with_genres'), isFalse);
+      final action = kDiscoverFilters.firstWhere((f) => f.key == 'action');
+      final q2 = tmdbDiscoverQuery(action, 1);
+      expect(q2['with_genres'], '28');
+      expect(q2.containsKey('with_original_language'), isFalse);
+      expect(q2['include_adult'], 'false');
+    });
+
+    test('tmdbSearchQuery + cache name: stable, distinct, safe', () {
+      final q = tmdbSearchQuery('Dune Part Two', 3);
+      expect(q['query'], 'Dune Part Two');
+      expect(q['page'], '3');
+      expect(q['include_adult'], 'false');
+      final n1 = tmdbSearchCacheName('dune 2', 1);
+      expect(tmdbSearchCacheName('dune 2', 1), n1);
+      expect(tmdbSearchCacheName('dune 2', 2), isNot(n1)); // page matters
+      expect(tmdbSearchCacheName('dune 3', 1), isNot(n1)); // query matters
+    });
+
+    test('parseTmdbPage paginates and caps TMDB at 500 pages (thousands)', () {
+      const body = '{"page":2,"total_pages":99999,"total_results":1999800,'
+          '"results":[{"id":5,"title":"X","vote_average":7.2,'
+          '"poster_path":"/p.jpg","release_date":"2020-01-01"}]}';
+      final page = parseTmdbPage(body);
+      expect(page.items.single.title, 'X');
+      expect(page.page, 2);
+      expect(page.totalPages, 500); // TMDB's own maximum depth
+      expect(page.totalResults, 1999800);
+      final bad = parseTmdbPage('garbage');
+      expect(bad.items, isEmpty);
+      expect(bad.totalPages, 1);
+    });
+
+    test('parseTmdbExtras: director + cast + runtime + genres + votes', () {
+      const body = '{"id":1,"title":"X","runtime":136,"tagline":"Dream.",'
+          '"status":"Released","vote_count":24513,'
+          '"genres":[{"name":"Sci-Fi"},{"name":"Adventure"}],'
+          '"credits":{"crew":[{"job":"Director","name":"Christopher Nolan"}],'
+          '"cast":[{"name":"Leonardo DiCaprio"},'
+          '{"name":"Joseph Gordon-Levitt"}]}}';
+      final x = parseTmdbExtras(body);
+      expect(x.director, 'Christopher Nolan');
+      expect(x.cast, ['Leonardo DiCaprio', 'Joseph Gordon-Levitt']);
+      expect(x.runtimeMinutes, 136);
+      expect(x.genres, ['Sci-Fi', 'Adventure']);
+      expect(x.tagline, 'Dream.');
+      expect(x.voteCount, 24513);
+      expect(parseTmdbExtras('{}').director, isEmpty);
+      expect(parseTmdbExtras('not json').cast, isEmpty);
+    });
+
+    test('formatRuntime + formatVoteCount', () {
+      expect(formatRuntime(136), '2h 16m');
+      expect(formatRuntime(45), '45m');
+      expect(formatRuntime(120), '2h');
+      expect(formatRuntime(0), '');
+      expect(formatVoteCount(24513), '24,513');
+      expect(formatVoteCount(8), '8');
+    });
+
+    test('filterLibraryItems: the pure filter behind the new search icon', () {
+      const titles = ['Dune Part Two.mkv', 'Interstellar.mp4', 'dune trailer.mp4'];
+      expect(filterLibraryItems(titles, 'dune', (t) => t).length, 2);
+      expect(filterLibraryItems(titles, '  INTER ', (t) => t),
+          ['Interstellar.mp4']);
+      expect(filterLibraryItems(titles, '', (t) => t).length, 3);
+    });
+
+    test('leaving the player restores MANUAL bars (no status-bar overlap)', () {
+      expect(playerRestoreSystemUiMode, SystemUiMode.manual);
+      expect(playerRestoreOverlays, containsAll(SystemUiOverlay.values));
     });
   });
 }

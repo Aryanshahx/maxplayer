@@ -5,9 +5,29 @@ import 'package:flutter/material.dart';
 
 import 'fade_in_image.dart';
 
+/// Filesystem-safe, deterministic cache name for a poster URL.
+///
+/// v44 FIX (wrong posters): v43 used Dart's String.hashCode, which is not
+/// a stable contract - and recycled grid cells kept showing whatever file
+/// the reuse collision mapped to. Now the name keeps the REAL photo name
+/// (and its size folder, so w342 never fights w500) plus a deterministic
+/// 31-fold hash of the full URL. Pure for tests.
+String tmdbImageCacheName(String url) {
+  final segs = Uri.tryParse(url)?.pathSegments ?? const <String>[];
+  var base = segs.isNotEmpty ? segs.last : '';
+  base = base.replaceAll(RegExp('[^A-Za-z0-9._-]'), '_');
+  if (base.isEmpty) base = 'img';
+  final size = segs.length >= 2 ? segs[segs.length - 2] : '';
+  var h = 0;
+  for (final c in url.codeUnits) {
+    h = (h * 31 + c) & 0x7fffffff;
+  }
+  return 'tmdb_img_${size}_${h.toRadixString(16)}_$base';
+}
+
 /// v43: a poster/backdrop image for the Discover section with its own
-/// perpetual DISK cache (permanent - movie TVDB/TMDB images don't change,
-/// so one download is enough; the section stays fully offline afterwards).
+/// perpetual DISK cache (permanent - movie posters don't change, so one
+/// download is enough; the section stays fully offline afterwards).
 ///
 /// Plain dart:io + Image.file/Image.memory - zero new dependencies.
 /// Failed loads are remembered for the session so a dead URL is not
@@ -40,10 +60,18 @@ class _TmdbImageState extends State<TmdbImage> {
     _resolve();
   }
 
-  static String _cacheNameFor(String url) {
-    // hashCode can be negative; keep the filename filesystem-safe.
-    final h = url.hashCode;
-    return 'tmdb_img_${h < 0 ? 'n${-h}' : h}.jpg';
+  @override
+  void didUpdateWidget(covariant TmdbImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      // v44 FIX (wrong posters after refresh): the grid RECYCLES cells when
+      // the list re-orders; without this reset the reused cell kept the OLD
+      // movie's poster while the title already showed the new movie.
+      _filePath = null;
+      _bytes = null;
+      _failed = false;
+      _resolve();
+    }
   }
 
   Future<void> _resolve() async {
@@ -57,8 +85,9 @@ class _TmdbImageState extends State<TmdbImage> {
       return;
     }
     final dir = TmdbImage._cacheDirPath;
-    final path =
-        dir == null ? null : '$dir${Platform.pathSeparator}${_cacheNameFor(widget.url)}';
+    final path = dir == null
+        ? null
+        : '$dir${Platform.pathSeparator}${tmdbImageCacheName(widget.url)}';
     if (path != null) {
       try {
         if (await File(path).exists()) {
@@ -118,6 +147,7 @@ class _TmdbImageState extends State<TmdbImage> {
   }
 }
 
+/// Neutral dark placeholder while a poster is missing or failed.
 class _PosterPlaceholder extends StatelessWidget {
   const _PosterPlaceholder();
 
@@ -125,9 +155,9 @@ class _PosterPlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFF1e1e2a),
-      child: const Center(
-        child: Icon(Icons.movie_outlined, size: 22, color: Colors.white24),
-      ),
+      alignment: Alignment.center,
+      child: Icon(Icons.movie_outlined,
+          color: Colors.white.withValues(alpha: 0.15)),
     );
   }
 }

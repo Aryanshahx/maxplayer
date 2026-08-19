@@ -8,7 +8,7 @@ import 'dart:io';
 /// results and the Discover screen shows its setup note - nothing crashes.
 const String kTmdbApiKey = String.fromEnvironment('TMDB_API_KEY');
 
-/// One movie row from TMDB (trending / discover / detail).
+/// One movie row from TMDB (trending / discover / search / detail).
 class TmdbMovie {
   final int id;
   final String title;
@@ -47,6 +47,119 @@ class TmdbMovie {
       );
 }
 
+/// v44: one user-selectable filter chip for the Discover section. Exactly
+/// ONE of [trending], [language] or [genreId] drives the query.
+class DiscoverFilter {
+  final String key;
+  final String label;
+  final String language;
+  final int? genreId;
+  final bool trending;
+
+  const DiscoverFilter({
+    required this.key,
+    required this.label,
+    this.language = '',
+    this.genreId,
+    this.trending = false,
+  });
+}
+
+/// v44: MANY more filters than v43's three (All/Hollywood/Bollywood).
+/// Languages first (Indian users), then the most-used TMDB genre ids.
+const List<DiscoverFilter> kDiscoverFilters = [
+  DiscoverFilter(key: 'trending', label: 'Trending', trending: true),
+  DiscoverFilter(key: 'hollywood', label: 'Hollywood', language: 'en'),
+  DiscoverFilter(key: 'bollywood', label: 'Bollywood', language: 'hi'),
+  DiscoverFilter(key: 'tamil', label: 'Tamil', language: 'ta'),
+  DiscoverFilter(key: 'telugu', label: 'Telugu', language: 'te'),
+  DiscoverFilter(key: 'action', label: 'Action', genreId: 28),
+  DiscoverFilter(key: 'comedy', label: 'Comedy', genreId: 35),
+  DiscoverFilter(key: 'drama', label: 'Drama', genreId: 18),
+  DiscoverFilter(key: 'horror', label: 'Horror', genreId: 27),
+  DiscoverFilter(key: 'romance', label: 'Romance', genreId: 10749),
+  DiscoverFilter(key: 'thriller', label: 'Thriller', genreId: 53),
+  DiscoverFilter(key: 'scifi', label: 'Sci-Fi', genreId: 878),
+];
+
+/// Query params for one page of a NON-trending filter. Pure for tests.
+Map<String, String> tmdbDiscoverQuery(DiscoverFilter f, int page) => {
+      'language': 'en-US',
+      'page': '$page',
+      'include_adult': 'false',
+      'sort_by': 'popularity.desc',
+      'vote_count.gte': '25',
+      if (f.language.isNotEmpty) 'with_original_language': f.language,
+      if (f.genreId != null) 'with_genres': '${f.genreId}',
+    };
+
+/// Query params for one SEARCH page (the Discover search bar). Pure.
+Map<String, String> tmdbSearchQuery(String query, int page) => {
+      'language': 'en-US',
+      'query': query,
+      'include_adult': 'false',
+      'page': '$page',
+    };
+
+/// Deterministic cache file name for a search. Dart's String.hashCode is
+/// NOT guaranteed stable, so v44 uses an explicit 31-fold hash of the code
+/// units (same as v44 poster names) - pure and testable.
+String tmdbSearchCacheName(String query, int page) {
+  var words = query.toLowerCase().replaceAll(RegExp('[^a-z0-9]+'), '_');
+  if (words.length > 30) words = words.substring(0, 30);
+  if (words.isEmpty) words = 'q';
+  var h = 0;
+  for (final c in query.codeUnits) {
+    h = (h * 31 + c) & 0x7fffffff;
+  }
+  return 'tmdb_search_${words}_${h.toRadixString(16)}_p$page.json';
+}
+
+/// One page of results - pagination is what puts THOUSANDS of movies in
+/// every section (TMDB serves up to 500 pages per query, ~10,000 items).
+class TmdbPage {
+  final List<TmdbMovie> items;
+  final int page;
+  final int totalPages;
+  final int totalResults;
+
+  const TmdbPage({
+    this.items = const [],
+    this.page = 1,
+    this.totalPages = 1,
+    this.totalResults = 0,
+  });
+}
+
+/// Extra facts from the detail call (append_to_response=videos,credits).
+class TmdbDetailExtras {
+  final String director;
+  final List<String> cast;
+  final int runtimeMinutes;
+  final List<String> genres;
+  final String tagline;
+  final int voteCount;
+  final String status;
+
+  const TmdbDetailExtras({
+    this.director = '',
+    this.cast = const [],
+    this.runtimeMinutes = 0,
+    this.genres = const [],
+    this.tagline = '',
+    this.voteCount = 0,
+    this.status = '',
+  });
+}
+
+/// Detail bundle: the movie (with trailer key) + the extras above.
+class TmdbFull {
+  final TmdbMovie movie;
+  final TmdbDetailExtras extras;
+
+  const TmdbFull(this.movie, this.extras);
+}
+
 /// "7.834" -> "7.8" (badge text). Pure for tests.
 String tmdbRatingText(double rating) => rating.toStringAsFixed(1);
 
@@ -54,6 +167,27 @@ String tmdbRatingText(double rating) => rating.toStringAsFixed(1);
 String tmdbPosterUrl(String? path, {bool big = false}) => (path == null || path.isEmpty)
     ? ''
     : 'https://image.tmdb.org/t/p/${big ? 'w500' : 'w342'}$path';
+
+/// 136 -> "2h 16m", 45 -> "45m", 120 -> "2h", 0 -> ''. Pure for tests.
+String formatRuntime(int minutes) {
+  if (minutes <= 0) return '';
+  final h = minutes ~/ 60;
+  final m = minutes % 60;
+  if (h == 0) return '${m}m';
+  if (m == 0) return '${h}h';
+  return '${h}h ${m}m';
+}
+
+/// 24513 -> "24,513" (hand-rolled so no intl locale setup is needed). Pure.
+String formatVoteCount(int votes) {
+  final s = '$votes';
+  final out = StringBuffer();
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) out.write(',');
+    out.write(s[i]);
+  }
+  return out.toString();
+}
 
 double? _numToDouble(Object? v) =>
     v is num ? v.toDouble() : double.tryParse('$v');
@@ -77,22 +211,42 @@ TmdbMovie? _movieFromMap(Object? e) {
   );
 }
 
-/// Parses a trending/discover LIST response. Never throws: any garbage
-/// row is skipped, garbage body -> empty list. Pure for tests.
+/// Parses a trending/discover/search LIST response. Never throws: any
+/// garbage row is skipped, garbage body -> empty list. Pure for tests.
 List<TmdbMovie> parseTmdbList(String jsonBody) {
+  return parseTmdbPage(jsonBody).items;
+}
+
+/// v44: list + paging info in one parse. Never throws; garbage -> empty
+/// page. total_pages is CAPPED at 500 (TMDB's own maximum page depth).
+/// Pure for tests.
+TmdbPage parseTmdbPage(String jsonBody) {
   try {
     final decoded = jsonDecode(jsonBody);
-    if (decoded is! Map) return const [];
+    if (decoded is! Map) return const TmdbPage();
     final results = decoded['results'];
-    if (results is! List) return const [];
-    final out = <TmdbMovie>[];
-    for (final e in results) {
-      final m = _movieFromMap(e);
-      if (m != null) out.add(m);
+    final items = <TmdbMovie>[];
+    if (results is List) {
+      for (final e in results) {
+        final m = _movieFromMap(e);
+        if (m != null) items.add(m);
+      }
     }
-    return out;
+    var totalPages = decoded['total_pages'] is num
+        ? (decoded['total_pages'] as num).toInt()
+        : 1;
+    if (totalPages < 1) totalPages = 1;
+    if (totalPages > 500) totalPages = 500;
+    return TmdbPage(
+      items: items,
+      page: decoded['page'] is num ? (decoded['page'] as num).toInt() : 1,
+      totalPages: totalPages,
+      totalResults: decoded['total_results'] is num
+          ? (decoded['total_results'] as num).toInt()
+          : items.length,
+    );
   } catch (_) {
-    return const [];
+    return const TmdbPage();
   }
 }
 
@@ -106,6 +260,62 @@ TmdbMovie? parseTmdbDetail(String jsonBody) {
     return base.copyWith(trailerKey: pickTrailerKey(decoded['videos']));
   } catch (_) {
     return null;
+  }
+}
+
+/// v44: parses the detail EXTRAS (director, cast, runtime, genres,
+/// tagline, votes). Never throws; missing data -> empty fields. Pure.
+TmdbDetailExtras parseTmdbExtras(String jsonBody) {
+  try {
+    final decoded = jsonDecode(jsonBody);
+    if (decoded is! Map) return const TmdbDetailExtras();
+    String director = '';
+    final cast = <String>[];
+    final credits = decoded['credits'];
+    if (credits is Map) {
+      final crew = credits['crew'];
+      if (crew is List) {
+        for (final c in crew) {
+          if (c is Map && c['job'] == 'Director') {
+            director = '${c['name'] ?? ''}'.trim();
+            if (director.isNotEmpty) break;
+          }
+        }
+      }
+      final castList = credits['cast'];
+      if (castList is List) {
+        for (final c in castList) {
+          if (c is! Map) continue;
+          final name = '${c['name'] ?? ''}'.trim();
+          if (name.isNotEmpty) cast.add(name);
+          if (cast.length >= 6) break;
+        }
+      }
+    }
+    final genres = <String>[];
+    final g = decoded['genres'];
+    if (g is List) {
+      for (final e in g) {
+        if (e is Map) {
+          final name = '${e['name'] ?? ''}'.trim();
+          if (name.isNotEmpty) genres.add(name);
+        }
+      }
+    }
+    return TmdbDetailExtras(
+      director: director,
+      cast: cast,
+      runtimeMinutes:
+          decoded['runtime'] is num ? (decoded['runtime'] as num).toInt() : 0,
+      genres: genres,
+      tagline: '${decoded['tagline'] ?? ''}'.trim(),
+      voteCount: decoded['vote_count'] is num
+          ? (decoded['vote_count'] as num).toInt()
+          : 0,
+      status: '${decoded['status'] ?? ''}'.trim(),
+    );
+  } catch (_) {
+    return const TmdbDetailExtras();
   }
 }
 
@@ -137,8 +347,8 @@ String? pickTrailerKey(Object? videos) {
   return k.isEmpty ? null : k;
 }
 
-/// v43: tiny TMDB client for the Discover screen. Plain dart:io HTTP -
-/// zero new dependencies. Every response (list, detail, posters handled
+/// v43/v44: tiny TMDB client for the Discover section. Plain dart:io HTTP -
+/// zero new dependencies. Every response (pages, detail, posters handled
 /// by TmdbImage) is cached on disk for 24h, so once loaded the section
 /// works offline and refreshes ITSELF in the background on the next open
 /// after the cache expires - the "automatically updated library".
@@ -195,42 +405,57 @@ class TmdbClient {
     }
   }
 
-  /// The weekly trending movies. [language] '' = all, 'hi' = Bollywood
-  /// etc., 'en' = Hollywood etc. (via TMDB discover popularity).
-  Future<List<TmdbMovie>> trending({String language = '', bool force = false}) async {
-    if (kTmdbApiKey.isEmpty) return const [];
+  /// v44: one page for the filter chips, incl. THOUSANDS more via paging.
+  Future<TmdbPage> browse(DiscoverFilter f,
+      {int page = 1, bool force = false}) async {
+    if (kTmdbApiKey.isEmpty) return const TmdbPage();
+    final String cacheName = 'tmdb_disc_${f.key}_p$page.json';
     final Uri uri;
-    final String cacheName;
-    if (language.isEmpty) {
-      cacheName = 'tmdb_trending_all.json';
-      uri = Uri.https(_host, '/3/trending/movie/week',
-          {'api_key': kTmdbApiKey, 'language': 'en-US'});
-    } else {
-      cacheName = 'tmdb_trending_$language.json';
-      uri = Uri.https(_host, '/3/discover/movie', {
+    if (f.trending) {
+      uri = Uri.https(_host, '/3/trending/movie/week', {
         'api_key': kTmdbApiKey,
         'language': 'en-US',
-        'with_original_language': language,
-        'sort_by': 'popularity.desc',
-        'include_adult': 'false',
-        'vote_count.gte': '25',
+        'page': '$page',
+      });
+    } else {
+      uri = Uri.https(_host, '/3/discover/movie', {
+        'api_key': kTmdbApiKey,
+        ...tmdbDiscoverQuery(f, page),
       });
     }
     final body = await _fetch(cacheName, uri,
         ttl: force ? Duration.zero : const Duration(hours: 24));
-    return body == null ? const [] : parseTmdbList(body);
+    return body == null ? const TmdbPage() : parseTmdbPage(body);
   }
 
-  /// Detail incl. the official trailer key (cached alongside).
-  Future<TmdbMovie?> details(int id, {bool force = false}) async {
+  /// v44: the Discover SEARCH bar - searches TMDB's whole catalogue.
+  Future<TmdbPage> searchMovies(String query,
+      {int page = 1, bool force = false}) async {
+    final q = query.trim();
+    if (kTmdbApiKey.isEmpty || q.isEmpty) return const TmdbPage();
+    final uri = Uri.https(_host, '/3/search/movie', {
+      'api_key': kTmdbApiKey,
+      ...tmdbSearchQuery(q, page),
+    });
+    final body = await _fetch(tmdbSearchCacheName(q, page), uri,
+        ttl: force ? Duration.zero : const Duration(hours: 24));
+    return body == null ? const TmdbPage() : parseTmdbPage(body);
+  }
+
+  /// v44: trailer + director/cast/runtime/genres in ONE call (the _v2
+  /// cache name forces one re-download - v43 cache files had no credits).
+  Future<TmdbFull?> fullDetail(int id, {bool force = false}) async {
     if (kTmdbApiKey.isEmpty) return null;
     final uri = Uri.https(_host, '/3/movie/$id', {
       'api_key': kTmdbApiKey,
       'language': 'en-US',
-      'append_to_response': 'videos',
+      'append_to_response': 'videos,credits',
     });
-    final body = await _fetch('tmdb_movie_$id.json', uri,
+    final body = await _fetch('tmdb_movie_v2_$id.json', uri,
         ttl: force ? Duration.zero : const Duration(hours: 24));
-    return body == null ? null : parseTmdbDetail(body);
+    if (body == null) return null;
+    final movie = parseTmdbDetail(body);
+    if (movie == null) return null;
+    return TmdbFull(movie, parseTmdbExtras(body));
   }
 }

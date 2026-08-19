@@ -31,11 +31,15 @@ Made by **Hyper Tech Labs** (Aryan Shah), Deoria, Uttar Pradesh, India.
 - **True full-screen video** - the status bar and the back/home buttons
   auto-hide the moment the phone turns sideways (and with the fullscreen
   button), VLC-style; they return in portrait.
-- **Discover movies (TMDB)** - trending Hollywood/Bollywood posters with
-  ⭐ ratings and stories, refreshed automatically every day and cached
-  for offline use; trailers open in the YouTube app (Play-policy-safe),
-  and when the movie is already on your phone, "In my library" plays it
-  instantly. Legal by design: TMDB data with credit - no IMDb copying,
+- **Discover movies (TMDB)** - poster grid with ⭐ ratings and full
+  details (runtime, director, cast, tagline, genres), a TMDB-wide
+  search bar, 12 filters (Trending, Hollywood, Bollywood, Tamil,
+  Telugu, Action, Comedy, Drama, Horror, Romance, Thriller, Sci-Fi)
+  and infinite scroll through thousands of titles; refreshed
+  automatically every day and cached for offline use; trailers open
+  in the YouTube app (Play-policy-safe), and when the movie is
+  already on your phone, "In my library" plays it instantly.
+  Legal by design: TMDB data with credit - no IMDb copying,
   no YouTube stream ripper.
 - **Statistics** - watch-time graphs, day streaks, most-watched videos.
 - **Cleaner library** - folder views, sort/group, list/grid, themes
