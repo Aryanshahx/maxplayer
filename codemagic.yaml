@@ -50,12 +50,12 @@ workflows:
         # (App settings -> Environment variables; free key from
         # themoviedb.org). It is compiled in, and NEVER committed to the
         # repo. Without it, Discover shows a setup note instead of movies.
-        script: flutter build apk --release --dart-define=TMDB_API_KEY=$TMDB_API_KEY
+        script: flutter build apk --release --dart-define=TMDB_API_KEY=$TMDB_API_KEY --dart-define=OPENROUTER_API_KEY=$OPENROUTER_API_KEY
       - name: Build AAB for the Play Store (release, ALL CPUs)
         # Play generates per-ABI download splits from the universal bundle,
         # so every phone still downloads only its own architecture - and
         # 32-bit devices stop seeing "device isn't compatible".
-        script: flutter build appbundle --release --dart-define=TMDB_API_KEY=$TMDB_API_KEY
+        script: flutter build appbundle --release --dart-define=TMDB_API_KEY=$TMDB_API_KEY --dart-define=OPENROUTER_API_KEY=$OPENROUTER_API_KEY
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
       - build/app/outputs/bundle/release/*.aab

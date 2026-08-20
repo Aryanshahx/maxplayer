@@ -1,7 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../models/video_track.dart';
-import '../state/theme_state.dart';
 
 /// Pure, testable: case-insensitive contains on the trimmed query; an
 /// empty query returns everything. Used by the v44 full-screen search
@@ -18,8 +19,8 @@ List<T> filterLibraryItems<T>(
 
 /// v44: the library search MOVED here - a proper full-screen search page
 /// (Flutter's built-in SearchDelegate) so the home screen has room for the
-/// Discover banner. Same behaviour as the old search box: type, see your
-/// videos filtered by title, tap to play.
+/// Discover banner. v45: results are a BIG-THUMBNAIL grid now (the old
+/// text-only rows were hard to scan).
 class VideoSearchDelegate extends SearchDelegate<void> {
   final List<VideoTrack> videos;
   final void Function(VideoTrack track) onOpen;
@@ -79,32 +80,80 @@ class VideoSearchDelegate extends SearchDelegate<void> {
         ),
       );
     }
-    return ListView.separated(
+    // v45: big-thumbnail grid - 2 columns on a phone.
+    return GridView.builder(
+      padding: const EdgeInsets.all(10),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 230,
+        childAspectRatio: 0.80,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+      ),
       itemCount: results.length,
-      separatorBuilder: (_, __) => const Divider(
-          height: 1, color: Colors.white10, indent: 56),
       itemBuilder: (context, i) {
         final v = results[i];
-        return ListTile(
-          leading: Icon(Icons.play_circle_outline, color: themeState.accent),
-          title: Text(
-            v.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
-          ),
-          subtitle: Text(
-            v.path,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white38, fontSize: 11),
-          ),
+        return GestureDetector(
           onTap: () {
             close(context, null);
             onOpen(v);
           },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: SizedBox.expand(child: _BigThumb(track: v)),
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                v.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+              ),
+            ],
+          ),
         );
       },
+    );
+  }
+}
+
+/// v45: the large search-result thumbnail (same cached JPEG the library
+/// tiles show, just displayed much bigger here).
+class _BigThumb extends StatelessWidget {
+  final VideoTrack track;
+
+  const _BigThumb({required this.track});
+
+  @override
+  Widget build(BuildContext context) {
+    final thumb = track.thumbnailPath;
+    if (thumb != null) {
+      return Image.file(
+        File(thumb),
+        fit: BoxFit.cover,
+        // bound the decode size (same v22 trick as the library tiles)
+        cacheWidth: 470,
+        errorBuilder: (_, __, ___) => const _ThumbFallback(),
+      );
+    }
+    return const _ThumbFallback();
+  }
+}
+
+class _ThumbFallback extends StatelessWidget {
+  const _ThumbFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFF1e1e2a),
+      alignment: Alignment.center,
+      child: Icon(Icons.videocam_outlined,
+          size: 42, color: Colors.white.withValues(alpha: 0.18)),
     );
   }
 }

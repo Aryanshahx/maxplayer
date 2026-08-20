@@ -152,12 +152,14 @@ class TmdbDetailExtras {
   });
 }
 
-/// Detail bundle: the movie (with trailer key) + the extras above.
+/// Detail bundle: the movie (with trailer key) + the extras above +
+/// backdrop "screenshot" paths (v45).
 class TmdbFull {
   final TmdbMovie movie;
   final TmdbDetailExtras extras;
+  final List<String> screenshots;
 
-  const TmdbFull(this.movie, this.extras);
+  const TmdbFull(this.movie, this.extras, {this.screenshots = const []});
 }
 
 /// "7.834" -> "7.8" (badge text). Pure for tests.
@@ -319,6 +321,35 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
   }
 }
 
+/// w500 backdrop URL - these are the movie "screenshots" (scene stills),
+/// not posters. Pure for tests.
+String tmdbScreenshotUrl(String path) =>
+    path.isEmpty ? '' : 'https://image.tmdb.org/t/p/w500$path';
+
+/// v45: backdrop/screenshot paths from a DETAIL body's `images` block
+/// (append_to_response=...,images). Never throws; missing/junk -> empty.
+/// Pure for tests.
+List<String> parseTmdbScreenshots(String jsonBody, {int count = 8}) {
+  try {
+    final decoded = jsonDecode(jsonBody);
+    if (decoded is! Map) return const [];
+    final images = decoded['images'];
+    if (images is! Map) return const [];
+    final backdrops = images['backdrops'];
+    if (backdrops is! List) return const [];
+    final out = <String>[];
+    for (final b in backdrops) {
+      if (b is! Map) continue;
+      final p = '${b['file_path'] ?? ''}'.trim();
+      if (p.isNotEmpty) out.add(p);
+      if (out.length >= count) break;
+    }
+    return out;
+  } catch (_) {
+    return const [];
+  }
+}
+
 /// Picks the best trailer's YouTube key from a `videos` object:
 /// official YouTube Trailer > any YouTube Trailer > any YouTube video.
 /// Pure for tests. Returns null when there is no YouTube video at all.
@@ -355,22 +386,36 @@ String? pickTrailerKey(Object? videos) {
 class TmdbClient {
   static const String _host = 'api.themoviedb.org';
 
+  /// v45: ONE shared client (keep-alive TLS) + longer timeouts. Before,
+  /// every request made a fresh 5-second-timeout client, so on a slow
+  /// network the first load almost always failed -> "needs multiple
+  /// refreshes". [TmdbClient] instances share this single connection.
+  static final HttpClient _http = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 12)
+    ..idleTimeout = const Duration(seconds: 10);
+
   /// Directory used for the 24h disk cache (from NativeBridge.cacheDirPath).
   Directory? cacheDir;
 
+  /// v45: one automatic RETRY after a short pause - most mobile failures
+  /// are one-off blips, so the second attempt lands without the user
+  /// pulling-to-refresh again.
   Future<String> _get(Uri uri) async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 5);
-    try {
-      final req = await client.getUrl(uri);
-      final res = await req.close().timeout(const Duration(seconds: 8));
-      if (res.statusCode != 200) {
-        throw HttpException('TMDB status ${res.statusCode}');
+    Object? lastError;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final req = await _http.getUrl(uri);
+        final res = await req.close().timeout(const Duration(seconds: 15));
+        if (res.statusCode != 200) {
+          throw HttpException('TMDB status ${res.statusCode}');
+        }
+        return await res.transform(utf8.decoder).join();
+      } catch (e) {
+        lastError = e;
+        await Future<void>.delayed(const Duration(milliseconds: 400));
       }
-      return await res.transform(utf8.decoder).join();
-    } finally {
-      client.close(force: true);
     }
+    throw HttpException('TMDB request failed: $lastError');
   }
 
   File? _cacheFile(String name) {
@@ -442,20 +487,37 @@ class TmdbClient {
     return body == null ? const TmdbPage() : parseTmdbPage(body);
   }
 
-  /// v44: trailer + director/cast/runtime/genres in ONE call (the _v2
-  /// cache name forces one re-download - v43 cache files had no credits).
+  /// v44: trailer + director/cast/runtime/genres in ONE call; v45 also
+  /// pulls the images block (screenshots) and RELATED movies come from
+  /// [similar]. The _v3 cache name forces one re-download (v2 files had
+  /// no screenshots).
   Future<TmdbFull?> fullDetail(int id, {bool force = false}) async {
     if (kTmdbApiKey.isEmpty) return null;
     final uri = Uri.https(_host, '/3/movie/$id', {
       'api_key': kTmdbApiKey,
       'language': 'en-US',
-      'append_to_response': 'videos,credits',
+      'append_to_response': 'videos,credits,images',
+      'include_image_language': 'en,null',
     });
-    final body = await _fetch('tmdb_movie_v2_$id.json', uri,
+    final body = await _fetch('tmdb_movie_v3_$id.json', uri,
         ttl: force ? Duration.zero : const Duration(hours: 24));
     if (body == null) return null;
     final movie = parseTmdbDetail(body);
     if (movie == null) return null;
-    return TmdbFull(movie, parseTmdbExtras(body));
+    return TmdbFull(movie, parseTmdbExtras(body),
+        screenshots: parseTmdbScreenshots(body));
+  }
+
+  /// v45: RELATED movies ("search is poor - show related movies"): TMDB's
+  /// similar endpoint for the top search hit. Cached 24h like everything.
+  Future<List<TmdbMovie>> similar(int id, {bool force = false}) async {
+    if (kTmdbApiKey.isEmpty) return const [];
+    final uri = Uri.https(_host, '/3/movie/$id/similar', {
+      'api_key': kTmdbApiKey,
+      'language': 'en-US',
+    });
+    final body = await _fetch('tmdb_similar_$id.json', uri,
+        ttl: force ? Duration.zero : const Duration(hours: 24));
+    return body == null ? const [] : parseTmdbList(body);
   }
 }

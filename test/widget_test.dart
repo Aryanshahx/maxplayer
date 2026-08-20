@@ -13,6 +13,7 @@ import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/services/native_bridge.dart';
 import 'package:maxplayer/services/tmdb_client.dart';
 import 'package:maxplayer/widgets/tmdb_image.dart';
+import 'package:maxplayer/services/movie_ai.dart';
 import 'package:maxplayer/widgets/video_search_delegate.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/player_settings.dart';
@@ -1535,6 +1536,56 @@ void main() {
     test('leaving the player restores MANUAL bars (no status-bar overlap)', () {
       expect(playerRestoreSystemUiMode, SystemUiMode.manual);
       expect(playerRestoreOverlays, containsAll(SystemUiOverlay.values));
+    });
+  });
+
+  group('v45 Discover reliability + screenshots + Ask with AI', () {
+    test('parseTmdbScreenshots picks backdrop paths, caps count, never throws', () {
+      const body = '{"id":1,"images":{"backdrops":['
+          '{"file_path":"/s1.jpg"},{"file_path":"/s2.jpg"},'
+          '{"file_path":""},{"file_path":"/s3.jpg"}]}}';
+      final shots = parseTmdbScreenshots(body);
+      expect(shots, ['/s1.jpg', '/s2.jpg', '/s3.jpg']); // empty skipped
+      expect(parseTmdbScreenshots(body, count: 2), ['/s1.jpg', '/s2.jpg']);
+      expect(parseTmdbScreenshots('{}'), isEmpty);
+      expect(parseTmdbScreenshots('junk'), isEmpty);
+    });
+
+    test('tmdbScreenshotUrl builds the w500 backdrop URL', () {
+      expect(tmdbScreenshotUrl('/abc.jpg'),
+          'https://image.tmdb.org/t/p/w500/abc.jpg');
+      expect(tmdbScreenshotUrl(''), '');
+    });
+
+    test('openRouterChatBody: model + restricted system + user question', () {
+      final body = openRouterChatBody(
+        model: kOpenRouterModels.first,
+        system: movieAiSystemPrompt(const TmdbMovie(
+            id: 1, title: 'Dune', rating: 8, year: 2021)),
+        question: 'Is it worth watching?',
+      );
+      expect(body['model'], kOpenRouterModels.first);
+      final messages = body['messages'] as List;
+      expect((messages.first as Map)['role'], 'system');
+      expect('${messages.first['content']}'.contains('ONLY'), isTrue);
+      expect('${messages.first['content']}'.contains('Dune'), isTrue);
+      expect((messages.last as Map)['role'], 'user');
+    });
+
+    test('parseOpenRouterAnswer extracts the text, null on junk', () {
+      const ok = '{"choices":[{"message":{"role":"assistant",'
+          '"content":"  Watch it in IMAX.  "}}]}';
+      expect(parseOpenRouterAnswer(ok), 'Watch it in IMAX.');
+      expect(parseOpenRouterAnswer('{"choices":[]}'), isNull);
+      expect(parseOpenRouterAnswer('not json'), isNull);
+    });
+
+    test('Ask-with-AI stays FREE: 4 fallback models + many templates', () {
+      expect(kOpenRouterModels.length, greaterThanOrEqualTo(4));
+      for (final m in kOpenRouterModels) {
+        expect(m.endsWith(':free'), isTrue);
+      }
+      expect(kMovieAiTemplates.length, greaterThanOrEqualTo(5));
     });
   });
 }

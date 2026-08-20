@@ -58,6 +58,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   String? _error;
   bool _keyMissing = false;
 
+  /// v45: "search is poor - show related movies": similar titles of the
+  /// top search hit, shown under the results in search mode.
+  List<TmdbMovie> _related = const [];
+
   /// Bumped every time the MODE (filter/search) changes; stale in-flight
   /// page loads check it and drop their results (no mixed-up grids).
   int _loadToken = 0;
@@ -129,6 +133,22 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         _error = null;
       }
     });
+    // v45: in search mode, also fetch "you may also like" from the top
+    // hit - a plain search word finds few direct matches otherwise.
+    if (_searching && page == 1 && result.items.isNotEmpty) {
+      _loadRelated(result.items.first.id, token);
+    }
+  }
+
+  Future<void> _loadRelated(int movieId, int token) async {
+    List<TmdbMovie> rel;
+    try {
+      rel = await _client.similar(movieId);
+    } catch (_) {
+      rel = const [];
+    }
+    if (!mounted || token != _loadToken || !_searching) return;
+    setState(() => _related = rel.take(12).toList());
   }
 
   /// Hard switch of browse/search mode: clears the grid, invalidates any
@@ -144,6 +164,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       _totalPages = 1;
       _totalResults = 0;
       _error = null;
+      _related = const [];
     });
     _loadPage(1, force: force);
   }
@@ -306,27 +327,71 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     }
     return Stack(
       children: [
-        GridView.builder(
+        CustomScrollView(
           controller: _scroll,
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(8),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 150,
-            childAspectRatio: 0.58,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-          ),
-          itemCount: _movies.length,
-          itemBuilder: (context, i) {
-            final movie = _movies[i];
-            return _PosterCard(
-              // v44: stable per-MOVIE key -> a recycled cell never flashes
-              // the previous movie's poster after refresh/reorder.
-              key: ValueKey(movie.id),
-              movie: movie,
-              onTap: () => _openMovie(movie),
-            );
-          },
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.all(10),
+              sliver: SliverGrid.builder(
+                // v45: BIGGER cards (150 -> 200 wide) so posters actually
+                // read like a movie app, not stamps.
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 200,
+                  childAspectRatio: 0.60,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                ),
+                itemCount: _movies.length,
+                itemBuilder: (context, i) {
+                  final movie = _movies[i];
+                  return _PosterCard(
+                    // v44: stable per-MOVIE key -> a recycled cell never
+                    // flashes the previous movie's poster after refresh.
+                    key: ValueKey(movie.id),
+                    movie: movie,
+                    onTap: () => _openMovie(movie),
+                  );
+                },
+              ),
+            ),
+            // v45: related movies under search results.
+            if (_searching && _related.isNotEmpty) ...[
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(12, 10, 12, 8),
+                  child: Text(
+                    'Related to your search',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 224,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: _related.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    itemBuilder: (context, i) => SizedBox(
+                      width: 128,
+                      child: _PosterCard(
+                        key: ValueKey('rel_${_related[i].id}'),
+                        movie: _related[i],
+                        onTap: () => _openMovie(_related[i]),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            const SliverToBoxAdapter(child: SizedBox(height: 16)),
+          ],
         ),
         if (_loadingMore)
           Positioned(

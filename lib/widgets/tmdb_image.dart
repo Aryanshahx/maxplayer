@@ -39,8 +39,21 @@ class TmdbImage extends StatefulWidget {
   const TmdbImage({super.key, required this.url, this.fit = BoxFit.cover});
 
   static final Map<String, String> _resolved = {};
-  static final Set<String> _failedUrls = {};
+
+  /// v45: failures are remembered WITH a time, not forever. v43/v44 kept
+  /// them for the whole session, so one weak-network moment froze dead
+  /// posters until the app restarted - part of why Discover "needed
+  /// multiple refreshes". Now a failed poster retries after 45 seconds.
+  static final Map<String, DateTime> _failedAt = {};
   static String? _cacheDirPath;
+
+  /// v45: one shared keep-alive client (was: a fresh 5s client per poster)
+  /// plus a tiny concurrency cap so 20 posters don't fight each other.
+  static final HttpClient _http = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 12)
+    ..idleTimeout = const Duration(seconds: 10);
+  static int _inFlight = 0;
+  static const int _maxInFlight = 4;
 
   /// Called once by the Discover screen (cache dir from NativeBridge).
   static void configure(String? cacheDirPath) => _cacheDirPath = cacheDirPath;
@@ -75,9 +88,19 @@ class _TmdbImageState extends State<TmdbImage> {
   }
 
   Future<void> _resolve() async {
-    if (widget.url.isEmpty || TmdbImage._failedUrls.contains(widget.url)) {
+    if (widget.url.isEmpty) {
       if (mounted) setState(() => _failed = true);
       return;
+    }
+    final failedAt = TmdbImage._failedAt[widget.url];
+    if (failedAt != null) {
+      if (DateTime.now().difference(failedAt) <
+          const Duration(seconds: 45)) {
+        if (mounted) setState(() => _failed = true);
+        return;
+      }
+      // v45: cooldown over - give it another chance instead of staying dead.
+      TmdbImage._failedAt.remove(widget.url);
     }
     final known = TmdbImage._resolved[widget.url];
     if (known != null) {
@@ -97,34 +120,50 @@ class _TmdbImageState extends State<TmdbImage> {
         }
       } catch (_) {}
     }
+    // v45: download with the shared client, one retry, and at most
+    // _maxInFlight parallel downloads (queue by waiting a little).
+    while (_TmdbImageState._slotsFull()) {
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      if (!mounted) return;
+    }
+    TmdbImage._inFlight++;
     try {
-      final client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 5);
-      try {
-        final req = await client.getUrl(Uri.parse(widget.url));
-        final res = await req.close().timeout(const Duration(seconds: 8));
-        if (res.statusCode != 200) {
-          throw HttpException('poster status ${res.statusCode}');
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          final req = await _TmdbImageState._httpGet(widget.url);
+          final res = await req.close().timeout(const Duration(seconds: 20));
+          if (res.statusCode != 200) {
+            throw HttpException('poster status ${res.statusCode}');
+          }
+          final bytes = await consolidateHttpClientResponseBytes(res);
+          if (path != null) {
+            try {
+              await File(path).writeAsBytes(bytes, flush: true);
+              TmdbImage._resolved[widget.url] = path;
+            } catch (_) {}
+            if (mounted) setState(() => _filePath = path);
+          } else {
+            // No cache dir (unexpected) - show from memory at least.
+            if (mounted) setState(() => _bytes = bytes);
+          }
+          return;
+        } catch (_) {
+          if (attempt == 0) {
+            await Future<void>.delayed(const Duration(milliseconds: 400));
+          }
         }
-        final bytes = await consolidateHttpClientResponseBytes(res);
-        if (path != null) {
-          try {
-            await File(path).writeAsBytes(bytes, flush: true);
-            TmdbImage._resolved[widget.url] = path;
-          } catch (_) {}
-          if (mounted) setState(() => _filePath = path);
-        } else {
-          // No cache dir (unexpected) - show from memory at least.
-          if (mounted) setState(() => _bytes = bytes);
-        }
-      } finally {
-        client.close(force: true);
       }
-    } catch (_) {
-      TmdbImage._failedUrls.add(widget.url);
+      TmdbImage._failedAt[widget.url] = DateTime.now();
       if (mounted) setState(() => _failed = true);
+    } finally {
+      TmdbImage._inFlight--;
     }
   }
+
+  static bool _slotsFull() => TmdbImage._inFlight >= TmdbImage._maxInFlight;
+
+  static Future<HttpClientRequest> _httpGet(String url) =>
+      TmdbImage._http.getUrl(Uri.parse(url));
 
   @override
   Widget build(BuildContext context) {

@@ -6,6 +6,7 @@ import '../services/native_bridge.dart';
 import '../services/tmdb_client.dart';
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
+import 'ask_ai_sheet.dart';
 import 'tmdb_image.dart';
 
 /// v44: the Discover detail sheet - poster, TMDB rating (with credit),
@@ -73,7 +74,15 @@ class MovieDetailSheet extends StatefulWidget {
 
 class _MovieDetailSheetState extends State<MovieDetailSheet> {
   // Fired once - never inside build(), so no refetch on every rebuild.
-  late final Future<TmdbFull?> _detailFuture = widget.detailLoader();
+  // v45: NOT final - a failed load (was common on slow networks) now has
+  // a visible Retry instead of needing sheet close/open rounds.
+  late Future<TmdbFull?> _detailFuture = widget.detailLoader();
+
+  void _retryDetail() {
+    setState(() {
+      _detailFuture = widget.detailLoader();
+    });
+  }
 
   Future<void> _playLocal(BuildContext context) async {
     final track = widget.localMatch;
@@ -166,6 +175,8 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
             ],
           ),
           // v44: the extra facts arrive with the trailer lookup (one call).
+          // v45: that same call also brings the screenshots row, and a
+          // failure offers Retry instead of a dead sheet.
           FutureBuilder<TmdbFull?>(
             future: _detailFuture,
             builder: (context, snap) {
@@ -179,8 +190,34 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                 );
               }
               final full = snap.data;
-              if (full == null) return const SizedBox(height: 8);
-              return _ExtrasBlock(extras: full.extras);
+              if (full == null) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Details could not load (network was busy).',
+                          style:
+                              TextStyle(color: Colors.white38, fontSize: 12),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _retryDetail,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (full.screenshots.isNotEmpty)
+                    _ScreenshotsRow(paths: full.screenshots),
+                  _ExtrasBlock(extras: full.extras),
+                ],
+              );
             },
           ),
           if (movie.overview.isNotEmpty)
@@ -237,6 +274,17 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
               },
             ),
           ),
+          const SizedBox(height: 10),
+          // v45: movie-restricted AI chat (free OpenRouter models).
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: () =>
+                  AskAiSheet.show(context, movie: widget.movie),
+              icon: const Icon(Icons.auto_awesome),
+              label: const Text('Ask with AI about this movie'),
+            ),
+          ),
           if (widget.localMatch != null) ...[
             const SizedBox(height: 10),
             SizedBox(
@@ -266,6 +314,36 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// v45: a horizontal strip of scene "screenshots" (TMDB backdrops) so the
+/// sheet shows the movie, not just tells it.
+class _ScreenshotsRow extends StatelessWidget {
+  final List<String> paths;
+
+  const _ScreenshotsRow({required this.paths});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: SizedBox(
+        height: 104,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: paths.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (context, i) => ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              width: 176,
+              child: TmdbImage(url: tmdbScreenshotUrl(paths[i])),
+            ),
+          ),
+        ),
       ),
     );
   }
