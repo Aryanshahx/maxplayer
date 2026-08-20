@@ -41,7 +41,9 @@ Made by **Hyper Tech Labs** (Aryan Shah), Deoria, Uttar Pradesh, India.
   already on your phone, "In my library" plays it instantly.
   Detail sheets also show scene screenshots, spoken languages,
   a Stream/Rent/Buy "Where to watch (India)" split, real user
-  reviews, an Upcoming (not-released-yet) shelf, search suggests
+  reviews, every supported language + the full TMDB data set
+  (budget, revenue, companies, certificate), real subtitle
+  availability (OpenSubtitles), an Upcoming shelf, search suggests
   related movies, and "Ask with AI" answers movie questions
   (movie-only by design, answers cached a week) via free
   OpenRouter models.

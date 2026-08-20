@@ -14,6 +14,7 @@ import 'package:maxplayer/services/native_bridge.dart';
 import 'package:maxplayer/services/tmdb_client.dart';
 import 'package:maxplayer/widgets/tmdb_image.dart';
 import 'package:maxplayer/services/movie_ai.dart';
+import 'package:maxplayer/services/subtitle_langs.dart';
 import 'package:maxplayer/widgets/video_search_delegate.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/player_settings.dart';
@@ -1647,6 +1648,45 @@ void main() {
       expect(movieAiCacheName(693134, 'ending?'), isNot(a));
       expect(movieAiCacheName(550, 'Is it good?'), isNot(a));
       expect(a.startsWith('ai_answer_693134_'), isTrue);
+    });
+  });
+
+  group('v47 real subtitles + all TMDB data + thumbnails', () {
+    test('parseOpenSubLanguages: unique sorted codes, junk-safe', () {
+      const body = '{"data":[{"attributes":{"language":"en"}},'
+          '{"attributes":{"language":"hi"}},'
+          '{"attributes":{"language":"en"}},'
+          '{"attributes":{}}]}';
+      expect(parseOpenSubLanguages(body), ['en', 'hi']);
+      expect(parseOpenSubLanguages('{}'), isEmpty);
+      expect(parseOpenSubLanguages('junk'), isEmpty);
+    });
+
+    test('tmdbLanguageName maps codes, uppercases unknowns', () {
+      expect(tmdbLanguageName('hi'), 'Hindi');
+      expect(tmdbLanguageName('ta'), 'Tamil');
+      expect(tmdbLanguageName('xx'), 'XX');
+    });
+
+    test('parseTmdbExtras v47: budget, revenue, companies, cert, languages', () {
+      const body = '{"id":1,"title":"X","release_date":"2024-06-14",'
+          '"original_title":"X Orig","budget":165000000,'
+          '"revenue":711000000,'
+          '"production_companies":[{"name":"Legendary"}],'
+          '"production_countries":[{"name":"United States"}],'
+          '"release_dates":{"results":[{"iso_3166_1":"US",'
+          '"release_dates":[{"certification":"PG-13"}]}]},'
+          '"translations":{"translations":[{"iso_639_1":"en"},'
+          '{"iso_639_1":"hi"},{"iso_639_1":"ta"}]}}';
+      final x = parseTmdbExtras(body);
+      expect(x.releaseDate, '2024-06-14');
+      expect(x.originalTitle, 'X Orig');
+      expect(x.budgetUsd, 165000000);
+      expect(x.revenueUsd, 711000000);
+      expect(x.companies, ['Legendary']);
+      expect(x.countries, ['United States']);
+      expect(x.certification, 'PG-13');
+      expect(x.allLanguages, ['English', 'Hindi', 'Tamil']);
     });
   });
 }

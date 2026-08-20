@@ -971,11 +971,21 @@ class MainActivity : FlutterActivity() {
         out["codec"] = null
 
         val videoFile = File(path)
-        if (!videoFile.exists()) return out
+        // v47: scoped-storage phones may hand us a content URI; don't
+        // reject it at the File-exists gate.
+        val isContent = path.startsWith("content://")
+        if (!isContent && !videoFile.exists()) return out
 
         val retriever = MediaMetadataRetriever()
         try {
-            retriever.setDataSource(path)
+            try {
+                // v47: content URIs need the Context overload.
+                if (isContent) retriever.setDataSource(
+                    this, android.net.Uri.parse(path))
+                else retriever.setDataSource(path)
+            } catch (e: Exception) {
+                retriever.setDataSource(this, android.net.Uri.parse(path))
+            }
             val durationMs =
                 retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
             out["durationMs"] = durationMs

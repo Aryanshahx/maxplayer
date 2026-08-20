@@ -1,9 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../utils/formatters.dart';
 import '../state/theme_state.dart';
-import 'fade_in_image.dart';
+import 'video_thumb.dart';
 
 /// List-mode row for the library (see "Display in list" in the settings
 /// sheet): small thumbnail, title, size + duration, and a favourite toggle.
@@ -41,7 +40,7 @@ class VideoListItem extends StatelessWidget {
         child: SizedBox(
           width: 96,
           height: 54,
-          child: _Thumb(track: track),
+          child: VideoThumb(track: track, cacheWidth: 220),
         ),
       ),
       title: Text(
@@ -62,39 +61,6 @@ class VideoListItem extends StatelessWidget {
           color: isFavorite ? themeState.accent : Colors.white38,
         ),
         onPressed: onFavorite,
-      ),
-    );
-  }
-}
-
-class _Thumb extends StatelessWidget {
-  final VideoTrack track;
-  const _Thumb({required this.track});
-
-  @override
-  Widget build(BuildContext context) {
-    if (track.thumbnailPath != null) {
-      return Image.file(
-        File(track.thumbnailPath!),
-        fit: BoxFit.cover,
-        cacheWidth: 220, // v22: bound the decode size (see video_tile)
-        frameBuilder: fadeInImageFrame,
-        errorBuilder: (_, __, ___) => const _Placeholder(),
-      );
-    }
-    return const _Placeholder();
-  }
-}
-
-class _Placeholder extends StatelessWidget {
-  const _Placeholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF12121a),
-      child: const Center(
-        child: Icon(Icons.movie_outlined, size: 22, color: Colors.white24),
       ),
     );
   }

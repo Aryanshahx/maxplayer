@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart' hide VideoTrack;
 
 import '../state/theme_state.dart';
-import '../utils/ai_subtitles.dart';
 
 import '../state/media_player_state.dart';
 
@@ -174,7 +173,7 @@ class TrackSelectionSheet extends StatelessWidget {
         leading: Icon(Icons.auto_awesome,
             size: 20, color: TrackSelectionSheet._accent),
         title: const Text(
-          'Generate with AI ✨',
+          'Generate with AI (cloud) ✨',
           style: TextStyle(
             color: Colors.white,
             fontSize: 15,
@@ -182,13 +181,15 @@ class TrackSelectionSheet extends StatelessWidget {
           ),
         ),
         subtitle: const Text(
-          'Offline & free · the AI writes subtitles for this video',
+          'Powered by the Puter cloud - arrives in the next update',
           style: TextStyle(color: Colors.white38, fontSize: 12),
         ),
         onTap: () {
           final rootCtx = Navigator.of(context, rootNavigator: true).context;
           Navigator.of(context).pop();
-          AiSubtitleRunner.start(rootCtx, player);
+          ScaffoldMessenger.of(rootCtx).showSnackBar(const SnackBar(
+                content: Text('AI subtitles move to the cloud (Puter) in the '
+                    'next update - faster, works on every phone.'),));
         },
       ),
     ];

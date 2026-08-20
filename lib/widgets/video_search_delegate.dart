@@ -1,8 +1,8 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../models/video_track.dart';
+import 'video_thumb.dart';
 
 /// Pure, testable: case-insensitive contains on the trimmed query; an
 /// empty query returns everything. Used by the v44 full-screen search
@@ -130,30 +130,7 @@ class _BigThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final thumb = track.thumbnailPath;
-    if (thumb != null) {
-      return Image.file(
-        File(thumb),
-        fit: BoxFit.cover,
-        // bound the decode size (same v22 trick as the library tiles)
-        cacheWidth: 470,
-        errorBuilder: (_, __, ___) => const _ThumbFallback(),
-      );
-    }
-    return const _ThumbFallback();
-  }
-}
-
-class _ThumbFallback extends StatelessWidget {
-  const _ThumbFallback();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF1e1e2a),
-      alignment: Alignment.center,
-      child: Icon(Icons.videocam_outlined,
-          size: 42, color: Colors.white.withValues(alpha: 0.18)),
-    );
+    // v47: the same self-healing thumbnail as the home grid
+    return VideoThumb(track: track, cacheWidth: 470);
   }
 }

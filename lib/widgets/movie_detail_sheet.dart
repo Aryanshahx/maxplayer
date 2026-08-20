@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../models/video_track.dart';
@@ -6,6 +8,7 @@ import '../services/native_bridge.dart';
 import '../services/tmdb_client.dart';
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
+import '../services/subtitle_langs.dart';
 import 'ask_ai_sheet.dart';
 import 'tmdb_image.dart';
 
@@ -217,6 +220,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                     _ScreenshotsRow(paths: full.screenshots),
                   _ExtrasBlock(extras: full.extras),
                   if (!full.watch.isEmpty) _WatchBlock(info: full.watch),
+                  _AllDataBlock(extras: full.extras, movieId: movie.id),
                 ],
               );
             },
@@ -414,17 +418,6 @@ class _ExtrasBlock extends StatelessWidget {
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              'Subtitles: Max Player\'s AI captions cover 90+ languages '
-              'while playing',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.45),
-                fontSize: 11,
-              ),
-            ),
-          ),
           if (extras.genres.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -591,6 +584,88 @@ class _ReviewsBlock extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// v47: EVERYTHING TMDB knows - dates, certificate, money, companies,
+/// countries and ALL supported languages.
+class _AllDataBlock extends StatelessWidget {
+  final TmdbDetailExtras extras;
+  final int movieId;
+  const _AllDataBlock({required this.extras, required this.movieId});
+  @override
+  Widget build(BuildContext context) {
+    Widget row(String l, String v) => Padding(
+        padding: const EdgeInsets.only(bottom: 3),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SizedBox(width: 78, child: Text(l, style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4), fontSize: 11))),
+          Expanded(child: Text(v, style: const TextStyle(
+              color: Colors.white70, fontSize: 12))),
+        ]));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (extras.releaseDate.isNotEmpty) row('Release', extras.releaseDate),
+        if (extras.certification.isNotEmpty) row('Certificate', extras.certification),
+        if (extras.originalTitle.isNotEmpty) row('Original', extras.originalTitle),
+        if (extras.budgetUsd > 0) row('Budget', '\$${formatVoteCount(extras.budgetUsd)}'),
+        if (extras.revenueUsd > 0) row('Revenue', '\$${formatVoteCount(extras.revenueUsd)}'),
+        if (extras.companies.isNotEmpty) row('Studio', extras.companies.join('  ')),
+        if (extras.countries.isNotEmpty) row('Country', extras.countries.join('  ')),
+        if (extras.allLanguages.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text('Languages supported (${extras.allLanguages.length})',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.75),
+                  fontSize: 12, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Wrap(spacing: 6, runSpacing: 4, children: [
+            for (final l in extras.allLanguages)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(10)),
+                child: Text(l, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+              ),
+          ]),
+          const SizedBox(height: 6),
+        ],
+        _RealSubtitlesBlock(movieId: movieId),
+      ]),
+    );
+  }
+}
+
+/// v47: REAL subtitle availability (OpenSubtitles).
+class _RealSubtitlesBlock extends StatefulWidget {
+  final int movieId;
+  const _RealSubtitlesBlock({required this.movieId});
+  @override
+  State<_RealSubtitlesBlock> createState() => _RealSubtitlesBlockState();
+}
+
+class _RealSubtitlesBlockState extends State<_RealSubtitlesBlock> {
+  final _client = OpenSubtitlesClient();
+  List<String>? _langs;
+  @override
+  void initState() { super.initState(); _boot(); }
+  Future<void> _boot() async {
+    final cachePath = await NativeBridge.cacheDirPath();
+    if (cachePath != null) _client.cacheDir = Directory(cachePath);
+    final langs = await _client.languagesFor(widget.movieId);
+    if (mounted) setState(() => _langs = langs);
+  }
+  @override
+  Widget build(BuildContext context) {
+    if (kOpenSubtitlesApiKey.isEmpty) return const SizedBox.shrink();
+    final langs = _langs;
+    if (langs == null || langs.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text('Subtitles available: ${langs.join('  ')}',
+          style: const TextStyle(color: Colors.white54, fontSize: 11)),
     );
   }
 }

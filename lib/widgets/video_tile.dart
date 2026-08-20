@@ -1,9 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/video_track.dart';
 import '../utils/formatters.dart';
 import '../state/theme_state.dart';
-import 'fade_in_image.dart';
+import 'video_thumb.dart';
 
 class VideoTile extends StatelessWidget {
   final VideoTrack track;
@@ -39,19 +38,8 @@ class VideoTile extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (track.thumbnailPath != null)
-                    Image.file(
-                      File(track.thumbnailPath!),
-                      fit: BoxFit.cover,
-                      // v22: bound the decode size - a stray full-size
-                      // capture must never cost a 33 MB bitmap while
-                      // scrolling the grid.
-                      cacheWidth: 360,
-                      frameBuilder: fadeInImageFrame,
-                      errorBuilder: (_, __, ___) => const _Placeholder(),
-                    )
-                  else
-                    const _Placeholder(),
+                  // v47: one shared, self-healing thumbnail
+                  VideoThumb(track: track, cacheWidth: 360),
                   // Quality badge (e.g. "1080p"), top-left like VLC.
                   if (track.qualityLabel != null)
                     Positioned(
@@ -145,20 +133,6 @@ class VideoTile extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _Placeholder extends StatelessWidget {
-  const _Placeholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.black45,
-      child: const Center(
-        child: Icon(Icons.movie_outlined, size: 32, color: Colors.white24),
       ),
     );
   }

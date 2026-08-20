@@ -154,6 +154,18 @@ class TmdbDetailExtras {
   final int voteCount;
   final String status;
 
+  /// v47: the FULL TMDB data set for the detail sheet.
+  final String releaseDate;
+  final String originalTitle;
+  final int budgetUsd;
+  final int revenueUsd;
+  final List<String> companies;
+  final List<String> countries;
+  final String certification;
+
+  /// Every language TMDB has this movie's data in (translations).
+  final List<String> allLanguages;
+
   /// v46: spoken (audio) language names - "Languages: English · Hindi".
   final List<String> spokenLanguages;
 
@@ -165,6 +177,14 @@ class TmdbDetailExtras {
     this.tagline = '',
     this.voteCount = 0,
     this.status = '',
+    this.releaseDate = '',
+    this.originalTitle = '',
+    this.budgetUsd = 0,
+    this.revenueUsd = 0,
+    this.companies = const [],
+    this.countries = const [],
+    this.certification = '',
+    this.allLanguages = const [],
     this.spokenLanguages = const [],
   });
 }
@@ -373,6 +393,14 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
           ? (decoded['vote_count'] as num).toInt()
           : 0,
       status: '${decoded['status'] ?? ''}'.trim(),
+      releaseDate: '${decoded['release_date'] ?? ''}'.trim(),
+      originalTitle: '${decoded['original_title'] ?? ''}'.trim(),
+      budgetUsd: decoded['budget'] is num ? (decoded['budget'] as num).toInt() : 0,
+      revenueUsd: decoded['revenue'] is num ? (decoded['revenue'] as num).toInt() : 0,
+      companies: _namesList(decoded['production_companies']),
+      countries: _namesList(decoded['production_countries']),
+      certification: _certification(decoded),
+      allLanguages: _translationLanguages(decoded),
       spokenLanguages: langs,
     );
   } catch (_) {
@@ -479,6 +507,79 @@ List<String> parseTmdbScreenshots(String jsonBody, {int count = 8}) {
   } catch (_) {
     return const [];
   }
+}
+
+/// Common ISO-639-1 codes -> readable language names (the ones likely
+/// to appear for our users). Unknown codes come back UPPERCASED.
+String tmdbLanguageName(String code) {
+  const names = {
+    'en': 'English', 'hi': 'Hindi', 'ta': 'Tamil', 'te': 'Telugu',
+    'ml': 'Malayalam', 'kn': 'Kannada', 'bn': 'Bengali', 'mr': 'Marathi',
+    'pa': 'Punjabi', 'ur': 'Urdu', 'ar': 'Arabic', 'es': 'Spanish',
+    'fr': 'French', 'de': 'German', 'it': 'Italian', 'pt': 'Portuguese',
+    'ru': 'Russian', 'ja': 'Japanese', 'ko': 'Korean', 'zh': 'Chinese',
+    'cn': 'Chinese', 'th': 'Thai', 'tr': 'Turkish', 'id': 'Indonesian',
+    'vi': 'Vietnamese', 'nl': 'Dutch', 'sv': 'Swedish', 'pl': 'Polish',
+    'ms': 'Malay', 'fa': 'Persian', 'he': 'Hebrew', 'uk': 'Ukrainian',
+    'cs': 'Czech', 'da': 'Danish', 'fi': 'Finnish', 'no': 'Norwegian',
+    'el': 'Greek', 'hu': 'Hungarian', 'ro': 'Romanian',
+  };
+  return names[code] ?? code.toUpperCase();
+}
+
+List<String> _namesList(Object? list) {
+  if (list is! List) return const [];
+  final out = <String>[];
+  for (final e in list) {
+    if (e is Map) {
+      final n = '${e['name'] ?? ''}'.trim();
+      if (n.isNotEmpty) out.add(n);
+    }
+  }
+  return out;
+}
+
+/// Certification (UA / A / PG-13...) - India first, then US.
+String _certification(Map decoded) {
+  final rd = decoded['release_dates'];
+  if (rd is! Map) return '';
+  final results = rd['results'];
+  if (results is! List) return '';
+  for (final want in ['IN', 'US']) {
+    for (final r in results) {
+      if (r is Map && r['iso_3166_1'] == want) {
+        final dates = r['release_dates'];
+        if (dates is List) {
+          for (final d in dates) {
+            if (d is Map) {
+              final c = '${d['certification'] ?? ''}'.trim();
+              if (c.isNotEmpty) return c;
+            }
+          }
+        }
+      }
+    }
+  }
+  return '';
+}
+
+/// All languages TMDB has data for this movie in.
+List<String> _translationLanguages(Map decoded) {
+  final tr = decoded['translations'];
+  if (tr is! Map) return const [];
+  final list = tr['translations'];
+  if (list is! List) return const [];
+  final out = <String>[];
+  for (final t in list) {
+    if (t is Map) {
+      final code = '${t['iso_639_1'] ?? ''}'.trim();
+      if (code.isNotEmpty) {
+        final name = tmdbLanguageName(code);
+        if (!out.contains(name)) out.add(name);
+      }
+    }
+  }
+  return out;
 }
 
 /// Picks the best trailer's YouTube key from a `videos` object:
@@ -627,10 +728,12 @@ class TmdbClient {
     final uri = Uri.https(_host, '/3/movie/$id', {
       'api_key': kTmdbApiKey,
       'language': 'en-US',
-      'append_to_response': 'videos,credits,images,watch/providers,reviews',
+      'append_to_response':
+          'videos,credits,images,watch/providers,reviews,'
+          'release_dates,translations',
       'include_image_language': 'en,null',
     });
-    final body = await _fetch('tmdb_movie_v4_$id.json', uri,
+    final body = await _fetch('tmdb_movie_v5_$id.json', uri,
         ttl: force ? Duration.zero : const Duration(hours: 24));
     if (body == null) return null;
     final movie = parseTmdbDetail(body);

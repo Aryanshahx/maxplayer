@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,11 @@ import 'tmdb_image.dart';
 /// text always reads). It replaced the old search TextField (search moved
 /// to an icon in the app bar).
 ///
+/// v47: the poster background now MOVES - a slow marquee that slides one
+/// poster every couple of seconds in a seamless loop (the set is drawn
+/// twice, so wrapping back one full set is invisible). The strip is also
+/// draggable by hand; auto-scrolling pauses while the user is holding it.
+///
 /// Posters come from the same 24h disk cache as the Discover screen, so
 /// after the first online visit the banner also works fully offline. With
 /// no key / no posters yet it quietly falls back to a themed gradient.
@@ -25,13 +31,21 @@ class DiscoverBanner extends StatefulWidget {
 }
 
 class _DiscoverBannerState extends State<DiscoverBanner> {
+  /// Width of one poster tile = one marquee step per tick.
+  static const double _step = 74;
+
   final _client = TmdbClient();
+  final _ctrl = ScrollController();
+  Timer? _timer;
   List<String> _posters = const [];
+  bool _userHolding = false;
 
   @override
   void initState() {
     super.initState();
     _boot();
+    _timer =
+        Timer.periodic(const Duration(milliseconds: 2200), (_) => _tick());
   }
 
   Future<void> _boot() async {
@@ -50,10 +64,41 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
     if (!mounted) return;
     setState(() {
       _posters = [
-        for (final m in list.take(4))
+        for (final m in list.take(10))
           if (m.posterPath != null) tmdbPosterUrl(m.posterPath),
       ];
     });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _tick() {
+    if (_userHolding || !_ctrl.hasClients || _posters.length < 2) return;
+    final double loopWidth = _step * _posters.length;
+    final pos = _ctrl.position;
+    var from = pos.pixels;
+    // Wrap point: the strip contains the same poster set twice, so at
+    // loopWidth the visible content is identical to offset 0 and jumping
+    // back one full set is invisible. On very wide screens the content can
+    // be shorter than one set; then wrap at the end instead.
+    final wrapAt =
+        loopWidth <= pos.maxScrollExtent ? loopWidth : pos.maxScrollExtent;
+    if (wrapAt > 0 && from >= wrapAt) {
+      from -= loopWidth;
+      if (from < 0) from = 0;
+      if (from > pos.maxScrollExtent) from = pos.maxScrollExtent;
+      _ctrl.jumpTo(from);
+    }
+    _ctrl.animateTo(
+      from + _step,
+      duration: const Duration(milliseconds: 700),
+      curve: Curves.easeInOut,
+    );
   }
 
   @override
@@ -80,7 +125,31 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                if (_posters.isNotEmpty)
+                if (_posters.length >= 2)
+                  Listener(
+                    onPointerDown: (_) => _userHolding = true,
+                    onPointerUp: (_) => _userHolding = false,
+                    onPointerCancel: (_) => _userHolding = false,
+                    child: ListView(
+                      controller: _ctrl,
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        // Two copies of the same set = seamless wrap.
+                        for (final url in [..._posters, ..._posters])
+                          SizedBox(
+                            width: _step,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: TmdbImage(url: url),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  )
+                else if (_posters.isNotEmpty)
                   Row(
                     children: [
                       for (final url in _posters)
