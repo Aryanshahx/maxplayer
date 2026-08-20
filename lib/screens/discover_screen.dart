@@ -250,7 +250,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: InputDecoration(
                       isDense: true,
-                      hintText: 'Search TMDB movies...',
+                      hintText: 'Search movies...',
                       hintStyle: const TextStyle(color: Colors.white38),
                       prefixIcon: Icon(Icons.search,
                           color: themeState.accent, size: 20),

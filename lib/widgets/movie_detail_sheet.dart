@@ -216,6 +216,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                   if (full.screenshots.isNotEmpty)
                     _ScreenshotsRow(paths: full.screenshots),
                   _ExtrasBlock(extras: full.extras),
+                  if (!full.watch.isEmpty) _WatchBlock(info: full.watch),
                 ],
               );
             },
@@ -299,12 +300,25 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
               ),
             ),
           ],
+          // v46: real TMDB user reviews (was asked: "real reviews").
+          FutureBuilder<TmdbFull?>(
+            future: _detailFuture,
+            builder: (context, snap) {
+              final full = snap.data;
+              if (snap.connectionState != ConnectionState.done ||
+                  full == null ||
+                  full.reviews.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return _ReviewsBlock(reviews: full.reviews);
+            },
+          ),
           const SizedBox(height: 14),
           Center(
             child: Text(
-              'Movie data & ratings: TMDB (themoviedb.org).\n'
-              'This product uses the TMDB API but is not endorsed or '
-              'certified by TMDB.',
+              // v46: short attribution line (the full legal phrasing lives
+              // in the README and the Play listing, as TMDB requires).
+              'Movie data & ratings: TMDB',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.3),
@@ -391,6 +405,26 @@ class _ExtrasBlock extends StatelessWidget {
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
             ),
+          // v46: audio languages + our own subtitle capability line.
+          if (extras.spokenLanguages.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(
+                'Languages: ${extras.spokenLanguages.join(' · ')}',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Subtitles: Max Player\'s AI captions cover 90+ languages '
+              'while playing',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 11,
+              ),
+            ),
+          ),
           if (extras.genres.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -427,6 +461,132 @@ class _ExtrasBlock extends StatelessWidget {
                 'Cast: ${extras.cast.join(', ')}',
                 style: const TextStyle(
                     color: Colors.white54, fontSize: 12, height: 1.4),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// v46: "Where to watch" (India) with the compare split - Stream / Rent /
+/// Buy provider names from TMDB's JustWatch-powered data.
+class _WatchBlock extends StatelessWidget {
+  final TmdbWatchInfo info;
+
+  const _WatchBlock({required this.info});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget row(String label, List<String> names, Color color) {
+      if (names.isEmpty) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 56,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: color, fontSize: 10, fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                names.join(' · '),
+                style: const TextStyle(color: Colors.white70, fontSize: 12,
+                    height: 1.4),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Where to watch (India)',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          row('Stream', info.stream, const Color(0xFF4ade80)),
+          row('Rent', info.rent, const Color(0xFFfacc15)),
+          row('Buy', info.buy, const Color(0xFF60a5fa)),
+        ],
+      ),
+    );
+  }
+}
+
+/// v46: real TMDB user reviews, trimmed, with the author's rating.
+class _ReviewsBlock extends StatelessWidget {
+  final List<TmdbReview> reviews;
+
+  const _ReviewsBlock({required this.reviews});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'User reviews',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          for (final r in reviews)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    [
+                      if (r.author.isNotEmpty) r.author else 'TMDB user',
+                      if (r.rating != null)
+                        '⭐ ${tmdbRatingText(r.rating!)}',
+                    ].join('  ·  '),
+                    style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    r.text,
+                    style: const TextStyle(
+                        color: Colors.white54, fontSize: 12, height: 1.45),
+                  ),
+                ],
               ),
             ),
         ],

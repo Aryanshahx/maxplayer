@@ -56,19 +56,25 @@ class DiscoverFilter {
   final int? genreId;
   final bool trending;
 
+  /// v46: the "not released yet" shelf (TMDB upcoming endpoint).
+  final bool upcoming;
+
   const DiscoverFilter({
     required this.key,
     required this.label,
     this.language = '',
     this.genreId,
     this.trending = false,
+    this.upcoming = false,
   });
 }
 
 /// v44: MANY more filters than v43's three (All/Hollywood/Bollywood).
 /// Languages first (Indian users), then the most-used TMDB genre ids.
+/// v46: "Upcoming" (not released yet) sits right after Trending.
 const List<DiscoverFilter> kDiscoverFilters = [
   DiscoverFilter(key: 'trending', label: 'Trending', trending: true),
+  DiscoverFilter(key: 'upcoming', label: 'Upcoming', upcoming: true),
   DiscoverFilter(key: 'hollywood', label: 'Hollywood', language: 'en'),
   DiscoverFilter(key: 'bollywood', label: 'Bollywood', language: 'hi'),
   DiscoverFilter(key: 'tamil', label: 'Tamil', language: 'ta'),
@@ -81,6 +87,13 @@ const List<DiscoverFilter> kDiscoverFilters = [
   DiscoverFilter(key: 'thriller', label: 'Thriller', genreId: 53),
   DiscoverFilter(key: 'scifi', label: 'Sci-Fi', genreId: 878),
 ];
+
+/// Which TMDB endpoint a filter pages through. Pure for tests.
+String tmdbEndpointPath(DiscoverFilter f) => f.trending
+    ? '/3/trending/movie/week'
+    : f.upcoming
+        ? '/3/movie/upcoming'
+        : '/3/discover/movie';
 
 /// Query params for one page of a NON-trending filter. Pure for tests.
 Map<String, String> tmdbDiscoverQuery(DiscoverFilter f, int page) => {
@@ -141,6 +154,9 @@ class TmdbDetailExtras {
   final int voteCount;
   final String status;
 
+  /// v46: spoken (audio) language names - "Languages: English · Hindi".
+  final List<String> spokenLanguages;
+
   const TmdbDetailExtras({
     this.director = '',
     this.cast = const [],
@@ -149,17 +165,48 @@ class TmdbDetailExtras {
     this.tagline = '',
     this.voteCount = 0,
     this.status = '',
+    this.spokenLanguages = const [],
   });
 }
 
 /// Detail bundle: the movie (with trailer key) + the extras above +
-/// backdrop "screenshot" paths (v45).
+/// backdrop "screenshot" paths (v45) + where-to-watch + reviews (v46).
 class TmdbFull {
   final TmdbMovie movie;
   final TmdbDetailExtras extras;
   final List<String> screenshots;
+  final TmdbWatchInfo watch;
+  final List<TmdbReview> reviews;
 
-  const TmdbFull(this.movie, this.extras, {this.screenshots = const []});
+  const TmdbFull(this.movie, this.extras,
+      {this.screenshots = const [],
+      this.watch = const TmdbWatchInfo(),
+      this.reviews = const []});
+}
+
+/// v46: where the movie can be watched in India (TMDB/JustWatch data):
+/// stream (flatrate), rent and buy lists - provider names only.
+class TmdbWatchInfo {
+  final List<String> stream;
+  final List<String> rent;
+  final List<String> buy;
+
+  const TmdbWatchInfo({
+    this.stream = const [],
+    this.rent = const [],
+    this.buy = const [],
+  });
+
+  bool get isEmpty => stream.isEmpty && rent.isEmpty && buy.isEmpty;
+}
+
+/// v46: one TMDB user review (real review text, trimmed for the sheet).
+class TmdbReview {
+  final String author;
+  final double? rating;
+  final String text;
+
+  const TmdbReview({required this.author, this.rating, required this.text});
 }
 
 /// "7.834" -> "7.8" (badge text). Pure for tests.
@@ -304,6 +351,17 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
         }
       }
     }
+    // v46: spoken audio languages
+    final langs = <String>[];
+    final sl = decoded['spoken_languages'];
+    if (sl is List) {
+      for (final e in sl) {
+        if (e is Map) {
+          final name = '${e['english_name'] ?? e['name'] ?? ''}'.trim();
+          if (name.isNotEmpty) langs.add(name);
+        }
+      }
+    }
     return TmdbDetailExtras(
       director: director,
       cast: cast,
@@ -315,6 +373,7 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
           ? (decoded['vote_count'] as num).toInt()
           : 0,
       status: '${decoded['status'] ?? ''}'.trim(),
+      spokenLanguages: langs,
     );
   } catch (_) {
     return const TmdbDetailExtras();
@@ -325,6 +384,78 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
 /// not posters. Pure for tests.
 String tmdbScreenshotUrl(String path) =>
     path.isEmpty ? '' : 'https://image.tmdb.org/t/p/w500$path';
+
+/// v46: where-to-watch for one region from a detail body's
+/// `watch/providers` block ("where to watch, with the compare split":
+/// stream vs rent vs buy). Never throws; Pure for tests.
+TmdbWatchInfo parseTmdbWatchProviders(String jsonBody, {String region = 'IN'}) {
+  try {
+    final decoded = jsonDecode(jsonBody);
+    if (decoded is! Map) return const TmdbWatchInfo();
+    final wp = decoded['watch/providers'];
+    if (wp is! Map) return const TmdbWatchInfo();
+    final results = wp['results'];
+    if (results is! Map) return const TmdbWatchInfo();
+    final area = results[region];
+    if (area is! Map) return const TmdbWatchInfo();
+    List<String> names(String key) {
+      final list = area[key];
+      if (list is! List) return const [];
+      final out = <String>[];
+      for (final p in list) {
+        if (p is Map) {
+          final n = '${p['provider_name'] ?? ''}'.trim();
+          if (n.isNotEmpty && !out.contains(n)) out.add(n);
+        }
+      }
+      return out;
+    }
+
+    return TmdbWatchInfo(
+      stream: names('flatrate'),
+      rent: names('rent'),
+      buy: names('buy'),
+    );
+  } catch (_) {
+    return const TmdbWatchInfo();
+  }
+}
+
+/// v46: real TMDB user reviews (author, optional 0..10 rating, trimmed
+/// text). Never throws; Pure for tests.
+List<TmdbReview> parseTmdbReviews(String jsonBody,
+    {int count = 2, int maxChars = 420}) {
+  try {
+    final decoded = jsonDecode(jsonBody);
+    if (decoded is! Map) return const [];
+    final reviews = decoded['reviews'];
+    if (reviews is! Map) return const [];
+    final results = reviews['results'];
+    if (results is! List) return const [];
+    final out = <TmdbReview>[];
+    for (final r in results) {
+      if (r is! Map) continue;
+      final author = '${r['author'] ?? ''}'.trim();
+      var text = '${r['content'] ?? ''}'
+          .replaceAll(RegExp('\\s+'), ' ')
+          .trim();
+      if (text.length > maxChars) {
+        text = '${text.substring(0, maxChars).trimRight()}...';
+      }
+      if (text.isEmpty) continue;
+      double? rating;
+      final details = r['author_details'];
+      if (details is Map && details['rating'] is num) {
+        rating = (details['rating'] as num).toDouble();
+      }
+      out.add(TmdbReview(author: author, rating: rating, text: text));
+      if (out.length >= count) break;
+    }
+    return out;
+  } catch (_) {
+    return const [];
+  }
+}
 
 /// v45: backdrop/screenshot paths from a DETAIL body's `images` block
 /// (append_to_response=...,images). Never throws; missing/junk -> empty.
@@ -397,22 +528,23 @@ class TmdbClient {
   /// Directory used for the 24h disk cache (from NativeBridge.cacheDirPath).
   Directory? cacheDir;
 
-  /// v45: one automatic RETRY after a short pause - most mobile failures
-  /// are one-off blips, so the second attempt lands without the user
-  /// pulling-to-refresh again.
+  /// v46: details got heavier (videos+credits+images+watch+reviews), so
+  /// give them up to 3 attempts with a 20s ceiling (was 2 attempts/15s -
+  /// the "details don't load at once" report).
   Future<String> _get(Uri uri) async {
     Object? lastError;
-    for (var attempt = 0; attempt < 2; attempt++) {
+    for (var attempt = 0; attempt < 3; attempt++) {
       try {
         final req = await _http.getUrl(uri);
-        final res = await req.close().timeout(const Duration(seconds: 15));
+        final res = await req.close().timeout(const Duration(seconds: 20));
         if (res.statusCode != 200) {
           throw HttpException('TMDB status ${res.statusCode}');
         }
         return await res.transform(utf8.decoder).join();
       } catch (e) {
         lastError = e;
-        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await Future<void>.delayed(
+            Duration(milliseconds: 400 * (attempt + 1)));
       }
     }
     throw HttpException('TMDB request failed: $lastError');
@@ -456,10 +588,11 @@ class TmdbClient {
     if (kTmdbApiKey.isEmpty) return const TmdbPage();
     final String cacheName = 'tmdb_disc_${f.key}_p$page.json';
     final Uri uri;
-    if (f.trending) {
-      uri = Uri.https(_host, '/3/trending/movie/week', {
+    if (f.trending || f.upcoming) {
+      uri = Uri.https(_host, tmdbEndpointPath(f), {
         'api_key': kTmdbApiKey,
         'language': 'en-US',
+        'region': 'IN',
         'page': '$page',
       });
     } else {
@@ -487,25 +620,28 @@ class TmdbClient {
     return body == null ? const TmdbPage() : parseTmdbPage(body);
   }
 
-  /// v44: trailer + director/cast/runtime/genres in ONE call; v45 also
-  /// pulls the images block (screenshots) and RELATED movies come from
-  /// [similar]. The _v3 cache name forces one re-download (v2 files had
-  /// no screenshots).
+  /// v46: one call now also brings WATCH PROVIDERS (where to watch) and
+  /// real user REVIEWS. Cache name _v4 forces one re-download.
   Future<TmdbFull?> fullDetail(int id, {bool force = false}) async {
     if (kTmdbApiKey.isEmpty) return null;
     final uri = Uri.https(_host, '/3/movie/$id', {
       'api_key': kTmdbApiKey,
       'language': 'en-US',
-      'append_to_response': 'videos,credits,images',
+      'append_to_response': 'videos,credits,images,watch/providers,reviews',
       'include_image_language': 'en,null',
     });
-    final body = await _fetch('tmdb_movie_v3_$id.json', uri,
+    final body = await _fetch('tmdb_movie_v4_$id.json', uri,
         ttl: force ? Duration.zero : const Duration(hours: 24));
     if (body == null) return null;
     final movie = parseTmdbDetail(body);
     if (movie == null) return null;
-    return TmdbFull(movie, parseTmdbExtras(body),
-        screenshots: parseTmdbScreenshots(body));
+    return TmdbFull(
+      movie,
+      parseTmdbExtras(body),
+      screenshots: parseTmdbScreenshots(body),
+      watch: parseTmdbWatchProviders(body),
+      reviews: parseTmdbReviews(body),
+    );
   }
 
   /// v45: RELATED movies ("search is poor - show related movies"): TMDB's

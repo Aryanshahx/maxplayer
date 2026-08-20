@@ -39,9 +39,12 @@ Made by **Hyper Tech Labs** (Aryan Shah), Deoria, Uttar Pradesh, India.
   automatically every day and cached for offline use; trailers open
   in the YouTube app (Play-policy-safe), and when the movie is
   already on your phone, "In my library" plays it instantly.
-  Detail sheets also show scene screenshots, search suggests
+  Detail sheets also show scene screenshots, spoken languages,
+  a Stream/Rent/Buy "Where to watch (India)" split, real user
+  reviews, an Upcoming (not-released-yet) shelf, search suggests
   related movies, and "Ask with AI" answers movie questions
-  (movie-only by design) via free OpenRouter models.
+  (movie-only by design, answers cached a week) via free
+  OpenRouter models.
   Legal by design: TMDB data with credit - no IMDb copying,
   no YouTube stream ripper.
 - **Statistics** - watch-time graphs, day streaks, most-watched videos.

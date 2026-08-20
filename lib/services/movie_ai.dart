@@ -89,6 +89,17 @@ class MovieAiAnswer {
   const MovieAiAnswer(this.text, this.model);
 }
 
+/// Deterministic cache file for one (movie, question) pair - the same
+/// deterministic 31-fold hash as the poster/search caches. Pure for tests.
+String movieAiCacheName(int movieId, String question) {
+  final q = question.trim().toLowerCase();
+  var h = 0;
+  for (final c in q.codeUnits) {
+    h = (h * 31 + c) & 0x7fffffff;
+  }
+  return 'ai_answer_${movieId}_${h.toRadixString(16)}.txt';
+}
+
 /// v45: tiny OpenRouter client for the "Ask with AI" sheet. Plain dart:io,
 /// zero new dependencies. One shared keep-alive connection.
 class MovieAiClient {
@@ -98,6 +109,19 @@ class MovieAiClient {
     ..connectionTimeout = const Duration(seconds: 12)
     ..idleTimeout = const Duration(seconds: 10);
 
+  /// v46: answers are SAVED for 7 days (per movie + question) - a movie's
+  /// story doesn't change daily. Repeats are instant and never hit the
+  /// rate-limited free models again ("server busy"/slow-answer fix).
+  Directory? cacheDir;
+  static const Duration _cacheTtl = Duration(days: 7);
+
+  File? _cacheFile(int movieId, String q) {
+    final dir = cacheDir;
+    if (dir == null) return null;
+    return File('${dir.path}${Platform.pathSeparator}'
+        '${movieAiCacheName(movieId, q)}');
+  }
+
   /// Tries [kOpenRouterModels] in order; the first usable answer wins.
   /// Returns null when the key is missing / every model failed.
   Future<MovieAiAnswer?> ask({
@@ -106,6 +130,18 @@ class MovieAiClient {
   }) async {
     final q = question.trim();
     if (kOpenRouterApiKey.isEmpty || q.isEmpty) return null;
+    // 1) saved answer first (instant, offline-friendly)
+    final f = _cacheFile(movie.id, q);
+    try {
+      if (f != null && await f.exists()) {
+        final age = DateTime.now().difference(await f.lastModified());
+        if (age <= _cacheTtl) {
+          final saved = (await f.readAsString()).trim();
+          if (saved.isNotEmpty) return MovieAiAnswer(saved, 'saved');
+        }
+      }
+    } catch (_) {}
+    // 2) model fallback chain
     final system = movieAiSystemPrompt(movie);
     for (final model in kOpenRouterModels) {
       try {
@@ -118,7 +154,7 @@ class MovieAiClient {
           system: system,
           question: q,
         )));
-        final res = await req.close().timeout(const Duration(seconds: 25));
+        final res = await req.close().timeout(const Duration(seconds: 22));
         if (res.statusCode != 200) {
           // rate-limited / model down -> next model in the chain
           await res.drain<void>();
@@ -126,7 +162,12 @@ class MovieAiClient {
         }
         final text =
             parseOpenRouterAnswer(await res.transform(utf8.decoder).join());
-        if (text != null) return MovieAiAnswer(text, model);
+        if (text != null) {
+          try {
+            await f?.writeAsString(text, flush: true);
+          } catch (_) {}
+          return MovieAiAnswer(text, model);
+        }
       } catch (_) {
         // network blip for this model -> try the next one
       }

@@ -1588,4 +1588,65 @@ void main() {
       expect(kMovieAiTemplates.length, greaterThanOrEqualTo(5));
     });
   });
+
+  group('v46 watch providers + reviews + upcoming + ai cache', () {
+    test('tmdbEndpointPath: trending vs upcoming vs discover', () {
+      const tr =
+          DiscoverFilter(key: 't', label: 'T', trending: true);
+      const up = DiscoverFilter(key: 'u', label: 'U', upcoming: true);
+      const hw =
+          DiscoverFilter(key: 'hollywood', label: 'H', language: 'en');
+      expect(tmdbEndpointPath(tr), '/3/trending/movie/week');
+      expect(tmdbEndpointPath(up), '/3/movie/upcoming');
+      expect(tmdbEndpointPath(hw), '/3/discover/movie');
+      expect(kDiscoverFilters.any((f) => f.upcoming), isTrue);
+    });
+
+    test('parseTmdbWatchProviders splits stream/rent/buy for IN', () {
+      const body = '{"watch/providers":{"results":{"IN":{'
+          '"flatrate":[{"provider_name":"Netflix"},'
+          '{"provider_name":"Amazon Prime Video"}],'
+          '"rent":[{"provider_name":"YouTube"}],'
+          '"buy":[{"provider_name":"Google Play Movies"}]},'
+          '"US":{"flatrate":[{"provider_name":"Hulu"}]}}}}';
+      final w = parseTmdbWatchProviders(body);
+      expect(w.stream, ['Netflix', 'Amazon Prime Video']);
+      expect(w.rent, ['YouTube']);
+      expect(w.buy, ['Google Play Movies']);
+      expect(w.isEmpty, isFalse);
+      expect(parseTmdbWatchProviders(body, region: 'XX').isEmpty, isTrue);
+      expect(parseTmdbWatchProviders('junk').isEmpty, isTrue);
+    });
+
+    test('parseTmdbReviews: real text, rating, caps, junk-safe', () {
+      const body = '{"reviews":{"results":[{"author":"Aryan",'
+          '"content":"  Loved   every   minute.  ",'
+          '"author_details":{"rating":9}},'
+          '{"author":"Second","content":"Decent timepass.",'
+          '"author_details":{}}]}}';
+      final r = parseTmdbReviews(body);
+      expect(r.length, 2);
+      expect(r.first.text, 'Loved every minute.'); // whitespace collapsed
+      expect(r.first.rating, 9.0);
+      expect(r.last.rating, isNull);
+      expect(parseTmdbReviews('{}'), isEmpty);
+      expect(parseTmdbReviews('junk'), isEmpty);
+    });
+
+    test('parseTmdbExtras includes spoken languages', () {
+      const body = '{"id":1,"title":"X","spoken_languages":['
+          '{"english_name":"English"},{"english_name":"Hindi"}]}';
+      expect(parseTmdbExtras(body).spokenLanguages, ['English', 'Hindi']);
+      expect(parseTmdbExtras('{}').spokenLanguages, isEmpty);
+    });
+
+    test('movieAiCacheName is deterministic per movie+question', () {
+      final a = movieAiCacheName(693134, 'Is it good?');
+      expect(movieAiCacheName(693134, 'Is it good?'), a);
+      expect(movieAiCacheName(693134, 'is it good?'), a); // case/trim-safe
+      expect(movieAiCacheName(693134, 'ending?'), isNot(a));
+      expect(movieAiCacheName(550, 'Is it good?'), isNot(a));
+      expect(a.startsWith('ai_answer_693134_'), isTrue);
+    });
+  });
 }

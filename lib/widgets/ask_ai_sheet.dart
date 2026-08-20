@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../services/movie_ai.dart';
+import '../services/native_bridge.dart';
 import '../services/tmdb_client.dart';
 import '../state/theme_state.dart';
 
@@ -54,6 +57,18 @@ class _AskAiSheetState extends State<AskAiSheet> {
   String? _answerModel;
   String? _error;
   int _askToken = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _bootCache();
+  }
+
+  /// v46: the 7-day answer cache lives next to the TMDB caches.
+  Future<void> _bootCache() async {
+    final path = await NativeBridge.cacheDirPath();
+    if (path != null) _client.cacheDir = Directory(path);
+  }
 
   @override
   void dispose() {
@@ -237,8 +252,10 @@ class _AskAiSheetState extends State<AskAiSheet> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Answer by ${_answerModel!.split('/').last.split(':').first} '
-              'via OpenRouter',
+              _answerModel == 'saved'
+                  ? 'Saved answer - instant, works offline'
+                  : 'Answer by ${_answerModel!.split('/').last.split(':').first} '
+                      'via OpenRouter',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.35),
                 fontSize: 10,
