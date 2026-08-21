@@ -37,9 +37,6 @@ import android.os.StatFs
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.WindowManager
-import dev.ffmpegkit.whisper.Whisper
-import dev.ffmpegkit.whisper.WhisperConfig
-import dev.ffmpegkit.whisper.WhisperModel
 import android.hardware.SensorManager
 import android.view.OrientationEventListener
 import io.flutter.embedding.android.FlutterActivity
@@ -56,7 +53,6 @@ import java.security.MessageDigest
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 import kotlin.math.min
-import kotlinx.coroutines.runBlocking
 
 /**
  * Native bridge for Max Player. One MethodChannel ("maxplayer/native") exposes:
@@ -101,6 +97,9 @@ class MainActivity : FlutterActivity() {
     @Volatile
     private var aiCancelled = false
     private var aiJobCounter = 0
+
+    /** v48: hidden WebView running puter.js for cloud AI subtitles. */
+    private val puterBridge by lazy { PuterBridge(this) }
 
     // --- DLNA casting: multicast lock held during SSDP discovery ---
     private var multicastLock: WifiManager.MulticastLock? = null
@@ -340,59 +339,61 @@ class MainActivity : FlutterActivity() {
                         mainHandler.post { result.success(dir) }
                     }
                 }
-                "whisperAvailable" -> {
-                    // AI SUBTITLES Phase-1 probe: proves the on-device
-                    // whisper.cpp engine loaded its native library on this
-                    // device. Runs off the main thread (first call may load
-                    // libwhisper.so).
+                "puterStatus" -> {
+                    // v48: is the Puter cloud bridge usable on this device,
+                    // and is the user signed in (temp account counts)?
                     executor.execute {
-                        val info = try {
-                            Whisper.getSystemInfo()
-                        } catch (t: Throwable) {
-                            null
-                        }
-                        mainHandler.post { result.success(info) }
+                        val ready = puterBridge.awaitReady(25000)
+                        val status = if (ready) puterBridge.statusSync() else null
+                        val map = HashMap<String, Any?>()
+                        map["ready"] = ready
+                        map["signedIn"] = status == "signed"
+                        map["user"] = puterBridge.lastUserLabel()
+                        mainHandler.post { result.success(map) }
                     }
                 }
-                "aiModelStatus" -> {
-                    // Which models are already on disk, with size in MB.
-                    val map = HashMap<String, Any>()
-                    for (name in listOf("tiny", "base", "small")) {
-                        val f = modelFileFor(name)
-                        map[name] = if (f.exists() && f.length() > 1_000_000) {
-                            (f.length() / (1024 * 1024)).toInt()
-                        } else {
-                            0
-                        }
+                "puterSignIn" -> {
+                    // v48: one-time sign-in (temp user when possible; the
+                    // Puter popup is hosted in a dialog when interaction is
+                    // needed). Session persists in WebView storage after.
+                    executor.execute {
+                        val ok = puterBridge.signInSync(180000)
+                        val map = HashMap<String, Any?>()
+                        map["signedIn"] = ok
+                        map["user"] = puterBridge.lastUserLabel()
+                        mainHandler.post { result.success(map) }
                     }
-                    result.success(map)
+                }
+                "puterSignOut" -> {
+                    executor.execute {
+                        val ok = puterBridge.signOutSync(15000)
+                        mainHandler.post { result.success(ok) }
+                    }
                 }
                 "aiSubtitleGenerate" -> {
                     val videoPath = call.argument<String>("videoPath")
-                    val model = call.argument<String>("model") ?: "base"
+                    // v48: cloud model ids ('fast'/'best' mapped below).
+                    val model = call.argument<String>("model") ?: "fast"
                     val language = call.argument<String>("language") ?: "auto"
-                    // v21: whisper translate task -> English subtitles from
-                    // any spoken language.
+                    // English translation of any spoken language.
                     val translate = call.argument<Boolean>("translate") ?: false
                     if (videoPath.isNullOrEmpty()) {
                         result.error("bad_args", "videoPath is required", null)
-                    } else if (!Build.SUPPORTED_ABIS.contains("arm64-v8a")) {
-                        // v39: the whisper engine ships arm64-only native
-                        // libraries. On 32-bit phones (POCO C51 & friends)
-                        // decline cleanly BEFORE any model download - Dart
-                        // turns the null job id into the friendly snack.
-                        result.success(null)
                     } else {
+                        // v48: cloud subtitles need no 64-bit chip and no
+                        // model download - every phone Max Player runs on
+                        // can use them (32-bit Android Go included).
                         aiCancelled = false
                         val jobId = ++aiJobCounter
                         executor.execute {
-                            runAiPipeline(jobId, videoPath, model, language, translate)
+                            runCloudPipeline(jobId, videoPath, model, language, translate)
                         }
                         result.success(jobId)
                     }
                 }
                 "aiSubtitleCancel" -> {
                     aiCancelled = true
+                    puterBridge.cancelAll()
                     result.success(true)
                 }
                 "scanFile" -> {
@@ -1156,35 +1157,16 @@ class MainActivity : FlutterActivity() {
     }
 
     // ---------------------------------------------------------------------------
-    // AI subtitles pipeline (Phases 2+3)
+    // AI subtitles pipeline (v48: Puter CLOUD)
     //
-    //   video -> [MediaExtractor + MediaCodec] 16 kHz mono WAV
-    //         -> whisper.cpp (offline) -> timestamped segments -> Dart
+    //   video -> [MediaExtractor + MediaCodec] 16 kHz mono WAV (on device)
+    //         -> speech gating (on device) -> speech slices <= 3 min
+    //         -> Puter cloud via hidden WebView -> .srt per slice -> Dart
     //
-    // Dart builds the .srt text (pure, unit-tested) and mpv loads it via
-    // `sub-add`. The model is downloaded once from Hugging Face (~142 MB
-    // base / ~466 MB small); after that everything is offline & free.
+    // Dart merges the slice SRTs (pure, unit-tested), writes the .srt and
+    // mpv loads it via `sub-add`. No model download, no 64-bit limit, no
+    // API key; the user's own (free) Puter account pays for their usage.
     // ---------------------------------------------------------------------------
-
-    // v25: only the accurate models stay ("tiny" removed for good). Speed
-    // comes from all-core threading instead of a weaker model. Unknown ids
-    // (including a "tiny" id saved by v22-v24 builds) fall back to "base".
-    private fun modelFileFor(name: String): File {
-        val safe = when (name) {
-            "base", "small" -> name
-            else -> "base"
-        }
-        return File(filesDir, "models/ggml-$safe.bin")
-    }
-
-    private fun modelUrlFor(name: String): String {
-        return when (name) {
-            "small" ->
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
-            else ->
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
-        }
-    }
 
     private fun aiProgress(jobId: Int, stage: String, percent: Int) {
         mainHandler.post {
@@ -1213,46 +1195,67 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun runAiPipeline(
+    /** One finished speech slice -> Dart (offset in ms + raw .srt text). */
+    private fun aiChunk(jobId: Int, offsetMs: Long, srt: String) {
+        mainHandler.post {
+            channel?.invokeMethod(
+                "onAiChunk",
+                hashMapOf("job" to jobId, "offsetMs" to offsetMs, "srt" to srt)
+            )
+        }
+    }
+
+    /**
+     * Greedy grouping of speech spans into cloud-sized slices: spans merge
+     * while the slice's WALL duration (gaps between spans included) stays
+     * <= [maxWallSec]. Sending only voiced audio costs a fraction of the
+     * whole file and short kept gaps preserve sentence context across
+     * spans. Indices are 16 kHz mono sample positions (same as speechSpans).
+     */
+    private fun groupSpans(spans: List<IntArray>, maxWallSec: Int): List<IntArray> {
+        val groups = ArrayList<IntArray>()
+        val maxSamples = maxWallSec * 16000
+        var start = -1
+        var end = -1
+        for (sp in spans) {
+            if (start < 0) {
+                start = sp[0]
+                end = sp[1]
+            } else if (sp[1] - start <= maxSamples) {
+                end = maxOf(end, sp[1])
+            } else {
+                groups.add(intArrayOf(start, end))
+                start = sp[0]
+                end = sp[1]
+            }
+        }
+        if (start >= 0) groups.add(intArrayOf(start, end))
+        return groups
+    }
+
+    /**
+     * v48 cloud pipeline. Audio extraction and speech gating stay 100% on
+     * device; only voiced slices travel to the Puter cloud (via PuterBridge)
+     * for transcription. Each slice returns .srt text which is forwarded to
+     * Dart with its absolute start offset; Dart merges everything.
+     */
+    private fun runCloudPipeline(
         jobId: Int,
         videoPath: String,
-        modelName: String,
+        modelId: String,
         language: String,
         translate: Boolean = false
     ) {
         try {
-            // 1. Model file (one-time download).
-            val modelFile = modelFileFor(modelName)
-            if (!modelFile.exists() || modelFile.length() < 1_000_000) {
-                aiProgress(jobId, "downloading", 0)
-                val dlError = try {
-                    downloadModel(modelUrlFor(modelName), modelFile, jobId)
-                    null
-                } catch (e: AiCancelledException) {
-                    "cancelled"
-                } catch (e: Exception) {
-                    (e.message ?: "network error").take(80)
-                }
-                if (dlError != null) {
-                    modelFile.delete()
-                    aiFailed(
-                        jobId,
-                        if (dlError == "cancelled") "cancelled"
-                        else "Model download failed ($dlError) - internet is needed once; after that AI subtitles work fully offline."
-                    )
-                    return
-                }
-            }
-            if (aiCancelled) return aiFailed(jobId, "cancelled")
-
-            // 2. Extract audio track -> 16 kHz mono WAV.
+            // 1. Audio track -> 16 kHz mono WAV (fully on device).
             aiProgress(jobId, "extracting", 0)
             val wav = File(cacheDir, "ai_audio_$jobId.wav")
             if (!extractAudioToWav(videoPath, wav, jobId)) {
                 wav.delete()
                 aiFailed(
                     jobId,
-                    if (aiCancelled) "cancelled" else "Could not read the audio track of this file."
+                    if (aiCancelled) "cancelled"
+                    else "Could not read the audio track of this file."
                 )
                 return
             }
@@ -1261,149 +1264,68 @@ class MainActivity : FlutterActivity() {
                 return aiFailed(jobId, "cancelled")
             }
 
-            // 3. Transcribe with whisper.cpp (offline), speech-gated:
-            // the 16 kHz track is first split into voiced spans and only
-            // those are sent to whisper. Long silent stretches of a video
-            // are skipped entirely, which is FASTER (a big share of any
-            // movie is non-speech) AND cleaner (whisper used to answer
-            // silence with "music" hallucinations). Music is never treated
-            // as silence, so speech over loud background music still gets
-            // transcribed. A cancel between spans takes effect immediately;
-            // a cancel mid-span discards the result afterwards.
+            // 2. Speech gating (on device): silent/music-only stretches are
+            // never uploaded - cheaper AND faster AND more private.
             aiProgress(jobId, "transcribing", 0)
-            val segments = ArrayList<HashMap<String, Any>>()
-            runBlocking {
-                var model: WhisperModel? = null
+            val pcmData = readWavPcm(wav) ?: ByteArray(0)
+            val spans = speechSpans(pcmData)
+            if (spans.isEmpty()) {
+                wav.delete()
+                aiDone(jobId, ArrayList())
+                return
+            }
+            val groups = groupSpans(spans, 180)
+            val cloudModel = when (modelId) {
+                "best", "gpt-4o-transcribe" -> "gpt-4o-transcribe"
+                else -> "gpt-4o-mini-transcribe"
+            }
+            var sent = 0
+            for (g in groups) {
+                if (aiCancelled) {
+                    wav.delete()
+                    return aiFailed(jobId, "cancelled")
+                }
+                val gw = File(cacheDir, "ai_slice_${jobId}_$sent.wav")
                 try {
-                    model = Whisper.loadModel(this@MainActivity, modelFile.absolutePath)
-                    val pcmData = readWavPcm(wav) ?: ByteArray(0)
-                    val spans = speechSpans(pcmData)
-                    // spans empty = no voice anywhere -> empty result, and
-                    // Dart shows its friendly "No speech detected" snack.
-                    spans.forEachIndexed { i, span ->
-                        if (aiCancelled) return@forEachIndexed
-                        val spanWav = File(cacheDir, "ai_span_${jobId}_$i.wav")
+                    writeSpanWav(gw, pcmData, g[0], g[1])
+                    var srt: String? = null
+                    var lastError = "cloud error"
+                    for (attempt in 1..2) {
+                        if (aiCancelled) break
                         try {
-                            writeSpanWav(spanWav, pcmData, span[0], span[1])
-                            // The user can pin a language ("hi", "ur", "en", ...)
-                            // in the Generate dialog; "auto" = detect it. Pinning
-                            // is noticeably more accurate than detection.
-                            val res = Whisper.transcribe(
-                                model,
-                                spanWav.absolutePath,
-                                WhisperConfig(
-                                    language = language,
-                                    translate = translate,
-                                    // v22: use every core the phone offers -
-                                    // whisper.cpp scales well to 8 threads,
-                                    // roughly halving transcription time vs
-                                    // the library default of 4.
-                                    threads = Runtime.getRuntime()
-                                        .availableProcessors()
-                                        .coerceIn(2, 8),
-                                )
+                            srt = puterBridge.transcribeBlocking(
+                                gw, cloudModel, language, translate
                             )
-                            val offsetMs = span[0] * 1000L / 16000
-                            for (s in res.segments) {
-                                val text = s.text.trim()
-                                if (text.isEmpty()) continue
-                                segments.add(
-                                    hashMapOf(
-                                        "start" to (s.startMs + offsetMs) as Any,
-                                        "end" to (s.endMs + offsetMs) as Any,
-                                        "text" to text as Any
-                                    )
-                                )
-                            }
-                        } finally {
-                            spanWav.delete()
+                            break
+                        } catch (e: PuterBridge.BridgeException) {
+                            lastError = e.message ?: "cloud error"
                         }
-                        aiProgress(jobId, "transcribing", (i + 1) * 100 / spans.size)
                     }
+                    if (aiCancelled) {
+                        wav.delete()
+                        return aiFailed(jobId, "cancelled")
+                    }
+                    if (srt == null) {
+                        wav.delete()
+                        return aiFailed(jobId, lastError.take(120))
+                    }
+                    aiChunk(jobId, g[0] * 1000L / 16000, srt)
                 } finally {
-                    model?.let { Whisper.releaseModel(it) }
+                    gw.delete()
+                }
+                sent++
+                if (groups.isNotEmpty()) {
+                    aiProgress(jobId, "transcribing", sent * 100 / groups.size)
                 }
             }
             wav.delete()
             if (aiCancelled) return aiFailed(jobId, "cancelled")
-            aiDone(jobId, segments)
+            aiDone(jobId, ArrayList())
         } catch (t: Throwable) {
             aiFailed(jobId, t.message ?: "AI subtitle generation failed")
         }
     }
 
-    /**
-     * Downloads [url] into [dest] via a ".part" temp file. Redirects are
-     * followed MANUALLY: huggingface.co /resolve/ URLs answer with a 302 to
-     * a CDN host, and relying on HttpURLConnection's automatic redirect
-     * handling has proven unreliable across Android versions. Progress is
-     * reported as the "downloading" stage.
-     *
-     * Throws [AiCancelledException] when the user cancels, and
-     * [java.io.IOException] with a short machine-readable reason otherwise,
-     * so the failure snackbar can say WHAT went wrong.
-     */
-    private fun downloadModel(url: String, dest: File, jobId: Int) {
-        dest.parentFile?.mkdirs()
-        val tmp = File(dest.parentFile, dest.name + ".part")
-        var conn: HttpURLConnection? = null
-        try {
-            var current = url
-            var hops = 0
-            while (true) {
-                val c = URL(current).openConnection() as HttpURLConnection
-                conn = c
-                c.connectTimeout = 20000
-                c.readTimeout = 30000
-                c.instanceFollowRedirects = false
-                c.setRequestProperty("User-Agent", "MaxPlayer/1.0 (Android)")
-                c.connect()
-                val code = c.responseCode
-                if (code in 300..399) {
-                    val loc = c.getHeaderField("Location")
-                    c.disconnect()
-                    if (loc == null || ++hops > 6) {
-                        throw java.io.IOException("redirect failed (HTTP $code)")
-                    }
-                    // Handles both absolute and relative Location headers.
-                    current = URL(URL(current), loc).toString()
-                    continue
-                }
-                if (code !in 200..299) {
-                    c.disconnect()
-                    throw java.io.IOException("HTTP $code")
-                }
-                break
-            }
-            val c = conn ?: throw java.io.IOException("no connection")
-            val total = c.contentLengthLong
-            c.inputStream.use { input ->
-                FileOutputStream(tmp).use { out ->
-                    val buf = ByteArray(256 * 1024)
-                    var done = 0L
-                    var read: Int
-                    while (input.read(buf).also { read = it } != -1) {
-                        if (aiCancelled) throw AiCancelledException()
-                        out.write(buf, 0, read)
-                        done += read
-                        if (total > 0) {
-                            aiProgress(jobId, "downloading", (done * 100 / total).toInt())
-                        }
-                    }
-                    if (total > 0 && done != total) {
-                        throw java.io.IOException("incomplete download")
-                    }
-                }
-            }
-            c.disconnect()
-            if (!tmp.renameTo(dest)) {
-                tmp.copyTo(dest, overwrite = true)
-                tmp.delete()
-            }
-        } finally {
-            if (tmp.exists()) tmp.delete()
-        }
-    }
 
     /**
      * Decodes the first audio track of [videoPath] to a 16 kHz mono 16-bit
@@ -1446,8 +1368,8 @@ class MainActivity : FlutterActivity() {
             // The decoder's OUTPUT format is authoritative: it can differ
             // from the container's declared format AND it reveals the PCM
             // encoding. Many AAC decoders output 32-bit FLOAT PCM - feeding
-            // those bytes to the 16-bit resampler produced noise, and
-            // whisper answered noise with "music" captions.
+            // those bytes to the 16-bit resampler produced noise, and the
+            // transcriber answered noise with "music" captions.
             var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
             try {
                 val of = codec!!.outputFormat
@@ -1543,7 +1465,7 @@ class MainActivity : FlutterActivity() {
      * Normalizes decoder PCM (any common encoding) to interleaved signed
      * 16-bit little-endian samples. Without this, FLOAT/32-bit decoder
      * output was interpreted as 16-bit, which sounds like noise - and
-     * whisper transcribes noise as "music".
+     * the transcriber answered noise with "music".
      */
     private fun pcmToShorts(pcm: ByteArray, encoding: Int): ShortArray {
         return when (encoding) {
@@ -1686,13 +1608,13 @@ class MainActivity : FlutterActivity() {
      * Speech-gate for the AI pipeline (v18): finds voiced spans in 16 kHz
      * mono 16-bit PCM (raw little-endian bytes, no header) and returns them
      * as [startSample, endSample) pairs - padded, gap-merged and chunked to
-     * <=30 s so whisper's context window stays effective.
+     * <=30 s so slices stay small and fast to transcribe.
      *
      * Conservative by design: only true near-silence is dropped. The
      * threshold sits at ~2x the adaptive noise floor with a very low
      * absolute floor, so quiet speech is kept while digital/room silence is
      * skipped. Music is far above this floor and is therefore NEVER gated
-     * out (speech over loud background music still reaches whisper).
+     * out (speech over loud background music still gets transcribed).
      */
     private fun speechSpans(pcm: ByteArray): List<IntArray> {
         val frame = 400 // 25 ms at 16 kHz

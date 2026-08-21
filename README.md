@@ -11,8 +11,10 @@ Made by **Hyper Tech Labs** (Aryan Shah), Deoria, Uttar Pradesh, India.
 - **Every format, hardware decoded** - mpv-based playback engine
   (media_kit) with subtitle & audio track switching, playback speed,
   A-B loop, shuffle/repeat and Picture-in-Picture.
-- **AI subtitles, 100% offline** - whisper models run on the phone
-  itself; generate subtitles for any video that has none.
+- **AI subtitles in the Puter cloud** - no model download, works on every
+  phone (32-bit too); speech audio is found on-device and only those
+  slices are transcribed via the user's own free Puter account. English
+  translation of any spoken language included.
 - **Karaoke mode** - word-by-word highlighting of the current line.
 - **Private folder** - PIN + on-device unlock (biometric / screen lock),
   hidden videos move out of the gallery and out of other players.

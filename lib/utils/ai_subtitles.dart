@@ -3,23 +3,32 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:path/path.dart' as p;
 
 import '../services/native_bridge.dart';
-import '../services/puter_ai_service.dart';
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
 import 'srt.dart';
 
+/// True when a transcription segment is caption decoration rather than
+/// speech - e.g. "♪", "♪ ♪", "[Music]", "(music playing)". Whisper-class
+/// engines emit these over music-only stretches; dropping them keeps the
+/// .srt clean (v18).
+///
+/// Deliberately conservative: anything that might be real speech (even
+/// speech ABOUT music, like "I love music") is kept - we only drop the
+/// exact decoration phrases the engine hallucinates.
 bool isMusicOnlyCaption(String text) {
   var t = text.toLowerCase().trim();
   if (t.isEmpty) return true;
+  // Pure note decorations: "♪", "♪ ♫ ♪", ...
   t = t.replaceAll(RegExp(r'[♪♫𝄞𝄢]+'), ' ').trim();
   if (t.isEmpty) return true;
+  // Reduce to letters only, then compare against known decorations.
   final core = t.replaceAll(RegExp(r'[^a-z]'), '');
   return _musicOnlyCores.contains(core);
 }
 
+/// Lowercase, letters-only forms of the engine's music/SFX-only captions.
 const Set<String> _musicOnlyCores = {
   'music',
   'musicplaying',
@@ -48,20 +57,45 @@ const Set<String> _musicOnlyCores = {
   'silence',
 };
 
+/// Runs the CLOUD AI subtitle flow end to end (v48) and shows a progress
+/// dialog:
+///
+///   one-time free Puter sign-in (silent temp account when possible) ->
+///   native audio extraction + speech gating (on device) -> Puter cloud
+///   transcription per speech slice -> merge slices -> write
+///   "<video>.maxai.srt" next to the video -> load it into the player
+///
+/// vs the old on-device engine (v25-v47): NO 142-466 MB model download, NO
+/// 64-bit restriction, and noticeably better CJK/Hinglish handling - the
+/// only speech audio travels to the user's own (free) Puter account.
 class AiSubtitleRunner {
   AiSubtitleRunner._();
 
+  /// Persisted picker defaults (native settings store).
   static const String _kModelKey = 'ai.model';
   static const String _kLanguageKey = 'ai.language';
   static const String _kTranslateKey = 'ai.translate';
 
+  /// Cloud model choices: id -> (label, detail). v48: the ids changed from
+  /// on-device builds (base/small) to cloud tiers; old saved ids map onto
+  /// the new ones via [normalizeModelId].
   static const Map<String, (String, String)> modelChoices = {
-    'base': ('Balanced', '~142 MB · good for most videos'),
-    'small': ('Best', '~466 MB · strongest on music & noise'),
+    'fast': ('Fast · gpt-4o-mini', 'quick - great for clear speech'),
+    'best': ('Best · gpt-4o', 'strongest on music & noise'),
   };
 
-  static String normalizeModelId(String? id) => id == 'small' ? 'small' : 'base';
+  /// Anything unknown (including "base"/"tiny" ids saved by older builds)
+  /// falls back to the fast model; an old "small" maps to "best".
+  static String normalizeModelId(String? id) => switch (id) {
+        'best' || 'small' => 'best',
+        _ => 'fast',
+      };
 
+  /// Maps a picker id to the actual Puter speech2txt model name.
+  static String cloudModelFor(String id) =>
+      id == 'best' ? 'gpt-4o-transcribe' : 'gpt-4o-mini-transcribe';
+
+  /// Language choices: ISO-639 code -> label; 'auto' = detect.
   static const Map<String, String> languageChoices = {
     'auto': 'Auto-detect',
     'en': 'English',
@@ -81,11 +115,46 @@ class AiSubtitleRunner {
     'fr': 'French',
   };
 
-  static String modelSizeLabel(String model) => switch (model) {
-        'small' => '~466 MB',
-        _ => '~142 MB',
-      };
+  /// Normalizes caption text for duplicate comparison across slice
+  /// boundaries (Latin + Devanagari survive; punctuation/case dropped).
+  static String _normCaption(String t) => t
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9؀-ॿ]+'), '');
 
+  /// Merges per-slice .srt documents into absolute-timeline cues (PURE,
+  /// unit-tested):
+  ///  - each slice's cue times shift by its absolute start offset
+  ///  - cues are sorted by start time
+  ///  - music-only decoration captions are dropped ([isMusicOnlyCaption])
+  ///  - boundary duplicates (same caption re-emitted inside the 3 s guard
+  ///    band where two slices overlap) are dropped once
+  static List<SrtCue> mergeChunkCues(List<(int offsetMs, String srt)> chunks) {
+    final all = <SrtCue>[];
+    for (final (offsetMs, doc) in chunks) {
+      for (final c in parseSrt(doc)) {
+        all.add(SrtCue(c.startMs + offsetMs, c.endMs + offsetMs, c.text));
+      }
+    }
+    all.sort((a, b) => a.startMs.compareTo(b.startMs));
+    final kept = <SrtCue>[];
+    for (final c in all) {
+      final text = c.text.trim();
+      if (text.isEmpty) continue;
+      if (isMusicOnlyCaption(text)) continue;
+      final prev = kept.isEmpty ? null : kept.last;
+      if (prev != null &&
+          _normCaption(prev.text) == _normCaption(text) &&
+          c.startMs - prev.startMs < 12000) {
+        continue; // same caption re-emitted at a slice boundary
+      }
+      kept.add(SrtCue(c.startMs, c.endMs, text));
+    }
+    return kept;
+  }
+
+  /// Launches generation for the video currently loaded in [player].
+  /// [context] must be a context that outlives the subtitle sheet (the
+  /// caller closes the sheet first).
   static Future<void> start(
     BuildContext context,
     MediaPlayerState player,
@@ -97,17 +166,11 @@ class AiSubtitleRunner {
       return;
     }
 
+    // Ask for quality + language + output mode first (choices are remembered).
     final stored = await NativeBridge.loadSettings();
     if (!context.mounted) return;
-    final options = await showDialog<
-        ({
-          String model,
-          String language,
-          bool translate,
-          bool usePuterAi,
-          String puterModel,
-          String puterApiKey,
-        })>(
+    final options =
+        await showDialog<({String model, String language, bool translate})>(
       context: context,
       builder: (_) => _AiOptionsDialog(
         initialModel: normalizeModelId(stored[_kModelKey]),
@@ -120,9 +183,34 @@ class AiSubtitleRunner {
     unawaited(NativeBridge.saveSetting(_kLanguageKey, options.language));
     unawaited(NativeBridge.saveSetting(_kTranslateKey, '${options.translate}'));
 
+    // v48: one-time Puter sign-in. The bridge loads lazily here; a silent
+    // temp account covers most users, otherwise Puter's popup shows once
+    // and the session persists afterwards.
+    var status = await NativeBridge.puterStatus();
+    if (!context.mounted) return;
+    if (status['signedIn'] != true) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (_) => const _PuterIntroDialog(),
+      );
+      if (go != true || !context.mounted) return;
+      final res = await NativeBridge.puterSignIn();
+      if (!context.mounted) return;
+      if (res['signedIn'] != true) {
+        _snack(
+          context,
+          'Sign-in was cancelled - AI subtitles need the free Puter '
+          'account (one time only)',
+        );
+        return;
+      }
+    }
+
+    // One active job at a time; hook up the event callbacks first.
     final progress = ValueNotifier<(String, int)>(('starting', 0));
+    final chunks = <(int, String)>[];
     var dialogOpen = false;
-    List<AiSegment>? segments;
+    var done = false;
     String? error;
 
     void closeDialog() {
@@ -134,8 +222,11 @@ class AiSubtitleRunner {
 
     NativeBridge.configureCallbacks(
       onAiProgress: (stage, percent) => progress.value = (stage, percent),
-      onAiDone: (s) {
-        segments = s;
+      onAiChunk: (offsetMs, srt) {
+        if (srt.trim().isNotEmpty) chunks.add((offsetMs, srt));
+      },
+      onAiDone: (_) {
+        done = true;
         closeDialog();
       },
       onAiFailed: (e) {
@@ -154,8 +245,8 @@ class AiSubtitleRunner {
     if (jobId == null) {
       _snack(
         context,
-        'AI subtitles are not available on this phone '
-        '(they need a 64-bit chip)',
+        'AI subtitles could not start on this phone - they need internet '
+        'and Android System WebView',
       );
       return;
     }
@@ -167,7 +258,6 @@ class AiSubtitleRunner {
       barrierDismissible: false,
       builder: (dialogContext) => _AiProgressDialog(
         progress: progress,
-        model: options.model,
         onCancel: () {
           error = 'cancelled';
           NativeBridge.aiSubtitleCancel();
@@ -183,45 +273,19 @@ class AiSubtitleRunner {
       _snack(context, 'AI subtitles failed: $error');
       return;
     }
-    if (error == 'cancelled' || segments == null) return;
+    if (error == 'cancelled' || !done) return;
 
-    if (segments!.isEmpty) {
+    final cues = mergeChunkCues(chunks);
+    if (cues.isEmpty) {
       _snack(context,
           'No speech was detected in this video - nothing to write');
       return;
     }
 
-    final rawCues = [
-      for (final s in segments!)
-        if (!isMusicOnlyCaption(s.text)) SrtCue(s.startMs, s.endMs, s.text),
-    ];
-    if (rawCues.isEmpty) {
-      _snack(context,
-          'Only background music was detected - no subtitles to write');
-      return;
-    }
-
-    List<SrtCue> finalCues = rawCues;
-    if (options.usePuterAi) {
-      final targetLang = options.language == 'auto'
-          ? 'English'
-          : (AiSubtitleRunner.languageChoices[options.language] ?? options.language);
-
-      final puterResult = await PuterAiService.translateSubtitles(
-        cues: rawCues,
-        targetLanguage: targetLang,
-        model: options.puterModel,
-        userApiKey: options.puterApiKey,
-      );
-
-      if (puterResult != null && puterResult.cues.isNotEmpty) {
-        finalCues = puterResult.cues;
-      }
-    }
-
-    final srtPath = _srtPathFor(track.path);
+    // Build the .srt (pure function) and save it next to the video.
+    final srtPath = srtPathForVideo(track.path);
     try {
-      await File(srtPath).writeAsString(buildSrt(finalCues));
+      await File(srtPath).writeAsString(buildSrt(cues));
     } catch (_) {
       if (context.mounted) {
         _snack(context, 'Subtitles generated, but saving the file failed');
@@ -230,6 +294,8 @@ class AiSubtitleRunner {
     }
     if (!context.mounted) return;
 
+    // Hand it to mpv so the subtitle picker lists it immediately, and let
+    // the karaoke overlay / skip-intro chip pick up the fresh cues.
     final platform = player.player.platform;
     if (platform is NativePlayer) {
       try {
@@ -242,12 +308,6 @@ class AiSubtitleRunner {
     }
   }
 
-  static String _srtPathFor(String videoPath) {
-    final dir = p.dirname(videoPath);
-    final base = p.basenameWithoutExtension(videoPath);
-    return p.join(dir, '$base.maxai.srt');
-  }
-
   static void _snack(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -258,27 +318,71 @@ class AiSubtitleRunner {
   }
 }
 
+/// Shown the FIRST time someone taps Generate (when no Puter session exists
+/// yet). Explains the switch to the cloud honestly: what leaves the phone
+/// (speech audio only) and who pays (the user's own free Puter account).
+class _PuterIntroDialog extends StatelessWidget {
+  const _PuterIntroDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1a1a24),
+      title: Row(
+        children: [
+          Icon(Icons.cloud_outlined, color: themeState.accent, size: 20),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text('One-time free setup',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+      content: const Text(
+        'AI subtitles now run in the Puter cloud - nothing to download and '
+        'every phone is supported (32-bit too).\n\n'
+        'First use needs a quick Puter sign-in. A temporary account is '
+        'created automatically - no email, no password, no card. Your usage '
+        'is covered by your own free Puter account.\n\n'
+        'Only the speech parts of the audio leave your phone, straight to '
+        'your Puter session. You can sign out any time from Settings.',
+        style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.35),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Not now'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          style: FilledButton.styleFrom(backgroundColor: themeState.accent),
+          child: Text('Continue',
+              style: TextStyle(color: themeState.onAccent)),
+        ),
+      ],
+    );
+  }
+}
+
 class _AiProgressDialog extends StatelessWidget {
   final ValueNotifier<(String, int)> progress;
-  final String model;
   final VoidCallback onCancel;
 
   const _AiProgressDialog({
     required this.progress,
-    required this.model,
     required this.onCancel,
   });
 
-  static String _stageLabel(String stage, String model) {
+  static String _stageLabel(String stage) {
     switch (stage) {
-      case 'downloading':
-        return 'Downloading the AI model (one time, '
-            '${AiSubtitleRunner.modelSizeLabel(model)})…';
       case 'extracting':
-        return 'Extracting audio from the video…';
+        return 'Extracting audio from the video (on device)…';
       case 'transcribing':
-        return 'Listening to the speech in this video…\n'
-            '(silent parts are skipped automatically for speed)';
+        return 'Listening in the Puter cloud - only speech is uploaded…\n'
+            '(silent parts are skipped for speed)';
+      case 'downloading':
+        // Legacy stage id - nothing is downloaded in the cloud flow.
+        return 'Contacting the Puter cloud…';
       default:
         return 'Preparing…';
     }
@@ -292,22 +396,24 @@ class _AiProgressDialog extends StatelessWidget {
         children: [
           Icon(Icons.auto_awesome, color: themeState.accent, size: 20),
           const SizedBox(width: 8),
-          const Text('AI subtitles', style: TextStyle(color: Colors.white)),
+          const Expanded(
+            child: Text('AI subtitles · Puter cloud',
+                style: TextStyle(color: Colors.white, fontSize: 16)),
+          ),
         ],
       ),
       content: ValueListenableBuilder<(String, int)>(
         valueListenable: progress,
         builder: (context, value, _) {
           final (stage, percent) = value;
-          final determinate = stage == 'downloading' ||
-              stage == 'extracting' ||
-              stage == 'transcribing';
+          final determinate =
+              stage == 'extracting' || stage == 'transcribing';
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _stageLabel(stage, model),
+                _stageLabel(stage),
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
               const SizedBox(height: 14),
@@ -337,6 +443,9 @@ class _AiProgressDialog extends StatelessWidget {
   }
 }
 
+/// "Generate with AI" options: cloud quality tier (speed vs accuracy) and
+/// which language the video is spoken in (auto-detect or pinned). Choosing
+/// the right language is the single biggest accuracy boost on short clips.
 class _AiOptionsDialog extends StatefulWidget {
   final String initialModel;
   final String initialLanguage;
@@ -356,15 +465,6 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
   late String _model = widget.initialModel;
   late String _language = widget.initialLanguage;
   late bool _translate = widget.initialTranslate;
-  bool _usePuterAi = false;
-  String _puterModel = kPuterAiModels.first;
-  final TextEditingController _puterApiKeyController = TextEditingController();
-
-  @override
-  void dispose() {
-    _puterApiKeyController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -374,228 +474,84 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
         children: [
           Icon(Icons.auto_awesome, color: themeState.accent, size: 20),
           const SizedBox(width: 8),
-          const Text('AI subtitles', style: TextStyle(color: Colors.white)),
+          const Expanded(
+            child: Text('AI subtitles · Puter cloud',
+                style: TextStyle(color: Colors.white, fontSize: 16)),
+          ),
         ],
       ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Spoken language',
-              style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            _dropdown<String>(
-              value: _language,
-              items: [
-                for (final e in AiSubtitleRunner.languageChoices.entries)
-                  DropdownMenuItem(value: e.key, child: Text(e.value)),
-              ],
-              onChanged: (v) => setState(() => _language = v ?? 'auto'),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'AI model (quality)',
-              style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            _dropdown<String>(
-              value: _model,
-              items: [
-                for (final e in AiSubtitleRunner.modelChoices.entries)
-                  DropdownMenuItem(
-                    value: e.key,
-                    child: Text('${e.value.$1}  ·  ${e.value.$2}'),
-                  ),
-              ],
-              onChanged: (v) => setState(() => _model = v ?? 'base'),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Output',
-              style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: _modeChip(
-                    label: 'Same language',
-                    icon: Icons.record_voice_over_outlined,
-                    selected: !_translate,
-                    onTap: () => setState(() => _translate = false),
-                  ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Spoken language',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          _dropdown<String>(
+            value: _language,
+            items: [
+              for (final e in AiSubtitleRunner.languageChoices.entries)
+                DropdownMenuItem(value: e.key, child: Text(e.value)),
+            ],
+            onChanged: (v) => setState(() => _language = v ?? 'auto'),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Quality (cloud AI)',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          _dropdown<String>(
+            value: _model,
+            items: [
+              for (final e in AiSubtitleRunner.modelChoices.entries)
+                DropdownMenuItem(
+                  value: e.key,
+                  child: Text('${e.value.$1}  ·  ${e.value.$2}'),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _modeChip(
-                    label: '→ English',
-                    icon: Icons.translate,
-                    selected: _translate,
-                    onTap: () => setState(() => _translate = true),
-                  ),
-                ),
-              ],
-            ),
-            if (_translate)
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Text(
-                  'Foreign speech becomes ENGLISH subtitles (AI translate).',
-                  style: TextStyle(color: Colors.white38, fontSize: 11.5),
-                ),
-              ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.04),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SwitchListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    activeColor: themeState.accent,
-                    title: Row(
-                      children: [
-                        Icon(Icons.psychology, size: 18, color: themeState.accent),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'Puter AI Enhancement',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    subtitle: const Text(
-                      'Use Puter AI cloud models to translate & polish timing/grammar.',
-                      style: TextStyle(color: Colors.white54, fontSize: 11),
-                    ),
-                    value: _usePuterAi,
-                    onChanged: (v) => setState(() => _usePuterAi = v),
-                  ),
-                  if (_usePuterAi) ...[
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Puter AI Model',
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                    const SizedBox(height: 4),
-                    _dropdown<String>(
-                      value: _puterModel,
-                      items: [
-                        for (final m in kPuterAiModels)
-                          DropdownMenuItem(value: m, child: Text(m)),
-                      ],
-                      onChanged: (v) => setState(() => _puterModel = v ?? kPuterAiModels.first),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _puterApiKeyController,
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                      decoration: InputDecoration(
-                        hintText: 'Puter API Key (Optional)',
-                        hintStyle: const TextStyle(color: Colors.white30, fontSize: 12),
-                        isDense: true,
-                        filled: true,
-                        fillColor: Colors.white.withOpacity(0.06),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Runs 100% offline locally, or via Puter AI API cloud when enabled.',
-              style: TextStyle(color: Colors.white38, fontSize: 11.5),
-            ),
-          ],
-        ),
+            ],
+            onChanged: (v) =>
+                setState(() => _model = AiSubtitleRunner.normalizeModelId(v)),
+          ),
+          const SizedBox(height: 16),
+          SwitchListTile(
+            value: _translate,
+            onChanged: (v) => setState(() => _translate = v),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            activeThumbColor: themeState.accent,
+            title: const Text('Translate to English',
+                style: TextStyle(color: Colors.white70, fontSize: 13)),
+            subtitle: const Text('Any spoken language -> English subtitles',
+                style: TextStyle(color: Colors.white38, fontSize: 12)),
+          ),
+        ],
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
         FilledButton.icon(
-          onPressed: () => Navigator.of(context).pop((
-            model: _model,
-            language: _language,
-            translate: _translate,
-            usePuterAi: _usePuterAi,
-            puterModel: _puterModel,
-            puterApiKey: _puterApiKeyController.text.trim(),
-          )),
-          icon: const Icon(Icons.auto_awesome, size: 16),
-          label: Text(_translate ? 'Translate' : 'Generate'),
+          onPressed: () => Navigator.pop(
+            context,
+            (model: _model, language: _language, translate: _translate),
+          ),
+          style: FilledButton.styleFrom(backgroundColor: themeState.accent),
+          icon: Icon(Icons.cloud_done_outlined,
+              size: 16, color: themeState.onAccent),
+          label: Text('Generate',
+              style: TextStyle(color: themeState.onAccent)),
         ),
       ],
-    );
-  }
-
-  Widget _modeChip({
-    required String label,
-    required IconData icon,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-        decoration: BoxDecoration(
-          color: selected
-              ? themeState.accent.withValues(alpha: 0.18)
-              : Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected ? themeState.accent : Colors.white12,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon,
-                size: 16, color: selected ? themeState.accent : Colors.white54),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: selected ? Colors.white : Colors.white70,
-                  fontSize: 12.5,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -605,11 +561,10 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
     required ValueChanged<T?> onChanged,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white12),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<T>(
@@ -618,7 +573,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           onChanged: onChanged,
           isExpanded: true,
           dropdownColor: const Color(0xFF26262f),
-          style: const TextStyle(color: Colors.white, fontSize: 14),
+          style: const TextStyle(color: Colors.white, fontSize: 13),
         ),
       ),
     );

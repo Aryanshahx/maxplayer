@@ -518,24 +518,23 @@ void main() {
   });
 
   group('AI subtitle options & caption filter (v18)', () {
-    // v25: only accurate models (user call); speed comes from all-core
-    // threading, and any stale "tiny" id from v22-v24 maps to base.
-    test('only accurate models remain; stale tiny ids map to base', () {
+    // v48: cloud tiers replaced on-device models; stale ids migrate.
+    test('cloud model tiers; stale on-device ids migrate', () {
       expect(AiSubtitleRunner.modelChoices.containsKey('tiny'), isFalse);
+      expect(AiSubtitleRunner.modelChoices.containsKey('base'), isFalse);
       expect(
         AiSubtitleRunner.modelChoices.keys,
-        containsAll(<String>['base', 'small']),
+        containsAll(<String>['fast', 'best']),
       );
-      expect(AiSubtitleRunner.normalizeModelId(null), 'base');
+      expect(AiSubtitleRunner.normalizeModelId(null), 'fast');
       expect(
         AiSubtitleRunner.normalizeModelId('tiny'),
-        'base',
-        reason: 'a stale v22-24 "tiny" pref must migrate to base',
+        'fast',
+        reason: 'a stale v22-24 "tiny" pref must migrate to fast',
       );
-      expect(AiSubtitleRunner.normalizeModelId('small'), 'small');
-      expect(AiSubtitleRunner.normalizeModelId('nonsense'), 'base');
-      expect(AiSubtitleRunner.modelSizeLabel('base'), '~142 MB');
-      expect(AiSubtitleRunner.modelSizeLabel('small'), '~466 MB');
+      expect(AiSubtitleRunner.normalizeModelId('base'), 'fast');
+      expect(AiSubtitleRunner.normalizeModelId('small'), 'best');
+      expect(AiSubtitleRunner.normalizeModelId('nonsense'), 'fast');
     });
 
     test('music-only decoration captions are dropped, speech is kept', () {
@@ -1687,6 +1686,63 @@ void main() {
       expect(x.countries, ['United States']);
       expect(x.certification, 'PG-13');
       expect(x.allLanguages, ['English', 'Hindi', 'Tamil']);
+    });
+  });
+
+  group('v48 Puter cloud AI subtitles', () {
+    test('cloudModelFor maps picker ids to Puter models', () {
+      expect(
+        AiSubtitleRunner.cloudModelFor('fast'),
+        'gpt-4o-mini-transcribe',
+      );
+      expect(AiSubtitleRunner.cloudModelFor('best'), 'gpt-4o-transcribe');
+      // Unknown / legacy ids fall back to the fast tier.
+      expect(
+        AiSubtitleRunner.cloudModelFor('base'),
+        'gpt-4o-mini-transcribe',
+      );
+    });
+
+    test('mergeChunkCues shifts slice-local times to absolute', () {
+      final cues = AiSubtitleRunner.mergeChunkCues([
+        (0, '1\n00:00:01,000 --> 00:00:02,500\nHello\n'),
+        (60000, '1\n00:00:00,000 --> 00:00:01,500\nWorld\n'),
+      ]);
+      expect(cues, hasLength(2));
+      expect(cues[0].startMs, 1000);
+      expect(cues[0].text, 'Hello');
+      expect(cues[1].startMs, 60000);
+      expect(cues[1].endMs, 61500);
+    });
+
+    test('boundary duplicates + music decorations drop once', () {
+      final cues = AiSubtitleRunner.mergeChunkCues([
+        (
+          0,
+          '1\n00:00:01,000 --> 00:00:03,000\nHello there\n\n'
+              '2\n00:00:03,000 --> 00:00:04,000\n♪ Music ♪\n'
+        ),
+        (2970, '1\n00:00:00,200 --> 00:00:02,200\nHello there!\n'),
+      ]);
+      expect(
+        cues,
+        hasLength(1),
+        reason: 'identical caption at a slice boundary counts once; '
+            'music-only decorations never survive',
+      );
+      expect(cues.single.startMs, 1000);
+      expect(cues.single.text.contains('Music'), isFalse);
+    });
+
+    test('merged cues feed buildSrt sorted and renumbered', () {
+      final cues = AiSubtitleRunner.mergeChunkCues([
+        (5000, '7\n00:00:02,000 --> 00:00:03,000\nSecond\n'),
+        (0, '1\n00:00:01,000 --> 00:00:02,000\nFirst\n'),
+      ]);
+      final doc = buildSrt(cues);
+      expect(doc.indexOf('First'), lessThan(doc.indexOf('Second')));
+      expect(doc, contains('00:00:01,000 --> 00:00:02,000'));
+      expect(doc, contains('00:00:07,000 --> 00:00:08,000'));
     });
   });
 }

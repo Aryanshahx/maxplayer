@@ -192,17 +192,21 @@ class AboutSheet extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        // Phase-1 verification: proves the offline whisper.cpp engine
-        // bundled in this build actually loads on this device.
+        // v48: shows whether the Puter cloud bridge (hidden WebView)
+        // loaded on this device and whether a session is signed in.
         Center(
-          child: FutureBuilder<String?>(
-            future: NativeBridge.whisperEngineStatus(),
+          child: FutureBuilder<Map<String, Object?>>(
+            future: NativeBridge.puterStatus(),
             builder: (context, snap) {
-              final ready = snap.hasData && snap.data != null;
+              final m = snap.data;
+              final ready = m != null && m['ready'] == true;
+              final signed = m != null && m['signedIn'] == true;
               return Text(
                 ready
-                    ? 'AI subtitle engine: ready (offline & free)'
-                    : 'AI subtitle engine: unavailable on this build',
+                    ? (signed
+                        ? 'AI subtitles: Puter cloud ready'
+                        : 'AI subtitles: Puter cloud (sign-in on first use)')
+                    : 'AI subtitles: cloud bridge unavailable here',
                 style: TextStyle(
                   color: ready
                       ? Colors.greenAccent.withValues(alpha: 0.7)

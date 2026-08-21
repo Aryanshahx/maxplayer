@@ -3,7 +3,18 @@ workflows:
     name: Max Player - Android APK + AAB
     max_build_duration: 60
     environment:
+      # Pinned on purpose: 'stable' auto-upgrades, and upcoming Flutter
+      # versions will refuse to build plugins that still apply the Kotlin
+      # Gradle Plugin (media_kit's transitive package_info_plus /
+      # wakelock_plus warn about this today). A pinned version keeps every
+      # CI build reproducible.
       flutter: 3.44.9
+      # Play Store upload key comes from these environment variables when
+      # they are configured in Codemagic (App settings -> Environment
+      # variables -> group "keystore_credentials"): CM_KEYSTORE (base64 of
+      # the .jks/.keystore), CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS,
+      # CM_KEY_ALIAS_PASSWORD. Without them the build signs with the debug
+      # key (fine for testing; Play Console needs the real key).
       groups:
         - keystore_credentials
       vars:
@@ -23,14 +34,28 @@ workflows:
           else
             echo "No upload key configured - release signs with the debug key."
           fi
+      # v16's temporary "Diagnose signing secrets" step was removed in v17
+      # after it confirmed CI signing is green (CI KEYSTORE CHECK: OK).
       - name: Clean build (avoid stale plugin registration after dependency upgrades)
         script: flutter clean
       - name: Get Flutter packages
         script: flutter pub get
       - name: Build APK (release, ALL CPUs - sideload/WhatsApp build)
-        script: flutter build apk --release --dart-define=TMDB_API_KEY=$TMDB_API_KEY --dart-define=OPENROUTER_API_KEY=$OPENROUTER_API_KEY --dart-define=OPENSUBTITLES_API_KEY=$OPENSUBTITLES_API_KEY --dart-define=PUTER_API_KEY=$PUTER_API_KEY
+        # v39: universal APK (arm64-v8a + armeabi-v7a + x86_64). A fat APK
+        # is bigger, but sideloaded installs skip Android's ABI check, so
+        # 32-bit-only phones installed the old arm64-only APK fine and then
+        # crashed at start (real log: POCO C51, Android 13). A fat APK just
+        # works everywhere.
+        # v43: TMDB_API_KEY comes from a Codemagic environment variable
+        # (App settings -> Environment variables; free key from
+        # themoviedb.org). It is compiled in, and NEVER committed to the
+        # repo. Without it, Discover shows a setup note instead of movies.
+        script: flutter build apk --release --dart-define=TMDB_API_KEY=$TMDB_API_KEY --dart-define=OPENROUTER_API_KEY=$OPENROUTER_API_KEY --dart-define=OPENSUBTITLES_API_KEY=$OPENSUBTITLES_API_KEY
       - name: Build AAB for the Play Store (release, ALL CPUs)
-        script: flutter build appbundle --release --dart-define=TMDB_API_KEY=$TMDB_API_KEY --dart-define=OPENROUTER_API_KEY=$OPENROUTER_API_KEY --dart-define=OPENSUBTITLES_API_KEY=$OPENSUBTITLES_API_KEY --dart-define=PUTER_API_KEY=$PUTER_API_KEY
+        # Play generates per-ABI download splits from the universal bundle,
+        # so every phone still downloads only its own architecture - and
+        # 32-bit devices stop seeing "device isn't compatible".
+        script: flutter build appbundle --release --dart-define=TMDB_API_KEY=$TMDB_API_KEY --dart-define=OPENROUTER_API_KEY=$OPENROUTER_API_KEY --dart-define=OPENSUBTITLES_API_KEY=$OPENSUBTITLES_API_KEY
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
       - build/app/outputs/bundle/release/*.aab

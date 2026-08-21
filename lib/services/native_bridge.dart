@@ -78,6 +78,9 @@ class NativeBridge {
   static void Function(String stage, int percent)? _onAiProgress;
   static void Function(List<AiSegment> segments)? _onAiDone;
   static void Function(String error)? _onAiFailed;
+
+  /// v48: one finished cloud slice - raw .srt text at an absolute offset.
+  static void Function(int offsetMs, String srt)? _onAiChunk;
   static bool _handlerRegistered = false;
 
   /// Registers (or replaces) the app-level native event callbacks.
@@ -93,6 +96,9 @@ class NativeBridge {
     void Function(String stage, int percent)? onAiProgress,
     void Function(List<AiSegment> segments)? onAiDone,
     void Function(String error)? onAiFailed,
+
+    /// v48: raw cloud slices (see [aiSubtitleGenerate]).
+    void Function(int offsetMs, String srt)? onAiChunk,
   }) {
     if (onOpenVideo != null) _onOpenVideo = onOpenVideo;
     if (onOpenVideoFailed != null) _onOpenVideoFailed = onOpenVideoFailed;
@@ -101,6 +107,7 @@ class NativeBridge {
     if (onAiProgress != null) _onAiProgress = onAiProgress;
     if (onAiDone != null) _onAiDone = onAiDone;
     if (onAiFailed != null) _onAiFailed = onAiFailed;
+    if (onAiChunk != null) _onAiChunk = onAiChunk;
     if (_handlerRegistered) return;
     _handlerRegistered = true;
     _channel.setMethodCallHandler(_dispatch);
@@ -128,6 +135,15 @@ class NativeBridge {
           _onAiProgress?.call(
             '${m['stage']}',
             (m['percent'] as num?)?.toInt() ?? 0,
+          );
+        }
+        break;
+      case 'onAiChunk':
+        final cm = call.arguments as Map?;
+        if (cm != null) {
+          _onAiChunk?.call(
+            (cm['offsetMs'] as num?)?.toInt() ?? 0,
+            '${cm['srt'] ?? ''}',
           );
         }
         break;
@@ -296,45 +312,59 @@ class NativeBridge {
     } catch (_) {}
   }
 
-  // --- AI subtitles (Phase 1 probe) ---
+  // --- AI subtitles (v48: Puter cloud) ---
 
-  /// Returns the whisper.cpp system-info string when the on-device AI
-  /// subtitle engine is bundled and its native library loads, else null.
-  /// Used by the About sheet as a build verification.
-  static Future<String?> whisperEngineStatus() async {
-    try {
-      final res = await _channel.invokeMethod<String>('whisperAvailable');
-      return (res != null && res.isNotEmpty) ? res : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  // --- AI subtitles pipeline (Phases 2+3) ---
-
-  /// Which models are present on device. Returns {tiny: MB, base: MB,
-  /// small: MB}; 0 MB means "not downloaded yet".
-  static Future<Map<String, int>> aiModelStatus() async {
+  /// v48: cloud bridge status: {ready, signedIn, user}. Empty map when the
+  /// channel is missing (unit tests / desktop).
+  static Future<Map<String, Object?>> puterStatus() async {
     try {
       final res = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'aiModelStatus',
+        'puterStatus',
       );
       if (res == null) return const {};
-      return res.map((k, v) => MapEntry('$k', (v as num?)?.toInt() ?? 0));
+      return res.map((k, v) => MapEntry('$k', v));
     } catch (_) {
       return const {};
     }
   }
 
-  /// Starts the offline AI subtitle job for [videoPath]. Returns the job id
-  /// immediately; progress/completion arrive via [configureCallbacks]
-  /// (`onAiProgress` / `onAiDone` / `onAiFailed`). [model] is tiny/base/
-  /// small; [language] is a whisper language code or 'auto' (detect).
+  /// v48: one-time Puter sign-in (creates a silent temp account when
+  /// possible). Returns {signedIn, user}.
+  static Future<Map<String, Object?>> puterSignIn() async {
+    try {
+      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'puterSignIn',
+      );
+      if (res == null) return const {};
+      return res.map((k, v) => MapEntry('$k', v));
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// v48: forget the Puter session on this device (sign out of the cloud).
+  static Future<bool> puterSignOut() async {
+    try {
+      return await _channel.invokeMethod<bool>('puterSignOut') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // --- AI subtitles pipeline ---
+
+  /// Starts the CLOUD AI subtitle job for [videoPath] (v48). Returns the
+  /// job id immediately; progress arrives via [configureCallbacks]:
+  /// `onAiChunk` delivers each speech slice's raw .srt + absolute offset,
+  /// `onAiDone` fires with EMPTY segments when the last slice is in, and
+  /// `onAiFailed` carries the reason. [model] is 'fast'/'best' (Puter cloud
+  /// ids), [language] an ISO hint or 'auto' (detect). No 64-bit limit and
+  /// no model download anymore - null means the bridge could not start.
   static Future<int?> aiSubtitleGenerate({
     required String videoPath,
     String model = 'base',
     String language = 'auto',
-    // v21: whisper's translate task - any spoken language -> English subs.
+    // Any spoken language -> English subtitles (cloud translation).
     bool translate = false,
   }) async {
     try {

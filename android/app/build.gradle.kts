@@ -58,9 +58,8 @@ android {
         // trace from a POCO C51 (Android 13!) showed the arm64-only APK
         // dying with: Could not find 'libflutter.so'. Looked for:
         // [armeabi-v7a, armeabi], but only found: [arm64-v8a].
-        // (AI subtitles still need 64-bit - the whisper engine ships an
-        //  arm64-only library; on 32-bit devices playback works normally
-        //  and the AI feature declines gracefully instead of crashing.)
+        // v48: AI subtitles are cloud-based (Puter WebView bridge) - even
+        //  32-bit phones get them now; nothing native left to decline.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
@@ -97,12 +96,7 @@ flutter {
 }
 
 dependencies {
-    // AI SUBTITLES (Phase 1): prebuilt on-device whisper.cpp engine.
-    // Plain Maven artifact (NOT a Gradle/Flutter plugin) = no toolchain
-    // conflicts. ~1.1 MB AAR, MIT licensed, runs 100% offline & free.
-    implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
-    // The AAR only exports coroutines on the runtime classpath; we call its
-    // suspend functions from Kotlin, so we need it explicitly at compile
-    // time. Same version as the AAR's -> no conflict.
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // v48: NO native dependencies at all. AI subtitles moved to the Puter
+    // cloud, driven through a plain Android WebView - zero AARs, zero
+    // bundled .so libraries, works on 32-bit phones too.
 }
