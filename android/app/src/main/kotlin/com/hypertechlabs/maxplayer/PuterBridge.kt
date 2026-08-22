@@ -53,6 +53,7 @@ class PuterBridge(private val activity: MainActivity) {
     private var webView: WebView? = null
     private var popup: WebView? = null
     private var popupDialog: android.app.AlertDialog? = null
+    private var signInOverlay: WebView? = null
 
     @Volatile private var pageReady = false
     @Volatile private var puterReady = false
@@ -171,6 +172,84 @@ window.mxSignOut = async function() {
 };
 
 MXP.onPageReady();
+</script>
+</body>
+</html>
+""".trimIndent()
+
+    private val signInPageHtml = """
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://js.puter.com/v2/"></script>
+</head>
+<body style="background:#1a1a24;color:#fff;font-family:sans-serif;
+    display:flex;flex-direction:column;align-items:center;
+    justify-content:center;height:100vh;margin:0">
+<div style="text-align:center;max-width:320px;padding:20px">
+  <div style="font-size:48px;margin-bottom:16px">\u2601\uFE0F</div>
+  <h2 style="margin:0 0 8px">One-time free setup</h2>
+  <p style="color:#aaa;font-size:14px;line-height:1.4;margin:0 0 24px">
+    AI subtitles use the Puter cloud. Tap below to sign in &mdash;
+    a free temporary account is created automatically.
+  </p>
+  <button id="mxBtn" disabled
+    style="background:#22D3EE;color:#111;font-size:18px;font-weight:bold;
+    padding:14px 32px;border:none;border-radius:12px;opacity:0.5">
+    Loading&hellip;
+  </button>
+  <br><br>
+  <a href="#" id="mxCancel"
+    style="color:#666;font-size:14px;text-decoration:none">Cancel</a>
+</div>
+<script>
+var btn = document.getElementById('mxBtn');
+var ready = false;
+var check = setInterval(function() {
+    if (typeof puter !== 'undefined' && puter.auth) {
+        ready = true;
+        clearInterval(check);
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+        btn.textContent = 'Continue';
+    }
+}, 200);
+setTimeout(function() {
+    if (!ready) { clearInterval(check); btn.textContent = 'No internet'; }
+}, 15000);
+btn.addEventListener('click', async function() {
+    if (!ready) return;
+    btn.disabled = true;
+    btn.textContent = 'Signing in\u2026';
+    btn.style.opacity = '0.5';
+    try {
+        if (puter.auth.isSignedIn()) {
+            var u = null;
+            try { u = await puter.auth.getUser(); } catch(e0) {}
+            var label = (u && (u.username || u.email))
+                ? String(u.username || u.email) : 'guest';
+            MXP.onSignIn(true, label);
+            return;
+        }
+        await puter.auth.signIn({ attempt_temp_user_creation: true });
+        var u = null;
+        try { u = await puter.auth.getUser(); } catch(e0) {}
+        var label = (u && (u.username || u.email))
+            ? String(u.username || u.email) : 'guest';
+        MXP.onSignIn(true, label);
+    } catch(e) {
+        var code = (e && (e.error || e.code)) ? String(e.error || e.code)
+            : ((e && e.message) ? String(e.message) : 'cancelled');
+        MXP.onSignIn(false, code.slice(0, 120));
+    }
+});
+document.getElementById('mxCancel').addEventListener('click', function(e) {
+    e.preventDefault();
+    MXP.onSignIn(false, 'cancelled');
+});
 </script>
 </body>
 </html>
@@ -448,16 +527,39 @@ MXP.onPageReady();
      * (when needed) is hosted in a dialog. Blocks the caller (executor
      * thread) until the flow resolves or [timeoutMs] passes.
      */
+    @SuppressLint("SetJavaScriptEnabled")
     fun signInSync(timeoutMs: Long): Boolean {
         if (!awaitReady(25000)) return false
+        val st = statusSync()
+        if (st == "signed") return true
         signInOk = false
         signInLatch = CountDownLatch(1)
-        evalOnMain("window.mxSignIn && window.mxSignIn();")
-        return try {
-            signInLatch.await(timeoutMs, TimeUnit.MILLISECONDS) && signInOk
-        } catch (e: InterruptedException) {
-            false
+        main.post {
+            val wv = try { WebView(activity) } catch (t: Throwable) {
+                signInLatch.countDown()
+                return@post
+            }
+            val s = wv.settings
+            s.javaScriptEnabled = true
+            s.domStorageEnabled = true
+            s.setSupportMultipleWindows(true)
+            s.mediaPlaybackRequiresUserGesture = false
+            try { CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true) } catch (_: Throwable) {}
+            wv.addJavascriptInterface(JsApi(), "MXP")
+            wv.webViewClient = object : WebViewClient() {}
+            wv.webChromeClient = object : WebChromeClient() {
+                override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean = openPopupOnMain(resultMsg)
+                override fun onCloseWindow(window: WebView?) { closePopupOnMain() }
+            }
+            try {
+                activity.addContentView(wv, ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            } catch (_: Throwable) {}
+            signInOverlay = wv
+            wv.loadDataWithBaseURL("https://maxplayer-cloud.local/", signInPageHtml, "text/html", "utf-8", null)
+            main.postDelayed({ if (signInLatch.count > 0) { signInLatch.countDown(); removeSignInOverlay() } }, 120000)
         }
+        return try { signInLatch.await(timeoutMs, TimeUnit.MILLISECONDS) && signInOk } catch (e: InterruptedException) { false }
     }
 
     /** Clears the persisted Puter session (WebView storage stays intact). */
@@ -523,6 +625,15 @@ MXP.onPageReady();
         }
     }
 
+    private fun removeSignInOverlay() {
+        val wv = signInOverlay ?: return
+        signInOverlay = null
+        main.post {
+            closePopupOnMain()
+            try { (wv.parent as? ViewGroup)?.removeView(wv); wv.stopLoading(); wv.destroy() } catch (_: Throwable) {}
+        }
+    }
+
     /** Cancellation from the player: every in-flight call ends as cancelled. */
     fun cancelAll() {
         val ids = synchronized(pending) { pending.keys.toList() }
@@ -531,6 +642,7 @@ MXP.onPageReady();
             evalOnMain("window.mxDrop($id);")
         }
         closePopupOnMain()
+        removeSignInOverlay()
     }
 
     /** Full teardown (e.g. user pressed Cancel during sign-in). */
