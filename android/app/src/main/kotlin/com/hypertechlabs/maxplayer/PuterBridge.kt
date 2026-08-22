@@ -453,7 +453,6 @@ MXP.onPageReady();
         val st = statusSync()
         if (st == "signed") return true
         signInOk = false
-        lastSignInError = null
         signInLatch = CountDownLatch(1)
         main.post {
             val wv = webView ?: return@post
