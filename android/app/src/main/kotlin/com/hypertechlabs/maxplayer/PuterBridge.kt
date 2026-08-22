@@ -450,73 +450,13 @@ MXP.onPageReady();
      */
     fun signInSync(timeoutMs: Long): Boolean {
         if (!awaitReady(25000)) return false
-        val st = statusSync()
-        if (st == "signed") return true
         signInOk = false
         signInLatch = CountDownLatch(1)
-        main.post {
-            val wv = webView ?: return@post
-            try {
-                (wv.parent as? ViewGroup)?.removeView(wv)
-                activity.addContentView(wv, ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                ))
-            } catch (_: Throwable) {}
-            val js = """
-(function(){
-  var o=document.createElement('div');
-  o.id='mxSO';
-  o.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:#1a1a24;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;color:#fff;font-family:sans-serif;';
-  o.innerHTML='<div style="text-align:center;max-width:320px;padding:20px">'
-    +'<div style="font-size:48px;margin-bottom:16px">\u2601\uFE0F</div>'
-    +'<h2 style="margin:0 0 8px">One-time free setup</h2>'
-    +'<p style="color:#aaa;font-size:14px;line-height:1.4;margin:0 0 24px">'
-    +'AI subtitles use the Puter cloud. Tap below to sign in \u2014 '
-    +'a free temporary account is created automatically.</p>'
-    +'<button id="mxSB" style="background:#22D3EE;color:#111;font-size:18px;'
-    +'font-weight:bold;padding:14px 32px;border:none;border-radius:12px;'
-    +'cursor:pointer">Continue</button><br><br>'
-    +'<a href="#" id="mxCB" style="color:#666;font-size:14px;'
-    +'text-decoration:none">Cancel</a></div>';
-  document.body.appendChild(o);
-  document.getElementById('mxSB').addEventListener('click',async function(){
-    this.disabled=true;this.textContent='Signing in\u2026';this.style.opacity='0.5';
-    try{
-      if(puter.auth.isSignedIn()){
-        var u=null;try{u=await puter.auth.getUser();}catch(e){}
-        MXP.onSignIn(true,(u&&(u.username||u.email))?String(u.username||u.email):'guest');
-        return;
-      }
-      await puter.auth.signIn({attempt_temp_user_creation:true});
-      var u=null;try{u=await puter.auth.getUser();}catch(e){}
-      MXP.onSignIn(true,(u&&(u.username||u.email))?String(u.username||u.email):'guest');
-    }catch(e){
-      var c=(e&&(e.error||e.code))?String(e.error||e.code):((e&&e.message)?String(e.message):'cancelled');
-      MXP.onSignIn(false,c.slice(0,120));
-    }
-  });
-  document.getElementById('mxCB').addEventListener('click',function(e){
-    e.preventDefault();MXP.onSignIn(false,'cancelled');
-  });
-})()
-""".trimIndent()
-            wv.evaluateJavascript(js, null)
-        }
+        evalOnMain("window.mxSignIn && window.mxSignIn();")
         return try {
             signInLatch.await(timeoutMs, TimeUnit.MILLISECONDS) && signInOk
         } catch (e: InterruptedException) {
             false
-        } finally {
-            main.post {
-                val wv = webView ?: return@post
-                wv.evaluateJavascript(
-                    "var o=document.getElementById('mxSO');if(o)o.remove();", null)
-                try {
-                    (wv.parent as? ViewGroup)?.removeView(wv)
-                    activity.addContentView(wv, ViewGroup.LayoutParams(1, 1))
-                } catch (_: Throwable) {}
-            }
         }
     }
 

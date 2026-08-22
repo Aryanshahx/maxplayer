@@ -183,9 +183,8 @@ class AiSubtitleRunner {
     unawaited(NativeBridge.saveSetting(_kLanguageKey, options.language));
     unawaited(NativeBridge.saveSetting(_kTranslateKey, '${options.translate}'));
 
-    // v48: one-time Puter sign-in. The bridge loads lazily here; a silent
-    // temp account covers most users, otherwise Puter's popup shows once
-    // and the session persists afterwards.
+    _snack(context, 'AI subtitles coming soon — feature under development');
+    return;
     var status = await NativeBridge.puterStatus();
     if (!context.mounted) return;
     if (status['signedIn'] != true) {
