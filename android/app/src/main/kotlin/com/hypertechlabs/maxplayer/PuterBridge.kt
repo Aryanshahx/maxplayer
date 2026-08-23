@@ -200,12 +200,14 @@ MXP.onPageReady();
     padding:14px 32px;border:none;border-radius:12px;opacity:0.5">
     Loading&hellip;
   </button>
-  <br><br>
+  <p id="mxErr" style="color:#f66;font-size:13px;margin-top:16px;display:none"></p>
+  <br>
   <a href="#" id="mxCancel"
     style="color:#666;font-size:14px;text-decoration:none">Cancel</a>
 </div>
 <script>
 var btn = document.getElementById('mxBtn');
+var err = document.getElementById('mxErr');
 var ready = false;
 var check = setInterval(function() {
     if (typeof puter !== 'undefined' && puter.auth) {
@@ -225,30 +227,30 @@ btn.addEventListener('click', async function() {
     btn.disabled = true;
     btn.textContent = 'Signing in\u2026';
     btn.style.opacity = '0.5';
+    err.style.display = 'none';
     try {
-        if (puter.auth.isSignedIn()) {
+        var sp = (async function() {
+            if (puter.auth.isSignedIn()) {
+                var u = null;
+                try { u = await puter.auth.getUser(); } catch(e) {}
+                return (u && (u.username || u.email)) ? String(u.username || u.email) : 'guest';
+            }
+            await puter.auth.signIn({ attempt_temp_user_creation: true });
             var u = null;
-            try { u = await puter.auth.getUser(); } catch(e0) {}
-            var label = (u && (u.username || u.email))
-                ? String(u.username || u.email) : 'guest';
-            MXP.onSignIn(true, label);
-            return;
-        }
-        await puter.auth.signIn({ attempt_temp_user_creation: true });
-        var u = null;
-        try { u = await puter.auth.getUser(); } catch(e0) {}
-        var label = (u && (u.username || u.email))
-            ? String(u.username || u.email) : 'guest';
+            try { u = await puter.auth.getUser(); } catch(e) {}
+            return (u && (u.username || u.email)) ? String(u.username || u.email) : 'guest';
+        })();
+        var tp = new Promise(function(_, r) { setTimeout(function(){r(new Error('timed out'));},60000); });
+        var label = await Promise.race([sp, tp]);
         MXP.onSignIn(true, label);
     } catch(e) {
-        var code = (e && (e.error || e.code)) ? String(e.error || e.code)
-            : ((e && e.message) ? String(e.message) : 'cancelled');
-        MXP.onSignIn(false, code.slice(0, 120));
+        var msg = (e && e.message) ? e.message : 'cancelled';
+        err.textContent = msg; err.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Try again'; btn.style.opacity = '1';
     }
 });
 document.getElementById('mxCancel').addEventListener('click', function(e) {
-    e.preventDefault();
-    MXP.onSignIn(false, 'cancelled');
+    e.preventDefault(); MXP.onSignIn(false, 'cancelled');
 });
 </script>
 </body>
@@ -536,8 +538,7 @@ document.getElementById('mxCancel').addEventListener('click', function(e) {
         signInLatch = CountDownLatch(1)
         main.post {
             val wv = try { WebView(activity) } catch (t: Throwable) {
-                signInLatch.countDown()
-                return@post
+                signInLatch.countDown(); return@post
             }
             val s = wv.settings
             s.javaScriptEnabled = true
@@ -548,8 +549,16 @@ document.getElementById('mxCancel').addEventListener('click', function(e) {
             wv.addJavascriptInterface(JsApi(), "MXP")
             wv.webViewClient = object : WebViewClient() {}
             wv.webChromeClient = object : WebChromeClient() {
-                override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean = openPopupOnMain(resultMsg)
-                override fun onCloseWindow(window: WebView?) { closePopupOnMain() }
+                override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
+                    // Hide overlay so user can see the puter popup.
+                    main.post { signInOverlay?.visibility = WebView.INVISIBLE }
+                    return openPopupOnMain(resultMsg)
+                }
+                override fun onCloseWindow(window: WebView?) {
+                    closePopupOnMain()
+                    // Show overlay again if sign-in not done yet.
+                    main.post { signInOverlay?.visibility = WebView.VISIBLE }
+                }
             }
             try {
                 activity.addContentView(wv, ViewGroup.LayoutParams(
