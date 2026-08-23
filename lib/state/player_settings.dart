@@ -11,6 +11,10 @@ class PlayerSettings {
   final bool brightnessSwipe;
   final bool pinchZoom;
 
+  /// v52: which fit mode the player starts in (and a two-finger tap snaps
+  /// back to). 0 = Fit screen (the default); indexes match [kFitModeNames].
+  final int defaultFitIndex;
+
   /// Hold a finger on the video to temporarily play faster.
   final bool longPressSpeed;
 
@@ -64,6 +68,7 @@ class PlayerSettings {
     this.volumeSwipe = true,
     this.brightnessSwipe = true,
     this.pinchZoom = true,
+    this.defaultFitIndex = 0,
     this.longPressSpeed = true,
     this.longPressMultiplier = 2.0,
     this.autoHideSeconds = 4,
@@ -89,6 +94,18 @@ class PlayerSettings {
   static const String kVolumeSwipe = 'player.volumeSwipe';
   static const String kBrightnessSwipe = 'player.brightnessSwipe';
   static const String kPinchZoom = 'player.pinchZoom';
+  static const String kDefaultFitIndex = 'player.defaultFitIndex';
+
+  /// v52: fit modes offered in Settings. MUST stay in the same order as
+  /// PlayerScreen's private _fits/_fitNames lists (tested).
+  static const List<String> kFitModeNames = [
+    'Fit',
+    'Crop',
+    'Stretch',
+    '16:9',
+    '4:3',
+    'Original',
+  ];
   static const String kLongPressSpeed = 'player.longPressSpeed';
   static const String kLongPressMultiplier = 'player.longPressMultiplier';
   static const String kAutoHideSeconds = 'player.autoHideSeconds';
@@ -114,6 +131,9 @@ class PlayerSettings {
       volumeSwipe: s[kVolumeSwipe] != 'false',
       brightnessSwipe: s[kBrightnessSwipe] != 'false',
       pinchZoom: s[kPinchZoom] != 'false',
+      defaultFitIndex: (int.tryParse(s[kDefaultFitIndex] ?? '') ??
+              d.defaultFitIndex)
+          .clamp(0, kFitModeNames.length - 1),
       longPressSpeed: s[kLongPressSpeed] != 'false',
       longPressMultiplier:
           double.tryParse(s[kLongPressMultiplier] ?? '') ??
@@ -153,6 +173,7 @@ class PlayerSettings {
     NativeBridge.saveSetting(kVolumeSwipe, '$volumeSwipe');
     NativeBridge.saveSetting(kBrightnessSwipe, '$brightnessSwipe');
     NativeBridge.saveSetting(kPinchZoom, '$pinchZoom');
+    NativeBridge.saveSetting(kDefaultFitIndex, '$defaultFitIndex');
     NativeBridge.saveSetting(kLongPressSpeed, '$longPressSpeed');
     NativeBridge.saveSetting(
       kLongPressMultiplier,
@@ -179,6 +200,7 @@ class PlayerSettings {
     bool? volumeSwipe,
     bool? brightnessSwipe,
     bool? pinchZoom,
+    int? defaultFitIndex,
     bool? longPressSpeed,
     double? longPressMultiplier,
     int? autoHideSeconds,
@@ -201,6 +223,7 @@ class PlayerSettings {
       volumeSwipe: volumeSwipe ?? this.volumeSwipe,
       brightnessSwipe: brightnessSwipe ?? this.brightnessSwipe,
       pinchZoom: pinchZoom ?? this.pinchZoom,
+      defaultFitIndex: defaultFitIndex ?? this.defaultFitIndex,
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
       longPressMultiplier: longPressMultiplier ?? this.longPressMultiplier,
       autoHideSeconds: autoHideSeconds ?? this.autoHideSeconds,

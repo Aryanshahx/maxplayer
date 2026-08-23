@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_info.dart';
-import '../services/native_bridge.dart';
+import '../services/movie_ai.dart' show kOpenRouterApiKey;
 import '../state/theme_state.dart';
 import '../utils/privacy_policy.dart';
 
@@ -192,29 +192,19 @@ class AboutSheet extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        // v48: shows whether the Puter cloud bridge (hidden WebView)
-        // loaded on this device and whether a session is signed in.
+        // v52: AI subtitles moved to the key-based OpenRouter cloud -
+        // the fragile WebView sign-in dance is gone entirely.
         Center(
-          child: FutureBuilder<Map<String, Object?>>(
-            future: NativeBridge.puterStatus(),
-            builder: (context, snap) {
-              final m = snap.data;
-              final ready = m != null && m['ready'] == true;
-              final signed = m != null && m['signedIn'] == true;
-              return Text(
-                ready
-                    ? (signed
-                        ? 'AI subtitles: Puter cloud ready'
-                        : 'AI subtitles: Puter cloud (sign-in on first use)')
-                    : 'AI subtitles: cloud bridge unavailable here',
-                style: TextStyle(
-                  color: ready
-                      ? Colors.greenAccent.withValues(alpha: 0.7)
-                      : Colors.white24,
-                  fontSize: 11,
-                ),
-              );
-            },
+          child: Text(
+            kOpenRouterApiKey.isNotEmpty
+                ? 'AI subtitles: cloud ready (no sign-in needed)'
+                : 'AI subtitles: not configured in this build',
+            style: TextStyle(
+              color: kOpenRouterApiKey.isNotEmpty
+                  ? Colors.greenAccent.withValues(alpha: 0.7)
+                  : Colors.white24,
+              fontSize: 11,
+            ),
           ),
         ),
       ],

@@ -146,8 +146,51 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               _SwitchTile(
                 icon: Icons.pinch_outlined,
                 label: 'Pinch to zoom (two fingers)',
+                subtitle: 'Two-finger tap snaps back to fit screen',
                 value: _settings.pinchZoom,
                 onChanged: (v) => _update(_settings.copyWith(pinchZoom: v)),
+              ),
+              // v52: which fit mode videos start in (default: fit screen).
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.fit_screen,
+                        color: Colors.white38, size: 22),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Default video fit',
+                            style:
+                                TextStyle(color: Colors.white, fontSize: 15),
+                          ),
+                          Text(
+                            'Every video opens in this mode',
+                            style: TextStyle(
+                              color: Colors.white38,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _MiniDropdown<int>(
+                      value: _settings.defaultFitIndex,
+                      entries: {
+                        for (var i = 0;
+                            i < PlayerSettings.kFitModeNames.length;
+                            i++)
+                          i: PlayerSettings.kFitModeNames[i],
+                      },
+                      onChanged: (v) => _update(
+                          _settings.copyWith(defaultFitIndex: v ?? 0)),
+                    ),
+                  ],
+                ),
               ),
               _SwitchTile(
                 icon: Icons.fast_forward,

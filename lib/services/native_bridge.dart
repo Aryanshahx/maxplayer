@@ -42,6 +42,14 @@ class VideoMetadata {
 }
 
 /// One AI-generated subtitle cue (whisper.cpp segment).
+/// One prepared speech slice on disk, ready for Dart to upload (v52).
+class AiSlice {
+  final String path;
+  final int offsetMs;
+
+  const AiSlice(this.path, this.offsetMs);
+}
+
 class AiSegment {
   final int startMs;
   final int endMs;
@@ -80,7 +88,6 @@ class NativeBridge {
   static void Function(String error)? _onAiFailed;
 
   /// v48: one finished cloud slice - raw .srt text at an absolute offset.
-  static void Function(int offsetMs, String srt)? _onAiChunk;
   static bool _handlerRegistered = false;
 
   /// Registers (or replaces) the app-level native event callbacks.
@@ -92,13 +99,10 @@ class NativeBridge {
     /// Fired when the play/pause button ON THE PiP WINDOW is tapped.
     void Function()? onPipAction,
 
-    /// AI subtitle job events (see [aiSubtitleGenerate]).
+    /// AI subtitle job progress events (see [aiPrepareSlices]).
     void Function(String stage, int percent)? onAiProgress,
     void Function(List<AiSegment> segments)? onAiDone,
     void Function(String error)? onAiFailed,
-
-    /// v48: raw cloud slices (see [aiSubtitleGenerate]).
-    void Function(int offsetMs, String srt)? onAiChunk,
   }) {
     if (onOpenVideo != null) _onOpenVideo = onOpenVideo;
     if (onOpenVideoFailed != null) _onOpenVideoFailed = onOpenVideoFailed;
@@ -107,7 +111,6 @@ class NativeBridge {
     if (onAiProgress != null) _onAiProgress = onAiProgress;
     if (onAiDone != null) _onAiDone = onAiDone;
     if (onAiFailed != null) _onAiFailed = onAiFailed;
-    if (onAiChunk != null) _onAiChunk = onAiChunk;
     if (_handlerRegistered) return;
     _handlerRegistered = true;
     _channel.setMethodCallHandler(_dispatch);
@@ -135,15 +138,6 @@ class NativeBridge {
           _onAiProgress?.call(
             '${m['stage']}',
             (m['percent'] as num?)?.toInt() ?? 0,
-          );
-        }
-        break;
-      case 'onAiChunk':
-        final cm = call.arguments as Map?;
-        if (cm != null) {
-          _onAiChunk?.call(
-            (cm['offsetMs'] as num?)?.toInt() ?? 0,
-            '${cm['srt'] ?? ''}',
           );
         }
         break;
@@ -312,71 +306,46 @@ class NativeBridge {
     } catch (_) {}
   }
 
-  // --- AI subtitles (v48: Puter cloud) ---
+  // --- AI subtitles pipeline (v52: OpenRouter cloud, key built in) ---
 
-  /// v48: cloud bridge status: {ready, signedIn, user}. Empty map when the
-  /// channel is missing (unit tests / desktop).
-  static Future<Map<String, Object?>> puterStatus() async {
+  /// v52: runs the ON-DEVICE half of AI subtitles - audio extraction,
+  /// speech gating and ~3-minute speech-slice WAV files - and hands the
+  /// slice list to Dart, which uploads each slice to the OpenRouter cloud
+  /// itself. Extraction progress arrives via [configureCallbacks]
+  /// (`onAiProgress`). `error` == 'cancelled' means the user aborted;
+  /// `slices` == empty with no error means "no speech in this video".
+  static Future<({int jobId, List<AiSlice> slices, String? error})>
+      aiPrepareSlices(String videoPath) async {
     try {
       final res = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'puterStatus',
+        'aiPrepareSlices',
+        {'videoPath': videoPath},
       );
-      if (res == null) return const {};
-      return res.map((k, v) => MapEntry('$k', v));
-    } catch (_) {
-      return const {};
-    }
-  }
-
-  /// v48: one-time Puter sign-in (creates a silent temp account when
-  /// possible). Returns {signedIn, user}.
-  static Future<Map<String, Object?>> puterSignIn() async {
-    try {
-      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'puterSignIn',
+      if (res == null) {
+        return (jobId: -1, slices: const <AiSlice>[], error: 'no reply');
+      }
+      final raw = res['slices'];
+      final slices = <AiSlice>[
+        if (raw is List)
+          for (final s in raw)
+            if (s is Map)
+              AiSlice('${s['path']}', (s['offsetMs'] as num?)?.toInt() ?? 0),
+      ];
+      return (
+        jobId: (res['jobId'] as num?)?.toInt() ?? -1,
+        slices: slices,
+        error: res['error'] as String?,
       );
-      if (res == null) return const {};
-      return res.map((k, v) => MapEntry('$k', v));
-    } catch (_) {
-      return const {};
+    } catch (e) {
+      return (jobId: -1, slices: const <AiSlice>[], error: '$e');
     }
   }
 
-  /// v48: forget the Puter session on this device (sign out of the cloud).
-  static Future<bool> puterSignOut() async {
+  /// Deletes any speech slices a cancelled/failed job left behind.
+  static Future<void> aiSliceDiscard(int jobId) async {
     try {
-      return await _channel.invokeMethod<bool>('puterSignOut') ?? false;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  // --- AI subtitles pipeline ---
-
-  /// Starts the CLOUD AI subtitle job for [videoPath] (v48). Returns the
-  /// job id immediately; progress arrives via [configureCallbacks]:
-  /// `onAiChunk` delivers each speech slice's raw .srt + absolute offset,
-  /// `onAiDone` fires with EMPTY segments when the last slice is in, and
-  /// `onAiFailed` carries the reason. [model] is 'fast'/'best' (Puter cloud
-  /// ids), [language] an ISO hint or 'auto' (detect). No 64-bit limit and
-  /// no model download anymore - null means the bridge could not start.
-  static Future<int?> aiSubtitleGenerate({
-    required String videoPath,
-    String model = 'base',
-    String language = 'auto',
-    // Any spoken language -> English subtitles (cloud translation).
-    bool translate = false,
-  }) async {
-    try {
-      return await _channel.invokeMethod<int>('aiSubtitleGenerate', {
-        'videoPath': videoPath,
-        'model': model,
-        'language': language,
-        'translate': translate,
-      });
-    } catch (_) {
-      return null;
-    }
+      await _channel.invokeMethod('aiSliceDiscard', {'jobId': jobId});
+    } catch (_) {}
   }
 
   /// Asks the running job to stop (effective during download/extraction; a

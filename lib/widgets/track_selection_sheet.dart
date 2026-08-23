@@ -167,14 +167,14 @@ class TrackSelectionSheet extends StatelessWidget {
           },
         ),
       const Divider(height: 16, color: Colors.white12),
-      // Offline AI subtitle generation (whisper.cpp) - free, no internet
-      // after the one-time model download.
+      // v52: cloud AI subtitles - built-in key, no sign-in, no download.
+      // Only detected speech audio leaves the phone.
       ListTile(
         dense: true,
         leading: Icon(Icons.auto_awesome,
             size: 20, color: TrackSelectionSheet._accent),
         title: const Text(
-          'Generate with AI (cloud) ✨',
+          'Generate with AI ✨',
           style: TextStyle(
             color: Colors.white,
             fontSize: 15,
@@ -182,7 +182,7 @@ class TrackSelectionSheet extends StatelessWidget {
           ),
         ),
         subtitle: const Text(
-          'Puter cloud - no download, works on every phone',
+          'AI cloud - no sign-in, nothing to download',
           style: TextStyle(color: Colors.white38, fontSize: 12),
         ),
         onTap: () {

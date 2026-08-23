@@ -9,6 +9,7 @@ import '../cast/cast_state.dart';
 import '../services/native_bridge.dart';
 import '../state/media_player_state.dart';
 import '../state/player_settings.dart';
+import '../state/video_zoom.dart';
 import '../state/theme_state.dart';
 import '../utils/formatters.dart';
 import '../utils/srt.dart';
@@ -156,6 +157,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   // feel "glitchy". One recognizer = deterministic behavior.
   _ScaleMode _scaleMode = _ScaleMode.undecided;
   Offset _dragAccum = Offset.zero;
+
+  // v52: two-finger TAP = snap back to fit screen. We measure the pinch
+  // gesture's total travel / whether any real scaling happened.
+  int _scaleStartMs = 0;
+  double _pinchTravelPx = 0;
+  bool _pinchScaled = false;
   Offset _focalStart = Offset.zero;
   double _dragStartValue = 0;
 
@@ -269,7 +276,14 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _reloadSettings() async {
     final s = await PlayerSettings.load();
-    if (mounted) setState(() => _settings = s);
+    if (mounted) {
+      setState(() {
+        _settings = s;
+        // v52: start every session in the fit mode chosen in Settings
+        // (default: fit screen). In-session cycling still works.
+        _fitIndex = s.defaultFitIndex.clamp(0, _fits.length - 1);
+      });
+    }
     // v21: push the playback-extras settings into the player state.
     unawaited(widget.player.setVolumeBoost200(s.volumeBoost200));
     unawaited(widget.player.setVolumeLeveling(s.volumeLeveling));
@@ -617,6 +631,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     _zoomBase = _zoom;
     _panBase = _pan;
     _focalBase = details.localFocalPoint;
+    _scaleStartMs = DateTime.now().millisecondsSinceEpoch;
+    _pinchTravelPx = 0;
+    _pinchScaled = false;
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
@@ -624,12 +641,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (details.pointerCount >= 2) {
       if (!_settings.pinchZoom) return;
       _scaleMode = _ScaleMode.zoom;
+      _pinchTravelPx += details.focalPointDelta.distance;
+      if ((details.scale - 1.0).abs() > 0.05) _pinchScaled = true;
 
       // Focal-anchored transform: the content point that was under the
       // fingers when the pinch started stays glued to the CURRENT focal
       // point. Because we track the live focal point, moving both fingers
       // together pans the zoomed video for free.
-      final z = (_zoomBase * details.scale).clamp(1.0, 4.0);
+      final z = clampVideoZoom(_zoomBase * details.scale);
       final contentV = (_focalBase - _panBase) / _zoomBase;
       final pan = _clampPan(details.localFocalPoint - contentV * z, z);
 
@@ -776,6 +795,17 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     if (mode == _ScaleMode.volume || mode == _ScaleMode.brightness) return;
+    // v52: a fast two-finger tap (no real pinch) snaps home to fit screen.
+    if (mode == _ScaleMode.zoom &&
+        isTwoFingerTapReset(
+          durationMs:
+              DateTime.now().millisecondsSinceEpoch - _scaleStartMs,
+          travelPx: _pinchTravelPx,
+          scaled: _pinchScaled,
+        )) {
+      _resetToFitScreen();
+      return;
+    }
     if (!_settings.pinchZoom && mode != _ScaleMode.pan) return;
     // Snap back when barely zoomed.
     if (_zoom < 1.1) {
@@ -788,6 +818,21 @@ class _PlayerScreenState extends State<PlayerScreen>
     } else {
       setState(() => _pan = _clampPan(_pan, _zoom));
     }
+  }
+
+  /// v52: two-finger tap target - back to the user's default fit mode
+  /// ("fit screen" out of the box) with any pinch zoom/pan undone.
+  void _resetToFitScreen() {
+    final fit = _settings.defaultFitIndex.clamp(0, _fits.length - 1);
+    if (_zoom != 1.0 || _pan != Offset.zero || _fitIndex != fit) {
+      setState(() {
+        _zoom = 1.0;
+        _pan = Offset.zero;
+        _fitIndex = fit;
+      });
+    }
+    _showIndicator('Fit: ${_fitNames[fit]}', _fitIcons[fit]);
+    _onUserInteraction();
   }
 
   /// Keep the scaled video covering the viewport (no drifting past edges).

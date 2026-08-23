@@ -98,9 +98,6 @@ class MainActivity : FlutterActivity() {
     private var aiCancelled = false
     private var aiJobCounter = 0
 
-    /** v48: hidden WebView running puter.js for cloud AI subtitles. */
-    private val puterBridge by lazy { PuterBridge(this) }
-
     // --- DLNA casting: multicast lock held during SSDP discovery ---
     private var multicastLock: WifiManager.MulticastLock? = null
 
@@ -342,61 +339,29 @@ class MainActivity : FlutterActivity() {
                         mainHandler.post { result.success(dir) }
                     }
                 }
-                "puterStatus" -> {
-                    // v48: is the Puter cloud bridge usable on this device,
-                    // and is the user signed in (temp account counts)?
-                    executor.execute {
-                        val ready = puterBridge.awaitReady(25000)
-                        val status = if (ready) puterBridge.statusSync() else null
-                        val map = HashMap<String, Any?>()
-                        map["ready"] = ready
-                        map["signedIn"] = status == "signed"
-                        map["user"] = puterBridge.lastUserLabel()
-                        mainHandler.post { result.success(map) }
-                    }
-                }
-                "puterSignIn" -> {
-                    // v48: one-time sign-in (temp user when possible; the
-                    // Puter popup is hosted in a dialog when interaction is
-                    // needed). Session persists in WebView storage after.
-                    executor.execute {
-                        val ok = puterBridge.signInSync(180000)
-                        val map = HashMap<String, Any?>()
-                        map["signedIn"] = ok
-                        map["user"] = puterBridge.lastUserLabel()
-                        mainHandler.post { result.success(map) }
-                    }
-                }
-                "puterSignOut" -> {
-                    executor.execute {
-                        val ok = puterBridge.signOutSync(15000)
-                        mainHandler.post { result.success(ok) }
-                    }
-                }
-                "aiSubtitleGenerate" -> {
+                "aiPrepareSlices" -> {
+                    // v52: on-device half only (extract -> speech gate ->
+                    // slice WAVs); Dart uploads each slice to the cloud.
                     val videoPath = call.argument<String>("videoPath")
-                    // v48: cloud model ids ('fast'/'best' mapped below).
-                    val model = call.argument<String>("model") ?: "fast"
-                    val language = call.argument<String>("language") ?: "auto"
-                    // English translation of any spoken language.
-                    val translate = call.argument<Boolean>("translate") ?: false
                     if (videoPath.isNullOrEmpty()) {
                         result.error("bad_args", "videoPath is required", null)
                     } else {
-                        // v48: cloud subtitles need no 64-bit chip and no
-                        // model download - every phone Max Player runs on
-                        // can use them (32-bit Android Go included).
                         aiCancelled = false
                         val jobId = ++aiJobCounter
                         executor.execute {
-                            runCloudPipeline(jobId, videoPath, model, language, translate)
+                            val r = aiPrepareSlicesSync(videoPath, jobId)
+                            r["jobId"] = jobId
+                            mainHandler.post { result.success(r) }
                         }
-                        result.success(jobId)
                     }
+                }
+                "aiSliceDiscard" -> {
+                    val id = call.argument<Int>("jobId") ?: -1
+                    executor.execute { aiDiscardSlices(id) }
+                    result.success(true)
                 }
                 "aiSubtitleCancel" -> {
                     aiCancelled = true
-                    puterBridge.cancelAll()
                     result.success(true)
                 }
                 "scanFile" -> {
@@ -1177,15 +1142,16 @@ class MainActivity : FlutterActivity() {
     }
 
     // ---------------------------------------------------------------------------
-    // AI subtitles pipeline (v48: Puter CLOUD)
+    // AI subtitles pipeline (v52: OpenRouter CLOUD)
     //
     //   video -> [MediaExtractor + MediaCodec] 16 kHz mono WAV (on device)
     //         -> speech gating (on device) -> speech slices <= 3 min
-    //         -> Puter cloud via hidden WebView -> .srt per slice -> Dart
+    //         -> speech-slice WAVs on disk. Dart uploads each slice to
+    //         the OpenRouter cloud (built-in key) and merges the SRT.
     //
     // Dart merges the slice SRTs (pure, unit-tested), writes the .srt and
     // mpv loads it via `sub-add`. No model download, no 64-bit limit, no
-    // API key; the user's own (free) Puter account pays for their usage.
+    // WebView, no sign-in - the API key is compiled in (like movie Q&A).
     // ---------------------------------------------------------------------------
 
     private fun aiProgress(jobId: Int, stage: String, percent: Int) {
@@ -1193,34 +1159,6 @@ class MainActivity : FlutterActivity() {
             channel?.invokeMethod(
                 "onAiProgress",
                 hashMapOf("job" to jobId, "stage" to stage, "percent" to percent)
-            )
-        }
-    }
-
-    private fun aiDone(jobId: Int, segments: ArrayList<HashMap<String, Any>>) {
-        mainHandler.post {
-            channel?.invokeMethod(
-                "onAiSubtitleDone",
-                hashMapOf("job" to jobId, "segments" to segments)
-            )
-        }
-    }
-
-    private fun aiFailed(jobId: Int, message: String) {
-        mainHandler.post {
-            channel?.invokeMethod(
-                "onAiSubtitleFailed",
-                hashMapOf("job" to jobId, "message" to message)
-            )
-        }
-    }
-
-    /** One finished speech slice -> Dart (offset in ms + raw .srt text). */
-    private fun aiChunk(jobId: Int, offsetMs: Long, srt: String) {
-        mainHandler.post {
-            channel?.invokeMethod(
-                "onAiChunk",
-                hashMapOf("job" to jobId, "offsetMs" to offsetMs, "srt" to srt)
             )
         }
     }
@@ -1254,101 +1192,85 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * v48 cloud pipeline. Audio extraction and speech gating stay 100% on
-     * device; only voiced slices travel to the Puter cloud (via PuterBridge)
-     * for transcription. Each slice returns .srt text which is forwarded to
-     * Dart with its absolute start offset; Dart merges everything.
+     * v52: prepares cloud subtitle input ON DEVICE: video -> 16 kHz mono
+     * WAV -> speech gating -> ~3 minute speech-slice WAV files on disk.
+     * Returns a map {slices: [{path, offsetMs}...]} for Dart, which then
+     * uploads each slice to the OpenRouter cloud itself. An empty slice
+     * list means "no speech"; "error" holds a user-readable reason
+     * ('cancelled' when aborted).
      */
-    private fun runCloudPipeline(
-        jobId: Int,
+    private fun aiPrepareSlicesSync(
         videoPath: String,
-        modelId: String,
-        language: String,
-        translate: Boolean = false
-    ) {
-        // Declared outside the try so the catch below can always clean up
-        // a half-extracted WAV (v51: leftover 100+ MB files on rare throws).
+        jobId: Int
+    ): HashMap<String, Any?> {
+        val out = HashMap<String, Any?>()
+        val slices = ArrayList<HashMap<String, Any?>>()
+        // Declared outside the try so the finally below can always clean up
+        // a half-extracted WAV (leftover 100+ MB files on rare throws).
         val wav = File(cacheDir, "ai_audio_$jobId.wav")
         try {
-            // 1. Audio track -> 16 kHz mono WAV (fully on device).
             aiProgress(jobId, "extracting", 0)
             if (!extractAudioToWav(videoPath, wav, jobId)) {
-                wav.delete()
-                aiFailed(
-                    jobId,
+                out["error"] =
                     if (aiCancelled) "cancelled"
                     else "Could not read the audio track of this file."
-                )
-                return
+                return out
             }
             if (aiCancelled) {
-                wav.delete()
-                return aiFailed(jobId, "cancelled")
+                out["error"] = "cancelled"
+                return out
             }
 
-            // 2. Speech gating (on device): silent/music-only stretches are
-            // never uploaded - cheaper AND faster AND more private.
-            aiProgress(jobId, "transcribing", 0)
+            // Speech gating (on device): silent/music-only stretches never
+            // become slices, so they are never uploaded - cheaper, faster
+            // AND more private.
             val pcmData = readWavPcm(wav) ?: ByteArray(0)
             val spans = speechSpans(pcmData)
             if (spans.isEmpty()) {
-                wav.delete()
-                aiDone(jobId, ArrayList())
-                return
+                out["slices"] = slices // empty => "no speech" for Dart
+                return out
             }
             val groups = groupSpans(spans, 180)
-            val cloudModel = when (modelId) {
-                "best", "gpt-4o-transcribe" -> "gpt-4o-transcribe"
-                else -> "gpt-4o-mini-transcribe"
-            }
-            var sent = 0
-            for (g in groups) {
+            for (i in groups.indices) {
                 if (aiCancelled) {
-                    wav.delete()
-                    return aiFailed(jobId, "cancelled")
+                    out["error"] = "cancelled"
+                    slices.forEach { File("${it["path"]}").delete() }
+                    return out
                 }
-                val gw = File(cacheDir, "ai_slice_${jobId}_$sent.wav")
-                try {
-                    writeSpanWav(gw, pcmData, g[0], g[1])
-                    var srt: String? = null
-                    var lastError = "cloud error"
-                    for (attempt in 1..2) {
-                        if (aiCancelled) break
-                        try {
-                            srt = puterBridge.transcribeBlocking(
-                                gw, cloudModel, language, translate
-                            )
-                            break
-                        } catch (e: PuterBridge.BridgeException) {
-                            lastError = e.message ?: "cloud error"
-                        }
-                    }
-                    if (aiCancelled) {
-                        wav.delete()
-                        return aiFailed(jobId, "cancelled")
-                    }
-                    if (srt == null) {
-                        wav.delete()
-                        return aiFailed(jobId, lastError.take(120))
-                    }
-                    aiChunk(jobId, g[0] * 1000L / 16000, srt)
-                } finally {
-                    gw.delete()
-                }
-                sent++
-                if (groups.isNotEmpty()) {
-                    aiProgress(jobId, "transcribing", sent * 100 / groups.size)
-                }
+                val g = groups[i]
+                val f = File(cacheDir, "ai_slice_${jobId}_$i.wav")
+                writeSpanWav(f, pcmData, g[0], g[1])
+                val m = HashMap<String, Any?>()
+                m["path"] = f.absolutePath
+                m["offsetMs"] = g[0] * 1000L / 16000
+                slices.add(m)
+                aiProgress(jobId, "slicing", (i + 1) * 100 / groups.size)
             }
-            wav.delete()
-            if (aiCancelled) return aiFailed(jobId, "cancelled")
-            aiDone(jobId, ArrayList())
+            out["slices"] = slices
+            return out
         } catch (t: Throwable) {
+            slices.forEach { runCatching { File("${it["path"]}").delete() } }
+            out["error"] = t.message ?: "audio preparation failed"
+            return out
+        } finally {
             wav.delete()
-            aiFailed(jobId, t.message ?: "AI subtitle generation failed")
         }
     }
 
+    /** Deletes any slices a cancelled/failed job left on disk. */
+    private fun aiDiscardSlices(jobId: Int) {
+        try {
+            cacheDir.listFiles()?.forEach {
+                if (it.isFile &&
+                    (it.name.startsWith("ai_slice_${jobId}_") ||
+                        it.name == "ai_audio_$jobId.wav")
+                ) {
+                    it.delete()
+                }
+            }
+        } catch (_: Throwable) {
+        }
+    }
 
     /**
      * Decodes the first audio track of [videoPath] to a 16 kHz mono 16-bit

@@ -17,6 +17,7 @@ import 'package:maxplayer/services/movie_ai.dart';
 import 'package:maxplayer/services/subtitle_langs.dart';
 import 'package:maxplayer/widgets/video_search_delegate.dart';
 import 'package:maxplayer/state/media_player_state.dart';
+import 'package:maxplayer/state/video_zoom.dart';
 import 'package:maxplayer/state/player_settings.dart';
 import 'package:maxplayer/state/playlist_store.dart';
 import 'package:maxplayer/utils/movie_match.dart';
@@ -1689,17 +1690,71 @@ void main() {
     });
   });
 
-  group('v48 Puter cloud AI subtitles', () {
-    test('cloudModelFor maps picker ids to Puter models', () {
+  group('v52 OpenRouter cloud AI subtitles', () {
+    test('cloudModelFor maps picker ids to OpenRouter models', () {
       expect(
         AiSubtitleRunner.cloudModelFor('fast'),
-        'gpt-4o-mini-transcribe',
+        'google/gemini-2.5-flash-lite',
       );
-      expect(AiSubtitleRunner.cloudModelFor('best'), 'gpt-4o-transcribe');
+      expect(
+        AiSubtitleRunner.cloudModelFor('best'),
+        'google/gemini-2.5-flash',
+      );
       // Unknown / legacy ids fall back to the fast tier.
       expect(
         AiSubtitleRunner.cloudModelFor('base'),
-        'gpt-4o-mini-transcribe',
+        'google/gemini-2.5-flash-lite',
+      );
+    });
+
+    test('cloudModelChain: primary first, all Gemini, real fallbacks', () {
+      for (final id in ['fast', 'best']) {
+        final chain = AiSubtitleRunner.cloudModelChain(id);
+        expect(chain.first, AiSubtitleRunner.cloudModelFor(id));
+        expect(chain.length, greaterThanOrEqualTo(2));
+        for (final m in chain) {
+          expect(m, startsWith('google/gemini'));
+        }
+      }
+    });
+
+    test('stripSrtFences removes code fences, keeps plain SRT', () {
+      const srt = '1\n00:00:01,000 --> 00:00:02,000\nHello\n';
+      expect(AiSubtitleRunner.stripSrtFences('```srt\n$srt```'), srt.trim());
+      expect(AiSubtitleRunner.stripSrtFences(srt), srt.trim());
+    });
+
+    test('parseChatText reads choices[0].message.content, junk-safe', () {
+      expect(AiSubtitleRunner.parseChatText('not json'), isNull);
+      expect(AiSubtitleRunner.parseChatText('{}'), isNull);
+      expect(
+        AiSubtitleRunner.parseChatText(
+            '{"choices":[{"message":{"content":"1\\n00:00:01,000"}}]}'),
+        '1\n00:00:01,000',
+      );
+    });
+
+    test('audioChatBody carries the clip as input_audio wav', () {
+      final body = AiSubtitleRunner.audioChatBody(
+        model: 'm',
+        prompt: 'p',
+        base64Wav: 'QUJD',
+      );
+      final messages = body['messages']! as List;
+      final content = (messages.first as Map)['content'] as List;
+      expect(content.first, {'type': 'text', 'text': 'p'});
+      expect(content[1], {
+        'type': 'input_audio',
+        'input_audio': {'data': 'QUJD', 'format': 'wav'},
+      });
+    });
+
+    test('aiCloudErrorMessage speaks plainly per status', () {
+      expect(AiSubtitleRunner.aiCloudErrorMessage(402), contains('balance'));
+      expect(AiSubtitleRunner.aiCloudErrorMessage(429), contains('busy'));
+      expect(
+        AiSubtitleRunner.aiCloudErrorMessage(null),
+        contains('internet'),
       );
     });
 
@@ -1756,6 +1811,47 @@ void main() {
       expect(
           MediaPlayerState.kMpvCacheCapProps['demuxer-max-back-bytes'], '8MiB');
       expect(MediaPlayerState.kMpvCacheCapProps['cache-secs'], '10');
+    });
+  });
+
+  group('v52 two-finger zoom + default fit', () {
+    test('clampVideoZoom keeps pinch inside 1x..4x (1x = fit screen)', () {
+      expect(clampVideoZoom(0.4), 1.0);
+      expect(clampVideoZoom(1.0), 1.0);
+      expect(clampVideoZoom(2.5), 2.5);
+      expect(clampVideoZoom(9), 4.0);
+    });
+
+    test('two-finger TAP resets to fit; a real pinch does not', () {
+      // Quick tap with almost no travel and no scaling -> reset.
+      expect(
+        isTwoFingerTapReset(durationMs: 180, travelPx: 6, scaled: false),
+        isTrue,
+      );
+      // User actually pinched -> do NOT snap home.
+      expect(
+        isTwoFingerTapReset(durationMs: 180, travelPx: 6, scaled: true),
+        isFalse,
+      );
+      // Slow two-finger hold is not a tap.
+      expect(
+        isTwoFingerTapReset(durationMs: 900, travelPx: 6, scaled: false),
+        isFalse,
+      );
+      // Big movement is a pan-ish pinch, not a tap.
+      expect(
+        isTwoFingerTapReset(durationMs: 180, travelPx: 60, scaled: false),
+        isFalse,
+      );
+    });
+
+    test('default fit is FIT SCREEN and cycles stay wired', () {
+      const s = PlayerSettings();
+      expect(s.defaultFitIndex, 0);
+      expect(PlayerSettings.kFitModeNames.first, 'Fit');
+      expect(PlayerSettings.kFitModeNames.length, 6);
+      // copyWith carries the choice through (Settings sheet writes this).
+      expect(s.copyWith(defaultFitIndex: 1).defaultFitIndex, 1);
     });
   });
 }

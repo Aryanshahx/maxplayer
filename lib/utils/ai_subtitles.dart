@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
+import '../services/movie_ai.dart' show kOpenRouterApiKey;
 import '../services/native_bridge.dart';
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
@@ -57,17 +59,20 @@ const Set<String> _musicOnlyCores = {
   'silence',
 };
 
-/// Runs the CLOUD AI subtitle flow end to end (v48) and shows a progress
-/// dialog:
+/// Runs the CLOUD AI subtitle flow end to end and shows a progress dialog:
 ///
-///   one-time free Puter sign-in (silent temp account when possible) ->
-///   native audio extraction + speech gating (on device) -> Puter cloud
-///   transcription per speech slice -> merge slices -> write
-///   "<video>.maxai.srt" next to the video -> load it into the player
+///   native audio extraction + speech gating (on device) -> speech-slice
+///   WAV files on disk -> Dart uploads each slice to the OpenRouter cloud
+///   (Gemini audio models, built-in key like the movie Q&A feature) ->
+///   merge slices -> write "<video>.maxai.srt" next to the video -> load
 ///
-/// vs the old on-device engine (v25-v47): NO 142-466 MB model download, NO
-/// 64-bit restriction, and noticeably better CJK/Hinglish handling - the
-/// only speech audio travels to the user's own (free) Puter account.
+/// v52 ROOT REBUILD: v48-v51 used a hidden WebView cloud whose sign-in
+/// popup required a real user gesture and broke on real phones in five
+/// different ways (overlay, transport, timeouts...). That whole
+/// WebView/sign-in layer is DELETED. The new pipeline is pure HTTPS with
+/// the same compile-time OPENROUTER_API_KEY that already powers the
+/// movie-Q&A sheet - no sign-in, no popup, no WebView, nothing for the
+/// viewer to set up. Only detected speech audio leaves the phone.
 class AiSubtitleRunner {
   AiSubtitleRunner._();
 
@@ -76,24 +81,37 @@ class AiSubtitleRunner {
   static const String _kLanguageKey = 'ai.language';
   static const String _kTranslateKey = 'ai.translate';
 
-  /// Cloud model choices: id -> (label, detail). v48: the ids changed from
-  /// on-device builds (base/small) to cloud tiers; old saved ids map onto
-  /// the new ones via [normalizeModelId].
+  /// Cloud quality tiers: id -> (label, detail).
   static const Map<String, (String, String)> modelChoices = {
-    'fast': ('Fast · gpt-4o-mini', 'quick - great for clear speech'),
-    'best': ('Best · gpt-4o', 'strongest on music & noise'),
+    'fast': ('Fast · Flash-Lite', 'quick - great for clear speech'),
+    'best': ('Best · Flash', 'strongest on music & noise'),
   };
 
-  /// Anything unknown (including "base"/"tiny" ids saved by older builds)
-  /// falls back to the fast model; an old "small" maps to "best".
+  /// Anything unknown (including legacy "base"/"small" ids saved by older
+  /// builds) falls back to the fast tier; an old "small" maps to "best".
   static String normalizeModelId(String? id) => switch (id) {
         'best' || 'small' => 'best',
         _ => 'fast',
       };
 
-  /// Maps a picker id to the actual Puter speech2txt model name.
-  static String cloudModelFor(String id) =>
-      id == 'best' ? 'gpt-4o-transcribe' : 'gpt-4o-mini-transcribe';
+  /// v52: picker id -> primary OpenRouter audio model.
+  static String cloudModelFor(String id) => id == 'best'
+      ? 'google/gemini-2.5-flash'
+      : 'google/gemini-2.5-flash-lite';
+
+  /// Fallback chain per tier, tried IN ORDER - the first model that
+  /// answers wins (rate limits / a retired model just move to the next).
+  static List<String> cloudModelChain(String id) => id == 'best'
+      ? const [
+          'google/gemini-2.5-flash',
+          'google/gemini-2.5-flash-lite',
+          'google/gemini-2.0-flash-001',
+        ]
+      : const [
+          'google/gemini-2.5-flash-lite',
+          'google/gemini-2.0-flash-001',
+          'google/gemini-2.0-flash-exp:free',
+        ];
 
   /// Language choices: ISO-639 code -> label; 'auto' = detect.
   static const Map<String, String> languageChoices = {
@@ -152,6 +170,139 @@ class AiSubtitleRunner {
     return kept;
   }
 
+  // ------------------------------------------------------------------
+  // v52 OpenRouter cloud client (PURE helpers, unit-tested)
+  // ------------------------------------------------------------------
+
+  /// Prompt sent with every audio slice. SRT-only output, clip-relative
+  /// timestamps, music stretches answered with an empty reply.
+  static String transcriptionPrompt({
+    required String languageLabel,
+    required bool translate,
+  }) {
+    final b = StringBuffer()
+      ..write('Transcribe the speech in this audio clip into SubRip (SRT) '
+          'subtitles.\nRules:\n')
+      ..write('- Output ONLY the SRT cues: no commentary, no markdown '
+          'code fences.\n')
+      ..write('- Number cues starting at 1 and use "HH:MM:SS,mmm --> '
+          'HH:MM:SS,mmm" timestamps relative to the CLIP start '
+          '(00:00:00,000).\n')
+      ..write('- Keep every cue under two lines and split long speech into '
+          'short cues.\n');
+    if (languageLabel == 'Auto-detect') {
+      b.write('- Detect the spoken language automatically (it may mix '
+          'Hindi, English and others).\n');
+    } else {
+      b.write('- The spoken language is $languageLabel.\n');
+    }
+    if (translate) {
+      b.write('- Translate everything into natural English subtitle text '
+          'instead of the original language.\n');
+    } else {
+      b.write('- Write the subtitles in the ORIGINAL spoken language and '
+          'script.\n');
+    }
+    b.write('- For stretches of pure music or silence output nothing at '
+        'all (an empty reply is correct).');
+    return b.toString();
+  }
+
+  /// One OpenRouter chat-completions body carrying the audio clip.
+  static Map<String, Object?> audioChatBody({
+    required String model,
+    required String prompt,
+    required String base64Wav,
+  }) =>
+      {
+        'model': model,
+        'messages': [
+          {
+            'role': 'user',
+            'content': [
+              {'type': 'text', 'text': prompt},
+              {
+                'type': 'input_audio',
+                'input_audio': {'data': base64Wav, 'format': 'wav'},
+              },
+            ],
+          },
+        ],
+        'max_tokens': 4096,
+        'temperature': 0.0,
+      };
+
+  /// Extracts the assistant's text from a chat-completion response.
+  /// Never throws; junk -> null.
+  static String? parseChatText(String jsonBody) {
+    try {
+      final decoded = jsonDecode(jsonBody);
+      if (decoded is! Map) return null;
+      final choices = decoded['choices'];
+      if (choices is! List || choices.isEmpty) return null;
+      final first = choices.first;
+      if (first is! Map) return null;
+      final message = first['message'];
+      if (message is! Map) return null;
+      final content = '${message['content'] ?? ''}'.trim();
+      return content.isEmpty ? null : content;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Strips wrapping ``` / ```srt code fences some models add despite the
+  /// instructions. No fences -> input unchanged.
+  static String stripSrtFences(String text) {
+    var t = text.trim();
+    if (t.startsWith('```')) {
+      final nl = t.indexOf('\n');
+      if (nl > 0) t = t.substring(nl + 1);
+      if (t.trimRight().endsWith('```')) {
+        t = t.trimRight().substring(0, t.trimRight().length - 3);
+      }
+      t = t.trim();
+    }
+    return t;
+  }
+
+  /// Numeric error code from an OpenRouter error body, or null.
+  static int? chatErrorCode(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is! Map) return null;
+      final err = decoded['error'];
+      if (err is! Map) return null;
+      final code = err['code'];
+      if (code is int) return code;
+      if (code is String) return int.tryParse(code);
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Maps a cloud failure to words the viewer understands.
+  static String aiCloudErrorMessage(int? code) {
+    if (code == 401 || code == 403) {
+      return 'the built-in AI key was rejected - please report this build';
+    }
+    if (code == 402) {
+      return 'the AI service balance is empty right now - '
+          'please try again later';
+    }
+    if (code == 404) {
+      return 'this AI model is unavailable - try the other quality tier';
+    }
+    if (code == 408 || code == 429) {
+      return 'the AI cloud is busy - please try again in a minute';
+    }
+    if (code != null && code >= 500) {
+      return 'the AI cloud had a hiccup - please try again';
+    }
+    return 'check your internet connection and try again';
+  }
+
   /// Launches generation for the video currently loaded in [player].
   /// [context] must be a context that outlives the subtitle sheet (the
   /// caller closes the sheet first).
@@ -163,6 +314,10 @@ class AiSubtitleRunner {
     if (track == null || track.path.contains('://')) {
       _snack(context,
           'AI subtitles work on local video files (not network streams)');
+      return;
+    }
+    if (kOpenRouterApiKey.isEmpty) {
+      _snack(context, 'AI subtitles are not configured in this build');
       return;
     }
 
@@ -183,34 +338,11 @@ class AiSubtitleRunner {
     unawaited(NativeBridge.saveSetting(_kLanguageKey, options.language));
     unawaited(NativeBridge.saveSetting(_kTranslateKey, '${options.translate}'));
 
-    // v48: one-time Puter sign-in. The bridge loads lazily here; a silent
-    // temp account covers most users, otherwise Puter's popup shows once
-    // and the session persists afterwards.
-    var status = await NativeBridge.puterStatus();
-    if (!context.mounted) return;
-    if (status['signedIn'] != true) {
-      final go = await showDialog<bool>(
-        context: context,
-        builder: (_) => const _PuterIntroDialog(),
-      );
-      if (go != true || !context.mounted) return;
-      final res = await NativeBridge.puterSignIn();
-      if (!context.mounted) return;
-      if (res['signedIn'] != true) {
-        _snack(
-          context,
-          'Sign-in was cancelled - AI subtitles need the free Puter '
-          'account (one time only)',
-        );
-        return;
-      }
-    }
-
-    // One active job at a time; hook up the event callbacks first.
+    // v52: NO sign-in step - the key is compiled in, like movie Q&A.
     final progress = ValueNotifier<(String, int)>(('starting', 0));
     final chunks = <(int, String)>[];
     var dialogOpen = false;
-    var done = false;
+    var cancelled = false;
     String? error;
 
     void closeDialog() {
@@ -222,63 +354,116 @@ class AiSubtitleRunner {
 
     NativeBridge.configureCallbacks(
       onAiProgress: (stage, percent) => progress.value = (stage, percent),
-      onAiChunk: (offsetMs, srt) {
-        if (srt.trim().isNotEmpty) chunks.add((offsetMs, srt));
-      },
-      onAiDone: (_) {
-        done = true;
-        closeDialog();
-      },
-      onAiFailed: (e) {
-        error = e;
-        closeDialog();
-      },
     );
 
-    final jobId = await NativeBridge.aiSubtitleGenerate(
-      videoPath: track.path,
-      model: options.model,
-      language: options.language,
-      translate: options.translate,
-    );
-    if (!context.mounted) return;
-    if (jobId == null) {
-      _snack(
-        context,
-        'AI subtitles could not start on this phone - they need internet '
-        'and Android System WebView',
-      );
-      return;
-    }
-
-    if (!context.mounted) return;
     dialogOpen = true;
-    await showDialog(
+    unawaited(showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => _AiProgressDialog(
         progress: progress,
         onCancel: () {
-          error = 'cancelled';
-          NativeBridge.aiSubtitleCancel();
+          cancelled = true;
+          unawaited(NativeBridge.aiSubtitleCancel());
           closeDialog();
         },
       ),
-    );
-    dialogOpen = false;
+    ));
+
+    var jobId = -1;
+    try {
+      // 1) on-device: extract + speech-gate + slice into ~3 min WAVs.
+      final prep = await NativeBridge.aiPrepareSlices(track.path);
+      jobId = prep.jobId;
+      if (!context.mounted) return;
+      if (prep.error != null) {
+        if (prep.error == 'cancelled') {
+          cancelled = true;
+        } else {
+          error = prep.error;
+        }
+      } else if (prep.slices.isEmpty) {
+        closeDialog();
+        _snack(context,
+            'No speech was detected in this video - nothing to write');
+        return;
+      } else {
+        // 2) upload each speech slice; the first model that answers wins.
+        final prompt = transcriptionPrompt(
+          languageLabel: languageChoices[options.language] ?? 'Auto-detect',
+          translate: options.translate,
+        );
+        final total = prep.slices.length;
+        for (var i = 0; i < total; i++) {
+          if (cancelled) break;
+          final slice = prep.slices[i];
+          progress.value = ('transcribing', i * 100 ~/ total);
+          try {
+            final b64 = base64Encode(await File(slice.path).readAsBytes());
+            String? srt;
+            int? lastCode;
+            for (final model in cloudModelChain(options.model)) {
+              var moveOn = false;
+              for (var attempt = 0; attempt < 2 && !moveOn; attempt++) {
+                if (cancelled) break;
+                try {
+                  final (code, body) = await _CloudSpeech.transcribeOnce(
+                    model: model,
+                    prompt: prompt,
+                    base64Wav: b64,
+                  );
+                  if (code == 200) {
+                    final t = parseChatText(body);
+                    if (t != null) {
+                      srt = stripSrtFences(t);
+                      moveOn = true;
+                    }
+                  } else {
+                    lastCode = chatErrorCode(body) ?? code;
+                    // Busy/server hiccup -> wait and retry once; anything
+                    // else -> try the next model in the chain.
+                    if (code == 429 || code >= 500) {
+                      await Future<void>.delayed(const Duration(seconds: 3));
+                    } else {
+                      moveOn = true;
+                    }
+                  }
+                } catch (_) {
+                  await Future<void>.delayed(const Duration(seconds: 2));
+                }
+              }
+              if (srt != null || cancelled) break;
+            }
+            if (cancelled) break;
+            if (srt == null) {
+              error = aiCloudErrorMessage(lastCode);
+              break;
+            }
+            if (srt.trim().isNotEmpty) chunks.add((slice.offsetMs, srt));
+          } finally {
+            try {
+              await File(slice.path).delete();
+            } catch (_) {}
+          }
+        }
+        progress.value = ('transcribing', 100);
+      }
+    } finally {
+      unawaited(NativeBridge.aiSliceDiscard(jobId));
+    }
 
     if (!context.mounted) return;
+    closeDialog();
 
-    if (error != null && error != 'cancelled') {
+    if (cancelled) return;
+    if (error != null) {
       _snack(context, 'AI subtitles failed: $error');
       return;
     }
-    if (error == 'cancelled' || !done) return;
 
     final cues = mergeChunkCues(chunks);
     if (cues.isEmpty) {
-      _snack(context,
-          'No speech was detected in this video - nothing to write');
+      _snack(context, 'The cloud heard no speech in this video');
       return;
     }
 
@@ -318,49 +503,33 @@ class AiSubtitleRunner {
   }
 }
 
-/// Shown the FIRST time someone taps Generate (when no Puter session exists
-/// yet). Explains the switch to the cloud honestly: what leaves the phone
-/// (speech audio only) and who pays (the user's own free Puter account).
-class _PuterIntroDialog extends StatelessWidget {
-  const _PuterIntroDialog();
+/// Tiny OpenRouter uploader: plain dart:io, one keep-alive connection,
+/// generous read timeout for long audio clips (v52).
+class _CloudSpeech {
+  static const String _url = 'https://openrouter.ai/api/v1/chat/completions';
 
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: const Color(0xFF1a1a24),
-      title: Row(
-        children: [
-          Icon(Icons.cloud_outlined, color: themeState.accent, size: 20),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text('One-time free setup',
-                style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-      content: const Text(
-        'AI subtitles now run in the Puter cloud - nothing to download and '
-        'every phone is supported (32-bit too).\n\n'
-        'First use needs a quick Puter sign-in. A temporary account is '
-        'created automatically - no email, no password, no card. Your usage '
-        'is covered by your own free Puter account.\n\n'
-        'Only the speech parts of the audio leave your phone, straight to '
-        'your Puter session. You can sign out any time from Settings.',
-        style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.35),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Not now'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, true),
-          style: FilledButton.styleFrom(backgroundColor: themeState.accent),
-          child: Text('Continue',
-              style: TextStyle(color: themeState.onAccent)),
-        ),
-      ],
-    );
+  static final HttpClient _http = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 25)
+    ..idleTimeout = const Duration(seconds: 30);
+
+  /// One upload attempt -> (HTTP status, response body).
+  static Future<(int, String)> transcribeOnce({
+    required String model,
+    required String prompt,
+    required String base64Wav,
+  }) async {
+    final req = await _http.postUrl(Uri.parse(_url));
+    req.headers.set('content-type', 'application/json');
+    req.headers.set('authorization', 'Bearer $kOpenRouterApiKey');
+    req.headers.set('x-title', 'Max Player');
+    req.write(jsonEncode(AiSubtitleRunner.audioChatBody(
+      model: model,
+      prompt: prompt,
+      base64Wav: base64Wav,
+    )));
+    final res = await req.close().timeout(const Duration(seconds: 180));
+    final body = await res.transform(utf8.decoder).join();
+    return (res.statusCode, body);
   }
 }
 
@@ -377,12 +546,10 @@ class _AiProgressDialog extends StatelessWidget {
     switch (stage) {
       case 'extracting':
         return 'Extracting audio from the video (on device)…';
+      case 'slicing':
+        return 'Keeping only the speech parts (silent parts are skipped)…';
       case 'transcribing':
-        return 'Listening in the Puter cloud - only speech is uploaded…\n'
-            '(silent parts are skipped for speed)';
-      case 'downloading':
-        // Legacy stage id - nothing is downloaded in the cloud flow.
-        return 'Contacting the Puter cloud…';
+        return 'Listening in the AI cloud - only speech is uploaded…';
       default:
         return 'Preparing…';
     }
@@ -397,7 +564,7 @@ class _AiProgressDialog extends StatelessWidget {
           Icon(Icons.auto_awesome, color: themeState.accent, size: 20),
           const SizedBox(width: 8),
           const Expanded(
-            child: Text('AI subtitles · Puter cloud',
+            child: Text('AI subtitles · cloud',
                 style: TextStyle(color: Colors.white, fontSize: 16)),
           ),
         ],
@@ -406,8 +573,7 @@ class _AiProgressDialog extends StatelessWidget {
         valueListenable: progress,
         builder: (context, value, _) {
           final (stage, percent) = value;
-          final determinate =
-              stage == 'extracting' || stage == 'transcribing';
+          final determinate = stage != 'starting';
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -475,7 +641,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           Icon(Icons.auto_awesome, color: themeState.accent, size: 20),
           const SizedBox(width: 8),
           const Expanded(
-            child: Text('AI subtitles · Puter cloud',
+            child: Text('AI subtitles · cloud',
                 style: TextStyle(color: Colors.white, fontSize: 16)),
           ),
         ],
