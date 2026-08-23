@@ -22,7 +22,7 @@ Max Player is a local video player. **It does not collect, store, transmit, or s
 - No crash reporting service (crash reports are shown **to you** inside the app, and are only shared if **you** copy and send them)
 
 ## AI subtitles
-AI subtitles run in the **OpenRouter cloud**. Your phone first finds the speech parts of a video locally; only those audio slices are uploaded, over HTTPS, using the API key built into the app (the same key that powers the movie Q&A feature) — there is no account to create and nothing to sign into. Max Player does not run its own server and never stores your audio or subtitle text anywhere; the audio slices themselves are deleted from your phone the moment they are transcribed. Translating subtitles to English uses the same pipeline.
+Subtitle generation runs entirely **on your device** using the open-source whisper.cpp engine. Your audio never leaves your phone. The only network access is the one-time model file download from Hugging Face (ggerganov/whisper.cpp), which you trigger and can delete afterwards. Translating subtitles to English uses the same fully on-device engine — no audio or text is sent anywhere.
 
 ## Private folder
 Videos you hide are **moved into the app's own protected folder**, which Android blocks other apps from reading, and are unlocked with a PIN you choose. They never leave your device and are never uploaded. The PIN is stored only as a cryptographic hash inside the app's settings. Uninstalling the app deletes the protected folder — move videos out first.

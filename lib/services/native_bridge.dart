@@ -42,14 +42,6 @@ class VideoMetadata {
 }
 
 /// One AI-generated subtitle cue (whisper.cpp segment).
-/// One prepared speech slice on disk, ready for Dart to upload (v52).
-class AiSlice {
-  final String path;
-  final int offsetMs;
-
-  const AiSlice(this.path, this.offsetMs);
-}
-
 class AiSegment {
   final int startMs;
   final int endMs;
@@ -99,7 +91,7 @@ class NativeBridge {
     /// Fired when the play/pause button ON THE PiP WINDOW is tapped.
     void Function()? onPipAction,
 
-    /// AI subtitle job progress events (see [aiPrepareSlices]).
+    /// AI subtitle job progress events (see [aiSubtitleGenerate]).
     void Function(String stage, int percent)? onAiProgress,
     void Function(List<AiSegment> segments)? onAiDone,
     void Function(String error)? onAiFailed,
@@ -306,46 +298,56 @@ class NativeBridge {
     } catch (_) {}
   }
 
-  // --- AI subtitles pipeline (v52: OpenRouter cloud, key built in) ---
+  // --- AI subtitles (v54: back ON DEVICE, offline & free) ---
 
-  /// v52: runs the ON-DEVICE half of AI subtitles - audio extraction,
-  /// speech gating and ~3-minute speech-slice WAV files - and hands the
-  /// slice list to Dart, which uploads each slice to the OpenRouter cloud
-  /// itself. Extraction progress arrives via [configureCallbacks]
-  /// (`onAiProgress`). `error` == 'cancelled' means the user aborted;
-  /// `slices` == empty with no error means "no speech in this video".
-  static Future<({int jobId, List<AiSlice> slices, String? error})>
-      aiPrepareSlices(String videoPath) async {
+  /// Returns the whisper.cpp system-info string when the on-device AI
+  /// subtitle engine is bundled and its native library loads, else null.
+  /// Used by the About sheet as a build verification.
+  static Future<String?> whisperEngineStatus() async {
     try {
-      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'aiPrepareSlices',
-        {'videoPath': videoPath},
-      );
-      if (res == null) {
-        return (jobId: -1, slices: const <AiSlice>[], error: 'no reply');
-      }
-      final raw = res['slices'];
-      final slices = <AiSlice>[
-        if (raw is List)
-          for (final s in raw)
-            if (s is Map)
-              AiSlice('${s['path']}', (s['offsetMs'] as num?)?.toInt() ?? 0),
-      ];
-      return (
-        jobId: (res['jobId'] as num?)?.toInt() ?? -1,
-        slices: slices,
-        error: res['error'] as String?,
-      );
-    } catch (e) {
-      return (jobId: -1, slices: const <AiSlice>[], error: '$e');
+      final res = await _channel.invokeMethod<String>('whisperAvailable');
+      return (res != null && res.isNotEmpty) ? res : null;
+    } catch (_) {
+      return null;
     }
   }
 
-  /// Deletes any speech slices a cancelled/failed job left behind.
-  static Future<void> aiSliceDiscard(int jobId) async {
+  /// Which models are present on device. Returns {base: MB, small: MB};
+  /// 0 MB means "not downloaded yet".
+  static Future<Map<String, int>> aiModelStatus() async {
     try {
-      await _channel.invokeMethod('aiSliceDiscard', {'jobId': jobId});
-    } catch (_) {}
+      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'aiModelStatus',
+      );
+      if (res == null) return const {};
+      return res.map((k, v) => MapEntry('$k', (v as num?)?.toInt() ?? 0));
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Starts the offline AI subtitle job for [videoPath]. Returns the job id
+  /// immediately; progress/completion arrive via [configureCallbacks]
+  /// (`onAiProgress` / `onAiDone` / `onAiFailed`). [model] is base/small;
+  /// [language] is a whisper language code or 'auto' (detect). A null job
+  /// id means the engine cannot run here (32-bit-only chip).
+  static Future<int?> aiSubtitleGenerate({
+    required String videoPath,
+    String model = 'base',
+    String language = 'auto',
+    // whisper's translate task - any spoken language -> English subs.
+    bool translate = false,
+  }) async {
+    try {
+      return await _channel.invokeMethod<int>('aiSubtitleGenerate', {
+        'videoPath': videoPath,
+        'model': model,
+        'language': language,
+        'translate': translate,
+      });
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Asks the running job to stop (effective during download/extraction; a

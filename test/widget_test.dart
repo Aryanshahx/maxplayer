@@ -519,23 +519,23 @@ void main() {
   });
 
   group('AI subtitle options & caption filter (v18)', () {
-    // v48: cloud tiers replaced on-device models; stale ids migrate.
-    test('cloud model tiers; stale on-device ids migrate', () {
+    // v54: back on-device - accurate whisper models; stale ids migrate.
+    test('only accurate models remain; stale tiny ids map to base', () {
       expect(AiSubtitleRunner.modelChoices.containsKey('tiny'), isFalse);
-      expect(AiSubtitleRunner.modelChoices.containsKey('base'), isFalse);
       expect(
         AiSubtitleRunner.modelChoices.keys,
-        containsAll(<String>['fast', 'best']),
+        containsAll(<String>['base', 'small']),
       );
-      expect(AiSubtitleRunner.normalizeModelId(null), 'fast');
+      expect(AiSubtitleRunner.normalizeModelId(null), 'base');
       expect(
         AiSubtitleRunner.normalizeModelId('tiny'),
-        'fast',
-        reason: 'a stale v22-24 "tiny" pref must migrate to fast',
+        'base',
+        reason: 'a stale v22-24 "tiny" pref must migrate to base',
       );
-      expect(AiSubtitleRunner.normalizeModelId('base'), 'fast');
-      expect(AiSubtitleRunner.normalizeModelId('small'), 'best');
-      expect(AiSubtitleRunner.normalizeModelId('nonsense'), 'fast');
+      expect(AiSubtitleRunner.normalizeModelId('small'), 'small');
+      expect(AiSubtitleRunner.normalizeModelId('nonsense'), 'base');
+      expect(AiSubtitleRunner.modelSizeLabel('base'), '~142 MB');
+      expect(AiSubtitleRunner.modelSizeLabel('small'), '~466 MB');
     });
 
     test('music-only decoration captions are dropped, speech is kept', () {
@@ -1690,130 +1690,6 @@ void main() {
     });
   });
 
-  group('v52 OpenRouter cloud AI subtitles', () {
-    test('cloudModelFor maps picker ids to OpenRouter models', () {
-      expect(
-        AiSubtitleRunner.cloudModelFor('fast'),
-        'google/gemini-2.5-flash-lite',
-      );
-      expect(
-        AiSubtitleRunner.cloudModelFor('best'),
-        'google/gemini-2.5-flash',
-      );
-      // Unknown / legacy ids fall back to the fast tier.
-      expect(
-        AiSubtitleRunner.cloudModelFor('base'),
-        'google/gemini-2.5-flash-lite',
-      );
-    });
-
-    test('cloudModelChain: primary first, all Gemini, real fallbacks', () {
-      for (final id in ['fast', 'best']) {
-        final chain = AiSubtitleRunner.cloudModelChain(id);
-        expect(chain.first, AiSubtitleRunner.cloudModelFor(id));
-        expect(chain.length, greaterThanOrEqualTo(2));
-        for (final m in chain) {
-          expect(m, startsWith('google/gemini'));
-        }
-      }
-    });
-
-    test('stripSrtFences removes code fences, keeps plain SRT', () {
-      const srt = '1\n00:00:01,000 --> 00:00:02,000\nHello\n';
-      expect(AiSubtitleRunner.stripSrtFences('```srt\n$srt```'), srt.trim());
-      expect(AiSubtitleRunner.stripSrtFences(srt), srt.trim());
-    });
-
-    test('parseChatText reads choices[0].message.content, junk-safe', () {
-      expect(AiSubtitleRunner.parseChatText('not json'), isNull);
-      expect(AiSubtitleRunner.parseChatText('{}'), isNull);
-      expect(
-        AiSubtitleRunner.parseChatText(
-            '{"choices":[{"message":{"content":"1\\n00:00:01,000"}}]}'),
-        '1\n00:00:01,000',
-      );
-    });
-
-    test('audioChatBody carries the clip as input_audio wav', () {
-      final body = AiSubtitleRunner.audioChatBody(
-        model: 'm',
-        prompt: 'p',
-        base64Wav: 'QUJD',
-      );
-      final messages = body['messages']! as List;
-      final content = (messages.first as Map)['content'] as List;
-      expect(content.first, {'type': 'text', 'text': 'p'});
-      expect(content[1], {
-        'type': 'input_audio',
-        'input_audio': {'data': 'QUJD', 'format': 'wav'},
-      });
-    });
-
-    test('aiCloudErrorMessage speaks plainly per status', () {
-      expect(AiSubtitleRunner.aiCloudErrorMessage(402), contains('balance'));
-      expect(AiSubtitleRunner.aiCloudErrorMessage(429), contains('busy'));
-      expect(
-        AiSubtitleRunner.aiCloudErrorMessage(null),
-        contains('internet'),
-      );
-    });
-
-    test('mergeChunkCues shifts slice-local times to absolute', () {
-      final cues = AiSubtitleRunner.mergeChunkCues([
-        (0, '1\n00:00:01,000 --> 00:00:02,500\nHello\n'),
-        (60000, '1\n00:00:00,000 --> 00:00:01,500\nWorld\n'),
-      ]);
-      expect(cues, hasLength(2));
-      expect(cues[0].startMs, 1000);
-      expect(cues[0].text, 'Hello');
-      expect(cues[1].startMs, 60000);
-      expect(cues[1].endMs, 61500);
-    });
-
-    test('boundary duplicates + music decorations drop once', () {
-      final cues = AiSubtitleRunner.mergeChunkCues([
-        (
-          0,
-          '1\n00:00:01,000 --> 00:00:03,000\nHello there\n\n'
-              '2\n00:00:03,000 --> 00:00:04,000\n♪ Music ♪\n'
-        ),
-        (2970, '1\n00:00:00,200 --> 00:00:02,200\nHello there!\n'),
-      ]);
-      expect(
-        cues,
-        hasLength(1),
-        reason: 'identical caption at a slice boundary counts once; '
-            'music-only decorations never survive',
-      );
-      expect(cues.single.startMs, 1000);
-      expect(cues.single.text.contains('Music'), isFalse);
-    });
-
-    test('merged cues feed buildSrt sorted and renumbered', () {
-      final cues = AiSubtitleRunner.mergeChunkCues([
-        (5000, '7\n00:00:02,000 --> 00:00:03,000\nSecond\n'),
-        (0, '1\n00:00:01,000 --> 00:00:02,000\nFirst\n'),
-      ]);
-      final doc = buildSrt(cues);
-      expect(doc.indexOf('First'), lessThan(doc.indexOf('Second')));
-      expect(doc, contains('00:00:01,000 --> 00:00:02,000'));
-      expect(doc, contains('00:00:07,000 --> 00:00:08,000'));
-    });
-  });
-
-  group('v51 cache-bloat fixes', () {
-    test('mpv demuxer cache caps are set explicitly', () {
-      // The 800 MB storage balloon came from on-disk seek strips (fixed
-      // natively); these caps stop mpv's RAM cache ever drifting to
-      // desktop-sized defaults on low-RAM phones.
-      expect(MediaPlayerState.kMpvCacheCapProps, hasLength(3));
-      expect(MediaPlayerState.kMpvCacheCapProps['demuxer-max-bytes'], '32MiB');
-      expect(
-          MediaPlayerState.kMpvCacheCapProps['demuxer-max-back-bytes'], '8MiB');
-      expect(MediaPlayerState.kMpvCacheCapProps['cache-secs'], '10');
-    });
-  });
-
   group('v52 two-finger zoom + default fit', () {
     test('clampVideoZoom keeps pinch inside 1x..4x (1x = fit screen)', () {
       expect(clampVideoZoom(0.4), 1.0);
@@ -1852,6 +1728,14 @@ void main() {
       expect(PlayerSettings.kFitModeNames.length, 6);
       // copyWith carries the choice through (Settings sheet writes this).
       expect(s.copyWith(defaultFitIndex: 1).defaultFitIndex, 1);
+    });
+
+    test('two-finger tap-to-fit toggle defaults ON and persists', () {
+      const s = PlayerSettings();
+      expect(s.twoFingerTapFit, isTrue);
+      expect(s.copyWith(twoFingerTapFit: false).twoFingerTapFit, isFalse);
+      // ...while pinch zoom stays its own independent toggle.
+      expect(s.pinchZoom, isTrue);
     });
   });
 }

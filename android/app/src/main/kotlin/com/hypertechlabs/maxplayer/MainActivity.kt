@@ -37,6 +37,9 @@ import android.os.StatFs
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.WindowManager
+import dev.ffmpegkit.whisper.Whisper
+import dev.ffmpegkit.whisper.WhisperConfig
+import dev.ffmpegkit.whisper.WhisperModel
 import android.hardware.SensorManager
 import android.view.OrientationEventListener
 import io.flutter.embedding.android.FlutterActivity
@@ -52,6 +55,7 @@ import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
+import kotlinx.coroutines.runBlocking
 import kotlin.math.min
 
 /**
@@ -339,26 +343,56 @@ class MainActivity : FlutterActivity() {
                         mainHandler.post { result.success(dir) }
                     }
                 }
-                "aiPrepareSlices" -> {
-                    // v52: on-device half only (extract -> speech gate ->
-                    // slice WAVs); Dart uploads each slice to the cloud.
+                "whisperAvailable" -> {
+                    // AI SUBTITLES Phase-1 probe: proves the on-device
+                    // whisper.cpp engine loaded its native library on this
+                    // device. Runs off the main thread (first call may load
+                    // libwhisper.so).
+                    executor.execute {
+                        val info = try {
+                            Whisper.getSystemInfo()
+                        } catch (t: Throwable) {
+                            null
+                        }
+                        mainHandler.post { result.success(info) }
+                    }
+                }
+                "aiModelStatus" -> {
+                    // Which models are already on disk, with size in MB.
+                    val map = HashMap<String, Any>()
+                    for (name in listOf("tiny", "base", "small")) {
+                        val f = modelFileFor(name)
+                        map[name] = if (f.exists() && f.length() > 1_000_000) {
+                            (f.length() / (1024 * 1024)).toInt()
+                        } else {
+                            0
+                        }
+                    }
+                    result.success(map)
+                }
+                "aiSubtitleGenerate" -> {
                     val videoPath = call.argument<String>("videoPath")
+                    val model = call.argument<String>("model") ?: "base"
+                    val language = call.argument<String>("language") ?: "auto"
+                    // v21: whisper translate task -> English subtitles from
+                    // any spoken language.
+                    val translate = call.argument<Boolean>("translate") ?: false
                     if (videoPath.isNullOrEmpty()) {
                         result.error("bad_args", "videoPath is required", null)
+                    } else if (!Build.SUPPORTED_ABIS.contains("arm64-v8a")) {
+                        // v39: the whisper engine ships arm64-only native
+                        // libraries. On 32-bit phones (POCO C51 & friends)
+                        // decline cleanly BEFORE any model download - Dart
+                        // turns the null job id into the friendly snack.
+                        result.success(null)
                     } else {
                         aiCancelled = false
                         val jobId = ++aiJobCounter
                         executor.execute {
-                            val r = aiPrepareSlicesSync(videoPath, jobId)
-                            r["jobId"] = jobId
-                            mainHandler.post { result.success(r) }
+                            runAiPipeline(jobId, videoPath, model, language, translate)
                         }
+                        result.success(jobId)
                     }
-                }
-                "aiSliceDiscard" -> {
-                    val id = call.argument<Int>("jobId") ?: -1
-                    executor.execute { aiDiscardSlices(id) }
-                    result.success(true)
                 }
                 "aiSubtitleCancel" -> {
                     aiCancelled = true
@@ -1142,7 +1176,8 @@ class MainActivity : FlutterActivity() {
     }
 
     // ---------------------------------------------------------------------------
-    // AI subtitles pipeline (v52: OpenRouter CLOUD)
+    // AI subtitles pipeline (v54: back ON DEVICE - whisper.cpp,
+    // offline & free after the one-time model download)
     //
     //   video -> [MediaExtractor + MediaCodec] 16 kHz mono WAV (on device)
     //         -> speech gating (on device) -> speech slices <= 3 min
@@ -1199,76 +1234,233 @@ class MainActivity : FlutterActivity() {
      * list means "no speech"; "error" holds a user-readable reason
      * ('cancelled' when aborted).
      */
-    private fun aiPrepareSlicesSync(
-        videoPath: String,
-        jobId: Int
-    ): HashMap<String, Any?> {
-        val out = HashMap<String, Any?>()
-        val slices = ArrayList<HashMap<String, Any?>>()
-        // Declared outside the try so the finally below can always clean up
-        // a half-extracted WAV (leftover 100+ MB files on rare throws).
-        val wav = File(cacheDir, "ai_audio_$jobId.wav")
-        try {
-            aiProgress(jobId, "extracting", 0)
-            if (!extractAudioToWav(videoPath, wav, jobId)) {
-                out["error"] =
-                    if (aiCancelled) "cancelled"
-                    else "Could not read the audio track of this file."
-                return out
-            }
-            if (aiCancelled) {
-                out["error"] = "cancelled"
-                return out
-            }
+    // v25: only the accurate models stay ("tiny" removed for good). Speed
+    // comes from all-core threading instead of a weaker model. Unknown ids
+    // (including a "tiny" id saved by v22-v24 builds) fall back to "base".
+    private fun modelFileFor(name: String): File {
+        val safe = when (name) {
+            "base", "small" -> name
+            else -> "base"
+        }
+        return File(filesDir, "models/ggml-$safe.bin")
+    }
 
-            // Speech gating (on device): silent/music-only stretches never
-            // become slices, so they are never uploaded - cheaper, faster
-            // AND more private.
-            val pcmData = readWavPcm(wav) ?: ByteArray(0)
-            val spans = speechSpans(pcmData)
-            if (spans.isEmpty()) {
-                out["slices"] = slices // empty => "no speech" for Dart
-                return out
-            }
-            val groups = groupSpans(spans, 180)
-            for (i in groups.indices) {
-                if (aiCancelled) {
-                    out["error"] = "cancelled"
-                    slices.forEach { File("${it["path"]}").delete() }
-                    return out
-                }
-                val g = groups[i]
-                val f = File(cacheDir, "ai_slice_${jobId}_$i.wav")
-                writeSpanWav(f, pcmData, g[0], g[1])
-                val m = HashMap<String, Any?>()
-                m["path"] = f.absolutePath
-                m["offsetMs"] = g[0] * 1000L / 16000
-                slices.add(m)
-                aiProgress(jobId, "slicing", (i + 1) * 100 / groups.size)
-            }
-            out["slices"] = slices
-            return out
-        } catch (t: Throwable) {
-            slices.forEach { runCatching { File("${it["path"]}").delete() } }
-            out["error"] = t.message ?: "audio preparation failed"
-            return out
-        } finally {
-            wav.delete()
+    private fun modelUrlFor(name: String): String {
+        return when (name) {
+            "small" ->
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
+            else ->
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
         }
     }
 
-    /** Deletes any slices a cancelled/failed job left on disk. */
-    private fun aiDiscardSlices(jobId: Int) {
+    private fun aiDone(jobId: Int, segments: ArrayList<HashMap<String, Any>>) {
+        mainHandler.post {
+            channel?.invokeMethod(
+                "onAiSubtitleDone",
+                hashMapOf("job" to jobId, "segments" to segments)
+            )
+        }
+    }
+
+    private fun aiFailed(jobId: Int, message: String) {
+        mainHandler.post {
+            channel?.invokeMethod(
+                "onAiSubtitleFailed",
+                hashMapOf("job" to jobId, "message" to message)
+            )
+        }
+    }
+
+    private fun runAiPipeline(
+        jobId: Int,
+        videoPath: String,
+        modelName: String,
+        language: String,
+        translate: Boolean = false
+    ) {
         try {
-            cacheDir.listFiles()?.forEach {
-                if (it.isFile &&
-                    (it.name.startsWith("ai_slice_${jobId}_") ||
-                        it.name == "ai_audio_$jobId.wav")
-                ) {
-                    it.delete()
+            // 1. Model file (one-time download).
+            val modelFile = modelFileFor(modelName)
+            if (!modelFile.exists() || modelFile.length() < 1_000_000) {
+                aiProgress(jobId, "downloading", 0)
+                val dlError = try {
+                    downloadModel(modelUrlFor(modelName), modelFile, jobId)
+                    null
+                } catch (e: AiCancelledException) {
+                    "cancelled"
+                } catch (e: Exception) {
+                    (e.message ?: "network error").take(80)
+                }
+                if (dlError != null) {
+                    modelFile.delete()
+                    aiFailed(
+                        jobId,
+                        if (dlError == "cancelled") "cancelled"
+                        else "Model download failed ($dlError) - internet is needed once; after that AI subtitles work fully offline."
+                    )
+                    return
                 }
             }
-        } catch (_: Throwable) {
+            if (aiCancelled) return aiFailed(jobId, "cancelled")
+
+            // 2. Extract audio track -> 16 kHz mono WAV.
+            aiProgress(jobId, "extracting", 0)
+            val wav = File(cacheDir, "ai_audio_$jobId.wav")
+            if (!extractAudioToWav(videoPath, wav, jobId)) {
+                wav.delete()
+                aiFailed(
+                    jobId,
+                    if (aiCancelled) "cancelled" else "Could not read the audio track of this file."
+                )
+                return
+            }
+            if (aiCancelled) {
+                wav.delete()
+                return aiFailed(jobId, "cancelled")
+            }
+
+            // 3. Transcribe with whisper.cpp (offline), speech-gated:
+            // the 16 kHz track is first split into voiced spans and only
+            // those are sent to whisper. Long silent stretches of a video
+            // are skipped entirely, which is FASTER (a big share of any
+            // movie is non-speech) AND cleaner (whisper used to answer
+            // silence with "music" hallucinations). Music is never treated
+            // as silence, so speech over loud background music still gets
+            // transcribed. A cancel between spans takes effect immediately;
+            // a cancel mid-span discards the result afterwards.
+            aiProgress(jobId, "transcribing", 0)
+            val segments = ArrayList<HashMap<String, Any>>()
+            runBlocking {
+                var model: WhisperModel? = null
+                try {
+                    model = Whisper.loadModel(this@MainActivity, modelFile.absolutePath)
+                    val pcmData = readWavPcm(wav) ?: ByteArray(0)
+                    val spans = speechSpans(pcmData)
+                    // spans empty = no voice anywhere -> empty result, and
+                    // Dart shows its friendly "No speech detected" snack.
+                    spans.forEachIndexed { i, span ->
+                        if (aiCancelled) return@forEachIndexed
+                        val spanWav = File(cacheDir, "ai_span_${jobId}_$i.wav")
+                        try {
+                            writeSpanWav(spanWav, pcmData, span[0], span[1])
+                            // The user can pin a language ("hi", "ur", "en", ...)
+                            // in the Generate dialog; "auto" = detect it. Pinning
+                            // is noticeably more accurate than detection.
+                            val res = Whisper.transcribe(
+                                model,
+                                spanWav.absolutePath,
+                                WhisperConfig(
+                                    language = language,
+                                    translate = translate,
+                                    // v22: use every core the phone offers -
+                                    // whisper.cpp scales well to 8 threads,
+                                    // roughly halving transcription time vs
+                                    // the library default of 4.
+                                    threads = Runtime.getRuntime()
+                                        .availableProcessors()
+                                        .coerceIn(2, 8),
+                                )
+                            )
+                            val offsetMs = span[0] * 1000L / 16000
+                            for (s in res.segments) {
+                                val text = s.text.trim()
+                                if (text.isEmpty()) continue
+                                segments.add(
+                                    hashMapOf(
+                                        "start" to (s.startMs + offsetMs) as Any,
+                                        "end" to (s.endMs + offsetMs) as Any,
+                                        "text" to text as Any
+                                    )
+                                )
+                            }
+                        } finally {
+                            spanWav.delete()
+                        }
+                        aiProgress(jobId, "transcribing", (i + 1) * 100 / spans.size)
+                    }
+                } finally {
+                    model?.let { Whisper.releaseModel(it) }
+                }
+            }
+            wav.delete()
+            if (aiCancelled) return aiFailed(jobId, "cancelled")
+            aiDone(jobId, segments)
+        } catch (t: Throwable) {
+            aiFailed(jobId, t.message ?: "AI subtitle generation failed")
+        }
+    }
+
+    /**
+     * Downloads [url] into [dest] via a ".part" temp file. Redirects are
+     * followed MANUALLY: huggingface.co /resolve/ URLs answer with a 302 to
+     * a CDN host, and relying on HttpURLConnection's automatic redirect
+     * handling has proven unreliable across Android versions. Progress is
+     * reported as the "downloading" stage.
+     *
+     * Throws [AiCancelledException] when the user cancels, and
+     * [java.io.IOException] with a short machine-readable reason otherwise,
+     * so the failure snackbar can say WHAT went wrong.
+     */
+    private fun downloadModel(url: String, dest: File, jobId: Int) {
+        dest.parentFile?.mkdirs()
+        val tmp = File(dest.parentFile, dest.name + ".part")
+        var conn: HttpURLConnection? = null
+        try {
+            var current = url
+            var hops = 0
+            while (true) {
+                val c = URL(current).openConnection() as HttpURLConnection
+                conn = c
+                c.connectTimeout = 20000
+                c.readTimeout = 30000
+                c.instanceFollowRedirects = false
+                c.setRequestProperty("User-Agent", "MaxPlayer/1.0 (Android)")
+                c.connect()
+                val code = c.responseCode
+                if (code in 300..399) {
+                    val loc = c.getHeaderField("Location")
+                    c.disconnect()
+                    if (loc == null || ++hops > 6) {
+                        throw java.io.IOException("redirect failed (HTTP $code)")
+                    }
+                    // Handles both absolute and relative Location headers.
+                    current = URL(URL(current), loc).toString()
+                    continue
+                }
+                if (code !in 200..299) {
+                    c.disconnect()
+                    throw java.io.IOException("HTTP $code")
+                }
+                break
+            }
+            val c = conn ?: throw java.io.IOException("no connection")
+            val total = c.contentLengthLong
+            c.inputStream.use { input ->
+                FileOutputStream(tmp).use { out ->
+                    val buf = ByteArray(256 * 1024)
+                    var done = 0L
+                    var read: Int
+                    while (input.read(buf).also { read = it } != -1) {
+                        if (aiCancelled) throw AiCancelledException()
+                        out.write(buf, 0, read)
+                        done += read
+                        if (total > 0) {
+                            aiProgress(jobId, "downloading", (done * 100 / total).toInt())
+                        }
+                    }
+                    if (total > 0 && done != total) {
+                        throw java.io.IOException("incomplete download")
+                    }
+                }
+            }
+            c.disconnect()
+            if (!tmp.renameTo(dest)) {
+                tmp.copyTo(dest, overwrite = true)
+                tmp.delete()
+            }
+        } finally {
+            if (tmp.exists()) tmp.delete()
         }
     }
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_info.dart';
-import '../services/movie_ai.dart' show kOpenRouterApiKey;
+import '../services/native_bridge.dart';
 import '../state/theme_state.dart';
 import '../utils/privacy_policy.dart';
 
@@ -192,19 +192,25 @@ class AboutSheet extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        // v52: AI subtitles moved to the key-based OpenRouter cloud -
-        // the fragile WebView sign-in dance is gone entirely.
+        // Phase-1 verification: proves the offline whisper.cpp engine
+        // bundled in this build actually loads on this device.
         Center(
-          child: Text(
-            kOpenRouterApiKey.isNotEmpty
-                ? 'AI subtitles: cloud ready (no sign-in needed)'
-                : 'AI subtitles: not configured in this build',
-            style: TextStyle(
-              color: kOpenRouterApiKey.isNotEmpty
-                  ? Colors.greenAccent.withValues(alpha: 0.7)
-                  : Colors.white24,
-              fontSize: 11,
-            ),
+          child: FutureBuilder<String?>(
+            future: NativeBridge.whisperEngineStatus(),
+            builder: (context, snap) {
+              final ready = snap.hasData && snap.data != null;
+              return Text(
+                ready
+                    ? 'AI subtitle engine: ready (offline & free)'
+                    : 'AI subtitle engine: unavailable on this build',
+                style: TextStyle(
+                  color: ready
+                      ? Colors.greenAccent.withValues(alpha: 0.7)
+                      : Colors.white24,
+                  fontSize: 11,
+                ),
+              );
+            },
           ),
         ),
       ],

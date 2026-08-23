@@ -15,6 +15,10 @@ class PlayerSettings {
   /// back to). 0 = Fit screen (the default); indexes match [kFitModeNames].
   final int defaultFitIndex;
 
+  /// v53: the two-finger TAP gesture snaps a zoomed view back to fit
+  /// screen. Toggleable from Settings; independent of pinch-to-zoom.
+  final bool twoFingerTapFit;
+
   /// Hold a finger on the video to temporarily play faster.
   final bool longPressSpeed;
 
@@ -69,6 +73,7 @@ class PlayerSettings {
     this.brightnessSwipe = true,
     this.pinchZoom = true,
     this.defaultFitIndex = 0,
+    this.twoFingerTapFit = true,
     this.longPressSpeed = true,
     this.longPressMultiplier = 2.0,
     this.autoHideSeconds = 4,
@@ -95,6 +100,7 @@ class PlayerSettings {
   static const String kBrightnessSwipe = 'player.brightnessSwipe';
   static const String kPinchZoom = 'player.pinchZoom';
   static const String kDefaultFitIndex = 'player.defaultFitIndex';
+  static const String kTwoFingerTapFit = 'player.twoFingerTapFit';
 
   /// v52: fit modes offered in Settings. MUST stay in the same order as
   /// PlayerScreen's private _fits/_fitNames lists (tested).
@@ -134,6 +140,7 @@ class PlayerSettings {
       defaultFitIndex: (int.tryParse(s[kDefaultFitIndex] ?? '') ??
               d.defaultFitIndex)
           .clamp(0, kFitModeNames.length - 1),
+      twoFingerTapFit: s[kTwoFingerTapFit] != 'false',
       longPressSpeed: s[kLongPressSpeed] != 'false',
       longPressMultiplier:
           double.tryParse(s[kLongPressMultiplier] ?? '') ??
@@ -174,6 +181,7 @@ class PlayerSettings {
     NativeBridge.saveSetting(kBrightnessSwipe, '$brightnessSwipe');
     NativeBridge.saveSetting(kPinchZoom, '$pinchZoom');
     NativeBridge.saveSetting(kDefaultFitIndex, '$defaultFitIndex');
+    NativeBridge.saveSetting(kTwoFingerTapFit, '$twoFingerTapFit');
     NativeBridge.saveSetting(kLongPressSpeed, '$longPressSpeed');
     NativeBridge.saveSetting(
       kLongPressMultiplier,
@@ -201,6 +209,7 @@ class PlayerSettings {
     bool? brightnessSwipe,
     bool? pinchZoom,
     int? defaultFitIndex,
+    bool? twoFingerTapFit,
     bool? longPressSpeed,
     double? longPressMultiplier,
     int? autoHideSeconds,
@@ -224,6 +233,7 @@ class PlayerSettings {
       brightnessSwipe: brightnessSwipe ?? this.brightnessSwipe,
       pinchZoom: pinchZoom ?? this.pinchZoom,
       defaultFitIndex: defaultFitIndex ?? this.defaultFitIndex,
+      twoFingerTapFit: twoFingerTapFit ?? this.twoFingerTapFit,
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
       longPressMultiplier: longPressMultiplier ?? this.longPressMultiplier,
       autoHideSeconds: autoHideSeconds ?? this.autoHideSeconds,

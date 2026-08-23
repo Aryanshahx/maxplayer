@@ -1,55 +1,42 @@
 #!/bin/bash
 # ===============================================================
-#  Max Player - update v52  (1.0.0+48)
+#  Max Player - update v54  (1.0.0+50)
 #
-#  ROOT-LEVEL REBUILD of AI subtitles + two-finger zoom finish.
+#  BY YOUR CALL: cloud AI subtitles REMOVED, old ON-DEVICE engine is
+#  back. (autosubtitles.com checked: browser-only web app, SRT export
+#  is a paid feature, no API an app can call - so on-device it is.)
 #
-#  AI SUBTITLES - the fragile part is DELETED, not patched again:
-#  1. PuterBridge.kt (hidden WebView + puter.js) is REMOVED from the
-#     app. So are the puterStatus/puterSignIn/puterSignOut channels,
-#     the WebView sign-in popup, the temp-account dance - ALL of it.
-#     That sign-in popup is why generation kept failing; it no longer
-#     exists, so it cannot fail anymore.
-#  2. New pipeline: on-device audio extract + speech gating (kept)
-#     -> speech-slice WAVs -> Dart uploads each slice to OpenRouter
-#     (Gemini audio models, fast/best tiers with fallback chains),
-#     using the SAME OPENROUTER_API_KEY that already powers movie Q&A
-#     in Codemagic. No sign-in, no WebView, nothing to set up.
-#  3. Slices delete right after upload; junk sweeper already knows
-#     the pattern. Errors now say what matters (busy/no balance/no
-#     internet) instead of "cloud error".
+#  WHAT THIS DOES
+#  1. Restores the proven v25-v47 whisper.cpp pipeline VERBATIM from
+#     your own git history: model download ONCE (~142MB base / ~466MB
+#     best, from huggingface.co), then 100% offline + free forever.
+#     Hindi/Hinglish etc. via the language picker; Translate-to-English
+#     switch included like before.
+#  2. OpenRouter subtitle client + free/paid model chains all deleted
+#     (movie Q&A keeps its key and is untouched).
+#  3. 64-bit guard like before: 32-bit-only phones get a clean
+#     message instead of a broken job.
+#  4. Keeps everything from v52/v53: two-finger tap = fit screen
+#     toggle, pinch zoom toggle, Default video fit setting, cache fix.
 #
-#  TWO-FINGER GESTURES (pinch already existed - this completes it):
-#  4. Two-finger TAP now snaps back to fit screen (pinch 1x..4x kept).
-#  5. New Settings -> Gestures -> "Default video fit": Fit (default) /
-#     Crop / Stretch / 16:9 / 4:3 / Original. Every video opens in it.
-#
-#  Version: 1.0.0+47 -> 1.0.0+48.
-#
-#  HOW TO USE (on the Pi):
-#    cd ~/IdeaProjects/maxplayer
-#    nano update_maxplayer_v52.sh   # paste this whole file, save
-#    bash update_maxplayer_v52.sh
-#    git add -A && git commit -m "v52: root-rebuild AI subtitles on OpenRouter
-#      (WebView sign-in deleted), two-finger tap fit, default-fit setting (1.0.0+48)"
-#    git push
+#  Version 1.0.0+50. If you have NOT run v53 yet: skip it, v54 is
+#  complete on its own (run on top of the v52 commit).
 # ===============================================================
 set -e
 cd "$(dirname "$0")"
 if [ ! -f pubspec.yaml ] || ! grep -q "name: maxplayer" pubspec.yaml; then
-  echo "ERROR: run this script from the maxplayer repo root."; exit 1
+  echo "ERROR: run from the maxplayer repo root."; exit 1
 fi
-if grep -q "gemini-2.5-flash-lite" lib/utils/ai_subtitles.dart 2>/dev/null; then
-  echo "v52 looks already applied. Nothing to do."; exit 0
+if grep -q "whisper-android" android/app/build.gradle.kts 2>/dev/null; then
+  echo "v54 looks already applied. Nothing to do."; exit 0
 fi
-echo "Applying v52 ..."
-
+echo "Applying v54 (on-device AI subtitles) ..."; echo ""
 mkdir -p "."
-cat > 'pubspec.yaml' <<'V52_EOF_0'
+cat > 'pubspec.yaml' <<'V54_EOF_0'
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+48
+version: 1.0.0+50
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -84,10 +71,10 @@ flutter:
   assets:
     # Real-time Enhance shader loaded into mpv at runtime (v32).
     - assets/shaders/
-V52_EOF_0
+V54_EOF_0
 
 mkdir -p "."
-cat > 'PRIVACY_POLICY.md' <<'V52_EOF_1'
+cat > 'PRIVACY_POLICY.md' <<'V54_EOF_1'
 # Privacy Policy — Max Player
 
 **Effective date:** 13 August 2026
@@ -112,7 +99,7 @@ Max Player is a local video player. **It does not collect, store, transmit, or s
 - No crash reporting service (crash reports are shown **to you** inside the app, and are only shared if **you** copy and send them)
 
 ## AI subtitles
-AI subtitles run in the **OpenRouter cloud**. Your phone first finds the speech parts of a video locally; only those audio slices are uploaded, over HTTPS, using the API key built into the app (the same key that powers the movie Q&A feature) — there is no account to create and nothing to sign into. Max Player does not run its own server and never stores your audio or subtitle text anywhere; the audio slices themselves are deleted from your phone the moment they are transcribed. Translating subtitles to English uses the same pipeline.
+Subtitle generation runs entirely **on your device** using the open-source whisper.cpp engine. Your audio never leaves your phone. The only network access is the one-time model file download from Hugging Face (ggerganov/whisper.cpp), which you trigger and can delete afterwards. Translating subtitles to English uses the same fully on-device engine — no audio or text is sent anywhere.
 
 ## Private folder
 Videos you hide are **moved into the app's own protected folder**, which Android blocks other apps from reading, and are unlocked with a PIN you choose. They never leave your device and are never uploaded. The PIN is stored only as a cryptographic hash inside the app's settings. Uninstalling the app deletes the protected folder — move videos out first.
@@ -137,10 +124,122 @@ Any change to this policy will be committed to this file in the public repositor
 
 ## Contact
 Questions: open an issue on the GitHub repository above.
-V52_EOF_1
+V54_EOF_1
+
+mkdir -p "android/app"
+cat > 'android/app/build.gradle.kts' <<'V54_EOF_2'
+import java.util.Properties
+
+plugins {
+    id("com.android.application")
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Play Store upload key: android/key.properties holds the real signing
+// credentials when present (generated per PLAY_STORE_GUIDE.md); CI injects
+// it. When absent (local dev, old clones) release falls back to the debug
+// key so nothing breaks - a debug-signed build just can't go to the Play
+// Console.
+val uploadProps = Properties().apply {
+    // Conventional location: android/key.properties (git-ignored).
+    val f = rootProject.file("key.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val hasUploadKey = uploadProps.getProperty("storeFile")?.isNotEmpty() == true
+
+android {
+    namespace = "com.hypertechlabs.maxplayer"
+    compileSdk = 36
+    ndkVersion = flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    signingConfigs {
+        create("playStore") {
+            keyAlias = uploadProps.getProperty("keyAlias") ?: ""
+            keyPassword = uploadProps.getProperty("keyPassword") ?: ""
+            storePassword = uploadProps.getProperty("storePassword") ?: ""
+            uploadProps.getProperty("storeFile")?.let {
+                // Resolved relative to the android/ project dir.
+                storeFile = rootProject.file(it)
+            }
+        }
+    }
+
+    defaultConfig {
+        // Unique application ID (renamed from com.example.* for Play Store;
+        // a published app can never change this again).
+        applicationId = "com.hypertechlabs.maxplayer"
+        // You can update the following values to match your application needs.
+        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        minSdk = flutter.minSdkVersion
+        targetSdk = 36
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+
+        // CPU architectures: arm64 (modern) + armeabi-v7a + x86_64.
+        // v39: a 32-bit-only USERSPACE still exists in 2026 - Android Go
+        // phones (POCO C51/C65, Redmi A-series, even Android 14 Go
+        // devices) plus every Android 7-10 budget phone. The startup
+        // trace from a POCO C51 (Android 13!) showed the arm64-only APK
+        // dying with: Could not find 'libflutter.so'. Looked for:
+        // [armeabi-v7a, armeabi], but only found: [arm64-v8a].
+        // v48: AI subtitles are cloud-based (Puter WebView bridge) - even
+        //  32-bit phones get them now; nothing native left to decline.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+    }
+
+    buildTypes {
+        release {
+            // Real upload key when android/key.properties exists, otherwise
+            // the debug key so `flutter run --release` still works.
+            signingConfig = if (hasUploadKey) {
+                signingConfigs.getByName("playStore")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+        }
+    }
+}
+
+// v20: name the build artifacts "MaxPlayer-release.apk" /
+// "MaxPlayer-release.aab" instead of the generic "app-release.*".
+// (Gradle 9 removed the old archivesBaseName; base.archivesName replaces it.)
+base {
+    archivesName.set("MaxPlayer")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
+flutter {
+    source = "../.."
+}
+
+dependencies {
+    // AI SUBTITLES (v54: back ON DEVICE): prebuilt whisper.cpp engine.
+    // Plain Maven artifact (NOT a Gradle/Flutter plugin) = no toolchain
+    // conflicts. ~1.1 MB AAR, MIT licensed, runs 100% offline & free
+    // after the one-time model download (64-bit phones).
+    implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
+    // The AAR only exports coroutines on the runtime classpath; we call its
+    // suspend functions from Kotlin, so we need it explicitly at compile
+    // time. Same version as the AAR's -> no conflict.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+}
+V54_EOF_2
 
 mkdir -p "android/app/src/main/kotlin/com/hypertechlabs/maxplayer"
-cat > 'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt' <<'V52_EOF_2'
+cat > 'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt' <<'V54_EOF_3'
 package com.hypertechlabs.maxplayer
 
 import android.app.KeyguardManager
@@ -180,6 +279,9 @@ import android.os.StatFs
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.WindowManager
+import dev.ffmpegkit.whisper.Whisper
+import dev.ffmpegkit.whisper.WhisperConfig
+import dev.ffmpegkit.whisper.WhisperModel
 import android.hardware.SensorManager
 import android.view.OrientationEventListener
 import io.flutter.embedding.android.FlutterActivity
@@ -195,6 +297,7 @@ import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
+import kotlinx.coroutines.runBlocking
 import kotlin.math.min
 
 /**
@@ -482,26 +585,56 @@ class MainActivity : FlutterActivity() {
                         mainHandler.post { result.success(dir) }
                     }
                 }
-                "aiPrepareSlices" -> {
-                    // v52: on-device half only (extract -> speech gate ->
-                    // slice WAVs); Dart uploads each slice to the cloud.
+                "whisperAvailable" -> {
+                    // AI SUBTITLES Phase-1 probe: proves the on-device
+                    // whisper.cpp engine loaded its native library on this
+                    // device. Runs off the main thread (first call may load
+                    // libwhisper.so).
+                    executor.execute {
+                        val info = try {
+                            Whisper.getSystemInfo()
+                        } catch (t: Throwable) {
+                            null
+                        }
+                        mainHandler.post { result.success(info) }
+                    }
+                }
+                "aiModelStatus" -> {
+                    // Which models are already on disk, with size in MB.
+                    val map = HashMap<String, Any>()
+                    for (name in listOf("tiny", "base", "small")) {
+                        val f = modelFileFor(name)
+                        map[name] = if (f.exists() && f.length() > 1_000_000) {
+                            (f.length() / (1024 * 1024)).toInt()
+                        } else {
+                            0
+                        }
+                    }
+                    result.success(map)
+                }
+                "aiSubtitleGenerate" -> {
                     val videoPath = call.argument<String>("videoPath")
+                    val model = call.argument<String>("model") ?: "base"
+                    val language = call.argument<String>("language") ?: "auto"
+                    // v21: whisper translate task -> English subtitles from
+                    // any spoken language.
+                    val translate = call.argument<Boolean>("translate") ?: false
                     if (videoPath.isNullOrEmpty()) {
                         result.error("bad_args", "videoPath is required", null)
+                    } else if (!Build.SUPPORTED_ABIS.contains("arm64-v8a")) {
+                        // v39: the whisper engine ships arm64-only native
+                        // libraries. On 32-bit phones (POCO C51 & friends)
+                        // decline cleanly BEFORE any model download - Dart
+                        // turns the null job id into the friendly snack.
+                        result.success(null)
                     } else {
                         aiCancelled = false
                         val jobId = ++aiJobCounter
                         executor.execute {
-                            val r = aiPrepareSlicesSync(videoPath, jobId)
-                            r["jobId"] = jobId
-                            mainHandler.post { result.success(r) }
+                            runAiPipeline(jobId, videoPath, model, language, translate)
                         }
+                        result.success(jobId)
                     }
-                }
-                "aiSliceDiscard" -> {
-                    val id = call.argument<Int>("jobId") ?: -1
-                    executor.execute { aiDiscardSlices(id) }
-                    result.success(true)
                 }
                 "aiSubtitleCancel" -> {
                     aiCancelled = true
@@ -1285,7 +1418,8 @@ class MainActivity : FlutterActivity() {
     }
 
     // ---------------------------------------------------------------------------
-    // AI subtitles pipeline (v52: OpenRouter CLOUD)
+    // AI subtitles pipeline (v54: back ON DEVICE - whisper.cpp,
+    // offline & free after the one-time model download)
     //
     //   video -> [MediaExtractor + MediaCodec] 16 kHz mono WAV (on device)
     //         -> speech gating (on device) -> speech slices <= 3 min
@@ -1342,76 +1476,233 @@ class MainActivity : FlutterActivity() {
      * list means "no speech"; "error" holds a user-readable reason
      * ('cancelled' when aborted).
      */
-    private fun aiPrepareSlicesSync(
-        videoPath: String,
-        jobId: Int
-    ): HashMap<String, Any?> {
-        val out = HashMap<String, Any?>()
-        val slices = ArrayList<HashMap<String, Any?>>()
-        // Declared outside the try so the finally below can always clean up
-        // a half-extracted WAV (leftover 100+ MB files on rare throws).
-        val wav = File(cacheDir, "ai_audio_$jobId.wav")
-        try {
-            aiProgress(jobId, "extracting", 0)
-            if (!extractAudioToWav(videoPath, wav, jobId)) {
-                out["error"] =
-                    if (aiCancelled) "cancelled"
-                    else "Could not read the audio track of this file."
-                return out
-            }
-            if (aiCancelled) {
-                out["error"] = "cancelled"
-                return out
-            }
+    // v25: only the accurate models stay ("tiny" removed for good). Speed
+    // comes from all-core threading instead of a weaker model. Unknown ids
+    // (including a "tiny" id saved by v22-v24 builds) fall back to "base".
+    private fun modelFileFor(name: String): File {
+        val safe = when (name) {
+            "base", "small" -> name
+            else -> "base"
+        }
+        return File(filesDir, "models/ggml-$safe.bin")
+    }
 
-            // Speech gating (on device): silent/music-only stretches never
-            // become slices, so they are never uploaded - cheaper, faster
-            // AND more private.
-            val pcmData = readWavPcm(wav) ?: ByteArray(0)
-            val spans = speechSpans(pcmData)
-            if (spans.isEmpty()) {
-                out["slices"] = slices // empty => "no speech" for Dart
-                return out
-            }
-            val groups = groupSpans(spans, 180)
-            for (i in groups.indices) {
-                if (aiCancelled) {
-                    out["error"] = "cancelled"
-                    slices.forEach { File("${it["path"]}").delete() }
-                    return out
-                }
-                val g = groups[i]
-                val f = File(cacheDir, "ai_slice_${jobId}_$i.wav")
-                writeSpanWav(f, pcmData, g[0], g[1])
-                val m = HashMap<String, Any?>()
-                m["path"] = f.absolutePath
-                m["offsetMs"] = g[0] * 1000L / 16000
-                slices.add(m)
-                aiProgress(jobId, "slicing", (i + 1) * 100 / groups.size)
-            }
-            out["slices"] = slices
-            return out
-        } catch (t: Throwable) {
-            slices.forEach { runCatching { File("${it["path"]}").delete() } }
-            out["error"] = t.message ?: "audio preparation failed"
-            return out
-        } finally {
-            wav.delete()
+    private fun modelUrlFor(name: String): String {
+        return when (name) {
+            "small" ->
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
+            else ->
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
         }
     }
 
-    /** Deletes any slices a cancelled/failed job left on disk. */
-    private fun aiDiscardSlices(jobId: Int) {
+    private fun aiDone(jobId: Int, segments: ArrayList<HashMap<String, Any>>) {
+        mainHandler.post {
+            channel?.invokeMethod(
+                "onAiSubtitleDone",
+                hashMapOf("job" to jobId, "segments" to segments)
+            )
+        }
+    }
+
+    private fun aiFailed(jobId: Int, message: String) {
+        mainHandler.post {
+            channel?.invokeMethod(
+                "onAiSubtitleFailed",
+                hashMapOf("job" to jobId, "message" to message)
+            )
+        }
+    }
+
+    private fun runAiPipeline(
+        jobId: Int,
+        videoPath: String,
+        modelName: String,
+        language: String,
+        translate: Boolean = false
+    ) {
         try {
-            cacheDir.listFiles()?.forEach {
-                if (it.isFile &&
-                    (it.name.startsWith("ai_slice_${jobId}_") ||
-                        it.name == "ai_audio_$jobId.wav")
-                ) {
-                    it.delete()
+            // 1. Model file (one-time download).
+            val modelFile = modelFileFor(modelName)
+            if (!modelFile.exists() || modelFile.length() < 1_000_000) {
+                aiProgress(jobId, "downloading", 0)
+                val dlError = try {
+                    downloadModel(modelUrlFor(modelName), modelFile, jobId)
+                    null
+                } catch (e: AiCancelledException) {
+                    "cancelled"
+                } catch (e: Exception) {
+                    (e.message ?: "network error").take(80)
+                }
+                if (dlError != null) {
+                    modelFile.delete()
+                    aiFailed(
+                        jobId,
+                        if (dlError == "cancelled") "cancelled"
+                        else "Model download failed ($dlError) - internet is needed once; after that AI subtitles work fully offline."
+                    )
+                    return
                 }
             }
-        } catch (_: Throwable) {
+            if (aiCancelled) return aiFailed(jobId, "cancelled")
+
+            // 2. Extract audio track -> 16 kHz mono WAV.
+            aiProgress(jobId, "extracting", 0)
+            val wav = File(cacheDir, "ai_audio_$jobId.wav")
+            if (!extractAudioToWav(videoPath, wav, jobId)) {
+                wav.delete()
+                aiFailed(
+                    jobId,
+                    if (aiCancelled) "cancelled" else "Could not read the audio track of this file."
+                )
+                return
+            }
+            if (aiCancelled) {
+                wav.delete()
+                return aiFailed(jobId, "cancelled")
+            }
+
+            // 3. Transcribe with whisper.cpp (offline), speech-gated:
+            // the 16 kHz track is first split into voiced spans and only
+            // those are sent to whisper. Long silent stretches of a video
+            // are skipped entirely, which is FASTER (a big share of any
+            // movie is non-speech) AND cleaner (whisper used to answer
+            // silence with "music" hallucinations). Music is never treated
+            // as silence, so speech over loud background music still gets
+            // transcribed. A cancel between spans takes effect immediately;
+            // a cancel mid-span discards the result afterwards.
+            aiProgress(jobId, "transcribing", 0)
+            val segments = ArrayList<HashMap<String, Any>>()
+            runBlocking {
+                var model: WhisperModel? = null
+                try {
+                    model = Whisper.loadModel(this@MainActivity, modelFile.absolutePath)
+                    val pcmData = readWavPcm(wav) ?: ByteArray(0)
+                    val spans = speechSpans(pcmData)
+                    // spans empty = no voice anywhere -> empty result, and
+                    // Dart shows its friendly "No speech detected" snack.
+                    spans.forEachIndexed { i, span ->
+                        if (aiCancelled) return@forEachIndexed
+                        val spanWav = File(cacheDir, "ai_span_${jobId}_$i.wav")
+                        try {
+                            writeSpanWav(spanWav, pcmData, span[0], span[1])
+                            // The user can pin a language ("hi", "ur", "en", ...)
+                            // in the Generate dialog; "auto" = detect it. Pinning
+                            // is noticeably more accurate than detection.
+                            val res = Whisper.transcribe(
+                                model,
+                                spanWav.absolutePath,
+                                WhisperConfig(
+                                    language = language,
+                                    translate = translate,
+                                    // v22: use every core the phone offers -
+                                    // whisper.cpp scales well to 8 threads,
+                                    // roughly halving transcription time vs
+                                    // the library default of 4.
+                                    threads = Runtime.getRuntime()
+                                        .availableProcessors()
+                                        .coerceIn(2, 8),
+                                )
+                            )
+                            val offsetMs = span[0] * 1000L / 16000
+                            for (s in res.segments) {
+                                val text = s.text.trim()
+                                if (text.isEmpty()) continue
+                                segments.add(
+                                    hashMapOf(
+                                        "start" to (s.startMs + offsetMs) as Any,
+                                        "end" to (s.endMs + offsetMs) as Any,
+                                        "text" to text as Any
+                                    )
+                                )
+                            }
+                        } finally {
+                            spanWav.delete()
+                        }
+                        aiProgress(jobId, "transcribing", (i + 1) * 100 / spans.size)
+                    }
+                } finally {
+                    model?.let { Whisper.releaseModel(it) }
+                }
+            }
+            wav.delete()
+            if (aiCancelled) return aiFailed(jobId, "cancelled")
+            aiDone(jobId, segments)
+        } catch (t: Throwable) {
+            aiFailed(jobId, t.message ?: "AI subtitle generation failed")
+        }
+    }
+
+    /**
+     * Downloads [url] into [dest] via a ".part" temp file. Redirects are
+     * followed MANUALLY: huggingface.co /resolve/ URLs answer with a 302 to
+     * a CDN host, and relying on HttpURLConnection's automatic redirect
+     * handling has proven unreliable across Android versions. Progress is
+     * reported as the "downloading" stage.
+     *
+     * Throws [AiCancelledException] when the user cancels, and
+     * [java.io.IOException] with a short machine-readable reason otherwise,
+     * so the failure snackbar can say WHAT went wrong.
+     */
+    private fun downloadModel(url: String, dest: File, jobId: Int) {
+        dest.parentFile?.mkdirs()
+        val tmp = File(dest.parentFile, dest.name + ".part")
+        var conn: HttpURLConnection? = null
+        try {
+            var current = url
+            var hops = 0
+            while (true) {
+                val c = URL(current).openConnection() as HttpURLConnection
+                conn = c
+                c.connectTimeout = 20000
+                c.readTimeout = 30000
+                c.instanceFollowRedirects = false
+                c.setRequestProperty("User-Agent", "MaxPlayer/1.0 (Android)")
+                c.connect()
+                val code = c.responseCode
+                if (code in 300..399) {
+                    val loc = c.getHeaderField("Location")
+                    c.disconnect()
+                    if (loc == null || ++hops > 6) {
+                        throw java.io.IOException("redirect failed (HTTP $code)")
+                    }
+                    // Handles both absolute and relative Location headers.
+                    current = URL(URL(current), loc).toString()
+                    continue
+                }
+                if (code !in 200..299) {
+                    c.disconnect()
+                    throw java.io.IOException("HTTP $code")
+                }
+                break
+            }
+            val c = conn ?: throw java.io.IOException("no connection")
+            val total = c.contentLengthLong
+            c.inputStream.use { input ->
+                FileOutputStream(tmp).use { out ->
+                    val buf = ByteArray(256 * 1024)
+                    var done = 0L
+                    var read: Int
+                    while (input.read(buf).also { read = it } != -1) {
+                        if (aiCancelled) throw AiCancelledException()
+                        out.write(buf, 0, read)
+                        done += read
+                        if (total > 0) {
+                            aiProgress(jobId, "downloading", (done * 100 / total).toInt())
+                        }
+                    }
+                    if (total > 0 && done != total) {
+                        throw java.io.IOException("incomplete download")
+                    }
+                }
+            }
+            c.disconnect()
+            if (!tmp.renameTo(dest)) {
+                tmp.copyTo(dest, overwrite = true)
+                tmp.delete()
+            }
+        } finally {
+            if (tmp.exists()) tmp.delete()
         }
     }
 
@@ -2045,31 +2336,29 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
     }
 }
-V52_EOF_2
+V54_EOF_3
 
 mkdir -p "lib/utils"
-cat > 'lib/utils/ai_subtitles.dart' <<'V52_EOF_3'
+cat > 'lib/utils/ai_subtitles.dart' <<'V54_EOF_4'
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:path/path.dart' as p;
 
-import '../services/movie_ai.dart' show kOpenRouterApiKey;
 import '../services/native_bridge.dart';
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
 import 'srt.dart';
 
-/// True when a transcription segment is caption decoration rather than
-/// speech - e.g. "♪", "♪ ♪", "[Music]", "(music playing)". Whisper-class
-/// engines emit these over music-only stretches; dropping them keeps the
-/// .srt clean (v18).
+/// True when a whisper segment is caption decoration rather than speech -
+/// e.g. "♪", "♪ ♪", "[Music]", "(music playing)". Whisper emits these over
+/// music-only stretches; dropping them keeps the .srt clean (v18).
 ///
 /// Deliberately conservative: anything that might be real speech (even
 /// speech ABOUT music, like "I love music") is kept - we only drop the
-/// exact decoration phrases the engine hallucinates.
+/// exact decoration phrases whisper hallucinates.
 bool isMusicOnlyCaption(String text) {
   var t = text.toLowerCase().trim();
   if (t.isEmpty) return true;
@@ -2081,7 +2370,7 @@ bool isMusicOnlyCaption(String text) {
   return _musicOnlyCores.contains(core);
 }
 
-/// Lowercase, letters-only forms of the engine's music/SFX-only captions.
+/// Lowercase, letters-only forms of whisper's music/SFX-only captions.
 const Set<String> _musicOnlyCores = {
   'music',
   'musicplaying',
@@ -2110,20 +2399,12 @@ const Set<String> _musicOnlyCores = {
   'silence',
 };
 
-/// Runs the CLOUD AI subtitle flow end to end and shows a progress dialog:
+/// Runs the offline AI subtitle flow end to end and shows a progress dialog:
 ///
-///   native audio extraction + speech gating (on device) -> speech-slice
-///   WAV files on disk -> Dart uploads each slice to the OpenRouter cloud
-///   (Gemini audio models, built-in key like the movie Q&A feature) ->
-///   merge slices -> write "<video>.maxai.srt" next to the video -> load
+///   download model once (~142 MB) -> extract audio -> whisper.cpp ->
+///   write "<video>.maxai.srt" next to the video -> load it into the player
 ///
-/// v52 ROOT REBUILD: v48-v51 used a hidden WebView cloud whose sign-in
-/// popup required a real user gesture and broke on real phones in five
-/// different ways (overlay, transport, timeouts...). That whole
-/// WebView/sign-in layer is DELETED. The new pipeline is pure HTTPS with
-/// the same compile-time OPENROUTER_API_KEY that already powers the
-/// movie-Q&A sheet - no sign-in, no popup, no WebView, nothing for the
-/// viewer to set up. Only detected speech audio leaves the phone.
+/// Everything after the one-time model download is 100% offline & free.
 class AiSubtitleRunner {
   AiSubtitleRunner._();
 
@@ -2132,39 +2413,20 @@ class AiSubtitleRunner {
   static const String _kLanguageKey = 'ai.language';
   static const String _kTranslateKey = 'ai.translate';
 
-  /// Cloud quality tiers: id -> (label, detail).
+  /// Model choices: id -> (label, detail with size). v25: tiny is gone for
+  /// good (user call: keep only the accurate models). The SPEED upgrade now
+  /// comes from the engine using every CPU core (threads), which makes even
+  /// "Best" markedly faster without accuracy loss.
   static const Map<String, (String, String)> modelChoices = {
-    'fast': ('Fast · Flash-Lite', 'quick - great for clear speech'),
-    'best': ('Best · Flash', 'strongest on music & noise'),
+    'base': ('Balanced', '~142 MB · good for most videos'),
+    'small': ('Best', '~466 MB · strongest on music & noise'),
   };
 
-  /// Anything unknown (including legacy "base"/"small" ids saved by older
-  /// builds) falls back to the fast tier; an old "small" maps to "best".
-  static String normalizeModelId(String? id) => switch (id) {
-        'best' || 'small' => 'best',
-        _ => 'fast',
-      };
+  /// Anything unknown (including a "tiny" id saved by v22-v24 builds)
+  /// falls back to the default model.
+  static String normalizeModelId(String? id) => id == 'small' ? 'small' : 'base';
 
-  /// v52: picker id -> primary OpenRouter audio model.
-  static String cloudModelFor(String id) => id == 'best'
-      ? 'google/gemini-2.5-flash'
-      : 'google/gemini-2.5-flash-lite';
-
-  /// Fallback chain per tier, tried IN ORDER - the first model that
-  /// answers wins (rate limits / a retired model just move to the next).
-  static List<String> cloudModelChain(String id) => id == 'best'
-      ? const [
-          'google/gemini-2.5-flash',
-          'google/gemini-2.5-flash-lite',
-          'google/gemini-2.0-flash-001',
-        ]
-      : const [
-          'google/gemini-2.5-flash-lite',
-          'google/gemini-2.0-flash-001',
-          'google/gemini-2.0-flash-exp:free',
-        ];
-
-  /// Language choices: ISO-639 code -> label; 'auto' = detect.
+  /// Language choices: whisper code -> label; 'auto' = detect.
   static const Map<String, String> languageChoices = {
     'auto': 'Auto-detect',
     'en': 'English',
@@ -2184,175 +2446,11 @@ class AiSubtitleRunner {
     'fr': 'French',
   };
 
-  /// Normalizes caption text for duplicate comparison across slice
-  /// boundaries (Latin + Devanagari survive; punctuation/case dropped).
-  static String _normCaption(String t) => t
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9؀-ॿ]+'), '');
-
-  /// Merges per-slice .srt documents into absolute-timeline cues (PURE,
-  /// unit-tested):
-  ///  - each slice's cue times shift by its absolute start offset
-  ///  - cues are sorted by start time
-  ///  - music-only decoration captions are dropped ([isMusicOnlyCaption])
-  ///  - boundary duplicates (same caption re-emitted inside the 3 s guard
-  ///    band where two slices overlap) are dropped once
-  static List<SrtCue> mergeChunkCues(List<(int offsetMs, String srt)> chunks) {
-    final all = <SrtCue>[];
-    for (final (offsetMs, doc) in chunks) {
-      for (final c in parseSrt(doc)) {
-        all.add(SrtCue(c.startMs + offsetMs, c.endMs + offsetMs, c.text));
-      }
-    }
-    all.sort((a, b) => a.startMs.compareTo(b.startMs));
-    final kept = <SrtCue>[];
-    for (final c in all) {
-      final text = c.text.trim();
-      if (text.isEmpty) continue;
-      if (isMusicOnlyCaption(text)) continue;
-      final prev = kept.isEmpty ? null : kept.last;
-      if (prev != null &&
-          _normCaption(prev.text) == _normCaption(text) &&
-          c.startMs - prev.startMs < 12000) {
-        continue; // same caption re-emitted at a slice boundary
-      }
-      kept.add(SrtCue(c.startMs, c.endMs, text));
-    }
-    return kept;
-  }
-
-  // ------------------------------------------------------------------
-  // v52 OpenRouter cloud client (PURE helpers, unit-tested)
-  // ------------------------------------------------------------------
-
-  /// Prompt sent with every audio slice. SRT-only output, clip-relative
-  /// timestamps, music stretches answered with an empty reply.
-  static String transcriptionPrompt({
-    required String languageLabel,
-    required bool translate,
-  }) {
-    final b = StringBuffer()
-      ..write('Transcribe the speech in this audio clip into SubRip (SRT) '
-          'subtitles.\nRules:\n')
-      ..write('- Output ONLY the SRT cues: no commentary, no markdown '
-          'code fences.\n')
-      ..write('- Number cues starting at 1 and use "HH:MM:SS,mmm --> '
-          'HH:MM:SS,mmm" timestamps relative to the CLIP start '
-          '(00:00:00,000).\n')
-      ..write('- Keep every cue under two lines and split long speech into '
-          'short cues.\n');
-    if (languageLabel == 'Auto-detect') {
-      b.write('- Detect the spoken language automatically (it may mix '
-          'Hindi, English and others).\n');
-    } else {
-      b.write('- The spoken language is $languageLabel.\n');
-    }
-    if (translate) {
-      b.write('- Translate everything into natural English subtitle text '
-          'instead of the original language.\n');
-    } else {
-      b.write('- Write the subtitles in the ORIGINAL spoken language and '
-          'script.\n');
-    }
-    b.write('- For stretches of pure music or silence output nothing at '
-        'all (an empty reply is correct).');
-    return b.toString();
-  }
-
-  /// One OpenRouter chat-completions body carrying the audio clip.
-  static Map<String, Object?> audioChatBody({
-    required String model,
-    required String prompt,
-    required String base64Wav,
-  }) =>
-      {
-        'model': model,
-        'messages': [
-          {
-            'role': 'user',
-            'content': [
-              {'type': 'text', 'text': prompt},
-              {
-                'type': 'input_audio',
-                'input_audio': {'data': base64Wav, 'format': 'wav'},
-              },
-            ],
-          },
-        ],
-        'max_tokens': 4096,
-        'temperature': 0.0,
+    /// Approximate download size label per model (for the progress dialog).
+  static String modelSizeLabel(String model) => switch (model) {
+        'small' => '~466 MB',
+        _ => '~142 MB',
       };
-
-  /// Extracts the assistant's text from a chat-completion response.
-  /// Never throws; junk -> null.
-  static String? parseChatText(String jsonBody) {
-    try {
-      final decoded = jsonDecode(jsonBody);
-      if (decoded is! Map) return null;
-      final choices = decoded['choices'];
-      if (choices is! List || choices.isEmpty) return null;
-      final first = choices.first;
-      if (first is! Map) return null;
-      final message = first['message'];
-      if (message is! Map) return null;
-      final content = '${message['content'] ?? ''}'.trim();
-      return content.isEmpty ? null : content;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Strips wrapping ``` / ```srt code fences some models add despite the
-  /// instructions. No fences -> input unchanged.
-  static String stripSrtFences(String text) {
-    var t = text.trim();
-    if (t.startsWith('```')) {
-      final nl = t.indexOf('\n');
-      if (nl > 0) t = t.substring(nl + 1);
-      if (t.trimRight().endsWith('```')) {
-        t = t.trimRight().substring(0, t.trimRight().length - 3);
-      }
-      t = t.trim();
-    }
-    return t;
-  }
-
-  /// Numeric error code from an OpenRouter error body, or null.
-  static int? chatErrorCode(String body) {
-    try {
-      final decoded = jsonDecode(body);
-      if (decoded is! Map) return null;
-      final err = decoded['error'];
-      if (err is! Map) return null;
-      final code = err['code'];
-      if (code is int) return code;
-      if (code is String) return int.tryParse(code);
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Maps a cloud failure to words the viewer understands.
-  static String aiCloudErrorMessage(int? code) {
-    if (code == 401 || code == 403) {
-      return 'the built-in AI key was rejected - please report this build';
-    }
-    if (code == 402) {
-      return 'the AI service balance is empty right now - '
-          'please try again later';
-    }
-    if (code == 404) {
-      return 'this AI model is unavailable - try the other quality tier';
-    }
-    if (code == 408 || code == 429) {
-      return 'the AI cloud is busy - please try again in a minute';
-    }
-    if (code != null && code >= 500) {
-      return 'the AI cloud had a hiccup - please try again';
-    }
-    return 'check your internet connection and try again';
-  }
 
   /// Launches generation for the video currently loaded in [player].
   /// [context] must be a context that outlives the subtitle sheet (the
@@ -2365,10 +2463,6 @@ class AiSubtitleRunner {
     if (track == null || track.path.contains('://')) {
       _snack(context,
           'AI subtitles work on local video files (not network streams)');
-      return;
-    }
-    if (kOpenRouterApiKey.isEmpty) {
-      _snack(context, 'AI subtitles are not configured in this build');
       return;
     }
 
@@ -2389,11 +2483,10 @@ class AiSubtitleRunner {
     unawaited(NativeBridge.saveSetting(_kLanguageKey, options.language));
     unawaited(NativeBridge.saveSetting(_kTranslateKey, '${options.translate}'));
 
-    // v52: NO sign-in step - the key is compiled in, like movie Q&A.
+    // One active job at a time; hook up the event callbacks first.
     final progress = ValueNotifier<(String, int)>(('starting', 0));
-    final chunks = <(int, String)>[];
     var dialogOpen = false;
-    var cancelled = false;
+    List<AiSegment>? segments;
     String? error;
 
     void closeDialog() {
@@ -2405,121 +2498,77 @@ class AiSubtitleRunner {
 
     NativeBridge.configureCallbacks(
       onAiProgress: (stage, percent) => progress.value = (stage, percent),
+      onAiDone: (s) {
+        segments = s;
+        closeDialog();
+      },
+      onAiFailed: (e) {
+        error = e;
+        closeDialog();
+      },
     );
 
+    final jobId = await NativeBridge.aiSubtitleGenerate(
+      videoPath: track.path,
+      model: options.model,
+      language: options.language,
+      translate: options.translate,
+    );
+    if (!context.mounted) return;
+    if (jobId == null) {
+      _snack(
+        context,
+        'AI subtitles are not available on this phone '
+        '(they need a 64-bit chip)',
+      );
+      return;
+    }
+
+    if (!context.mounted) return;
     dialogOpen = true;
-    unawaited(showDialog(
+    await showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => _AiProgressDialog(
         progress: progress,
+        model: options.model,
         onCancel: () {
-          cancelled = true;
-          unawaited(NativeBridge.aiSubtitleCancel());
+          error = 'cancelled';
+          NativeBridge.aiSubtitleCancel();
           closeDialog();
         },
       ),
-    ));
-
-    var jobId = -1;
-    try {
-      // 1) on-device: extract + speech-gate + slice into ~3 min WAVs.
-      final prep = await NativeBridge.aiPrepareSlices(track.path);
-      jobId = prep.jobId;
-      if (!context.mounted) return;
-      if (prep.error != null) {
-        if (prep.error == 'cancelled') {
-          cancelled = true;
-        } else {
-          error = prep.error;
-        }
-      } else if (prep.slices.isEmpty) {
-        closeDialog();
-        _snack(context,
-            'No speech was detected in this video - nothing to write');
-        return;
-      } else {
-        // 2) upload each speech slice; the first model that answers wins.
-        final prompt = transcriptionPrompt(
-          languageLabel: languageChoices[options.language] ?? 'Auto-detect',
-          translate: options.translate,
-        );
-        final total = prep.slices.length;
-        for (var i = 0; i < total; i++) {
-          if (cancelled) break;
-          final slice = prep.slices[i];
-          progress.value = ('transcribing', i * 100 ~/ total);
-          try {
-            final b64 = base64Encode(await File(slice.path).readAsBytes());
-            String? srt;
-            int? lastCode;
-            for (final model in cloudModelChain(options.model)) {
-              var moveOn = false;
-              for (var attempt = 0; attempt < 2 && !moveOn; attempt++) {
-                if (cancelled) break;
-                try {
-                  final (code, body) = await _CloudSpeech.transcribeOnce(
-                    model: model,
-                    prompt: prompt,
-                    base64Wav: b64,
-                  );
-                  if (code == 200) {
-                    final t = parseChatText(body);
-                    if (t != null) {
-                      srt = stripSrtFences(t);
-                      moveOn = true;
-                    }
-                  } else {
-                    lastCode = chatErrorCode(body) ?? code;
-                    // Busy/server hiccup -> wait and retry once; anything
-                    // else -> try the next model in the chain.
-                    if (code == 429 || code >= 500) {
-                      await Future<void>.delayed(const Duration(seconds: 3));
-                    } else {
-                      moveOn = true;
-                    }
-                  }
-                } catch (_) {
-                  await Future<void>.delayed(const Duration(seconds: 2));
-                }
-              }
-              if (srt != null || cancelled) break;
-            }
-            if (cancelled) break;
-            if (srt == null) {
-              error = aiCloudErrorMessage(lastCode);
-              break;
-            }
-            if (srt.trim().isNotEmpty) chunks.add((slice.offsetMs, srt));
-          } finally {
-            try {
-              await File(slice.path).delete();
-            } catch (_) {}
-          }
-        }
-        progress.value = ('transcribing', 100);
-      }
-    } finally {
-      unawaited(NativeBridge.aiSliceDiscard(jobId));
-    }
+    );
+    dialogOpen = false;
 
     if (!context.mounted) return;
-    closeDialog();
 
-    if (cancelled) return;
-    if (error != null) {
+    if (error != null && error != 'cancelled') {
       _snack(context, 'AI subtitles failed: $error');
       return;
     }
+    if (error == 'cancelled' || segments == null) return;
 
-    final cues = mergeChunkCues(chunks);
-    if (cues.isEmpty) {
-      _snack(context, 'The cloud heard no speech in this video');
+    if (segments!.isEmpty) {
+      _snack(context,
+          'No speech was detected in this video - nothing to write');
       return;
     }
 
+    // (mounted was checked right after the dialog closed above)
+
     // Build the .srt (pure function) and save it next to the video.
-    final srtPath = srtPathForVideo(track.path);
+    // Music-only decoration captions ("♪", "[Music]") are filtered out.
+    final cues = [
+      for (final s in segments!)
+        if (!isMusicOnlyCaption(s.text)) SrtCue(s.startMs, s.endMs, s.text),
+    ];
+    if (cues.isEmpty) {
+      _snack(context,
+          'Only background music was detected - no subtitles to write');
+      return;
+    }
+    final srtPath = _srtPathFor(track.path);
     try {
       await File(srtPath).writeAsString(buildSrt(cues));
     } catch (_) {
@@ -2530,8 +2579,8 @@ class AiSubtitleRunner {
     }
     if (!context.mounted) return;
 
-    // Hand it to mpv so the subtitle picker lists it immediately, and let
-    // the karaoke overlay / skip-intro chip pick up the fresh cues.
+    // Hand it to mpv so the subtitle picker lists it immediately, and let the
+    // karaoke overlay / skip-intro chip pick up the fresh cues.
     final platform = player.player.platform;
     if (platform is NativePlayer) {
       try {
@@ -2544,6 +2593,12 @@ class AiSubtitleRunner {
     }
   }
 
+  static String _srtPathFor(String videoPath) {
+    final dir = p.dirname(videoPath);
+    final base = p.basenameWithoutExtension(videoPath);
+    return p.join(dir, '$base.maxai.srt');
+  }
+
   static void _snack(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -2554,53 +2609,27 @@ class AiSubtitleRunner {
   }
 }
 
-/// Tiny OpenRouter uploader: plain dart:io, one keep-alive connection,
-/// generous read timeout for long audio clips (v52).
-class _CloudSpeech {
-  static const String _url = 'https://openrouter.ai/api/v1/chat/completions';
-
-  static final HttpClient _http = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 25)
-    ..idleTimeout = const Duration(seconds: 30);
-
-  /// One upload attempt -> (HTTP status, response body).
-  static Future<(int, String)> transcribeOnce({
-    required String model,
-    required String prompt,
-    required String base64Wav,
-  }) async {
-    final req = await _http.postUrl(Uri.parse(_url));
-    req.headers.set('content-type', 'application/json');
-    req.headers.set('authorization', 'Bearer $kOpenRouterApiKey');
-    req.headers.set('x-title', 'Max Player');
-    req.write(jsonEncode(AiSubtitleRunner.audioChatBody(
-      model: model,
-      prompt: prompt,
-      base64Wav: base64Wav,
-    )));
-    final res = await req.close().timeout(const Duration(seconds: 180));
-    final body = await res.transform(utf8.decoder).join();
-    return (res.statusCode, body);
-  }
-}
-
 class _AiProgressDialog extends StatelessWidget {
   final ValueNotifier<(String, int)> progress;
+  final String model;
   final VoidCallback onCancel;
 
   const _AiProgressDialog({
     required this.progress,
+    required this.model,
     required this.onCancel,
   });
 
-  static String _stageLabel(String stage) {
+  static String _stageLabel(String stage, String model) {
     switch (stage) {
+      case 'downloading':
+        return 'Downloading the AI model (one time, '
+            '${AiSubtitleRunner.modelSizeLabel(model)})…';
       case 'extracting':
-        return 'Extracting audio from the video (on device)…';
-      case 'slicing':
-        return 'Keeping only the speech parts (silent parts are skipped)…';
+        return 'Extracting audio from the video…';
       case 'transcribing':
-        return 'Listening in the AI cloud - only speech is uploaded…';
+        return 'Listening to the speech in this video…\n'
+            '(silent parts are skipped automatically for speed)';
       default:
         return 'Preparing…';
     }
@@ -2614,23 +2643,24 @@ class _AiProgressDialog extends StatelessWidget {
         children: [
           Icon(Icons.auto_awesome, color: themeState.accent, size: 20),
           const SizedBox(width: 8),
-          const Expanded(
-            child: Text('AI subtitles · cloud',
-                style: TextStyle(color: Colors.white, fontSize: 16)),
-          ),
+          const Text('AI subtitles', style: TextStyle(color: Colors.white)),
         ],
       ),
       content: ValueListenableBuilder<(String, int)>(
         valueListenable: progress,
         builder: (context, value, _) {
           final (stage, percent) = value;
-          final determinate = stage != 'starting';
+          // "transcribing" became determinate in v18: Kotlin reports real
+          // progress as speech spans finish.
+          final determinate = stage == 'downloading' ||
+              stage == 'extracting' ||
+              stage == 'transcribing';
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _stageLabel(stage),
+                _stageLabel(stage, model),
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
               const SizedBox(height: 14),
@@ -2660,7 +2690,7 @@ class _AiProgressDialog extends StatelessWidget {
   }
 }
 
-/// "Generate with AI" options: cloud quality tier (speed vs accuracy) and
+/// "Generate with AI" options: which whisper model (speed vs accuracy) and
 /// which language the video is spoken in (auto-detect or pinned). Choosing
 /// the right language is the single biggest accuracy boost on short clips.
 class _AiOptionsDialog extends StatefulWidget {
@@ -2691,10 +2721,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
         children: [
           Icon(Icons.auto_awesome, color: themeState.accent, size: 20),
           const SizedBox(width: 8),
-          const Expanded(
-            child: Text('AI subtitles · cloud',
-                style: TextStyle(color: Colors.white, fontSize: 16)),
-          ),
+          const Text('AI subtitles', style: TextStyle(color: Colors.white)),
         ],
       ),
       content: Column(
@@ -2719,7 +2746,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           ),
           const SizedBox(height: 16),
           const Text(
-            'Quality (cloud AI)',
+            'AI model (quality)',
             style: TextStyle(
                 color: Colors.white70,
                 fontSize: 13,
@@ -2735,40 +2762,115 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
                   child: Text('${e.value.$1}  ·  ${e.value.$2}'),
                 ),
             ],
-            onChanged: (v) =>
-                setState(() => _model = AiSubtitleRunner.normalizeModelId(v)),
+            onChanged: (v) => setState(() => _model = v ?? 'base'),
           ),
           const SizedBox(height: 16),
-          SwitchListTile(
-            value: _translate,
-            onChanged: (v) => setState(() => _translate = v),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            activeThumbColor: themeState.accent,
-            title: const Text('Translate to English',
-                style: TextStyle(color: Colors.white70, fontSize: 13)),
-            subtitle: const Text('Any spoken language -> English subtitles',
-                style: TextStyle(color: Colors.white38, fontSize: 12)),
+          const Text(
+            'Output',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _modeChip(
+                  label: 'Same language',
+                  icon: Icons.record_voice_over_outlined,
+                  selected: !_translate,
+                  onTap: () => setState(() => _translate = false),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _modeChip(
+                  label: '→ English',
+                  icon: Icons.translate,
+                  selected: _translate,
+                  onTap: () => setState(() => _translate = true),
+                ),
+              ),
+            ],
+          ),
+          if (_translate)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'Foreign speech becomes ENGLISH subtitles (AI translate).',
+                style: TextStyle(color: Colors.white38, fontSize: 11.5),
+              ),
+            ),
+          const SizedBox(height: 10),
+          const Text(
+            'Runs 100% offline after a one-time model download.',
+            style: TextStyle(color: Colors.white38, fontSize: 11.5),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'v25: the engine now uses all CPU cores - much faster than '
+            'before. Tip: pinning the spoken language above (instead of '
+            'Auto-detect) is quicker AND more accurate.',
+            style: TextStyle(color: Colors.white38, fontSize: 11.5),
           ),
         ],
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
         FilledButton.icon(
-          onPressed: () => Navigator.pop(
-            context,
-            (model: _model, language: _language, translate: _translate),
-          ),
-          style: FilledButton.styleFrom(backgroundColor: themeState.accent),
-          icon: Icon(Icons.cloud_done_outlined,
-              size: 16, color: themeState.onAccent),
-          label: Text('Generate',
-              style: TextStyle(color: themeState.onAccent)),
+          onPressed: () => Navigator.of(context).pop(
+              (model: _model, language: _language, translate: _translate)),
+          icon: const Icon(Icons.auto_awesome, size: 16),
+          label: Text(_translate ? 'Translate' : 'Generate'),
         ),
       ],
+    );
+  }
+
+  Widget _modeChip({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? themeState.accent.withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? themeState.accent : Colors.white12,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                size: 16, color: selected ? themeState.accent : Colors.white54),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: selected ? Colors.white : Colors.white70,
+                  fontSize: 12.5,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -2778,10 +2880,11 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
     required ValueChanged<T?> onChanged,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white12),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<T>(
@@ -2790,16 +2893,16 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           onChanged: onChanged,
           isExpanded: true,
           dropdownColor: const Color(0xFF26262f),
-          style: const TextStyle(color: Colors.white, fontSize: 13),
+          style: const TextStyle(color: Colors.white, fontSize: 14),
         ),
       ),
     );
   }
 }
-V52_EOF_3
+V54_EOF_4
 
 mkdir -p "lib/services"
-cat > 'lib/services/native_bridge.dart' <<'V52_EOF_4'
+cat > 'lib/services/native_bridge.dart' <<'V54_EOF_5'
 import 'package:flutter/services.dart';
 
 /// Result of a native metadata extraction for one video file.
@@ -2844,14 +2947,6 @@ class VideoMetadata {
 }
 
 /// One AI-generated subtitle cue (whisper.cpp segment).
-/// One prepared speech slice on disk, ready for Dart to upload (v52).
-class AiSlice {
-  final String path;
-  final int offsetMs;
-
-  const AiSlice(this.path, this.offsetMs);
-}
-
 class AiSegment {
   final int startMs;
   final int endMs;
@@ -2901,7 +2996,7 @@ class NativeBridge {
     /// Fired when the play/pause button ON THE PiP WINDOW is tapped.
     void Function()? onPipAction,
 
-    /// AI subtitle job progress events (see [aiPrepareSlices]).
+    /// AI subtitle job progress events (see [aiSubtitleGenerate]).
     void Function(String stage, int percent)? onAiProgress,
     void Function(List<AiSegment> segments)? onAiDone,
     void Function(String error)? onAiFailed,
@@ -3108,46 +3203,56 @@ class NativeBridge {
     } catch (_) {}
   }
 
-  // --- AI subtitles pipeline (v52: OpenRouter cloud, key built in) ---
+  // --- AI subtitles (v54: back ON DEVICE, offline & free) ---
 
-  /// v52: runs the ON-DEVICE half of AI subtitles - audio extraction,
-  /// speech gating and ~3-minute speech-slice WAV files - and hands the
-  /// slice list to Dart, which uploads each slice to the OpenRouter cloud
-  /// itself. Extraction progress arrives via [configureCallbacks]
-  /// (`onAiProgress`). `error` == 'cancelled' means the user aborted;
-  /// `slices` == empty with no error means "no speech in this video".
-  static Future<({int jobId, List<AiSlice> slices, String? error})>
-      aiPrepareSlices(String videoPath) async {
+  /// Returns the whisper.cpp system-info string when the on-device AI
+  /// subtitle engine is bundled and its native library loads, else null.
+  /// Used by the About sheet as a build verification.
+  static Future<String?> whisperEngineStatus() async {
     try {
-      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'aiPrepareSlices',
-        {'videoPath': videoPath},
-      );
-      if (res == null) {
-        return (jobId: -1, slices: const <AiSlice>[], error: 'no reply');
-      }
-      final raw = res['slices'];
-      final slices = <AiSlice>[
-        if (raw is List)
-          for (final s in raw)
-            if (s is Map)
-              AiSlice('${s['path']}', (s['offsetMs'] as num?)?.toInt() ?? 0),
-      ];
-      return (
-        jobId: (res['jobId'] as num?)?.toInt() ?? -1,
-        slices: slices,
-        error: res['error'] as String?,
-      );
-    } catch (e) {
-      return (jobId: -1, slices: const <AiSlice>[], error: '$e');
+      final res = await _channel.invokeMethod<String>('whisperAvailable');
+      return (res != null && res.isNotEmpty) ? res : null;
+    } catch (_) {
+      return null;
     }
   }
 
-  /// Deletes any speech slices a cancelled/failed job left behind.
-  static Future<void> aiSliceDiscard(int jobId) async {
+  /// Which models are present on device. Returns {base: MB, small: MB};
+  /// 0 MB means "not downloaded yet".
+  static Future<Map<String, int>> aiModelStatus() async {
     try {
-      await _channel.invokeMethod('aiSliceDiscard', {'jobId': jobId});
-    } catch (_) {}
+      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'aiModelStatus',
+      );
+      if (res == null) return const {};
+      return res.map((k, v) => MapEntry('$k', (v as num?)?.toInt() ?? 0));
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Starts the offline AI subtitle job for [videoPath]. Returns the job id
+  /// immediately; progress/completion arrive via [configureCallbacks]
+  /// (`onAiProgress` / `onAiDone` / `onAiFailed`). [model] is base/small;
+  /// [language] is a whisper language code or 'auto' (detect). A null job
+  /// id means the engine cannot run here (32-bit-only chip).
+  static Future<int?> aiSubtitleGenerate({
+    required String videoPath,
+    String model = 'base',
+    String language = 'auto',
+    // whisper's translate task - any spoken language -> English subs.
+    bool translate = false,
+  }) async {
+    try {
+      return await _channel.invokeMethod<int>('aiSubtitleGenerate', {
+        'videoPath': videoPath,
+        'model': model,
+        'language': language,
+        'translate': translate,
+      });
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Asks the running job to stop (effective during download/extraction; a
@@ -3396,34 +3501,671 @@ class DeviceStorage {
   /// 0..1 fill of the usage bar (guarded against a bogus total).
   double get usedFraction => total <= 0 ? 0 : (used.clamp(0, total)) / total;
 }
-V52_EOF_4
+V54_EOF_5
+
+mkdir -p "lib/widgets"
+cat > 'lib/widgets/track_selection_sheet.dart' <<'V54_EOF_6'
+import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart' hide VideoTrack;
+
+import '../state/theme_state.dart';
+import '../utils/ai_subtitles.dart';
+
+import '../state/media_player_state.dart';
+
+/// v34: how tall the tracks sheet opens, as a fraction of the screen.
+/// Pure so tests can pin the behaviour: handle + title is ~110dp, each
+/// dense track row ~64dp; clamped to 40%..80% - and the sheet can always
+/// be dragged up to 92%, so rows are never clipped on any phone.
+double trackSheetInitialSize(int rowCount, double screenHeight) {
+  if (screenHeight <= 0) return 0.6;
+  final est = 110 + rowCount * 64.0;
+  return (est / screenHeight).clamp(0.4, 0.8);
+}
+
+/// Bottom sheet listing the current media's audio or subtitle tracks, with a
+/// check on the active one. Opened from the player controls.
+class TrackSelectionSheet extends StatelessWidget {
+  final MediaPlayerState player;
+  final bool isSubtitle;
+  final ScrollController scrollController;
+
+  const TrackSelectionSheet({
+    super.key,
+    required this.player,
+    required this.isSubtitle,
+    required this.scrollController,
+  });
+
+  static Color get _accent => themeState.accent;
+  static const Color _surface = Color(0xFF1a1a24);
+
+  static Future<void> show(
+    BuildContext context,
+    MediaPlayerState player, {
+    required bool isSubtitle,
+  }) {
+    return showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        // v34: the old constrained sheet STILL opened half-sized / cut on
+        // some small phones. A DraggableScrollableSheet always opens tall
+        // enough for the content (sized by real row count) and drags up
+        // to 92% of the screen - no clipped rows, ever.
+        final rows = isSubtitle
+            ? player.subtitleTracks.length + 2 // "Generate with AI" + room
+            : player.audioTracks.length;
+        final initial = trackSheetInitialSize(
+          rows,
+          MediaQuery.of(sheetContext).size.height,
+        );
+        return DraggableScrollableSheet(
+          initialChildSize: initial,
+          minChildSize: 0.35,
+          maxChildSize: 0.92,
+          expand: false,
+          builder: (_, controller) => TrackSelectionSheet(
+            player: player,
+            isSubtitle: isSubtitle,
+            scrollController: controller,
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 10),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+            child: Text(
+              isSubtitle ? 'Subtitles' : 'Audio track',
+              style: TextStyle(
+                color: _accent,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              controller: scrollController,
+              children:
+                  isSubtitle ? _subtitleTiles(context) : _audioTiles(context),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _audioTiles(BuildContext context) {
+    // Dedupe by id - some containers list an entry twice.
+    final tracks = <String, AudioTrack>{};
+    for (final t in player.audioTracks) {
+      if (t.id == 'no') continue;
+      tracks[t.id] = t;
+    }
+    final list = tracks.values.toList();
+    if (list.isEmpty) {
+      return const [
+        Padding(
+          padding: EdgeInsets.all(20),
+          child: Text(
+            'No audio tracks found',
+            style: TextStyle(color: Colors.white38),
+          ),
+        ),
+      ];
+    }
+    return [
+      for (var i = 0; i < list.length; i++)
+        _TrackTile(
+          label: _audioLabel(list[i], i),
+          detail: list[i].language,
+          selected: player.currentAudioTrack?.id == list[i].id,
+          onTap: () {
+            player.selectAudioTrack(list[i]);
+            Navigator.of(context).pop();
+          },
+        ),
+    ];
+  }
+
+  List<Widget> _subtitleTiles(BuildContext context) {
+    // "no" is the explicit OFF entry; dedupe the rest by id.
+    final tracks = <String, SubtitleTrack>{};
+    for (final t in player.subtitleTracks) {
+      if (t.id == 'no') continue;
+      tracks[t.id] = t;
+    }
+    final list = [SubtitleTrack.no(), ...tracks.values];
+    return [
+      for (var i = 0; i < list.length; i++)
+        _TrackTile(
+          label: _subtitleLabel(list[i], i),
+          detail: list[i].language ?? list[i].codec,
+          selected: player.currentSubtitleTrack?.id == list[i].id,
+          onTap: () {
+            player.selectSubtitleTrack(list[i]);
+            Navigator.of(context).pop();
+          },
+        ),
+      const Divider(height: 16, color: Colors.white12),
+      // v54: on-device AI subtitles again - free & offline forever after
+      // a one-time model download. Nothing ever leaves the phone.
+      ListTile(
+        dense: true,
+        leading: Icon(Icons.auto_awesome,
+            size: 20, color: TrackSelectionSheet._accent),
+        title: const Text(
+          'Generate with AI ✨',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: const Text(
+          'On-device · free · works offline after a one-time setup',
+          style: TextStyle(color: Colors.white38, fontSize: 12),
+        ),
+        onTap: () {
+          final rootCtx = Navigator.of(context, rootNavigator: true).context;
+          Navigator.of(context).pop();
+          AiSubtitleRunner.start(rootCtx, player);
+        },
+      ),
+    ];
+  }
+
+  String _audioLabel(AudioTrack t, int index) {
+    if (t.id == 'auto') return 'Auto';
+    final title = t.title?.trim() ?? '';
+    if (title.isNotEmpty) return title;
+    return t.language?.toUpperCase() ?? 'Audio ${index + 1}';
+  }
+
+  String _subtitleLabel(SubtitleTrack t, int index) {
+    if (t.id == 'no') return 'Off';
+    if (t.id == 'auto') return 'Auto';
+    final title = t.title?.trim() ?? '';
+    if (title.isNotEmpty) return title;
+    return t.language?.toUpperCase() ?? 'Subtitle $index';
+  }
+}
+
+class _TrackTile extends StatelessWidget {
+  final String label;
+  final String? detail;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _TrackTile({
+    required this.label,
+    required this.detail,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      onTap: onTap,
+      leading: SizedBox(
+        width: 24,
+        child: selected
+            ? Icon(Icons.check, size: 18, color: TrackSelectionSheet._accent)
+            : null,
+      ),
+      title: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: selected ? Colors.white : Colors.white70,
+          fontSize: 15,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+        ),
+      ),
+      subtitle: (detail != null && detail!.isNotEmpty)
+          ? Text(detail!,
+              style: const TextStyle(color: Colors.white38, fontSize: 12))
+          : null,
+    );
+  }
+}
+V54_EOF_6
+
+mkdir -p "lib/widgets"
+cat > 'lib/widgets/about_sheet.dart' <<'V54_EOF_7'
+import 'package:flutter/material.dart';
+
+import '../app_info.dart';
+import '../services/native_bridge.dart';
+import '../state/theme_state.dart';
+import '../utils/privacy_policy.dart';
+
+/// "About Max Player" sheet, opened from the home screen's ⋮ menu.
+/// Brand copy by Hyper Tech Labs. Static content - no platform calls.
+class AboutSheet extends StatelessWidget {
+  final ScrollController? scrollController;
+
+  const AboutSheet({super.key, this.scrollController});
+
+  static Future<void> show(BuildContext context) {
+    return showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF14141c),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.85,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        builder: (context, controller) =>
+            AboutSheet(scrollController: controller),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = themeState.accent;
+    return ListView(
+      controller: scrollController,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+      children: [
+        // Grab handle.
+        Center(
+          child: Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: const BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.all(Radius.circular(2)),
+            ),
+          ),
+        ),
+        // Brand header.
+        Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(Icons.play_circle_fill, color: accent, size: 32),
+            ),
+            const SizedBox(width: 12),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Max Player',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  'by Hyper Tech Labs',
+                  style: TextStyle(color: Colors.white54, fontSize: 12.5),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          'Max Player is a next-generation media player designed to make '
+          'watching and listening effortless. Built from the ground up with '
+          'performance, simplicity, and reliability in mind, Max Player '
+          'brings together powerful playback technology and a clean, '
+          'intuitive interface - so you can focus on your content, not on '
+          'fighting with your player.\n\n'
+          'Whether you\'re binge-watching your favorite series, enjoying '
+          'high-definition movies, or listening to music on the go, Max '
+          'Player is engineered to handle it all smoothly, without lag, '
+          'crashes, or unnecessary clutter.',
+          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+        ),
+
+        _Heading('Our mission', accent),
+        const Text(
+          'At Max Player, our goal is simple: to create the most seamless, '
+          'distraction-free media experience possible. We believe great '
+          'software should feel invisible - it should just work, every time, '
+          'without getting in your way. That philosophy drives every design '
+          'and engineering decision behind Max Player.',
+          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+        ),
+
+        _Heading('Key features', accent),
+        for (final f in _features)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.check_circle, size: 16, color: accent),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: RichText(
+                    text: TextSpan(
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                      children: [
+                        TextSpan(
+                          text: '${f.$1} - ',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        TextSpan(text: f.$2),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        _Heading('Our story', accent),
+        const Text(
+          'Max Player was created out of a simple frustration: too many '
+          'media players were bloated, slow, or filled with intrusive ads '
+          'and unnecessary features. We set out to build something '
+          'different - a player that respects your time, your device, and '
+          'your experience.',
+          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+        ),
+
+        _Heading('The team behind Max Player', accent),
+        const Text(
+          'Max Player is proudly developed and maintained by Hyper Tech '
+          'Labs, a technology company focused on building thoughtful, '
+          'high-quality applications for everyday use. Founded by Aryan '
+          'Shah, Hyper Tech Labs is driven by a passion for clean design, '
+          'efficient engineering, and solving real problems through '
+          'software.',
+          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+        ),
+
+        _Heading('Looking ahead', accent),
+        const Text(
+          'We\'re constantly working to improve Max Player - adding new '
+          'features, refining performance, and listening closely to our '
+          'users. This is just the beginning, and we\'re excited to keep '
+          'building a player that truly puts you first.',
+          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+        ),
+
+        const SizedBox(height: 22),
+        const Divider(color: Colors.white12),
+        const SizedBox(height: 6),
+        Center(
+          child: TextButton.icon(
+            onPressed: () => showPrivacyPolicyDialog(context),
+            icon: const Icon(Icons.privacy_tip_outlined, size: 16),
+            label: const Text('Privacy policy'),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white54,
+              textStyle: const TextStyle(fontSize: 12.5),
+            ),
+          ),
+        ),
+        const Center(
+          child: Text(
+            'Version $kAppVersion',
+            style: TextStyle(color: Colors.white38, fontSize: 12.5),
+          ),
+        ),
+        const SizedBox(height: 4),
+        // Phase-1 verification: proves the offline whisper.cpp engine
+        // bundled in this build actually loads on this device.
+        Center(
+          child: FutureBuilder<String?>(
+            future: NativeBridge.whisperEngineStatus(),
+            builder: (context, snap) {
+              final ready = snap.hasData && snap.data != null;
+              return Text(
+                ready
+                    ? 'AI subtitle engine: ready (offline & free)'
+                    : 'AI subtitle engine: unavailable on this build',
+                style: TextStyle(
+                  color: ready
+                      ? Colors.greenAccent.withValues(alpha: 0.7)
+                      : Colors.white24,
+                  fontSize: 11,
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Heading extends StatelessWidget {
+  final String text;
+  final Color accent;
+  const _Heading(this.text, this.accent);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 18, bottom: 6),
+      child: Text(
+        text.toUpperCase(),
+        style: TextStyle(
+          color: accent,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.1,
+        ),
+      ),
+    );
+  }
+}
+
+const List<(String, String)> _features = [
+  (
+    'Universal Format Support',
+    'Play almost any video or audio file without needing extra codecs or '
+        'converters.'
+  ),
+  (
+    'Smooth, High-Performance Playback',
+    'Optimized for speed and stability, even with large or high-resolution '
+        'files.'
+  ),
+  (
+    'Clean, Intuitive Interface',
+    'A minimal design that keeps the focus on your content.'
+  ),
+  (
+    'Customizable Controls',
+    'Adjust playback speed, subtitles, audio tracks, and more to fit your '
+        'preferences.'
+  ),
+  (
+    'Lightweight & Efficient',
+    'Built to run smoothly without draining your device\'s resources.'
+  ),
+  (
+    'Regular Updates',
+    'Continuously improved based on user feedback and evolving technology.'
+  ),
+];
+V54_EOF_7
+
+mkdir -p "lib/utils"
+cat > 'lib/utils/privacy_policy.dart' <<'V54_EOF_8'
+import 'package:flutter/material.dart';
+
+/// The app's privacy policy, bundled so it can be read offline (also what
+/// Play reviewers see when they open the app during review).
+///
+/// Play Console still needs the public-URL copy: PRIVACY_POLICY.md at the
+/// repo root. Keep the two in sync when either changes - the widget test
+/// checks that both carry the same anchors (effective date, developer).
+const String kPrivacyPolicyText =
+    'MAX PLAYER - PRIVACY POLICY\n'
+    'Effective date: 13 August 2026\n'
+    'Developer: Hyper Tech Labs (Aryan Shah)\n'
+    '\n'
+    'THE SHORT VERSION\n'
+    'Max Player is a local video player. It does not collect, store, '
+    'transmit, or share any personal data. Everything the app does happens '
+    'on your device.\n'
+    '\n'
+    'WHAT THE APP ACCESSES, AND WHY\n'
+    '\n'
+    '- Storage (videos / all files): to find and play the videos stored on '
+    'your device, save screenshots to "Pictures/Max Player", and write AI '
+    'subtitle files next to your videos. None of it ever leaves your '
+    'device.\n'
+    '\n'
+    '- Internet: only for two things you trigger yourself - (1) the '
+    'one-time download of the AI subtitle model (~142 MB from '
+    'huggingface.co) and (2) playing stream URLs you paste or open. '
+    'Nothing about you is sent anywhere.\n'
+    '\n'
+    '- Local network (Wi-Fi / multicast): only when you tap "Cast to TV" - '
+    'discovering DLNA televisions on your own Wi-Fi and serving the video '
+    'file from your phone to the television. Your Wi-Fi only; no external '
+    'server is involved.\n'
+    '\n'
+    'WHAT THE APP DOES NOT DO\n'
+    '\n'
+    '- No analytics, no tracking, no advertising, and no third-party SDKs '
+    'that collect data.\n'
+    '- No accounts, no sign-in, no device identifiers collected.\n'
+    '- No collection of your video library contents, file names, or watch '
+    'history - all of it stays in the app\'s local storage on your '
+    'device.\n'
+    '- No crash reporting service. Crash reports are shown to you inside '
+    'the app and are only shared if you copy and send them yourself.\n'
+    '\n'
+    'AI SUBTITLES\n'
+    '\n'
+    'Subtitle generation runs entirely on your device using the '
+    'open-source whisper.cpp engine. Your audio never leaves your phone. '
+    'The only network access is the one-time model file download from '
+    'Hugging Face, which you trigger and can delete afterwards. Translating '
+    'subtitles to English uses the same fully on-device engine - no audio '
+    'or text is sent anywhere.\n'
+    '\n'
+    'PRIVATE FOLDER\n'
+    '\n'
+    'Videos you hide are moved into the app\'s own protected folder, which '
+    'Android blocks other apps from reading, and are unlocked with a PIN '
+    'you choose. They never leave your device and are never uploaded; the '
+    'PIN is stored only as a cryptographic hash inside the app\'s '
+    'settings. Uninstalling the app deletes the protected folder - move '
+    'videos out first.\n'
+    'If the PIN is forgotten, resetting it requires passing the device\'s '
+    'own screen lock (PIN, pattern, password or fingerprint); that unlock '
+    'check is performed entirely by Android on your device - nothing is '
+    'sent anywhere.\n'
+    '\n'
+    'PLAYBACK EXTRAS (KARAOKE, SKIP INTRO, THUMBNAILS)\n'
+    '\n'
+    'Karaoke highlighting and skip-intro detection only read subtitle '
+    'files already on your device (AI-generated .srt files or the video\'s '
+    'own subtitle file) while you play a video. Library thumbnails are '
+    'decoded from your own videos into the app\'s cache folder, which the '
+    'system or you can clear at any time. None of this data leaves the '
+    'device or is shared anywhere.\n'
+    '\n'
+    'CHILDREN\n'
+    '\n'
+    'The app collects no data from anyone, including children.\n'
+    '\n'
+    'GOOGLE PLAY DATA SAFETY (SHORT ANSWERS)\n'
+    '\n'
+    '- Data collected: none.\n'
+    '- Data shared with third parties: none.\n'
+    '- Data sent off this device: none - AI subtitles, watch history, '
+    'bookmarks and settings are all local-only.\n'
+    '- Because no data leaves the device, "encryption in transit" and '
+    '"account/data deletion requests" do not apply: nothing is transmitted '
+    'and there is nothing on any server to delete.\n'
+    '\n'
+    'CHANGES\n'
+    '\n'
+    'Any change to this policy is published in PRIVACY_POLICY.md in the '
+    'public repository with a new effective date.\n'
+    '\n'
+    'CONTACT\n'
+    '\n'
+    'Questions: open an issue on github.com/Aryanshahx/maxplayer';
+
+/// Dialog showing [kPrivacyPolicyText]. Opened from the About sheet's
+/// "Privacy policy" button.
+void showPrivacyPolicyDialog(BuildContext context) {
+  showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: const Color(0xFF1b1b24),
+      title: const Text(
+        'Privacy policy',
+        style: TextStyle(color: Colors.white, fontSize: 17),
+      ),
+      scrollable: true,
+      content: const Text(
+        kPrivacyPolicyText,
+        style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
+  );
+}
+V54_EOF_8
 
 mkdir -p "lib/state"
-cat > 'lib/state/video_zoom.dart' <<'V52_EOF_5'
-/// Pure pinch-zoom math shared by the player screen and unit tests (v52).
-library;
-
-/// Pinch range: 1.0 = fit screen (the DEFAULT), up to 4x zoomed in.
-const double kMinVideoZoom = 1.0;
-const double kMaxVideoZoom = 4.0;
-
-/// Keeps a pinch result inside [kMinVideoZoom]..[kMaxVideoZoom].
-double clampVideoZoom(double v) => v.clamp(kMinVideoZoom, kMaxVideoZoom);
-
-/// A quick two-finger TAP (both fingers down and up fast, with no real
-/// pinch movement) means "snap back to fit screen" - the gesture MX/VLC
-/// users expect. Anything with genuine scale change or long travel is a
-/// real pinch, not a tap.
-bool isTwoFingerTapReset({
-  required int durationMs,
-  required double travelPx,
-  required bool scaled,
-}) =>
-    !scaled && travelPx < 24 && durationMs <= 400;
-V52_EOF_5
-
-mkdir -p "lib/state"
-cat > 'lib/state/player_settings.dart' <<'V52_EOF_6'
+cat > 'lib/state/player_settings.dart' <<'V54_EOF_9'
 import '../services/native_bridge.dart';
 
 /// Immutable snapshot of the customizable player settings (gestures, auto
@@ -3440,6 +4182,10 @@ class PlayerSettings {
   /// v52: which fit mode the player starts in (and a two-finger tap snaps
   /// back to). 0 = Fit screen (the default); indexes match [kFitModeNames].
   final int defaultFitIndex;
+
+  /// v53: the two-finger TAP gesture snaps a zoomed view back to fit
+  /// screen. Toggleable from Settings; independent of pinch-to-zoom.
+  final bool twoFingerTapFit;
 
   /// Hold a finger on the video to temporarily play faster.
   final bool longPressSpeed;
@@ -3495,6 +4241,7 @@ class PlayerSettings {
     this.brightnessSwipe = true,
     this.pinchZoom = true,
     this.defaultFitIndex = 0,
+    this.twoFingerTapFit = true,
     this.longPressSpeed = true,
     this.longPressMultiplier = 2.0,
     this.autoHideSeconds = 4,
@@ -3521,6 +4268,7 @@ class PlayerSettings {
   static const String kBrightnessSwipe = 'player.brightnessSwipe';
   static const String kPinchZoom = 'player.pinchZoom';
   static const String kDefaultFitIndex = 'player.defaultFitIndex';
+  static const String kTwoFingerTapFit = 'player.twoFingerTapFit';
 
   /// v52: fit modes offered in Settings. MUST stay in the same order as
   /// PlayerScreen's private _fits/_fitNames lists (tested).
@@ -3560,6 +4308,7 @@ class PlayerSettings {
       defaultFitIndex: (int.tryParse(s[kDefaultFitIndex] ?? '') ??
               d.defaultFitIndex)
           .clamp(0, kFitModeNames.length - 1),
+      twoFingerTapFit: s[kTwoFingerTapFit] != 'false',
       longPressSpeed: s[kLongPressSpeed] != 'false',
       longPressMultiplier:
           double.tryParse(s[kLongPressMultiplier] ?? '') ??
@@ -3600,6 +4349,7 @@ class PlayerSettings {
     NativeBridge.saveSetting(kBrightnessSwipe, '$brightnessSwipe');
     NativeBridge.saveSetting(kPinchZoom, '$pinchZoom');
     NativeBridge.saveSetting(kDefaultFitIndex, '$defaultFitIndex');
+    NativeBridge.saveSetting(kTwoFingerTapFit, '$twoFingerTapFit');
     NativeBridge.saveSetting(kLongPressSpeed, '$longPressSpeed');
     NativeBridge.saveSetting(
       kLongPressMultiplier,
@@ -3627,6 +4377,7 @@ class PlayerSettings {
     bool? brightnessSwipe,
     bool? pinchZoom,
     int? defaultFitIndex,
+    bool? twoFingerTapFit,
     bool? longPressSpeed,
     double? longPressMultiplier,
     int? autoHideSeconds,
@@ -3650,6 +4401,7 @@ class PlayerSettings {
       brightnessSwipe: brightnessSwipe ?? this.brightnessSwipe,
       pinchZoom: pinchZoom ?? this.pinchZoom,
       defaultFitIndex: defaultFitIndex ?? this.defaultFitIndex,
+      twoFingerTapFit: twoFingerTapFit ?? this.twoFingerTapFit,
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
       longPressMultiplier: longPressMultiplier ?? this.longPressMultiplier,
       autoHideSeconds: autoHideSeconds ?? this.autoHideSeconds,
@@ -3667,10 +4419,10 @@ class PlayerSettings {
     );
   }
 }
-V52_EOF_6
+V54_EOF_9
 
 mkdir -p "lib/screens"
-cat > 'lib/screens/player_screen.dart' <<'V52_EOF_7'
+cat > 'lib/screens/player_screen.dart' <<'V54_EOF_10'
 import 'dart:async';
 import 'dart:io';
 
@@ -4468,8 +5220,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     if (mode == _ScaleMode.volume || mode == _ScaleMode.brightness) return;
-    // v52: a fast two-finger tap (no real pinch) snaps home to fit screen.
-    if (mode == _ScaleMode.zoom &&
+    // v52: a fast two-finger tap (no real pinch) snaps home to fit
+    // screen (v53: toggleable from Settings).
+    if (_settings.twoFingerTapFit &&
+        mode == _ScaleMode.zoom &&
         isTwoFingerTapReset(
           durationMs:
               DateTime.now().millisecondsSinceEpoch - _scaleStartMs,
@@ -5371,10 +6125,10 @@ class _MarqueeTitleState extends State<_MarqueeTitle> {
     );
   }
 }
-V52_EOF_7
+V54_EOF_10
 
 mkdir -p "lib/widgets"
-cat > 'lib/widgets/player_settings_sheet.dart' <<'V52_EOF_8'
+cat > 'lib/widgets/player_settings_sheet.dart' <<'V54_EOF_11'
 import 'package:flutter/material.dart';
 
 import '../state/player_settings.dart';
@@ -5526,6 +6280,14 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 subtitle: 'Two-finger tap snaps back to fit screen',
                 value: _settings.pinchZoom,
                 onChanged: (v) => _update(_settings.copyWith(pinchZoom: v)),
+              ),
+              _SwitchTile(
+                icon: Icons.touch_app_outlined,
+                label: 'Two-finger tap = fit screen',
+                subtitle: 'Quick two-finger tap snaps a zoomed view back out',
+                value: _settings.twoFingerTapFit,
+                onChanged: (v) =>
+                    _update(_settings.copyWith(twoFingerTapFit: v)),
               ),
               // v52: which fit mode videos start in (default: fit screen).
               Padding(
@@ -5835,668 +6597,10 @@ class _MiniDropdown<T> extends StatelessWidget {
     );
   }
 }
-V52_EOF_8
-
-mkdir -p "lib/widgets"
-cat > 'lib/widgets/track_selection_sheet.dart' <<'V52_EOF_9'
-import 'package:flutter/material.dart';
-import 'package:media_kit/media_kit.dart' hide VideoTrack;
-
-import '../state/theme_state.dart';
-import '../utils/ai_subtitles.dart';
-
-import '../state/media_player_state.dart';
-
-/// v34: how tall the tracks sheet opens, as a fraction of the screen.
-/// Pure so tests can pin the behaviour: handle + title is ~110dp, each
-/// dense track row ~64dp; clamped to 40%..80% - and the sheet can always
-/// be dragged up to 92%, so rows are never clipped on any phone.
-double trackSheetInitialSize(int rowCount, double screenHeight) {
-  if (screenHeight <= 0) return 0.6;
-  final est = 110 + rowCount * 64.0;
-  return (est / screenHeight).clamp(0.4, 0.8);
-}
-
-/// Bottom sheet listing the current media's audio or subtitle tracks, with a
-/// check on the active one. Opened from the player controls.
-class TrackSelectionSheet extends StatelessWidget {
-  final MediaPlayerState player;
-  final bool isSubtitle;
-  final ScrollController scrollController;
-
-  const TrackSelectionSheet({
-    super.key,
-    required this.player,
-    required this.isSubtitle,
-    required this.scrollController,
-  });
-
-  static Color get _accent => themeState.accent;
-  static const Color _surface = Color(0xFF1a1a24);
-
-  static Future<void> show(
-    BuildContext context,
-    MediaPlayerState player, {
-    required bool isSubtitle,
-  }) {
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: _surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) {
-        // v34: the old constrained sheet STILL opened half-sized / cut on
-        // some small phones. A DraggableScrollableSheet always opens tall
-        // enough for the content (sized by real row count) and drags up
-        // to 92% of the screen - no clipped rows, ever.
-        final rows = isSubtitle
-            ? player.subtitleTracks.length + 2 // "Generate with AI" + room
-            : player.audioTracks.length;
-        final initial = trackSheetInitialSize(
-          rows,
-          MediaQuery.of(sheetContext).size.height,
-        );
-        return DraggableScrollableSheet(
-          initialChildSize: initial,
-          minChildSize: 0.35,
-          maxChildSize: 0.92,
-          expand: false,
-          builder: (_, controller) => TrackSelectionSheet(
-            player: player,
-            isSubtitle: isSubtitle,
-            scrollController: controller,
-          ),
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 10),
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
-            child: Text(
-              isSubtitle ? 'Subtitles' : 'Audio track',
-              style: TextStyle(
-                color: _accent,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          Expanded(
-            child: ListView(
-              controller: scrollController,
-              children:
-                  isSubtitle ? _subtitleTiles(context) : _audioTiles(context),
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-
-  List<Widget> _audioTiles(BuildContext context) {
-    // Dedupe by id - some containers list an entry twice.
-    final tracks = <String, AudioTrack>{};
-    for (final t in player.audioTracks) {
-      if (t.id == 'no') continue;
-      tracks[t.id] = t;
-    }
-    final list = tracks.values.toList();
-    if (list.isEmpty) {
-      return const [
-        Padding(
-          padding: EdgeInsets.all(20),
-          child: Text(
-            'No audio tracks found',
-            style: TextStyle(color: Colors.white38),
-          ),
-        ),
-      ];
-    }
-    return [
-      for (var i = 0; i < list.length; i++)
-        _TrackTile(
-          label: _audioLabel(list[i], i),
-          detail: list[i].language,
-          selected: player.currentAudioTrack?.id == list[i].id,
-          onTap: () {
-            player.selectAudioTrack(list[i]);
-            Navigator.of(context).pop();
-          },
-        ),
-    ];
-  }
-
-  List<Widget> _subtitleTiles(BuildContext context) {
-    // "no" is the explicit OFF entry; dedupe the rest by id.
-    final tracks = <String, SubtitleTrack>{};
-    for (final t in player.subtitleTracks) {
-      if (t.id == 'no') continue;
-      tracks[t.id] = t;
-    }
-    final list = [SubtitleTrack.no(), ...tracks.values];
-    return [
-      for (var i = 0; i < list.length; i++)
-        _TrackTile(
-          label: _subtitleLabel(list[i], i),
-          detail: list[i].language ?? list[i].codec,
-          selected: player.currentSubtitleTrack?.id == list[i].id,
-          onTap: () {
-            player.selectSubtitleTrack(list[i]);
-            Navigator.of(context).pop();
-          },
-        ),
-      const Divider(height: 16, color: Colors.white12),
-      // v52: cloud AI subtitles - built-in key, no sign-in, no download.
-      // Only detected speech audio leaves the phone.
-      ListTile(
-        dense: true,
-        leading: Icon(Icons.auto_awesome,
-            size: 20, color: TrackSelectionSheet._accent),
-        title: const Text(
-          'Generate with AI ✨',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        subtitle: const Text(
-          'AI cloud - no sign-in, nothing to download',
-          style: TextStyle(color: Colors.white38, fontSize: 12),
-        ),
-        onTap: () {
-          final rootCtx = Navigator.of(context, rootNavigator: true).context;
-          Navigator.of(context).pop();
-          AiSubtitleRunner.start(rootCtx, player);
-        },
-      ),
-    ];
-  }
-
-  String _audioLabel(AudioTrack t, int index) {
-    if (t.id == 'auto') return 'Auto';
-    final title = t.title?.trim() ?? '';
-    if (title.isNotEmpty) return title;
-    return t.language?.toUpperCase() ?? 'Audio ${index + 1}';
-  }
-
-  String _subtitleLabel(SubtitleTrack t, int index) {
-    if (t.id == 'no') return 'Off';
-    if (t.id == 'auto') return 'Auto';
-    final title = t.title?.trim() ?? '';
-    if (title.isNotEmpty) return title;
-    return t.language?.toUpperCase() ?? 'Subtitle $index';
-  }
-}
-
-class _TrackTile extends StatelessWidget {
-  final String label;
-  final String? detail;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _TrackTile({
-    required this.label,
-    required this.detail,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
-      onTap: onTap,
-      leading: SizedBox(
-        width: 24,
-        child: selected
-            ? Icon(Icons.check, size: 18, color: TrackSelectionSheet._accent)
-            : null,
-      ),
-      title: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: selected ? Colors.white : Colors.white70,
-          fontSize: 15,
-          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-        ),
-      ),
-      subtitle: (detail != null && detail!.isNotEmpty)
-          ? Text(detail!,
-              style: const TextStyle(color: Colors.white38, fontSize: 12))
-          : null,
-    );
-  }
-}
-V52_EOF_9
-
-mkdir -p "lib/widgets"
-cat > 'lib/widgets/about_sheet.dart' <<'V52_EOF_10'
-import 'package:flutter/material.dart';
-
-import '../app_info.dart';
-import '../services/movie_ai.dart' show kOpenRouterApiKey;
-import '../state/theme_state.dart';
-import '../utils/privacy_policy.dart';
-
-/// "About Max Player" sheet, opened from the home screen's ⋮ menu.
-/// Brand copy by Hyper Tech Labs. Static content - no platform calls.
-class AboutSheet extends StatelessWidget {
-  final ScrollController? scrollController;
-
-  const AboutSheet({super.key, this.scrollController});
-
-  static Future<void> show(BuildContext context) {
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF14141c),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.85,
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        builder: (context, controller) =>
-            AboutSheet(scrollController: controller),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = themeState.accent;
-    return ListView(
-      controller: scrollController,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
-      children: [
-        // Grab handle.
-        Center(
-          child: Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 14),
-            decoration: const BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.all(Radius.circular(2)),
-            ),
-          ),
-        ),
-        // Brand header.
-        Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(Icons.play_circle_fill, color: accent, size: 32),
-            ),
-            const SizedBox(width: 12),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Max Player',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  'by Hyper Tech Labs',
-                  style: TextStyle(color: Colors.white54, fontSize: 12.5),
-                ),
-              ],
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        const Text(
-          'Max Player is a next-generation media player designed to make '
-          'watching and listening effortless. Built from the ground up with '
-          'performance, simplicity, and reliability in mind, Max Player '
-          'brings together powerful playback technology and a clean, '
-          'intuitive interface - so you can focus on your content, not on '
-          'fighting with your player.\n\n'
-          'Whether you\'re binge-watching your favorite series, enjoying '
-          'high-definition movies, or listening to music on the go, Max '
-          'Player is engineered to handle it all smoothly, without lag, '
-          'crashes, or unnecessary clutter.',
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
-        ),
-
-        _Heading('Our mission', accent),
-        const Text(
-          'At Max Player, our goal is simple: to create the most seamless, '
-          'distraction-free media experience possible. We believe great '
-          'software should feel invisible - it should just work, every time, '
-          'without getting in your way. That philosophy drives every design '
-          'and engineering decision behind Max Player.',
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
-        ),
-
-        _Heading('Key features', accent),
-        for (final f in _features)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.check_circle, size: 16, color: accent),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: RichText(
-                    text: TextSpan(
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                        height: 1.4,
-                      ),
-                      children: [
-                        TextSpan(
-                          text: '${f.$1} - ',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        TextSpan(text: f.$2),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        _Heading('Our story', accent),
-        const Text(
-          'Max Player was created out of a simple frustration: too many '
-          'media players were bloated, slow, or filled with intrusive ads '
-          'and unnecessary features. We set out to build something '
-          'different - a player that respects your time, your device, and '
-          'your experience.',
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
-        ),
-
-        _Heading('The team behind Max Player', accent),
-        const Text(
-          'Max Player is proudly developed and maintained by Hyper Tech '
-          'Labs, a technology company focused on building thoughtful, '
-          'high-quality applications for everyday use. Founded by Aryan '
-          'Shah, Hyper Tech Labs is driven by a passion for clean design, '
-          'efficient engineering, and solving real problems through '
-          'software.',
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
-        ),
-
-        _Heading('Looking ahead', accent),
-        const Text(
-          'We\'re constantly working to improve Max Player - adding new '
-          'features, refining performance, and listening closely to our '
-          'users. This is just the beginning, and we\'re excited to keep '
-          'building a player that truly puts you first.',
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
-        ),
-
-        const SizedBox(height: 22),
-        const Divider(color: Colors.white12),
-        const SizedBox(height: 6),
-        Center(
-          child: TextButton.icon(
-            onPressed: () => showPrivacyPolicyDialog(context),
-            icon: const Icon(Icons.privacy_tip_outlined, size: 16),
-            label: const Text('Privacy policy'),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white54,
-              textStyle: const TextStyle(fontSize: 12.5),
-            ),
-          ),
-        ),
-        const Center(
-          child: Text(
-            'Version $kAppVersion',
-            style: TextStyle(color: Colors.white38, fontSize: 12.5),
-          ),
-        ),
-        const SizedBox(height: 4),
-        // v52: AI subtitles moved to the key-based OpenRouter cloud -
-        // the fragile WebView sign-in dance is gone entirely.
-        Center(
-          child: Text(
-            kOpenRouterApiKey.isNotEmpty
-                ? 'AI subtitles: cloud ready (no sign-in needed)'
-                : 'AI subtitles: not configured in this build',
-            style: TextStyle(
-              color: kOpenRouterApiKey.isNotEmpty
-                  ? Colors.greenAccent.withValues(alpha: 0.7)
-                  : Colors.white24,
-              fontSize: 11,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _Heading extends StatelessWidget {
-  final String text;
-  final Color accent;
-  const _Heading(this.text, this.accent);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 18, bottom: 6),
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          color: accent,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.1,
-        ),
-      ),
-    );
-  }
-}
-
-const List<(String, String)> _features = [
-  (
-    'Universal Format Support',
-    'Play almost any video or audio file without needing extra codecs or '
-        'converters.'
-  ),
-  (
-    'Smooth, High-Performance Playback',
-    'Optimized for speed and stability, even with large or high-resolution '
-        'files.'
-  ),
-  (
-    'Clean, Intuitive Interface',
-    'A minimal design that keeps the focus on your content.'
-  ),
-  (
-    'Customizable Controls',
-    'Adjust playback speed, subtitles, audio tracks, and more to fit your '
-        'preferences.'
-  ),
-  (
-    'Lightweight & Efficient',
-    'Built to run smoothly without draining your device\'s resources.'
-  ),
-  (
-    'Regular Updates',
-    'Continuously improved based on user feedback and evolving technology.'
-  ),
-];
-V52_EOF_10
-
-mkdir -p "lib/utils"
-cat > 'lib/utils/privacy_policy.dart' <<'V52_EOF_11'
-import 'package:flutter/material.dart';
-
-/// The app's privacy policy, bundled so it can be read offline (also what
-/// Play reviewers see when they open the app during review).
-///
-/// Play Console still needs the public-URL copy: PRIVACY_POLICY.md at the
-/// repo root. Keep the two in sync when either changes - the widget test
-/// checks that both carry the same anchors (effective date, developer).
-const String kPrivacyPolicyText =
-    'MAX PLAYER - PRIVACY POLICY\n'
-    'Effective date: 13 August 2026\n'
-    'Developer: Hyper Tech Labs (Aryan Shah)\n'
-    '\n'
-    'THE SHORT VERSION\n'
-    'Max Player is a local video player. It does not collect, store, '
-    'transmit, or share any personal data. Everything the app does happens '
-    'on your device.\n'
-    '\n'
-    'WHAT THE APP ACCESSES, AND WHY\n'
-    '\n'
-    '- Storage (videos / all files): to find and play the videos stored on '
-    'your device, save screenshots to "Pictures/Max Player", and write AI '
-    'subtitle files next to your videos. None of it ever leaves your '
-    'device.\n'
-    '\n'
-    '- Internet: only for two things you trigger yourself - (1) the '
-    'one-time download of the AI subtitle model (~142 MB from '
-    'huggingface.co) and (2) playing stream URLs you paste or open. '
-    'Nothing about you is sent anywhere.\n'
-    '\n'
-    '- Local network (Wi-Fi / multicast): only when you tap "Cast to TV" - '
-    'discovering DLNA televisions on your own Wi-Fi and serving the video '
-    'file from your phone to the television. Your Wi-Fi only; no external '
-    'server is involved.\n'
-    '\n'
-    'WHAT THE APP DOES NOT DO\n'
-    '\n'
-    '- No analytics, no tracking, no advertising, and no third-party SDKs '
-    'that collect data.\n'
-    '- No accounts, no sign-in, no device identifiers collected.\n'
-    '- No collection of your video library contents, file names, or watch '
-    'history - all of it stays in the app\'s local storage on your '
-    'device.\n'
-    '- No crash reporting service. Crash reports are shown to you inside '
-    'the app and are only shared if you copy and send them yourself.\n'
-    '\n'
-    'AI SUBTITLES (OPENROUTER CLOUD)\n'
-    '\n'
-    'AI subtitles run in the OpenRouter cloud. Your phone first finds the '
-    'speech parts of a video locally; only those audio slices are uploaded, '
-    'over HTTPS, using the API key built into the app (the same key that '
-    'powers the movie Q&A feature) - there is no account to create and '
-    'nothing to sign into. Max Player does not run its own server and '
-    'never stores your audio or the resulting text anywhere; the audio '
-    'slices themselves are deleted from your phone the moment they are '
-    'transcribed. Translating subtitles to English uses the same '
-    'pipeline.\n'
-    '\n'
-    'PRIVATE FOLDER\n'
-    '\n'
-    'Videos you hide are moved into the app\'s own protected folder, which '
-    'Android blocks other apps from reading, and are unlocked with a PIN '
-    'you choose. They never leave your device and are never uploaded; the '
-    'PIN is stored only as a cryptographic hash inside the app\'s '
-    'settings. Uninstalling the app deletes the protected folder - move '
-    'videos out first.\n'
-    'If the PIN is forgotten, resetting it requires passing the device\'s '
-    'own screen lock (PIN, pattern, password or fingerprint); that unlock '
-    'check is performed entirely by Android on your device - nothing is '
-    'sent anywhere.\n'
-    '\n'
-    'PLAYBACK EXTRAS (KARAOKE, SKIP INTRO, THUMBNAILS)\n'
-    '\n'
-    'Karaoke highlighting and skip-intro detection only read subtitle '
-    'files already on your device (AI-generated .srt files or the video\'s '
-    'own subtitle file) while you play a video. Library thumbnails are '
-    'decoded from your own videos into the app\'s cache folder, which the '
-    'system or you can clear at any time. None of this data leaves the '
-    'device or is shared anywhere.\n'
-    '\n'
-    'CHILDREN\n'
-    '\n'
-    'The app collects no data from anyone, including children.\n'
-    '\n'
-    'GOOGLE PLAY DATA SAFETY (SHORT ANSWERS)\n'
-    '\n'
-    '- Data collected: none.\n'
-    '- Data shared with third parties: none.\n'
-    '- Data sent off this device: none - AI subtitles, watch history, '
-    'bookmarks and settings are all local-only.\n'
-    '- Because no data leaves the device, "encryption in transit" and '
-    '"account/data deletion requests" do not apply: nothing is transmitted '
-    'and there is nothing on any server to delete.\n'
-    '\n'
-    'CHANGES\n'
-    '\n'
-    'Any change to this policy is published in PRIVACY_POLICY.md in the '
-    'public repository with a new effective date.\n'
-    '\n'
-    'CONTACT\n'
-    '\n'
-    'Questions: open an issue on github.com/Aryanshahx/maxplayer';
-
-/// Dialog showing [kPrivacyPolicyText]. Opened from the About sheet's
-/// "Privacy policy" button.
-void showPrivacyPolicyDialog(BuildContext context) {
-  showDialog<void>(
-    context: context,
-    builder: (context) => AlertDialog(
-      backgroundColor: const Color(0xFF1b1b24),
-      title: const Text(
-        'Privacy policy',
-        style: TextStyle(color: Colors.white, fontSize: 17),
-      ),
-      scrollable: true,
-      content: const Text(
-        kPrivacyPolicyText,
-        style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close'),
-        ),
-      ],
-    ),
-  );
-}
-V52_EOF_11
+V54_EOF_11
 
 mkdir -p "test"
-cat > 'test/widget_test.dart' <<'V52_EOF_12'
+cat > 'test/widget_test.dart' <<'V54_EOF_12'
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7018,23 +7122,23 @@ void main() {
   });
 
   group('AI subtitle options & caption filter (v18)', () {
-    // v48: cloud tiers replaced on-device models; stale ids migrate.
-    test('cloud model tiers; stale on-device ids migrate', () {
+    // v54: back on-device - accurate whisper models; stale ids migrate.
+    test('only accurate models remain; stale tiny ids map to base', () {
       expect(AiSubtitleRunner.modelChoices.containsKey('tiny'), isFalse);
-      expect(AiSubtitleRunner.modelChoices.containsKey('base'), isFalse);
       expect(
         AiSubtitleRunner.modelChoices.keys,
-        containsAll(<String>['fast', 'best']),
+        containsAll(<String>['base', 'small']),
       );
-      expect(AiSubtitleRunner.normalizeModelId(null), 'fast');
+      expect(AiSubtitleRunner.normalizeModelId(null), 'base');
       expect(
         AiSubtitleRunner.normalizeModelId('tiny'),
-        'fast',
-        reason: 'a stale v22-24 "tiny" pref must migrate to fast',
+        'base',
+        reason: 'a stale v22-24 "tiny" pref must migrate to base',
       );
-      expect(AiSubtitleRunner.normalizeModelId('base'), 'fast');
-      expect(AiSubtitleRunner.normalizeModelId('small'), 'best');
-      expect(AiSubtitleRunner.normalizeModelId('nonsense'), 'fast');
+      expect(AiSubtitleRunner.normalizeModelId('small'), 'small');
+      expect(AiSubtitleRunner.normalizeModelId('nonsense'), 'base');
+      expect(AiSubtitleRunner.modelSizeLabel('base'), '~142 MB');
+      expect(AiSubtitleRunner.modelSizeLabel('small'), '~466 MB');
     });
 
     test('music-only decoration captions are dropped, speech is kept', () {
@@ -8189,130 +8293,6 @@ void main() {
     });
   });
 
-  group('v52 OpenRouter cloud AI subtitles', () {
-    test('cloudModelFor maps picker ids to OpenRouter models', () {
-      expect(
-        AiSubtitleRunner.cloudModelFor('fast'),
-        'google/gemini-2.5-flash-lite',
-      );
-      expect(
-        AiSubtitleRunner.cloudModelFor('best'),
-        'google/gemini-2.5-flash',
-      );
-      // Unknown / legacy ids fall back to the fast tier.
-      expect(
-        AiSubtitleRunner.cloudModelFor('base'),
-        'google/gemini-2.5-flash-lite',
-      );
-    });
-
-    test('cloudModelChain: primary first, all Gemini, real fallbacks', () {
-      for (final id in ['fast', 'best']) {
-        final chain = AiSubtitleRunner.cloudModelChain(id);
-        expect(chain.first, AiSubtitleRunner.cloudModelFor(id));
-        expect(chain.length, greaterThanOrEqualTo(2));
-        for (final m in chain) {
-          expect(m, startsWith('google/gemini'));
-        }
-      }
-    });
-
-    test('stripSrtFences removes code fences, keeps plain SRT', () {
-      const srt = '1\n00:00:01,000 --> 00:00:02,000\nHello\n';
-      expect(AiSubtitleRunner.stripSrtFences('```srt\n$srt```'), srt.trim());
-      expect(AiSubtitleRunner.stripSrtFences(srt), srt.trim());
-    });
-
-    test('parseChatText reads choices[0].message.content, junk-safe', () {
-      expect(AiSubtitleRunner.parseChatText('not json'), isNull);
-      expect(AiSubtitleRunner.parseChatText('{}'), isNull);
-      expect(
-        AiSubtitleRunner.parseChatText(
-            '{"choices":[{"message":{"content":"1\\n00:00:01,000"}}]}'),
-        '1\n00:00:01,000',
-      );
-    });
-
-    test('audioChatBody carries the clip as input_audio wav', () {
-      final body = AiSubtitleRunner.audioChatBody(
-        model: 'm',
-        prompt: 'p',
-        base64Wav: 'QUJD',
-      );
-      final messages = body['messages']! as List;
-      final content = (messages.first as Map)['content'] as List;
-      expect(content.first, {'type': 'text', 'text': 'p'});
-      expect(content[1], {
-        'type': 'input_audio',
-        'input_audio': {'data': 'QUJD', 'format': 'wav'},
-      });
-    });
-
-    test('aiCloudErrorMessage speaks plainly per status', () {
-      expect(AiSubtitleRunner.aiCloudErrorMessage(402), contains('balance'));
-      expect(AiSubtitleRunner.aiCloudErrorMessage(429), contains('busy'));
-      expect(
-        AiSubtitleRunner.aiCloudErrorMessage(null),
-        contains('internet'),
-      );
-    });
-
-    test('mergeChunkCues shifts slice-local times to absolute', () {
-      final cues = AiSubtitleRunner.mergeChunkCues([
-        (0, '1\n00:00:01,000 --> 00:00:02,500\nHello\n'),
-        (60000, '1\n00:00:00,000 --> 00:00:01,500\nWorld\n'),
-      ]);
-      expect(cues, hasLength(2));
-      expect(cues[0].startMs, 1000);
-      expect(cues[0].text, 'Hello');
-      expect(cues[1].startMs, 60000);
-      expect(cues[1].endMs, 61500);
-    });
-
-    test('boundary duplicates + music decorations drop once', () {
-      final cues = AiSubtitleRunner.mergeChunkCues([
-        (
-          0,
-          '1\n00:00:01,000 --> 00:00:03,000\nHello there\n\n'
-              '2\n00:00:03,000 --> 00:00:04,000\n♪ Music ♪\n'
-        ),
-        (2970, '1\n00:00:00,200 --> 00:00:02,200\nHello there!\n'),
-      ]);
-      expect(
-        cues,
-        hasLength(1),
-        reason: 'identical caption at a slice boundary counts once; '
-            'music-only decorations never survive',
-      );
-      expect(cues.single.startMs, 1000);
-      expect(cues.single.text.contains('Music'), isFalse);
-    });
-
-    test('merged cues feed buildSrt sorted and renumbered', () {
-      final cues = AiSubtitleRunner.mergeChunkCues([
-        (5000, '7\n00:00:02,000 --> 00:00:03,000\nSecond\n'),
-        (0, '1\n00:00:01,000 --> 00:00:02,000\nFirst\n'),
-      ]);
-      final doc = buildSrt(cues);
-      expect(doc.indexOf('First'), lessThan(doc.indexOf('Second')));
-      expect(doc, contains('00:00:01,000 --> 00:00:02,000'));
-      expect(doc, contains('00:00:07,000 --> 00:00:08,000'));
-    });
-  });
-
-  group('v51 cache-bloat fixes', () {
-    test('mpv demuxer cache caps are set explicitly', () {
-      // The 800 MB storage balloon came from on-disk seek strips (fixed
-      // natively); these caps stop mpv's RAM cache ever drifting to
-      // desktop-sized defaults on low-RAM phones.
-      expect(MediaPlayerState.kMpvCacheCapProps, hasLength(3));
-      expect(MediaPlayerState.kMpvCacheCapProps['demuxer-max-bytes'], '32MiB');
-      expect(
-          MediaPlayerState.kMpvCacheCapProps['demuxer-max-back-bytes'], '8MiB');
-      expect(MediaPlayerState.kMpvCacheCapProps['cache-secs'], '10');
-    });
-  });
-
   group('v52 two-finger zoom + default fit', () {
     test('clampVideoZoom keeps pinch inside 1x..4x (1x = fit screen)', () {
       expect(clampVideoZoom(0.4), 1.0);
@@ -8352,38 +8332,41 @@ void main() {
       // copyWith carries the choice through (Settings sheet writes this).
       expect(s.copyWith(defaultFitIndex: 1).defaultFitIndex, 1);
     });
+
+    test('two-finger tap-to-fit toggle defaults ON and persists', () {
+      const s = PlayerSettings();
+      expect(s.twoFingerTapFit, isTrue);
+      expect(s.copyWith(twoFingerTapFit: false).twoFingerTapFit, isFalse);
+      // ...while pinch zoom stays its own independent toggle.
+      expect(s.pinchZoom, isTrue);
+    });
   });
 }
-V52_EOF_12
+V54_EOF_12
 
 rm -f android/app/src/main/kotlin/com/hypertechlabs/maxplayer/PuterBridge.kt
-
-echo ""; echo "--- verification ---"; fails=0
-if grep -q 'gemini-2.5-flash-lite' lib/utils/ai_subtitles.dart; then echo 'OK   OpenRouter Gemini pipeline present'; else echo 'FAIL OpenRouter Gemini pipeline present'; fails=1; fi
-if ! grep -qi puter lib/utils/ai_subtitles.dart lib/services/native_bridge.dart lib/widgets/about_sheet.dart lib/widgets/track_selection_sheet.dart lib/utils/privacy_policy.dart PRIVACY_POLICY.md; then echo 'OK   Puter gone from all Dart + privacy text'; else echo 'FAIL Puter gone from all Dart + privacy text'; fails=1; fi
-if ! grep -qi puter android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt; then echo 'OK   Puter gone from MainActivity'; else echo 'FAIL Puter gone from MainActivity'; fails=1; fi
-if test ! -f android/app/src/main/kotlin/com/hypertechlabs/maxplayer/PuterBridge.kt; then echo 'OK   PuterBridge.kt deleted'; else echo 'FAIL PuterBridge.kt deleted'; fails=1; fi
-if grep -q 'aiPrepareSlices' lib/services/native_bridge.dart; then echo 'OK   native bridge: aiPrepareSlices'; else echo 'FAIL native bridge: aiPrepareSlices'; fails=1; fi
-if grep -q 'aiPrepareSlicesSync' android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt; then echo 'OK   MainActivity: slice prep pipeline'; else echo 'FAIL MainActivity: slice prep pipeline'; fails=1; fi
-if ! grep -q 'onAiChunk' lib/services/native_bridge.dart; then echo 'OK   dead onAiChunk events removed'; else echo 'FAIL dead onAiChunk events removed'; fails=1; fi
-if grep -q 'Generate with AI ✨' lib/widgets/track_selection_sheet.dart; then echo 'OK   track sheet tile updated'; else echo 'FAIL track sheet tile updated'; fails=1; fi
-if grep -q 'kFitModeNames' lib/state/player_settings.dart; then echo 'OK   player settings: default-fit modes'; else echo 'FAIL player settings: default-fit modes'; fails=1; fi
-if grep -q 'isTwoFingerTapReset' lib/state/video_zoom.dart lib/screens/player_screen.dart 2>/dev/null && true; then echo 'OK   two-finger tap reset wired'; else echo 'FAIL two-finger tap reset wired'; fails=1; fi
-if grep -q 'clampVideoZoom' lib/screens/player_screen.dart; then echo 'OK   pinch clamp range wired'; else echo 'FAIL pinch clamp range wired'; fails=1; fi
-if grep -q 'Default video fit' lib/widgets/player_settings_sheet.dart; then echo 'OK   settings sheet: Default video fit row'; else echo 'FAIL settings sheet: Default video fit row'; fails=1; fi
-if grep -q 'OPENROUTER CLOUD' lib/utils/privacy_policy.dart; then echo 'OK   privacy text honest about OpenRouter'; else echo 'FAIL privacy text honest about OpenRouter'; fails=1; fi
-if grep -q 'version: 1.0.0+48' pubspec.yaml; then echo 'OK   version 1.0.0+48'; else echo 'FAIL version 1.0.0+48'; fails=1; fi
-if grep -q 'v52 two-finger zoom' test/widget_test.dart; then echo 'OK   new zoom tests present'; else echo 'FAIL new zoom tests present'; fails=1; fi
+echo "--- verification ---"; fails=0
+if grep -q 'dev.ffmpegkit-maintained:whisper-android:1.0.0' android/app/build.gradle.kts; then echo 'OK   whisper engine dependency restored'; else echo 'FAIL whisper engine dependency restored'; fails=1; fi
+if grep -q 'runAiPipeline' android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt && grep -q 'downloadModel' android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt; then echo 'OK   MainActivity: whisper pipeline restored'; else echo 'FAIL MainActivity: whisper pipeline restored'; fails=1; fi
+if grep -q 'whisperAvailable' android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt; then echo 'OK   whisperAvailable handler present'; else echo 'FAIL whisperAvailable handler present'; fails=1; fi
+if ! grep -q 'aiPrepareSlices' android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt lib/services/native_bridge.dart; then echo 'OK   cloud slice pipeline removed'; else echo 'FAIL cloud slice pipeline removed'; fails=1; fi
+if ! grep -qi 'puter\|openrouter' lib/utils/ai_subtitles.dart lib/widgets/about_sheet.dart; then echo 'OK   no cloud refs in subtitles/about'; else echo 'FAIL no cloud refs in subtitles/about'; fails=1; fi
+if grep -q 'modelSizeLabel' lib/utils/ai_subtitles.dart; then echo 'OK   on-device runner restored'; else echo 'FAIL on-device runner restored'; fails=1; fi
+if grep -q 'on your device' PRIVACY_POLICY.md; then echo 'OK   privacy: fully on-device wording'; else echo 'FAIL privacy: fully on-device wording'; fails=1; fi
+if grep -q 'On-device · free · works offline' lib/widgets/track_selection_sheet.dart; then echo 'OK   track tile text updated'; else echo 'FAIL track tile text updated'; fails=1; fi
+if grep -q 'whisperEngineStatus' lib/widgets/about_sheet.dart; then echo 'OK   about sheet engine check restored'; else echo 'FAIL about sheet engine check restored'; fails=1; fi
+if grep -q '_settings.twoFingerTapFit' lib/screens/player_screen.dart; then echo 'OK   v53 gesture toggle kept'; else echo 'FAIL v53 gesture toggle kept'; fails=1; fi
+if grep -q 'Two-finger tap = fit screen' lib/widgets/player_settings_sheet.dart; then echo 'OK   settings toggle kept'; else echo 'FAIL settings toggle kept'; fails=1; fi
+if grep -q 'version: 1.0.0+50' pubspec.yaml; then echo 'OK   version 1.0.0+50'; else echo 'FAIL version 1.0.0+50'; fails=1; fi
+if grep -q 'stale tiny ids map to base' test/widget_test.dart; then echo 'OK   on-device tests restored'; else echo 'FAIL on-device tests restored'; fails=1; fi
 echo ""
-if [ "$fails" = "0" ]; then echo "ALL CHECKS PASSED - v52 applied cleanly."; else echo "SOME CHECKS FAILED - do NOT commit; paste the output to me."; exit 1; fi
-ls update_maxplayer_v*.sh 2>/dev/null | grep -v 'update_maxplayer_v52.sh' | xargs -r rm -f
+if [ "$fails" = "0" ]; then echo "ALL CHECKS PASSED - v54 applied cleanly."; else echo "SOME CHECKS FAILED - paste the output to me."; exit 1; fi
+ls update_maxplayer_v*.sh 2>/dev/null | grep -v 'update_maxplayer_v54.sh' | xargs -r rm -f
 echo ""
-echo 'Next:  git add -A && git commit -m "v52: root-rebuild AI subtitles on OpenRouter, two-finger tap-to-fit, default-fit setting (1.0.0+48)" && git push'
+echo 'Next: git add -A && git commit -m "v54: back to on-device AI subtitles (whisper.cpp, free offline after one-time model download), cloud removed (1.0.0+50)" && git push'
 echo ""
 echo "Phone test after Codemagic build:"
-echo "  1. Play a local video > subtitles > Generate with AI > Generate."
-echo "     NO sign-in screen should appear - progress starts at once."
-echo "  2. Wait for '"'"'AI subtitles ready'"'"', pick them in the subtitle list."
-echo "  3. Two fingers pinch on video = zoom; two-finger quick TAP = fit screen."
-echo "  4. Settings (player, gear icon) > Gestures > Default video fit."
-
+echo "  1. subtitles > Generate with AI > pick Balanced > Generate."
+echo "  2. FIRST time: downloads the AI model once (~142MB) - use WiFi."
+echo "  3. After that it works fully offline, free, forever."
+echo "  4. Note: 64-bit phones only for AI subtitles (old behavior)."

@@ -167,8 +167,8 @@ class TrackSelectionSheet extends StatelessWidget {
           },
         ),
       const Divider(height: 16, color: Colors.white12),
-      // v52: cloud AI subtitles - built-in key, no sign-in, no download.
-      // Only detected speech audio leaves the phone.
+      // v54: on-device AI subtitles again - free & offline forever after
+      // a one-time model download. Nothing ever leaves the phone.
       ListTile(
         dense: true,
         leading: Icon(Icons.auto_awesome,
@@ -182,7 +182,7 @@ class TrackSelectionSheet extends StatelessWidget {
           ),
         ),
         subtitle: const Text(
-          'AI cloud - no sign-in, nothing to download',
+          'On-device · free · works offline after a one-time setup',
           style: TextStyle(color: Colors.white38, fontSize: 12),
         ),
         onTap: () {

@@ -1,24 +1,22 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:path/path.dart' as p;
 
-import '../services/movie_ai.dart' show kOpenRouterApiKey;
 import '../services/native_bridge.dart';
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
 import 'srt.dart';
 
-/// True when a transcription segment is caption decoration rather than
-/// speech - e.g. "♪", "♪ ♪", "[Music]", "(music playing)". Whisper-class
-/// engines emit these over music-only stretches; dropping them keeps the
-/// .srt clean (v18).
+/// True when a whisper segment is caption decoration rather than speech -
+/// e.g. "♪", "♪ ♪", "[Music]", "(music playing)". Whisper emits these over
+/// music-only stretches; dropping them keeps the .srt clean (v18).
 ///
 /// Deliberately conservative: anything that might be real speech (even
 /// speech ABOUT music, like "I love music") is kept - we only drop the
-/// exact decoration phrases the engine hallucinates.
+/// exact decoration phrases whisper hallucinates.
 bool isMusicOnlyCaption(String text) {
   var t = text.toLowerCase().trim();
   if (t.isEmpty) return true;
@@ -30,7 +28,7 @@ bool isMusicOnlyCaption(String text) {
   return _musicOnlyCores.contains(core);
 }
 
-/// Lowercase, letters-only forms of the engine's music/SFX-only captions.
+/// Lowercase, letters-only forms of whisper's music/SFX-only captions.
 const Set<String> _musicOnlyCores = {
   'music',
   'musicplaying',
@@ -59,20 +57,12 @@ const Set<String> _musicOnlyCores = {
   'silence',
 };
 
-/// Runs the CLOUD AI subtitle flow end to end and shows a progress dialog:
+/// Runs the offline AI subtitle flow end to end and shows a progress dialog:
 ///
-///   native audio extraction + speech gating (on device) -> speech-slice
-///   WAV files on disk -> Dart uploads each slice to the OpenRouter cloud
-///   (Gemini audio models, built-in key like the movie Q&A feature) ->
-///   merge slices -> write "<video>.maxai.srt" next to the video -> load
+///   download model once (~142 MB) -> extract audio -> whisper.cpp ->
+///   write "<video>.maxai.srt" next to the video -> load it into the player
 ///
-/// v52 ROOT REBUILD: v48-v51 used a hidden WebView cloud whose sign-in
-/// popup required a real user gesture and broke on real phones in five
-/// different ways (overlay, transport, timeouts...). That whole
-/// WebView/sign-in layer is DELETED. The new pipeline is pure HTTPS with
-/// the same compile-time OPENROUTER_API_KEY that already powers the
-/// movie-Q&A sheet - no sign-in, no popup, no WebView, nothing for the
-/// viewer to set up. Only detected speech audio leaves the phone.
+/// Everything after the one-time model download is 100% offline & free.
 class AiSubtitleRunner {
   AiSubtitleRunner._();
 
@@ -81,39 +71,20 @@ class AiSubtitleRunner {
   static const String _kLanguageKey = 'ai.language';
   static const String _kTranslateKey = 'ai.translate';
 
-  /// Cloud quality tiers: id -> (label, detail).
+  /// Model choices: id -> (label, detail with size). v25: tiny is gone for
+  /// good (user call: keep only the accurate models). The SPEED upgrade now
+  /// comes from the engine using every CPU core (threads), which makes even
+  /// "Best" markedly faster without accuracy loss.
   static const Map<String, (String, String)> modelChoices = {
-    'fast': ('Fast · Flash-Lite', 'quick - great for clear speech'),
-    'best': ('Best · Flash', 'strongest on music & noise'),
+    'base': ('Balanced', '~142 MB · good for most videos'),
+    'small': ('Best', '~466 MB · strongest on music & noise'),
   };
 
-  /// Anything unknown (including legacy "base"/"small" ids saved by older
-  /// builds) falls back to the fast tier; an old "small" maps to "best".
-  static String normalizeModelId(String? id) => switch (id) {
-        'best' || 'small' => 'best',
-        _ => 'fast',
-      };
+  /// Anything unknown (including a "tiny" id saved by v22-v24 builds)
+  /// falls back to the default model.
+  static String normalizeModelId(String? id) => id == 'small' ? 'small' : 'base';
 
-  /// v52: picker id -> primary OpenRouter audio model.
-  static String cloudModelFor(String id) => id == 'best'
-      ? 'google/gemini-2.5-flash'
-      : 'google/gemini-2.5-flash-lite';
-
-  /// Fallback chain per tier, tried IN ORDER - the first model that
-  /// answers wins (rate limits / a retired model just move to the next).
-  static List<String> cloudModelChain(String id) => id == 'best'
-      ? const [
-          'google/gemini-2.5-flash',
-          'google/gemini-2.5-flash-lite',
-          'google/gemini-2.0-flash-001',
-        ]
-      : const [
-          'google/gemini-2.5-flash-lite',
-          'google/gemini-2.0-flash-001',
-          'google/gemini-2.0-flash-exp:free',
-        ];
-
-  /// Language choices: ISO-639 code -> label; 'auto' = detect.
+  /// Language choices: whisper code -> label; 'auto' = detect.
   static const Map<String, String> languageChoices = {
     'auto': 'Auto-detect',
     'en': 'English',
@@ -133,175 +104,11 @@ class AiSubtitleRunner {
     'fr': 'French',
   };
 
-  /// Normalizes caption text for duplicate comparison across slice
-  /// boundaries (Latin + Devanagari survive; punctuation/case dropped).
-  static String _normCaption(String t) => t
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9؀-ॿ]+'), '');
-
-  /// Merges per-slice .srt documents into absolute-timeline cues (PURE,
-  /// unit-tested):
-  ///  - each slice's cue times shift by its absolute start offset
-  ///  - cues are sorted by start time
-  ///  - music-only decoration captions are dropped ([isMusicOnlyCaption])
-  ///  - boundary duplicates (same caption re-emitted inside the 3 s guard
-  ///    band where two slices overlap) are dropped once
-  static List<SrtCue> mergeChunkCues(List<(int offsetMs, String srt)> chunks) {
-    final all = <SrtCue>[];
-    for (final (offsetMs, doc) in chunks) {
-      for (final c in parseSrt(doc)) {
-        all.add(SrtCue(c.startMs + offsetMs, c.endMs + offsetMs, c.text));
-      }
-    }
-    all.sort((a, b) => a.startMs.compareTo(b.startMs));
-    final kept = <SrtCue>[];
-    for (final c in all) {
-      final text = c.text.trim();
-      if (text.isEmpty) continue;
-      if (isMusicOnlyCaption(text)) continue;
-      final prev = kept.isEmpty ? null : kept.last;
-      if (prev != null &&
-          _normCaption(prev.text) == _normCaption(text) &&
-          c.startMs - prev.startMs < 12000) {
-        continue; // same caption re-emitted at a slice boundary
-      }
-      kept.add(SrtCue(c.startMs, c.endMs, text));
-    }
-    return kept;
-  }
-
-  // ------------------------------------------------------------------
-  // v52 OpenRouter cloud client (PURE helpers, unit-tested)
-  // ------------------------------------------------------------------
-
-  /// Prompt sent with every audio slice. SRT-only output, clip-relative
-  /// timestamps, music stretches answered with an empty reply.
-  static String transcriptionPrompt({
-    required String languageLabel,
-    required bool translate,
-  }) {
-    final b = StringBuffer()
-      ..write('Transcribe the speech in this audio clip into SubRip (SRT) '
-          'subtitles.\nRules:\n')
-      ..write('- Output ONLY the SRT cues: no commentary, no markdown '
-          'code fences.\n')
-      ..write('- Number cues starting at 1 and use "HH:MM:SS,mmm --> '
-          'HH:MM:SS,mmm" timestamps relative to the CLIP start '
-          '(00:00:00,000).\n')
-      ..write('- Keep every cue under two lines and split long speech into '
-          'short cues.\n');
-    if (languageLabel == 'Auto-detect') {
-      b.write('- Detect the spoken language automatically (it may mix '
-          'Hindi, English and others).\n');
-    } else {
-      b.write('- The spoken language is $languageLabel.\n');
-    }
-    if (translate) {
-      b.write('- Translate everything into natural English subtitle text '
-          'instead of the original language.\n');
-    } else {
-      b.write('- Write the subtitles in the ORIGINAL spoken language and '
-          'script.\n');
-    }
-    b.write('- For stretches of pure music or silence output nothing at '
-        'all (an empty reply is correct).');
-    return b.toString();
-  }
-
-  /// One OpenRouter chat-completions body carrying the audio clip.
-  static Map<String, Object?> audioChatBody({
-    required String model,
-    required String prompt,
-    required String base64Wav,
-  }) =>
-      {
-        'model': model,
-        'messages': [
-          {
-            'role': 'user',
-            'content': [
-              {'type': 'text', 'text': prompt},
-              {
-                'type': 'input_audio',
-                'input_audio': {'data': base64Wav, 'format': 'wav'},
-              },
-            ],
-          },
-        ],
-        'max_tokens': 4096,
-        'temperature': 0.0,
+    /// Approximate download size label per model (for the progress dialog).
+  static String modelSizeLabel(String model) => switch (model) {
+        'small' => '~466 MB',
+        _ => '~142 MB',
       };
-
-  /// Extracts the assistant's text from a chat-completion response.
-  /// Never throws; junk -> null.
-  static String? parseChatText(String jsonBody) {
-    try {
-      final decoded = jsonDecode(jsonBody);
-      if (decoded is! Map) return null;
-      final choices = decoded['choices'];
-      if (choices is! List || choices.isEmpty) return null;
-      final first = choices.first;
-      if (first is! Map) return null;
-      final message = first['message'];
-      if (message is! Map) return null;
-      final content = '${message['content'] ?? ''}'.trim();
-      return content.isEmpty ? null : content;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Strips wrapping ``` / ```srt code fences some models add despite the
-  /// instructions. No fences -> input unchanged.
-  static String stripSrtFences(String text) {
-    var t = text.trim();
-    if (t.startsWith('```')) {
-      final nl = t.indexOf('\n');
-      if (nl > 0) t = t.substring(nl + 1);
-      if (t.trimRight().endsWith('```')) {
-        t = t.trimRight().substring(0, t.trimRight().length - 3);
-      }
-      t = t.trim();
-    }
-    return t;
-  }
-
-  /// Numeric error code from an OpenRouter error body, or null.
-  static int? chatErrorCode(String body) {
-    try {
-      final decoded = jsonDecode(body);
-      if (decoded is! Map) return null;
-      final err = decoded['error'];
-      if (err is! Map) return null;
-      final code = err['code'];
-      if (code is int) return code;
-      if (code is String) return int.tryParse(code);
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Maps a cloud failure to words the viewer understands.
-  static String aiCloudErrorMessage(int? code) {
-    if (code == 401 || code == 403) {
-      return 'the built-in AI key was rejected - please report this build';
-    }
-    if (code == 402) {
-      return 'the AI service balance is empty right now - '
-          'please try again later';
-    }
-    if (code == 404) {
-      return 'this AI model is unavailable - try the other quality tier';
-    }
-    if (code == 408 || code == 429) {
-      return 'the AI cloud is busy - please try again in a minute';
-    }
-    if (code != null && code >= 500) {
-      return 'the AI cloud had a hiccup - please try again';
-    }
-    return 'check your internet connection and try again';
-  }
 
   /// Launches generation for the video currently loaded in [player].
   /// [context] must be a context that outlives the subtitle sheet (the
@@ -314,10 +121,6 @@ class AiSubtitleRunner {
     if (track == null || track.path.contains('://')) {
       _snack(context,
           'AI subtitles work on local video files (not network streams)');
-      return;
-    }
-    if (kOpenRouterApiKey.isEmpty) {
-      _snack(context, 'AI subtitles are not configured in this build');
       return;
     }
 
@@ -338,11 +141,10 @@ class AiSubtitleRunner {
     unawaited(NativeBridge.saveSetting(_kLanguageKey, options.language));
     unawaited(NativeBridge.saveSetting(_kTranslateKey, '${options.translate}'));
 
-    // v52: NO sign-in step - the key is compiled in, like movie Q&A.
+    // One active job at a time; hook up the event callbacks first.
     final progress = ValueNotifier<(String, int)>(('starting', 0));
-    final chunks = <(int, String)>[];
     var dialogOpen = false;
-    var cancelled = false;
+    List<AiSegment>? segments;
     String? error;
 
     void closeDialog() {
@@ -354,121 +156,77 @@ class AiSubtitleRunner {
 
     NativeBridge.configureCallbacks(
       onAiProgress: (stage, percent) => progress.value = (stage, percent),
+      onAiDone: (s) {
+        segments = s;
+        closeDialog();
+      },
+      onAiFailed: (e) {
+        error = e;
+        closeDialog();
+      },
     );
 
+    final jobId = await NativeBridge.aiSubtitleGenerate(
+      videoPath: track.path,
+      model: options.model,
+      language: options.language,
+      translate: options.translate,
+    );
+    if (!context.mounted) return;
+    if (jobId == null) {
+      _snack(
+        context,
+        'AI subtitles are not available on this phone '
+        '(they need a 64-bit chip)',
+      );
+      return;
+    }
+
+    if (!context.mounted) return;
     dialogOpen = true;
-    unawaited(showDialog(
+    await showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => _AiProgressDialog(
         progress: progress,
+        model: options.model,
         onCancel: () {
-          cancelled = true;
-          unawaited(NativeBridge.aiSubtitleCancel());
+          error = 'cancelled';
+          NativeBridge.aiSubtitleCancel();
           closeDialog();
         },
       ),
-    ));
-
-    var jobId = -1;
-    try {
-      // 1) on-device: extract + speech-gate + slice into ~3 min WAVs.
-      final prep = await NativeBridge.aiPrepareSlices(track.path);
-      jobId = prep.jobId;
-      if (!context.mounted) return;
-      if (prep.error != null) {
-        if (prep.error == 'cancelled') {
-          cancelled = true;
-        } else {
-          error = prep.error;
-        }
-      } else if (prep.slices.isEmpty) {
-        closeDialog();
-        _snack(context,
-            'No speech was detected in this video - nothing to write');
-        return;
-      } else {
-        // 2) upload each speech slice; the first model that answers wins.
-        final prompt = transcriptionPrompt(
-          languageLabel: languageChoices[options.language] ?? 'Auto-detect',
-          translate: options.translate,
-        );
-        final total = prep.slices.length;
-        for (var i = 0; i < total; i++) {
-          if (cancelled) break;
-          final slice = prep.slices[i];
-          progress.value = ('transcribing', i * 100 ~/ total);
-          try {
-            final b64 = base64Encode(await File(slice.path).readAsBytes());
-            String? srt;
-            int? lastCode;
-            for (final model in cloudModelChain(options.model)) {
-              var moveOn = false;
-              for (var attempt = 0; attempt < 2 && !moveOn; attempt++) {
-                if (cancelled) break;
-                try {
-                  final (code, body) = await _CloudSpeech.transcribeOnce(
-                    model: model,
-                    prompt: prompt,
-                    base64Wav: b64,
-                  );
-                  if (code == 200) {
-                    final t = parseChatText(body);
-                    if (t != null) {
-                      srt = stripSrtFences(t);
-                      moveOn = true;
-                    }
-                  } else {
-                    lastCode = chatErrorCode(body) ?? code;
-                    // Busy/server hiccup -> wait and retry once; anything
-                    // else -> try the next model in the chain.
-                    if (code == 429 || code >= 500) {
-                      await Future<void>.delayed(const Duration(seconds: 3));
-                    } else {
-                      moveOn = true;
-                    }
-                  }
-                } catch (_) {
-                  await Future<void>.delayed(const Duration(seconds: 2));
-                }
-              }
-              if (srt != null || cancelled) break;
-            }
-            if (cancelled) break;
-            if (srt == null) {
-              error = aiCloudErrorMessage(lastCode);
-              break;
-            }
-            if (srt.trim().isNotEmpty) chunks.add((slice.offsetMs, srt));
-          } finally {
-            try {
-              await File(slice.path).delete();
-            } catch (_) {}
-          }
-        }
-        progress.value = ('transcribing', 100);
-      }
-    } finally {
-      unawaited(NativeBridge.aiSliceDiscard(jobId));
-    }
+    );
+    dialogOpen = false;
 
     if (!context.mounted) return;
-    closeDialog();
 
-    if (cancelled) return;
-    if (error != null) {
+    if (error != null && error != 'cancelled') {
       _snack(context, 'AI subtitles failed: $error');
       return;
     }
+    if (error == 'cancelled' || segments == null) return;
 
-    final cues = mergeChunkCues(chunks);
-    if (cues.isEmpty) {
-      _snack(context, 'The cloud heard no speech in this video');
+    if (segments!.isEmpty) {
+      _snack(context,
+          'No speech was detected in this video - nothing to write');
       return;
     }
 
+    // (mounted was checked right after the dialog closed above)
+
     // Build the .srt (pure function) and save it next to the video.
-    final srtPath = srtPathForVideo(track.path);
+    // Music-only decoration captions ("♪", "[Music]") are filtered out.
+    final cues = [
+      for (final s in segments!)
+        if (!isMusicOnlyCaption(s.text)) SrtCue(s.startMs, s.endMs, s.text),
+    ];
+    if (cues.isEmpty) {
+      _snack(context,
+          'Only background music was detected - no subtitles to write');
+      return;
+    }
+    final srtPath = _srtPathFor(track.path);
     try {
       await File(srtPath).writeAsString(buildSrt(cues));
     } catch (_) {
@@ -479,8 +237,8 @@ class AiSubtitleRunner {
     }
     if (!context.mounted) return;
 
-    // Hand it to mpv so the subtitle picker lists it immediately, and let
-    // the karaoke overlay / skip-intro chip pick up the fresh cues.
+    // Hand it to mpv so the subtitle picker lists it immediately, and let the
+    // karaoke overlay / skip-intro chip pick up the fresh cues.
     final platform = player.player.platform;
     if (platform is NativePlayer) {
       try {
@@ -493,6 +251,12 @@ class AiSubtitleRunner {
     }
   }
 
+  static String _srtPathFor(String videoPath) {
+    final dir = p.dirname(videoPath);
+    final base = p.basenameWithoutExtension(videoPath);
+    return p.join(dir, '$base.maxai.srt');
+  }
+
   static void _snack(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -503,53 +267,27 @@ class AiSubtitleRunner {
   }
 }
 
-/// Tiny OpenRouter uploader: plain dart:io, one keep-alive connection,
-/// generous read timeout for long audio clips (v52).
-class _CloudSpeech {
-  static const String _url = 'https://openrouter.ai/api/v1/chat/completions';
-
-  static final HttpClient _http = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 25)
-    ..idleTimeout = const Duration(seconds: 30);
-
-  /// One upload attempt -> (HTTP status, response body).
-  static Future<(int, String)> transcribeOnce({
-    required String model,
-    required String prompt,
-    required String base64Wav,
-  }) async {
-    final req = await _http.postUrl(Uri.parse(_url));
-    req.headers.set('content-type', 'application/json');
-    req.headers.set('authorization', 'Bearer $kOpenRouterApiKey');
-    req.headers.set('x-title', 'Max Player');
-    req.write(jsonEncode(AiSubtitleRunner.audioChatBody(
-      model: model,
-      prompt: prompt,
-      base64Wav: base64Wav,
-    )));
-    final res = await req.close().timeout(const Duration(seconds: 180));
-    final body = await res.transform(utf8.decoder).join();
-    return (res.statusCode, body);
-  }
-}
-
 class _AiProgressDialog extends StatelessWidget {
   final ValueNotifier<(String, int)> progress;
+  final String model;
   final VoidCallback onCancel;
 
   const _AiProgressDialog({
     required this.progress,
+    required this.model,
     required this.onCancel,
   });
 
-  static String _stageLabel(String stage) {
+  static String _stageLabel(String stage, String model) {
     switch (stage) {
+      case 'downloading':
+        return 'Downloading the AI model (one time, '
+            '${AiSubtitleRunner.modelSizeLabel(model)})…';
       case 'extracting':
-        return 'Extracting audio from the video (on device)…';
-      case 'slicing':
-        return 'Keeping only the speech parts (silent parts are skipped)…';
+        return 'Extracting audio from the video…';
       case 'transcribing':
-        return 'Listening in the AI cloud - only speech is uploaded…';
+        return 'Listening to the speech in this video…\n'
+            '(silent parts are skipped automatically for speed)';
       default:
         return 'Preparing…';
     }
@@ -563,23 +301,24 @@ class _AiProgressDialog extends StatelessWidget {
         children: [
           Icon(Icons.auto_awesome, color: themeState.accent, size: 20),
           const SizedBox(width: 8),
-          const Expanded(
-            child: Text('AI subtitles · cloud',
-                style: TextStyle(color: Colors.white, fontSize: 16)),
-          ),
+          const Text('AI subtitles', style: TextStyle(color: Colors.white)),
         ],
       ),
       content: ValueListenableBuilder<(String, int)>(
         valueListenable: progress,
         builder: (context, value, _) {
           final (stage, percent) = value;
-          final determinate = stage != 'starting';
+          // "transcribing" became determinate in v18: Kotlin reports real
+          // progress as speech spans finish.
+          final determinate = stage == 'downloading' ||
+              stage == 'extracting' ||
+              stage == 'transcribing';
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _stageLabel(stage),
+                _stageLabel(stage, model),
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
               const SizedBox(height: 14),
@@ -609,7 +348,7 @@ class _AiProgressDialog extends StatelessWidget {
   }
 }
 
-/// "Generate with AI" options: cloud quality tier (speed vs accuracy) and
+/// "Generate with AI" options: which whisper model (speed vs accuracy) and
 /// which language the video is spoken in (auto-detect or pinned). Choosing
 /// the right language is the single biggest accuracy boost on short clips.
 class _AiOptionsDialog extends StatefulWidget {
@@ -640,10 +379,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
         children: [
           Icon(Icons.auto_awesome, color: themeState.accent, size: 20),
           const SizedBox(width: 8),
-          const Expanded(
-            child: Text('AI subtitles · cloud',
-                style: TextStyle(color: Colors.white, fontSize: 16)),
-          ),
+          const Text('AI subtitles', style: TextStyle(color: Colors.white)),
         ],
       ),
       content: Column(
@@ -668,7 +404,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           ),
           const SizedBox(height: 16),
           const Text(
-            'Quality (cloud AI)',
+            'AI model (quality)',
             style: TextStyle(
                 color: Colors.white70,
                 fontSize: 13,
@@ -684,40 +420,115 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
                   child: Text('${e.value.$1}  ·  ${e.value.$2}'),
                 ),
             ],
-            onChanged: (v) =>
-                setState(() => _model = AiSubtitleRunner.normalizeModelId(v)),
+            onChanged: (v) => setState(() => _model = v ?? 'base'),
           ),
           const SizedBox(height: 16),
-          SwitchListTile(
-            value: _translate,
-            onChanged: (v) => setState(() => _translate = v),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            activeThumbColor: themeState.accent,
-            title: const Text('Translate to English',
-                style: TextStyle(color: Colors.white70, fontSize: 13)),
-            subtitle: const Text('Any spoken language -> English subtitles',
-                style: TextStyle(color: Colors.white38, fontSize: 12)),
+          const Text(
+            'Output',
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _modeChip(
+                  label: 'Same language',
+                  icon: Icons.record_voice_over_outlined,
+                  selected: !_translate,
+                  onTap: () => setState(() => _translate = false),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _modeChip(
+                  label: '→ English',
+                  icon: Icons.translate,
+                  selected: _translate,
+                  onTap: () => setState(() => _translate = true),
+                ),
+              ),
+            ],
+          ),
+          if (_translate)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'Foreign speech becomes ENGLISH subtitles (AI translate).',
+                style: TextStyle(color: Colors.white38, fontSize: 11.5),
+              ),
+            ),
+          const SizedBox(height: 10),
+          const Text(
+            'Runs 100% offline after a one-time model download.',
+            style: TextStyle(color: Colors.white38, fontSize: 11.5),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'v25: the engine now uses all CPU cores - much faster than '
+            'before. Tip: pinning the spoken language above (instead of '
+            'Auto-detect) is quicker AND more accurate.',
+            style: TextStyle(color: Colors.white38, fontSize: 11.5),
           ),
         ],
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
         FilledButton.icon(
-          onPressed: () => Navigator.pop(
-            context,
-            (model: _model, language: _language, translate: _translate),
-          ),
-          style: FilledButton.styleFrom(backgroundColor: themeState.accent),
-          icon: Icon(Icons.cloud_done_outlined,
-              size: 16, color: themeState.onAccent),
-          label: Text('Generate',
-              style: TextStyle(color: themeState.onAccent)),
+          onPressed: () => Navigator.of(context).pop(
+              (model: _model, language: _language, translate: _translate)),
+          icon: const Icon(Icons.auto_awesome, size: 16),
+          label: Text(_translate ? 'Translate' : 'Generate'),
         ),
       ],
+    );
+  }
+
+  Widget _modeChip({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? themeState.accent.withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? themeState.accent : Colors.white12,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                size: 16, color: selected ? themeState.accent : Colors.white54),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: selected ? Colors.white : Colors.white70,
+                  fontSize: 12.5,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -727,10 +538,11 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
     required ValueChanged<T?> onChanged,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white12),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<T>(
@@ -739,7 +551,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           onChanged: onChanged,
           isExpanded: true,
           dropdownColor: const Color(0xFF26262f),
-          style: const TextStyle(color: Colors.white, fontSize: 13),
+          style: const TextStyle(color: Colors.white, fontSize: 14),
         ),
       ),
     );

@@ -795,8 +795,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     if (mode == _ScaleMode.volume || mode == _ScaleMode.brightness) return;
-    // v52: a fast two-finger tap (no real pinch) snaps home to fit screen.
-    if (mode == _ScaleMode.zoom &&
+    // v52: a fast two-finger tap (no real pinch) snaps home to fit
+    // screen (v53: toggleable from Settings).
+    if (_settings.twoFingerTapFit &&
+        mode == _ScaleMode.zoom &&
         isTwoFingerTapReset(
           durationMs:
               DateTime.now().millisecondsSinceEpoch - _scaleStartMs,

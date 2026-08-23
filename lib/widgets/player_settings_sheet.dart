@@ -150,6 +150,14 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 value: _settings.pinchZoom,
                 onChanged: (v) => _update(_settings.copyWith(pinchZoom: v)),
               ),
+              _SwitchTile(
+                icon: Icons.touch_app_outlined,
+                label: 'Two-finger tap = fit screen',
+                subtitle: 'Quick two-finger tap snaps a zoomed view back out',
+                value: _settings.twoFingerTapFit,
+                onChanged: (v) =>
+                    _update(_settings.copyWith(twoFingerTapFit: v)),
+              ),
               // v52: which fit mode videos start in (default: fit screen).
               Padding(
                 padding:

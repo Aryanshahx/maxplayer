@@ -96,7 +96,13 @@ flutter {
 }
 
 dependencies {
-    // v48: NO native dependencies at all. AI subtitles moved to the Puter
-    // cloud, driven through a plain Android WebView - zero AARs, zero
-    // bundled .so libraries, works on 32-bit phones too.
+    // AI SUBTITLES (v54: back ON DEVICE): prebuilt whisper.cpp engine.
+    // Plain Maven artifact (NOT a Gradle/Flutter plugin) = no toolchain
+    // conflicts. ~1.1 MB AAR, MIT licensed, runs 100% offline & free
+    // after the one-time model download (64-bit phones).
+    implementation("dev.ffmpegkit-maintained:whisper-android:1.0.0")
+    // The AAR only exports coroutines on the runtime classpath; we call its
+    // suspend functions from Kotlin, so we need it explicitly at compile
+    // time. Same version as the AAR's -> no conflict.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }
