@@ -178,6 +178,9 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
+        // v51: one-time prune of seek-strip bloat accumulated by older
+        // versions (off the UI thread; recently-used order untouched).
+        executor.execute { pruneThumbStrips() }
         channel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "getMetadata" -> {
@@ -903,12 +906,29 @@ class MainActivity : FlutterActivity() {
         return list.filter { it.isDirectory && it.name.startsWith("thumbstrip_") }
     }
 
+    /**
+     * v51: one 72-frame strip costs ~1 MB and every video ever seeked
+     * kept its own strip forever - the real source of the 800 MB+ app     * cache bloat (not mpv's demuxer cache, which is RAM and dies with
+     * playback). Keep only the 48 most recently used strips.
+     */
+    private fun pruneThumbStrips(keep: Int = 48) {
+        try {
+            thumbStripDirs()
+                .sortedByDescending { it.lastModified() }
+                .drop(keep)
+                .forEach { it.deleteRecursively() }
+        } catch (_: Throwable) {
+            // Best effort - never break playback over cache hygiene.
+        }
+    }
+
     /** Leftover AI wav chunks / abandoned capture temp files in the cache root. */
     private fun tempAiFiles(): List<File> {
         val list = cacheDir.listFiles() ?: return emptyList()
         return list.filter {
             it.isFile && (
                 it.name.startsWith("ai_audio_") ||
+                    it.name.startsWith("ai_slice_") ||
                     it.name.startsWith("ai_span_") ||
                     it.name.endsWith(".capture")
                 )
@@ -1246,10 +1266,12 @@ class MainActivity : FlutterActivity() {
         language: String,
         translate: Boolean = false
     ) {
+        // Declared outside the try so the catch below can always clean up
+        // a half-extracted WAV (v51: leftover 100+ MB files on rare throws).
+        val wav = File(cacheDir, "ai_audio_$jobId.wav")
         try {
             // 1. Audio track -> 16 kHz mono WAV (fully on device).
             aiProgress(jobId, "extracting", 0)
-            val wav = File(cacheDir, "ai_audio_$jobId.wav")
             if (!extractAudioToWav(videoPath, wav, jobId)) {
                 wav.delete()
                 aiFailed(
@@ -1322,6 +1344,7 @@ class MainActivity : FlutterActivity() {
             if (aiCancelled) return aiFailed(jobId, "cancelled")
             aiDone(jobId, ArrayList())
         } catch (t: Throwable) {
+            wav.delete()
             aiFailed(jobId, t.message ?: "AI subtitle generation failed")
         }
     }
@@ -1774,7 +1797,11 @@ class MainActivity : FlutterActivity() {
             if (dir.isDirectory) {
                 val have =
                     dir.listFiles()?.count { it.name.endsWith(".jpg") } ?: 0
-                if (have >= count) return dir.absolutePath
+                if (have >= count) {
+                    // v51: touch so LRU pruning keeps recently-used strips.
+                    dir.setLastModified(System.currentTimeMillis())
+                    return dir.absolutePath
+                }
             }
             val retriever = android.media.MediaMetadataRetriever()
             try {
@@ -1809,6 +1836,7 @@ class MainActivity : FlutterActivity() {
             } finally {
                 retriever.release()
             }
+            pruneThumbStrips()
             return dir.absolutePath
         } catch (t: Throwable) {
             return null

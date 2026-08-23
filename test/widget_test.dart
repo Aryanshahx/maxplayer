@@ -1745,4 +1745,17 @@ void main() {
       expect(doc, contains('00:00:07,000 --> 00:00:08,000'));
     });
   });
+
+  group('v51 cache-bloat fixes', () {
+    test('mpv demuxer cache caps are set explicitly', () {
+      // The 800 MB storage balloon came from on-disk seek strips (fixed
+      // natively); these caps stop mpv's RAM cache ever drifting to
+      // desktop-sized defaults on low-RAM phones.
+      expect(MediaPlayerState.kMpvCacheCapProps, hasLength(3));
+      expect(MediaPlayerState.kMpvCacheCapProps['demuxer-max-bytes'], '32MiB');
+      expect(
+          MediaPlayerState.kMpvCacheCapProps['demuxer-max-back-bytes'], '8MiB');
+      expect(MediaPlayerState.kMpvCacheCapProps['cache-secs'], '10');
+    });
+  });
 }

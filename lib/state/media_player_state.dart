@@ -118,6 +118,15 @@ class MediaPlayerState extends ChangeNotifier {
   late final List<StreamSubscription> _subs;
 
   MediaPlayerState() {
+    // v51: cap mpv's demuxer cache once. Without explicit values some
+    // builds fall back to mpv's desktop-oriented defaults, which wastes
+    // RAM on 3-4 GB phones for zero benefit on a handset screen.
+    final capPlat = player.platform;
+    if (capPlat is NativePlayer) {
+      for (final e in kMpvCacheCapProps.entries) {
+        unawaited(capPlat.setProperty(e.key, e.value));
+      }
+    }
     _subs = [
       player.stream.playing.listen((v) {
         isPlaying = v;
@@ -975,6 +984,17 @@ class MediaPlayerState extends ChangeNotifier {
 
   /// Pure so tests can pin the decode-mode switch.
   static String enhanceHwdecFor(bool on) => on ? kEnhanceHwdec : 'auto';
+
+  /// v51: one-time mpv cache caps applied in the constructor. 32 MiB of
+  /// forward buffer still smooths 4K remux files; an 8 MiB back buffer
+  /// keeps instant seek-back; cache-secs bounds network-stream caching by
+  /// time so live http links cannot pile up RAM. (The 800 MB storage
+  /// bloat was on-disk seek strips - fixed natively in MainActivity.)
+  static const Map<String, String> kMpvCacheCapProps = {
+    'demuxer-max-bytes': '32MiB',
+    'demuxer-max-back-bytes': '8MiB',
+    'cache-secs': '10',
+  };
 
   bool _enhanceApplied = false;
   String? _enhanceShaderPath;
