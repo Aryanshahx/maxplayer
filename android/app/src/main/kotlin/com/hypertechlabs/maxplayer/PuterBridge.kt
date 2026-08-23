@@ -182,7 +182,7 @@ MXP.onPageReady();
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <script src="https://js.puter.com/v2/"></script>
 </head>
 <body style="background:#1a1a24;color:#fff;font-family:sans-serif;
@@ -201,13 +201,17 @@ MXP.onPageReady();
     Loading&hellip;
   </button>
   <p id="mxErr" style="color:#f66;font-size:13px;margin-top:16px;display:none"></p>
+  <p id="mxDbg" style="color:#666;font-size:11px;margin-top:8px;display:none"></p>
   <br>
-  <a href="#" id="mxCancel"
-    style="color:#666;font-size:14px;text-decoration:none">Cancel</a>
+  <button id="mxCancel" type="button"
+    style="background:none;border:none;color:#666;font-size:14px;
+    cursor:pointer;padding:8px 16px">Cancel</button>
 </div>
 <script>
 var btn = document.getElementById('mxBtn');
 var err = document.getElementById('mxErr');
+var dbg = document.getElementById('mxDbg');
+function log(m) { dbg.textContent = m; dbg.style.display = 'block'; }
 var ready = false;
 var check = setInterval(function() {
     if (typeof puter !== 'undefined' && puter.auth) {
@@ -217,10 +221,11 @@ var check = setInterval(function() {
         btn.style.opacity = '1';
         btn.style.cursor = 'pointer';
         btn.textContent = 'Continue';
+        log('puter ready');
     }
 }, 200);
 setTimeout(function() {
-    if (!ready) { clearInterval(check); btn.textContent = 'No internet'; }
+    if (!ready) { clearInterval(check); btn.textContent = 'No internet'; log('puter load timeout'); }
 }, 15000);
 btn.addEventListener('click', async function() {
     if (!ready) return;
@@ -228,29 +233,39 @@ btn.addEventListener('click', async function() {
     btn.textContent = 'Signing in\u2026';
     btn.style.opacity = '0.5';
     err.style.display = 'none';
+    log('calling signIn...');
     try {
-        var sp = (async function() {
-            if (puter.auth.isSignedIn()) {
-                var u = null;
-                try { u = await puter.auth.getUser(); } catch(e) {}
-                return (u && (u.username || u.email)) ? String(u.username || u.email) : 'guest';
-            }
-            await puter.auth.signIn({ attempt_temp_user_creation: true });
+        if (puter.auth.isSignedIn()) {
+            log('already signed in');
             var u = null;
             try { u = await puter.auth.getUser(); } catch(e) {}
-            return (u && (u.username || u.email)) ? String(u.username || u.email) : 'guest';
-        })();
-        var tp = new Promise(function(_, r) { setTimeout(function(){r(new Error('timed out'));},60000); });
-        var label = await Promise.race([sp, tp]);
+            var label = (u && (u.username || u.email)) ? String(u.username || u.email) : 'guest';
+            MXP.onSignIn(true, label);
+            return;
+        }
+        log('signIn starting...');
+        await puter.auth.signIn({ attempt_temp_user_creation: true });
+        log('signIn resolved, getting user...');
+        var u = null;
+        try { u = await puter.auth.getUser(); } catch(e) { log('getUser error: ' + e.message); }
+        var label = (u && (u.username || u.email)) ? String(u.username || u.email) : 'guest';
+        log('success: ' + label);
         MXP.onSignIn(true, label);
     } catch(e) {
-        var msg = (e && e.message) ? e.message : 'cancelled';
-        err.textContent = msg; err.style.display = 'block';
-        btn.disabled = false; btn.textContent = 'Try again'; btn.style.opacity = '1';
+        var msg = (e && e.message) ? e.message : 'unknown error';
+        log('ERROR: ' + msg);
+        err.textContent = msg;
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Try again';
+        btn.style.opacity = '1';
     }
 });
 document.getElementById('mxCancel').addEventListener('click', function(e) {
-    e.preventDefault(); MXP.onSignIn(false, 'cancelled');
+    e.preventDefault();
+    e.stopPropagation();
+    log('user cancelled');
+    MXP.onSignIn(false, 'user_cancelled');
 });
 </script>
 </body>
@@ -550,13 +565,11 @@ document.getElementById('mxCancel').addEventListener('click', function(e) {
             wv.webViewClient = object : WebViewClient() {}
             wv.webChromeClient = object : WebChromeClient() {
                 override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
-                    // Hide overlay so user can see the puter popup.
                     main.post { signInOverlay?.visibility = WebView.INVISIBLE }
                     return openPopupOnMain(resultMsg)
                 }
                 override fun onCloseWindow(window: WebView?) {
                     closePopupOnMain()
-                    // Show overlay again if sign-in not done yet.
                     main.post { signInOverlay?.visibility = WebView.VISIBLE }
                 }
             }
