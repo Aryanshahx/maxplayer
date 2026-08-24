@@ -14,6 +14,7 @@ import 'package:maxplayer/services/native_bridge.dart';
 import 'package:maxplayer/services/tmdb_client.dart';
 import 'package:maxplayer/widgets/tmdb_image.dart';
 import 'package:maxplayer/services/movie_ai.dart';
+import 'package:maxplayer/services/ai_suggest.dart';
 import 'package:maxplayer/services/subtitle_langs.dart';
 import 'package:maxplayer/widgets/video_search_delegate.dart';
 import 'package:maxplayer/state/media_player_state.dart';
@@ -1730,12 +1731,86 @@ void main() {
       expect(s.copyWith(defaultFitIndex: 1).defaultFitIndex, 1);
     });
 
-    test('two-finger tap-to-fit toggle defaults ON and persists', () {
+    test('v57 two-finger: FIT is default, switchable to zoom, one at a time', () {
       const s = PlayerSettings();
-      expect(s.twoFingerTapFit, isTrue);
-      expect(s.copyWith(twoFingerTapFit: false).twoFingerTapFit, isFalse);
-      // ...while pinch zoom stays its own independent toggle.
+      // The user's rule: two fingers = FIT SCREEN by default.
+      expect(s.twoFingerMode, 'fit');
+      expect(PlayerSettings.kTwoFingerModes.keys, ['fit', 'zoom']);
+      expect(s.copyWith(twoFingerMode: 'zoom').twoFingerMode, 'zoom');
+      // Legacy/unknown stored values fall back to the fit default.
+      expect(PlayerSettings.normalizeTwoFingerMode('both'), 'fit');
+      expect(PlayerSettings.normalizeTwoFingerMode('pinch'), 'fit');
+      expect(PlayerSettings.normalizeTwoFingerMode('junk'), 'fit');
+      expect(PlayerSettings.normalizeTwoFingerMode(null), 'fit');
+      expect(PlayerSettings.normalizeTwoFingerMode('zoom'), 'zoom');
+      // ...while pinch zoom stays its own independent master toggle.
       expect(s.pinchZoom, isTrue);
+    });
+
+    test('v57 twoFingerSnapsToFit: fit default always snaps; zoom on tap', () {
+      // fit (DEFAULT): EVERY two-finger gesture snaps back to fit screen.
+      expect(twoFingerSnapsToFit(mode: 'fit', wasTap: false), isTrue);
+      expect(twoFingerSnapsToFit(mode: 'fit', wasTap: true), isTrue);
+      // zoom: a real pinch KEEPS the zoom; a quick tap snaps home so you
+      // are never stuck zoomed in.
+      expect(twoFingerSnapsToFit(mode: 'zoom', wasTap: false), isFalse);
+      expect(twoFingerSnapsToFit(mode: 'zoom', wasTap: true), isTrue);
+      // unknown stored value behaves like the fit default.
+      expect(twoFingerSnapsToFit(mode: 'junk', wasTap: false), isTrue);
+    });
+
+    test('v58 nextFitIndex walks the fit list and wraps both ways', () {
+      // Fit, Crop, Stretch, 16:9, 4:3, Original (6 entries).
+      const n = 6;
+      expect(nextFitIndex(cur: 0, dir: 1, length: n), 1); // Fit -> Crop
+      expect(nextFitIndex(cur: 1, dir: 1, length: n), 2); // -> Stretch
+      expect(nextFitIndex(cur: 5, dir: 1, length: n), 0); // wraps to Fit
+      expect(nextFitIndex(cur: 0, dir: -1, length: n), 5); // pinch IN wraps
+      expect(nextFitIndex(cur: 2, dir: -1, length: n), 1);
+    });
+
+    test('v58 series filters drive the TMDB /tv endpoints', () {
+      final t = kSeriesFilters.firstWhere((f) => f.key == 'tv_hindi');
+      expect(kSeriesFilters.every((f) => f.tv), isTrue);
+      expect(kDiscoverFilters.every((f) => !f.tv), isTrue);
+      expect(tmdbEndpointPath(kSeriesFilters.first), '/3/trending/tv/week');
+      expect(tmdbEndpointPath(t), '/3/discover/tv');
+      expect(tmdbDiscoverQuery(t, 2)['with_original_language'], 'hi');
+      // series get their own cache files, movie cache names unchanged
+      expect(discoverCacheName(t, 1), contains('_tv_'));
+      expect(discoverCacheName(kDiscoverFilters.first, 1),
+          'tmdb_disc_trending_p1.json');
+    });
+
+    test('v58 parseTmdbPage reads SERIES (name/first_air_date, kind tv)', () {
+      final page = parseTmdbPage(
+          '{"page":1,"total_pages":3,"total_results":1,"results":['
+          '{"id":1399,"name":"Game of Thrones","first_air_date":"2011-04-17",'
+          '"vote_average":8.4,"poster_path":"/x.jpg"}]}',
+          kind: 'tv');
+      expect(page.items.single.title, 'Game of Thrones');
+      expect(page.items.single.year, 2011);
+      expect(page.items.single.kind, 'tv');
+      // movies stay kind 'movie' by default
+      expect(
+          parseTmdbPage('{"results":[{"id":1,"title":"X",'
+                  '"release_date":"2020-05-06"}]}')
+              .items
+              .single
+              .kind,
+          'movie');
+    });
+
+    test('v58 parseAiSuggestionJson tolerates prose, fences, garbage', () {
+      final picks = parseAiSuggestionJson(
+          'Sure! Here you go:\n```json\n[{"title":"3 Idiots","year":2009},'
+          '{"title":"Dangal"},{"no":"title"},{"title":""}]\n```');
+      expect(picks.map((p) => p.title), ['3 Idiots', 'Dangal']);
+      expect(picks.first.year, 2009);
+      expect(picks[1].year, isNull);
+      expect(parseAiSuggestionJson('no json at all'), isEmpty);
+      expect(parseAiSuggestionJson('[1,2,3]'), isEmpty);
+      expect(parseAiSuggestionJson('[]'), isEmpty);
     });
   });
 }

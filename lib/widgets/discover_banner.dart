@@ -39,6 +39,7 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
   Timer? _timer;
   List<String> _posters = const [];
   bool _userHolding = false;
+  int _bootTries = 0;
 
   @override
   void initState() {
@@ -68,6 +69,15 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
           if (m.posterPath != null) tmdbPosterUrl(m.posterPath),
       ];
     });
+    // v55: if the first open happened on a rough/blocked network the
+    // poster strip stayed empty forever (flat gradient). Retry a few
+    // times - each retry re-enters through the 24h cache/dual-host client.
+    if (_posters.isEmpty && _bootTries < 3 && kTmdbApiKey.isNotEmpty) {
+      _bootTries++;
+      Timer(const Duration(seconds: 8), () {
+        if (mounted && _posters.isEmpty) _boot();
+      });
+    }
   }
 
   @override

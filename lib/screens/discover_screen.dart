@@ -9,6 +9,7 @@ import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
 import '../state/video_library_state.dart';
 import '../utils/movie_match.dart';
+import '../widgets/ai_suggest_sheet.dart';
 import '../widgets/movie_detail_sheet.dart';
 import '../widgets/tmdb_image.dart';
 
@@ -27,6 +28,10 @@ import '../widgets/tmdb_image.dart';
 ///
 /// TRAILERS: a tap opens the official YouTube app (Play-policy-safe). We
 /// never play YouTube streams through our own player.
+/// v58 grew it further: WEB SERIES got their own shelf (Movies | Series
+/// switch + /tv endpoints), the grid paints INSTANTLY from the disk cache
+/// on slow networks (live data then replaces it), and the ✨ AI Suggestor
+/// turns "funny action like Dhoom" into real, tappable posters.
 class DiscoverScreen extends StatefulWidget {
   final VideoLibraryState library;
   final MediaPlayerState player;
@@ -48,6 +53,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   Timer? _debounce;
 
   DiscoverFilter _filter = kDiscoverFilters.first;
+
+  /// v58: false = movie shelves, true = WEB SERIES shelves (/tv endpoints).
+  bool _seriesMode = false;
   final List<TmdbMovie> _movies = [];
   final Set<int> _seenIds = {};
   int _page = 0;
@@ -103,13 +111,29 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     final token = _loadToken;
     if (page == 1) {
       if (mounted) setState(() => _initialLoading = true);
+      // v58: instant first paint on bad networks - show the cached page
+      // from disk RIGHT AWAY; the live fetch below replaces it.
+      if (!_searching && _movies.isEmpty) {
+        final cached = await _client.cachedBrowseFirstPage(_filter);
+        if (!mounted || token != _loadToken) return;
+        if (cached != null && _movies.isEmpty) {
+          setState(() {
+            for (final m in cached.items) {
+              if (_seenIds.add(m.id)) _movies.add(m);
+            }
+            _error = null;
+          });
+        }
+      }
     } else {
       if (mounted) setState(() => _loadingMore = true);
     }
     TmdbPage result;
     try {
       result = _searching
-          ? await _client.searchMovies(_searchQuery, page: page, force: force)
+          ? await (_seriesMode
+              ? _client.searchTv(_searchQuery, page: page, force: force)
+              : _client.searchMovies(_searchQuery, page: page, force: force))
           : await _client.browse(_filter, page: page, force: force);
     } catch (_) {
       result = const TmdbPage();
@@ -126,8 +150,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       }
       if (page == 1 && _movies.isEmpty) {
         _error = _searching
-            ? 'No movies match "$_searchQuery" on TMDB.'
-            : 'Could not load movies - connect the internet once, '
+            ? 'No ${_seriesMode ? 'series' : 'movies'} match "$_searchQuery" on TMDB.'
+            : 'Could not load ${_seriesMode ? 'series' : 'movies'} - connect the internet once, '
                 'then pull down to retry.';
       } else if (_movies.isNotEmpty) {
         _error = null;
@@ -143,7 +167,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   Future<void> _loadRelated(int movieId, int token) async {
     List<TmdbMovie> rel;
     try {
-      rel = await _client.similar(movieId);
+      rel = await _client.similar(movieId, kind: _seriesMode ? 'tv' : 'movie');
     } catch (_) {
       rel = const [];
     }
@@ -213,8 +237,24 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       movie: movie,
       localMatch: match,
       player: widget.player,
-      detailLoader: () => _client.fullDetail(movie.id),
+      detailLoader: () => _client.fullDetail(movie.id, kind: movie.kind),
     );
+  }
+
+  /// v58: Movies | Web Series master switch - swaps the chip shelf and
+  /// reloads page 1 of the right catalogue.
+  void _setSeriesMode(bool v) {
+    if (v == _seriesMode) return;
+    _seriesMode = v;
+    _switchTo(
+        filter: (v ? kSeriesFilters : kDiscoverFilters).first, force: true);
+  }
+
+  /// v58: the AI Suggestor - "describe your movie type" -> real posters.
+  Future<void> _openAiSuggest() async {
+    final pick = await AiSuggestSheet.show(context);
+    if (!mounted || pick == null) return;
+    _openMovie(pick);
   }
 
   @override
@@ -231,7 +271,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               Text(
                 _searching
                     ? '${_movies.length} of ~${formatVoteCount(_totalResults)} results'
-                    : '${formatVoteCount(_totalResults)} movies - scroll for more',
+                    : '${formatVoteCount(_totalResults)} ${_seriesMode ? 'series' : 'movies'} - scroll for more',
                 style: const TextStyle(color: Colors.white38, fontSize: 11),
               ),
           ],
@@ -250,7 +290,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: InputDecoration(
                       isDense: true,
-                      hintText: 'Search movies...',
+                      hintText:
+                          _seriesMode ? 'Search series...' : 'Search movies...',
                       hintStyle: const TextStyle(color: Colors.white38),
                       prefixIcon: Icon(Icons.search,
                           color: themeState.accent, size: 20),
@@ -273,14 +314,42 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     ),
                   ),
                 ),
+                // v58: Movies | Web Series master switch + the AI
+                // Suggestor entry - the row every user asked for.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                  child: Row(
+                    children: [
+                      _FilterChip(
+                        label: 'Movies',
+                        selected: !_seriesMode,
+                        onTap: () => _setSeriesMode(false),
+                      ),
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'Web Series',
+                        selected: _seriesMode,
+                        onTap: () => _setSeriesMode(true),
+                      ),
+                      const Spacer(),
+                      _FilterChip(
+                        label: '✨ AI Suggest',
+                        selected: false,
+                        onTap: _openAiSuggest,
+                      ),
+                    ],
+                  ),
+                ),
                 // v44: MANY filters (was just All/Hollywood/Bollywood).
+                // v58: the shelf swaps with the Movies | Series switch.
                 SizedBox(
                   height: 40,
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     children: [
-                      for (final f in kDiscoverFilters) ...[
+                      for (final f
+                          in (_seriesMode ? kSeriesFilters : kDiscoverFilters)) ...[
                         _FilterChip(
                           label: f.label,
                           selected: !_searching && _filter == f,

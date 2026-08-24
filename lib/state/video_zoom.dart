@@ -18,3 +18,23 @@ bool isTwoFingerTapReset({
   required bool scaled,
 }) =>
     !scaled && travelPx < 24 && durationMs <= 400;
+
+/// v57/v58: what a finished two-finger gesture should do, from the
+/// Settings choice (PlayerSettings.kTwoFingerModes). DEFAULT is 'fit':
+/// every two-finger gesture ends up at fit screen (pinch zoom is off;
+/// pinch STEPS through the fits instead - see nextFitIndex). 'zoom':
+/// pinch keeps its zoom; only a quick two-finger TAP snaps home so the
+/// user is never stuck zoomed in. Legacy/unknown values = 'fit' default.
+bool twoFingerSnapsToFit({required String mode, required bool wasTap}) {
+  if (mode == 'zoom') return wasTap;
+  return true; // 'fit' (DEFAULT) and any legacy/unknown value
+}
+
+/// v58 (user's design): with the zoom switch OFF, a two-finger pinch
+/// STEPS through the fit list (Fit, Crop, Stretch, 16:9, 4:3, Original):
+/// dir=+1 = pinch OUT -> next fit, dir=-1 = pinch IN -> previous fit.
+/// Wraps around both ways. Pure for tests.
+int nextFitIndex({required int cur, required int dir, required int length}) {
+  final n = (cur + dir) % length;
+  return n < 0 ? n + length : n;
+}

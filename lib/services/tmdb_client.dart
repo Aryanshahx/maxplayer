@@ -24,6 +24,10 @@ class TmdbMovie {
   /// Filled only by the detail call (the official YouTube trailer KEY).
   final String? trailerKey;
 
+  /// v58: 'movie' or 'tv' (web series). Detail/similar calls route to
+  /// the right TMDB endpoint with it; old entries default to 'movie'.
+  final String kind;
+
   const TmdbMovie({
     required this.id,
     required this.title,
@@ -33,9 +37,10 @@ class TmdbMovie {
     this.backdropPath,
     this.overview = '',
     this.trailerKey,
+    this.kind = 'movie',
   });
 
-  TmdbMovie copyWith({String? trailerKey}) => TmdbMovie(
+  TmdbMovie copyWith({String? trailerKey, String? kind}) => TmdbMovie(
         id: id,
         title: title,
         rating: rating,
@@ -44,6 +49,7 @@ class TmdbMovie {
         backdropPath: backdropPath,
         overview: overview,
         trailerKey: trailerKey ?? this.trailerKey,
+        kind: kind ?? this.kind,
       );
 }
 
@@ -59,6 +65,10 @@ class DiscoverFilter {
   /// v46: the "not released yet" shelf (TMDB upcoming endpoint).
   final bool upcoming;
 
+  /// v58: WEB SERIES - drive the TMDB TV endpoints instead of movies.
+  /// ("webseries are not showing" was a real user complaint.)
+  final bool tv;
+
   const DiscoverFilter({
     required this.key,
     required this.label,
@@ -66,6 +76,7 @@ class DiscoverFilter {
     this.genreId,
     this.trending = false,
     this.upcoming = false,
+    this.tv = false,
   });
 }
 
@@ -88,12 +99,30 @@ const List<DiscoverFilter> kDiscoverFilters = [
   DiscoverFilter(key: 'scifi', label: 'Sci-Fi', genreId: 878),
 ];
 
-/// Which TMDB endpoint a filter pages through. Pure for tests.
+/// v58: WEB SERIES shelves (TMDB /tv endpoints). TV genre ids differ from
+/// movie ids, so series chips stick to trending + language only.
+const List<DiscoverFilter> kSeriesFilters = [
+  DiscoverFilter(
+      key: 'tv_trending', label: 'Trending', trending: true, tv: true),
+  DiscoverFilter(key: 'tv_hindi', label: 'Hindi', language: 'hi', tv: true),
+  DiscoverFilter(
+      key: 'tv_english', label: 'English', language: 'en', tv: true),
+  DiscoverFilter(key: 'tv_korean', label: 'K-Drama', language: 'ko', tv: true),
+  DiscoverFilter(key: 'tv_anime', label: 'Anime', language: 'ja', tv: true),
+];
+
+/// Deterministic cache file name for one discover page (movie names are
+/// unchanged since v44; series get their own _tv files). Pure for tests.
+String discoverCacheName(DiscoverFilter f, int page) =>
+    'tmdb_disc_${f.key}${f.tv ? '_tv' : ''}_p$page.json';
+
+/// Which TMDB endpoint a filter pages through. v58: series-safe.
+/// Pure for tests.
 String tmdbEndpointPath(DiscoverFilter f) => f.trending
-    ? '/3/trending/movie/week'
+    ? (f.tv ? '/3/trending/tv/week' : '/3/trending/movie/week')
     : f.upcoming
         ? '/3/movie/upcoming'
-        : '/3/discover/movie';
+        : (f.tv ? '/3/discover/tv' : '/3/discover/movie');
 
 /// Query params for one page of a NON-trending filter. Pure for tests.
 Map<String, String> tmdbDiscoverQuery(DiscoverFilter f, int page) => {
@@ -261,11 +290,13 @@ String formatVoteCount(int votes) {
 double? _numToDouble(Object? v) =>
     v is num ? v.toDouble() : double.tryParse('$v');
 
-TmdbMovie? _movieFromMap(Object? e) {
+TmdbMovie? _movieFromMap(Object? e, {String kind = 'movie'}) {
   if (e is! Map) return null;
+  // v58: series arrive as name + first_air_date (movies: title +
+  // release_date) - take whichever is there.
   final title = '${e['title'] ?? e['name'] ?? ''}'.trim();
   if (title.isEmpty) return null;
-  final date = '${e['release_date'] ?? ''}';
+  final date = '${e['release_date'] ?? e['first_air_date'] ?? ''}';
   final year = date.length >= 4 ? int.tryParse(date.substring(0, 4)) : null;
   final poster = '${e['poster_path'] ?? ''}';
   final backdrop = '${e['backdrop_path'] ?? ''}';
@@ -277,19 +308,20 @@ TmdbMovie? _movieFromMap(Object? e) {
     posterPath: poster.isEmpty ? null : poster,
     backdropPath: backdrop.isEmpty ? null : backdrop,
     overview: '${e['overview'] ?? ''}',
+    kind: kind,
   );
 }
 
 /// Parses a trending/discover/search LIST response. Never throws: any
 /// garbage row is skipped, garbage body -> empty list. Pure for tests.
-List<TmdbMovie> parseTmdbList(String jsonBody) {
-  return parseTmdbPage(jsonBody).items;
+List<TmdbMovie> parseTmdbList(String jsonBody, {String kind = 'movie'}) {
+  return parseTmdbPage(jsonBody, kind: kind).items;
 }
 
 /// v44: list + paging info in one parse. Never throws; garbage -> empty
 /// page. total_pages is CAPPED at 500 (TMDB's own maximum page depth).
 /// Pure for tests.
-TmdbPage parseTmdbPage(String jsonBody) {
+TmdbPage parseTmdbPage(String jsonBody, {String kind = 'movie'}) {
   try {
     final decoded = jsonDecode(jsonBody);
     if (decoded is! Map) return const TmdbPage();
@@ -297,7 +329,7 @@ TmdbPage parseTmdbPage(String jsonBody) {
     final items = <TmdbMovie>[];
     if (results is List) {
       for (final e in results) {
-        final m = _movieFromMap(e);
+        final m = _movieFromMap(e, kind: kind);
         if (m != null) items.add(m);
       }
     }
@@ -393,7 +425,9 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
           ? (decoded['vote_count'] as num).toInt()
           : 0,
       status: '${decoded['status'] ?? ''}'.trim(),
-      releaseDate: '${decoded['release_date'] ?? ''}'.trim(),
+      releaseDate:
+          '${decoded['release_date'] ?? decoded['first_air_date'] ?? ''}'
+              .trim(),
       originalTitle: '${decoded['original_title'] ?? ''}'.trim(),
       budgetUsd: decoded['budget'] is num ? (decoded['budget'] as num).toInt() : 0,
       revenueUsd: decoded['revenue'] is num ? (decoded['revenue'] as num).toInt() : 0,
@@ -618,6 +652,14 @@ String? pickTrailerKey(Object? videos) {
 class TmdbClient {
   static const String _host = 'api.themoviedb.org';
 
+  /// v55: api.tmdb.org is TMDB's own shorter alias of api.themoviedb.org.
+  /// Some networks (several Indian ISPs) block or badly throttle ONE of
+  /// them, which left Discover stuck on its spinner/error and the home
+  /// banner on its flat gradient. We try the last-known-good host first,
+  /// then the alias, and stick with whichever answers.
+  static const List<String> _hosts = ['api.themoviedb.org', 'api.tmdb.org'];
+  static String _activeHost = _hosts.first;
+
   /// v45: ONE shared client (keep-alive TLS) + longer timeouts. Before,
   /// every request made a fresh 5-second-timeout client, so on a slow
   /// network the first load almost always failed -> "needs multiple
@@ -634,18 +676,26 @@ class TmdbClient {
   /// the "details don't load at once" report).
   Future<String> _get(Uri uri) async {
     Object? lastError;
-    for (var attempt = 0; attempt < 3; attempt++) {
-      try {
-        final req = await _http.getUrl(uri);
-        final res = await req.close().timeout(const Duration(seconds: 20));
-        if (res.statusCode != 200) {
-          throw HttpException('TMDB status ${res.statusCode}');
+    // v55: 2 rounds x both hosts; a dead/blackholed host fails fast (8 s
+    // connect cap) so the alias gets its turn quickly.
+    for (var round = 0; round < 2; round++) {
+      for (final host
+          in [_activeHost, ..._hosts.where((h) => h != _activeHost)]) {
+        try {
+          final req = await _http
+              .getUrl(uri.replace(host: host))
+              .timeout(const Duration(seconds: 8));
+          final res = await req.close().timeout(const Duration(seconds: 14));
+          if (res.statusCode != 200) {
+            throw HttpException('TMDB status ${res.statusCode}');
+          }
+          final body = await res.transform(utf8.decoder).join();
+          _activeHost = host;
+          return body;
+        } catch (e) {
+          lastError = e;
+          await Future<void>.delayed(const Duration(milliseconds: 350));
         }
-        return await res.transform(utf8.decoder).join();
-      } catch (e) {
-        lastError = e;
-        await Future<void>.delayed(
-            Duration(milliseconds: 400 * (attempt + 1)));
       }
     }
     throw HttpException('TMDB request failed: $lastError');
@@ -687,7 +737,7 @@ class TmdbClient {
   Future<TmdbPage> browse(DiscoverFilter f,
       {int page = 1, bool force = false}) async {
     if (kTmdbApiKey.isEmpty) return const TmdbPage();
-    final String cacheName = 'tmdb_disc_${f.key}_p$page.json';
+    final String cacheName = discoverCacheName(f, page);
     final Uri uri;
     if (f.trending || f.upcoming) {
       uri = Uri.https(_host, tmdbEndpointPath(f), {
@@ -697,14 +747,33 @@ class TmdbClient {
         'page': '$page',
       });
     } else {
-      uri = Uri.https(_host, '/3/discover/movie', {
+      uri = Uri.https(_host, tmdbEndpointPath(f), {
         'api_key': kTmdbApiKey,
         ...tmdbDiscoverQuery(f, page),
       });
     }
     final body = await _fetch(cacheName, uri,
         ttl: force ? Duration.zero : const Duration(hours: 24));
-    return body == null ? const TmdbPage() : parseTmdbPage(body);
+    return body == null
+        ? const TmdbPage()
+        : parseTmdbPage(body, kind: f.tv ? 'tv' : 'movie');
+  }
+
+  /// v58: instant first paint on slow networks - whatever the disk cache
+  /// already holds for page 1 (stale is fine); the live load then
+  /// replaces it. Null = nothing cached yet.
+  Future<TmdbPage?> cachedBrowseFirstPage(DiscoverFilter f) async {
+    try {
+      final dir = cacheDir;
+      if (dir == null) return null;
+      final file = File('${dir.path}/${discoverCacheName(f, 1)}');
+      if (!await file.exists()) return null;
+      final page = parseTmdbPage(await file.readAsString(),
+          kind: f.tv ? 'tv' : 'movie');
+      return page.items.isEmpty ? null : page;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// v44: the Discover SEARCH bar - searches TMDB's whole catalogue.
@@ -721,23 +790,44 @@ class TmdbClient {
     return body == null ? const TmdbPage() : parseTmdbPage(body);
   }
 
+  /// v58: the SAME search bar but for WEB SERIES (/search/tv).
+  Future<TmdbPage> searchTv(String query,
+      {int page = 1, bool force = false}) async {
+    final q = query.trim();
+    if (kTmdbApiKey.isEmpty || q.isEmpty) return const TmdbPage();
+    final uri = Uri.https(_host, '/3/search/tv', {
+      'api_key': kTmdbApiKey,
+      ...tmdbSearchQuery(q, page),
+    });
+    final body = await _fetch(tmdbSearchCacheName('tv_$q', page), uri,
+        ttl: force ? Duration.zero : const Duration(hours: 24));
+    return body == null ? const TmdbPage() : parseTmdbPage(body, kind: 'tv');
+  }
+
   /// v46: one call now also brings WATCH PROVIDERS (where to watch) and
   /// real user REVIEWS. Cache name _v4 forces one re-download.
-  Future<TmdbFull?> fullDetail(int id, {bool force = false}) async {
+  Future<TmdbFull?> fullDetail(int id,
+      {String kind = 'movie', bool force = false}) async {
     if (kTmdbApiKey.isEmpty) return null;
-    final uri = Uri.https(_host, '/3/movie/$id', {
+    final isTv = kind == 'tv';
+    final uri = Uri.https(_host, '/3/$kind/$id', {
       'api_key': kTmdbApiKey,
       'language': 'en-US',
-      'append_to_response':
-          'videos,credits,images,watch/providers,reviews,'
-          'release_dates,translations',
+      // Series have no release_dates; content_ratings is their cousin.
+      'append_to_response': isTv
+          ? 'videos,credits,images,watch/providers,reviews,'
+              'content_ratings,translations'
+          : 'videos,credits,images,watch/providers,reviews,'
+              'release_dates,translations',
       'include_image_language': 'en,null',
     });
-    final body = await _fetch('tmdb_movie_v5_$id.json', uri,
+    final body = await _fetch(
+        isTv ? 'tmdb_tv_v5_$id.json' : 'tmdb_movie_v5_$id.json', uri,
         ttl: force ? Duration.zero : const Duration(hours: 24));
     if (body == null) return null;
-    final movie = parseTmdbDetail(body);
-    if (movie == null) return null;
+    final parsed = parseTmdbDetail(body);
+    if (parsed == null) return null;
+    final movie = isTv ? parsed.copyWith(kind: 'tv') : parsed;
     return TmdbFull(
       movie,
       parseTmdbExtras(body),
@@ -749,14 +839,17 @@ class TmdbClient {
 
   /// v45: RELATED movies ("search is poor - show related movies"): TMDB's
   /// similar endpoint for the top search hit. Cached 24h like everything.
-  Future<List<TmdbMovie>> similar(int id, {bool force = false}) async {
+  Future<List<TmdbMovie>> similar(int id,
+      {String kind = 'movie', bool force = false}) async {
     if (kTmdbApiKey.isEmpty) return const [];
-    final uri = Uri.https(_host, '/3/movie/$id/similar', {
+    final uri = Uri.https(_host, '/3/$kind/$id/similar', {
       'api_key': kTmdbApiKey,
       'language': 'en-US',
     });
-    final body = await _fetch('tmdb_similar_$id.json', uri,
+    final body = await _fetch(
+        kind == 'tv' ? 'tmdb_tv_similar_$id.json' : 'tmdb_similar_$id.json',
+        uri,
         ttl: force ? Duration.zero : const Duration(hours: 24));
-    return body == null ? const [] : parseTmdbList(body);
+    return body == null ? const [] : parseTmdbList(body, kind: kind);
   }
 }

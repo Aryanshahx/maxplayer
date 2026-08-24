@@ -160,6 +160,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // v52: two-finger TAP = snap back to fit screen. We measure the pinch
   // gesture's total travel / whether any real scaling happened.
+  // v58: in fit mode a pinch STEPS the fit mode once per gesture; this
+  // flag stops one long pinch from machine-gunning through the list.
+  bool _fitSteppedThisGesture = false;
   int _scaleStartMs = 0;
   double _pinchTravelPx = 0;
   bool _pinchScaled = false;
@@ -620,6 +623,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     _onUserInteraction();
   }
 
+  /// v58: two-finger pinch STEPS through the fit list when the zoom
+  /// switch is off (pinch out = next, pinch in = previous, wraps both
+  /// ways). Mirrors _cycleFit's indicator so it feels identical.
+  void _stepFit(int dir) {
+    setState(() => _fitIndex =
+        nextFitIndex(cur: _fitIndex, dir: dir, length: _fits.length));
+    _showIndicator('Fit: ${_fitNames[_fitIndex]}', _fitIcons[_fitIndex]);
+    _onUserInteraction();
+  }
+
   // ---------------------------------------------------------------------------
   // Unified scale recognizer (pinch zoom + ALL drag gestures)
   // ---------------------------------------------------------------------------
@@ -634,15 +647,31 @@ class _PlayerScreenState extends State<PlayerScreen>
     _scaleStartMs = DateTime.now().millisecondsSinceEpoch;
     _pinchTravelPx = 0;
     _pinchScaled = false;
+    _fitSteppedThisGesture = false;
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
     // Two+ fingers -> pinch zoom (focal-anchored).
     if (details.pointerCount >= 2) {
-      if (!_settings.pinchZoom) return;
       _scaleMode = _ScaleMode.zoom;
       _pinchTravelPx += details.focalPointDelta.distance;
       if ((details.scale - 1.0).abs() > 0.05) _pinchScaled = true;
+      // v58 (user's redesign): ONE Settings switch decides what two
+      // fingers do. Switch OFF (default): pinch OUT steps to the NEXT
+      // fit (Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original), pinch
+      // IN steps back - one step per pinch, a quick tap snaps home (see
+      // _onScaleEnd). Switch ON: smooth pinch zoom below.
+      if (_settings.twoFingerMode == 'fit') {
+        if (!_fitSteppedThisGesture) {
+          final d = details.scale - 1.0;
+          if (d.abs() >= 0.18) {
+            _fitSteppedThisGesture = true;
+            _stepFit(d > 0 ? 1 : -1);
+          }
+        }
+        return;
+      }
+      if (!_settings.pinchZoom) return;
 
       // Focal-anchored transform: the content point that was under the
       // fingers when the pinch started stays glued to the CURRENT focal
@@ -795,15 +824,20 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     if (mode == _ScaleMode.volume || mode == _ScaleMode.brightness) return;
-    // v52: a fast two-finger tap (no real pinch) snaps home to fit
-    // screen (v53: toggleable from Settings).
-    if (_settings.twoFingerTapFit &&
-        mode == _ScaleMode.zoom &&
-        isTwoFingerTapReset(
-          durationMs:
-              DateTime.now().millisecondsSinceEpoch - _scaleStartMs,
-          travelPx: _pinchTravelPx,
-          scaled: _pinchScaled,
+    // v57/v58: Settings decides when a finished two-finger gesture snaps
+    // home. 'fit' (DEFAULT) = tap snaps to fit (a pinch that STEPPED the
+    // fit mode keeps its new fit - hence the flag); 'zoom' = only a
+    // quick tap snaps home, a real pinch keeps its zoom.
+    if (mode == _ScaleMode.zoom &&
+        !_fitSteppedThisGesture &&
+        twoFingerSnapsToFit(
+          mode: _settings.twoFingerMode,
+          wasTap: isTwoFingerTapReset(
+            durationMs:
+                DateTime.now().millisecondsSinceEpoch - _scaleStartMs,
+            travelPx: _pinchTravelPx,
+            scaled: _pinchScaled,
+          ),
         )) {
       _resetToFitScreen();
       return;

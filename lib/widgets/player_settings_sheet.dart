@@ -143,62 +143,19 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 onChanged: (v) =>
                     _update(_settings.copyWith(horizontalSeek: v)),
               ),
+              // v58 (user's redesign): ONE switch only - the old
+              // "Pinch to zoom" switch, "Two-finger gesture" dropdown and
+              // "Default video fit" dropdown are GONE. OFF (default) =
+              // two fingers step through ALL fits; ON = two fingers zoom.
               _SwitchTile(
                 icon: Icons.pinch_outlined,
-                label: 'Pinch to zoom (two fingers)',
-                subtitle: 'Two-finger tap snaps back to fit screen',
-                value: _settings.pinchZoom,
-                onChanged: (v) => _update(_settings.copyWith(pinchZoom: v)),
-              ),
-              _SwitchTile(
-                icon: Icons.touch_app_outlined,
-                label: 'Two-finger tap = fit screen',
-                subtitle: 'Quick two-finger tap snaps a zoomed view back out',
-                value: _settings.twoFingerTapFit,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(twoFingerTapFit: v)),
-              ),
-              // v52: which fit mode videos start in (default: fit screen).
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                child: Row(
-                  children: [
-                    const Icon(Icons.fit_screen,
-                        color: Colors.white38, size: 22),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Default video fit',
-                            style:
-                                TextStyle(color: Colors.white, fontSize: 15),
-                          ),
-                          Text(
-                            'Every video opens in this mode',
-                            style: TextStyle(
-                              color: Colors.white38,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    _MiniDropdown<int>(
-                      value: _settings.defaultFitIndex,
-                      entries: {
-                        for (var i = 0;
-                            i < PlayerSettings.kFitModeNames.length;
-                            i++)
-                          i: PlayerSettings.kFitModeNames[i],
-                      },
-                      onChanged: (v) => _update(
-                          _settings.copyWith(defaultFitIndex: v ?? 0)),
-                    ),
-                  ],
-                ),
+                label: 'Two-finger pinch to zoom',
+                subtitle:
+                    'OFF: two fingers step Fit, Crop, Stretch, 16:9, 4:3 - '
+                    'tap with 2 fingers to return to Fit. ON: pinch to zoom.',
+                value: _settings.twoFingerMode == 'zoom',
+                onChanged: (v) => _update(
+                    _settings.copyWith(twoFingerMode: v ? 'zoom' : 'fit')),
               ),
               _SwitchTile(
                 icon: Icons.fast_forward,

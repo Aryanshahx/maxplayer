@@ -15,9 +15,14 @@ class PlayerSettings {
   /// back to). 0 = Fit screen (the default); indexes match [kFitModeNames].
   final int defaultFitIndex;
 
-  /// v53: the two-finger TAP gesture snaps a zoomed view back to fit
-  /// screen. Toggleable from Settings; independent of pinch-to-zoom.
-  final bool twoFingerTapFit;
+  /// v55: what TWO FINGERS do on the video, chosen in Settings:
+  /// What two fingers do on the video - ONE at a time (the user's rule):
+  /// 'fit' (DEFAULT) = two fingers always snap the video back to fit
+  /// screen, pinch zoom is off; 'zoom' = two fingers pinch-zoom in/out
+  /// (a quick tap still snaps home so you are never stuck zoomed in).
+  /// Switch in Settings > Player > "Two-finger gesture".
+  /// See PlayerSettings.kTwoFingerModes.
+  final String twoFingerMode;
 
   /// Hold a finger on the video to temporarily play faster.
   final bool longPressSpeed;
@@ -73,7 +78,7 @@ class PlayerSettings {
     this.brightnessSwipe = true,
     this.pinchZoom = true,
     this.defaultFitIndex = 0,
-    this.twoFingerTapFit = true,
+    this.twoFingerMode = 'fit',
     this.longPressSpeed = true,
     this.longPressMultiplier = 2.0,
     this.autoHideSeconds = 4,
@@ -100,7 +105,21 @@ class PlayerSettings {
   static const String kBrightnessSwipe = 'player.brightnessSwipe';
   static const String kPinchZoom = 'player.pinchZoom';
   static const String kDefaultFitIndex = 'player.defaultFitIndex';
-  static const String kTwoFingerTapFit = 'player.twoFingerTapFit';
+  static const String kTwoFingerMode = 'player.twoFingerMode';
+
+  /// v58: backs the single "Two-finger pinch to zoom" switch in Settings
+  /// ('fit' = switch OFF, the default; 'zoom' = switch ON). ONLY ONE
+  /// works at a time, exactly as the user asked.
+  static const Map<String, String> kTwoFingerModes = {
+    'fit': 'Fit screen (default)',
+    'zoom': 'Zoom in & out',
+  };
+
+  /// Turn any stored value into a valid mode. Anything that is not
+  /// 'zoom' (legacy 'both'/'pinch', junk, or missing) falls back to the
+  /// fit-screen default.
+  static String normalizeTwoFingerMode(String? v) =>
+      v == 'zoom' ? 'zoom' : 'fit';
 
   /// v52: fit modes offered in Settings. MUST stay in the same order as
   /// PlayerScreen's private _fits/_fitNames lists (tested).
@@ -140,7 +159,7 @@ class PlayerSettings {
       defaultFitIndex: (int.tryParse(s[kDefaultFitIndex] ?? '') ??
               d.defaultFitIndex)
           .clamp(0, kFitModeNames.length - 1),
-      twoFingerTapFit: s[kTwoFingerTapFit] != 'false',
+      twoFingerMode: normalizeTwoFingerMode(s[kTwoFingerMode]),
       longPressSpeed: s[kLongPressSpeed] != 'false',
       longPressMultiplier:
           double.tryParse(s[kLongPressMultiplier] ?? '') ??
@@ -181,7 +200,7 @@ class PlayerSettings {
     NativeBridge.saveSetting(kBrightnessSwipe, '$brightnessSwipe');
     NativeBridge.saveSetting(kPinchZoom, '$pinchZoom');
     NativeBridge.saveSetting(kDefaultFitIndex, '$defaultFitIndex');
-    NativeBridge.saveSetting(kTwoFingerTapFit, '$twoFingerTapFit');
+    NativeBridge.saveSetting(kTwoFingerMode, twoFingerMode);
     NativeBridge.saveSetting(kLongPressSpeed, '$longPressSpeed');
     NativeBridge.saveSetting(
       kLongPressMultiplier,
@@ -209,7 +228,7 @@ class PlayerSettings {
     bool? brightnessSwipe,
     bool? pinchZoom,
     int? defaultFitIndex,
-    bool? twoFingerTapFit,
+    String? twoFingerMode,
     bool? longPressSpeed,
     double? longPressMultiplier,
     int? autoHideSeconds,
@@ -233,7 +252,7 @@ class PlayerSettings {
       brightnessSwipe: brightnessSwipe ?? this.brightnessSwipe,
       pinchZoom: pinchZoom ?? this.pinchZoom,
       defaultFitIndex: defaultFitIndex ?? this.defaultFitIndex,
-      twoFingerTapFit: twoFingerTapFit ?? this.twoFingerTapFit,
+      twoFingerMode: twoFingerMode ?? this.twoFingerMode,
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
       longPressMultiplier: longPressMultiplier ?? this.longPressMultiplier,
       autoHideSeconds: autoHideSeconds ?? this.autoHideSeconds,
