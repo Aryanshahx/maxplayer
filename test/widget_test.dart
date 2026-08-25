@@ -17,6 +17,7 @@ import 'package:maxplayer/services/movie_ai.dart';
 import 'package:maxplayer/services/ai_suggest.dart';
 import 'package:maxplayer/services/subtitle_langs.dart';
 import 'package:maxplayer/widgets/video_search_delegate.dart';
+import 'package:maxplayer/widgets/video_thumb.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/video_zoom.dart';
 import 'package:maxplayer/state/player_settings.dart';
@@ -1759,11 +1760,16 @@ void main() {
       expect(twoFingerSnapsToFit(mode: 'junk', wasTap: false), isTrue);
     });
 
-    test('v59 expand ladder: ALL fits by spreading, then ZOOM keeps going', () {
+    test('v60 expand ladder: reachable on a phone pinch, then ZOOM', () {
       const n = 6; // Fit, Crop, Stretch, 16:9, 4:3, Original
-      // One 1.35x spread from Fit climbs exactly one fit step (Crop).
-      var pos = fitLadderPosFor(basePos: 0, scale: 1.35, fitCount: n);
+      // One kFitLadderStepScale spread from Fit climbs exactly one step.
+      var pos =
+          fitLadderPosFor(basePos: 0, scale: kFitLadderStepScale, fitCount: n);
       expect(pos, closeTo(1.0, 0.01));
+      // v60 phone report was "the ladder never REACHED zoom": a normal
+      // firm phone pinch (~2.6x spread) must get PAST Original into zoom.
+      final phonePinch = fitLadderPosFor(basePos: 0, scale: 2.6, fitCount: n);
+      expect(phonePinch, greaterThan(n - 1)); // inside the zoom region
       // Two steps -> Stretch; decode rounds inside the fit region.
       pos = fitLadderPosFor(
           basePos: 0,
@@ -1772,16 +1778,15 @@ void main() {
       expect(fitLadderDecode(pos, n).fitIndex, 2);
       expect(fitLadderDecode(pos, n).zoom, 1.0);
       expect(fitLadderDecode(0.4, n).fitIndex, 0);
-      // Past the last fit the ladder flows into SMOOTH zoom (this is
-      // the "zooming is not working" fix - it just keeps going).
+      // Zoom region: slope 2.6 -> fast but smooth, clamped at 4x.
       expect(fitLadderDecode(n - 1, n).zoom, 1.0);
-      expect(fitLadderDecode((n - 1) + 0.5, n).zoom, closeTo(2.0, 0.01));
+      expect(fitLadderDecode((n - 1) + 0.5, n).zoom, closeTo(2.462, 0.01));
       expect(fitLadderDecode((n - 1) + 9, n).zoom, kMaxVideoZoom);
       expect(fitLadderDecode((n - 1) + 0.5, n).fitIndex, n - 1);
       // State -> base anchor round trips.
       expect(fitLadderPosOf(fitIndex: 3, fitCount: n, zoom: 1.0), 3.0);
       expect(fitLadderPosOf(fitIndex: 5, fitCount: n, zoom: 4.0),
-          closeTo((n - 1) + 1.0, 0.001));
+          closeTo((n - 1) + 0.769, 0.01));
       // Pinching IN (scale < 1) walks back DOWN the ladder.
       final down = fitLadderPosFor(
           basePos: 3, scale: 1 / kFitLadderStepScale, fitCount: n);
@@ -1830,6 +1835,30 @@ void main() {
       expect(seasons[1].year, 2018);
       expect(seasons[2].name, 'Season 2'); // fallback naming
       expect(parseTmdbSeasons('garbage'), isEmpty);
+    });
+
+    test('v60 parseTmdbSeasons falls back to the counters line', () {
+      // some /tv payloads carry ONLY counters, no seasons array
+      final s = parseTmdbSeasons(
+          '{"seasons":[],"number_of_seasons":3,"number_of_episodes":24}');
+      expect(s.single.name, contains('3 seasons'));
+      expect(s.single.episodes, 24);
+      expect(parseTmdbSeasons('{"seasons":[],"number_of_seasons":0}'),
+          isEmpty);
+    });
+
+    test('v60 thumbnail slots cap at 2 and hand over in order', () async {
+      await VideoThumb.acquireThumbSlot();
+      await VideoThumb.acquireThumbSlot();
+      var thirdDone = false;
+      final third =
+          VideoThumb.acquireThumbSlot().then((_) => thirdDone = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(thirdDone, isFalse); // third waits - the cap holds
+      VideoThumb.releaseThumbSlot(); // frees -> third gets the slot
+      await third;
+      expect(thirdDone, isTrue);
+      VideoThumb.releaseThumbSlot();
     });
 
     test('v58 series filters drive the TMDB /tv endpoints', () {

@@ -181,6 +181,16 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
           scaffoldMessengerKey: _messengerKey,
           title: 'Max Player',
           debugShowCheckedModeBanner: false,
+          // v60 CRASH FIX (his report: "Null check operator used on a null
+          // value" in _onUnknownRoute): when Android pushes a route the
+          // app does not know (task restore / back stack / plugin intent),
+          // pushNamed returned null and Flutter crashed with a null-check.
+          // Unknown routes now land on the normal home screen.
+          onUnknownRoute: (settings) => MaterialPageRoute(
+            builder: (_) => mp == null
+                ? _StartupFailureScreen(error: _playerError)
+                : LibraryScreen(library: library, player: mp),
+          ),
           theme: ThemeData(
             useMaterial3: true,
             brightness: Brightness.dark,

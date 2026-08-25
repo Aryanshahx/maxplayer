@@ -623,6 +623,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     _onUserInteraction();
   }
 
+  /// v60: forces the 16:9 / 4:3 FRAME inside the screen like VLC's
+  /// resize button (Center + AspectRatio, engine-independent, identical
+  /// in landscape and portrait). Other fit modes pass straight through.
+  Widget _fitFrame({required Widget child}) {
+    final asp = _fitAspects[_fitIndex];
+    if (asp == null) return child;
+    return Center(child: AspectRatio(aspectRatio: asp, child: child));
+  }
+
   // ---------------------------------------------------------------------------
   // Unified scale recognizer (pinch zoom + ALL drag gestures)
   // ---------------------------------------------------------------------------
@@ -1035,16 +1044,20 @@ class _PlayerScreenState extends State<PlayerScreen>
                                           // bottom, near the seek bar.
                                           child: Stack(
                                             children: [
-                                              Video(
-                                                controller: _controller,
-                                                controls: NoVideoControls,
-                                                fit: _fits[_fitIndex],
-                                                // v20: forces the frame to
-                                                // 16:9 / 4:3 in those fit
-                                                // modes; null keeps the
-                                                // video's own ratio.
-                                                aspectRatio:
-                                                    _fitAspects[_fitIndex],
+                                              // v60 (user: "fit button does
+                                              // not resize like VLC"): the
+                                              // 16:9 / 4:3 modes force the
+                                              // FRAME inside the screen with
+                                              // OUR OWN Center+AspectRatio
+                                              // wrapper - engine-independent,
+                                              // identical in landscape and
+                                              // portrait on every build.
+                                              _fitFrame(
+                                                child: Video(
+                                                  controller: _controller,
+                                                  controls: NoVideoControls,
+                                                  fit: _fits[_fitIndex],
+                                                  aspectRatio: null,
                                                 // v26/v27: karaoke <=>
                                                 // normal subtitles. The
                                                 // engine's own Flutter
@@ -1065,6 +1078,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                                       visible: !_settings
                                                           .karaokeSubs,
                                                     ),
+                                                  ),
                                               ),
                                               if (_settings.karaokeSubs &&
                                                   !_isPip)

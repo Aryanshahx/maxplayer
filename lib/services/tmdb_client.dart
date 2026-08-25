@@ -284,6 +284,24 @@ List<TmdbSeason> parseTmdbSeasons(String jsonBody) {
         year: air.length >= 4 ? int.tryParse(air.substring(0, 4)) : null,
       ));
     }
+    // v60 belt & braces (his report: "series parts not showing"): some
+    // /tv payloads carry ONLY the counters, no seasons array - still
+    // show the one summary line instead of nothing at all.
+    if (out.isEmpty) {
+      final ns = decoded['number_of_seasons'] is num
+          ? (decoded['number_of_seasons'] as num).toInt()
+          : 0;
+      final ne = decoded['number_of_episodes'] is num
+          ? (decoded['number_of_episodes'] as num).toInt()
+          : 0;
+      if (ns > 0) {
+        out.add(TmdbSeason(
+          number: ns,
+          name: '$ns season${ns == 1 ? '' : 's'} in total',
+          episodes: ne,
+        ));
+      }
+    }
     return out;
   } catch (_) {
     return const [];

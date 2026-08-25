@@ -42,8 +42,14 @@ bool twoFingerSnapsToFit({required String mode, required bool wasTap}) {
 // ---------------------------------------------------------------------------
 
 /// Spreading the fingers by this factor climbs exactly ONE ladder step.
-/// 1.35 feels like VLC/MX pinch speed.
-const double kFitLadderStepScale = 1.35;
+/// v60 retune (his phone report: the ladder never REACHED zoom - 1.35
+/// per step needed a ~4.5x finger spread): 1.20 per step puts the zoom
+/// region inside a normal phone pinch (~2.6x spread gets you there).
+const double kFitLadderStepScale = 1.20;
+
+/// Growth rate of the zoom REGION past the last fit (pos +1 == zoom
+/// 2^slope). 2.6 makes the zoom arrive fast once you cross Original.
+const double kFitLadderZoomSlope = 2.6;
 
 double _log2(double v) => math.log(v) / math.ln2;
 
@@ -55,8 +61,8 @@ double fitLadderPosOf({
   required double zoom,
 }) {
   if (zoom > kMinVideoZoom) {
-    final p = (fitCount - 1) + _log2(zoom) / 2; // zoom 1..4 -> +0..+1
-    return p.clamp(0.0, (fitCount - 1) + 1.0);
+    final p = (fitCount - 1) + _log2(zoom) / kFitLadderZoomSlope;
+    return p.clamp(0.0, (fitCount - 1) + _log2(kMaxVideoZoom) / kFitLadderZoomSlope);
   }
   return fitIndex.toDouble().clamp(0.0, (fitCount - 1).toDouble());
 }
@@ -69,7 +75,8 @@ double fitLadderPosFor({
   required int fitCount,
 }) {
   if (scale <= 0) return basePos;
-  final maxPos = (fitCount - 1) + 1.0; // top = 4x zoom over the last fit
+  final maxPos =
+      (fitCount - 1) + _log2(kMaxVideoZoom) / kFitLadderZoomSlope;
   return (basePos + _log2(scale) / _log2(kFitLadderStepScale))
       .clamp(0.0, maxPos);
 }
@@ -80,7 +87,7 @@ double fitLadderPosFor({
   if (pos <= fitCount - 1) {
     return (fitIndex: pos.round().clamp(0, fitCount - 1), zoom: kMinVideoZoom);
   }
-  final z = math.pow(2, (pos - (fitCount - 1)) * 2).toDouble();
+  final z = math.pow(2, (pos - (fitCount - 1)) * kFitLadderZoomSlope).toDouble();
   return (
     fitIndex: fitCount - 1,
     zoom: z.clamp(kMinVideoZoom, kMaxVideoZoom),

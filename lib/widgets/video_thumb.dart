@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -22,6 +23,30 @@ class VideoThumb extends StatefulWidget {
   /// path -> resolved thumbnail path (null = asked, still none)
   static final Map<String, String?> _lazy = {};
   static final Set<String> _inFlight = {};
+
+  /// v60 (old-phone pack): at most TWO native frame decodes running -
+  /// one task per visible grid tile was spiking low-RAM phones. Queued
+  /// tiles just keep the placeholder a moment longer.
+  static int _thumbJobsRunning = 0;
+  static final List<Completer<void>> _thumbWaiters = [];
+
+  static Future<void> acquireThumbSlot() async {
+    if (_thumbJobsRunning < 2) {
+      _thumbJobsRunning++;
+      return;
+    }
+    final c = Completer<void>();
+    _thumbWaiters.add(c);
+    await c.future;
+  }
+
+  static void releaseThumbSlot() {
+    if (_thumbWaiters.isNotEmpty) {
+      _thumbWaiters.removeAt(0).complete();
+    } else {
+      _thumbJobsRunning--;
+    }
+  }
 
   @override
   State<VideoThumb> createState() => _VideoThumbState();
@@ -61,8 +86,17 @@ class _VideoThumbState extends State<VideoThumb> {
     if (_asked || !VideoThumb._inFlight.add(widget.track.path)) return;
     _asked = true;
     () async {
+      await VideoThumb.acquireThumbSlot();
       try {
-        final meta = await NativeBridge.fetchMetadata(widget.track.path);
+        var meta = await NativeBridge.fetchMetadata(widget.track.path);
+        if (meta.thumbnailPath == null) {
+          // v60: ONE retry after a breath - some files expose a frame a
+          // beat late. Never loops forever, never crashes over a thumb.
+          await Future<void>.delayed(const Duration(milliseconds: 350));
+          if (mounted) {
+            meta = await NativeBridge.fetchMetadata(widget.track.path);
+          }
+        }
         VideoThumb._lazy[widget.track.path] = meta.thumbnailPath;
         if (meta.thumbnailPath == null) return;
         if (mounted) setState(() => _thumbPath = meta.thumbnailPath);
@@ -70,6 +104,7 @@ class _VideoThumbState extends State<VideoThumb> {
         // keep the placeholder - nothing crashes over a thumbnail
       } finally {
         VideoThumb._inFlight.remove(widget.track.path);
+        VideoThumb.releaseThumbSlot();
       }
     }();
   }

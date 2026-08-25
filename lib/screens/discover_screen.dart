@@ -159,6 +159,15 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       _loadRelated(result.items.first.id, token,
           kind: result.items.first.kind);
     }
+    // v60: "I am saying from the beginning - load INFINITE contents":
+    // if page 1 alone doesn't fill the screen (few results / tall
+    // display), pull the NEXT page right away instead of waiting for a
+    // scroll that can never start.
+    if (page == 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && token == _loadToken) _maybeLoadMore();
+      });
+    }
   }
 
   Future<void> _loadRelated(int movieId, int token,

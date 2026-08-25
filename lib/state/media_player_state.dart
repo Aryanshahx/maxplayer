@@ -175,6 +175,8 @@ class MediaPlayerState extends ChangeNotifier {
         if (karaokeMode) unawaited(_applySubVisibility());
         notifyListeners();
       }),
+      // v60 (old-phone pack): any decode/render failure phones home here.
+      player.stream.error.listen(_onPlaybackError),
     ];
     // libmpv stays at 100%: loudness is driven by the DEVICE media volume
     // (MX Player / VLC style) so the swipe can always reach the phone's
@@ -384,6 +386,34 @@ class MediaPlayerState extends ChangeNotifier {
     await _loadCurrent(autoplay: true);
   }
 
+  /// v60 (old-phone pack): path of the file that already FAILED once on
+  /// the hardware decoder and was moved to software. Reset per new file
+  /// by usage in _loadCurrent; the audio-only fallback insight: many
+  /// cheap SoCs (buggy HEVC) just can not do hardware decode.
+  String? _hwFallbackForPath;
+
+  /// Fires on mpv decode/render errors. Cheap-SoC hardware decoders
+  /// (H.265 especially) die here - so we flip the SAME file to SOFTWARE
+  /// decoding once and continue right where playback stopped, instead
+  /// of the dead black screen users reported.
+  void _onPlaybackError(Object e) {
+    final track = currentTrack;
+    if (track == null) return;
+    if (_hwFallbackForPath == track.path) return; // already retried once
+    _hwFallbackForPath = track.path;
+    final plat = player.platform;
+    if (plat is NativePlayer) {
+      unawaited(plat.setProperty('hwdec', 'no')); // software from now on
+    }
+    final resume = player.state.position;
+    unawaited(player.open(Media(track.path), play: true).then((_) {
+      if (resume > Duration.zero && resume < player.state.duration) {
+        player.seek(resume);
+      }
+    }).catchError((_) {}));
+    notifyListeners();
+  }
+
   Future<void> _loadCurrent({required bool autoplay}) async {
     final track = currentTrack;
     if (track == null) return;
@@ -392,6 +422,11 @@ class MediaPlayerState extends ChangeNotifier {
     loopB = null;
     final plat = player.platform;
     if (plat is NativePlayer) {
+      // v60: this exact file failed on the hardware decoder before ->
+      // start it in SOFTWARE straight away.
+      if (_hwFallbackForPath == track.path) {
+        unawaited(plat.setProperty('hwdec', 'no'));
+      }
       // Head-room for the 200% volume boost + re-apply the current gain /
       // leveling filter for the new file.
       unawaited(plat.setProperty('volume-max', '200'));

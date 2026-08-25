@@ -1,44 +1,45 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Max Player v59 (1.0.0+55) - The expand ladder + Discover rework (YOUR way)
+# Max Player v60 (1.0.0+56) - crash fix, reachable zoom, VLC fit, old phones
 # ----------------------------------------------------------------------------
-# Built from YOUR phone-test report of v58. Verbatim demands -> what changed:
+# From YOUR v58/v59 phone reports + the crash trace you pasted:
 #
-#   1. "make all (fit, crop, stretch, etc) fit screen by expanding fingers
-#      AND ZOOMING IS NOT WORKING":
-#      ONE continuous gesture now - spread two fingers and the video walks
-#      Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original and KEEPS GOING
-#      into smooth zoom (up to 4x). Pinch IN walks back down. The ladder
-#      NEVER undoes your pinch (that was the "zoom not working" bug).
-#      Quick two-finger tap = snap back to Fit. The Settings switch stays:
-#      ON = classic direct pinch zoom.
-#   2. "remove movies filter, add web series filter with all filter row":
-#      the Movies|Series TOGGLE IS GONE - ONE row with every chip (all
-#      movie filters + Trending/Hindi/English/K-Drama/Anime series).
-#   3. "move AI suggest to top": now the sparkle icon in the top AppBar.
-#   4. "search finds from all filters": the search bar now multi-searches
-#      movies AND series together (people results dropped).
-#   5. "in web series detail mention all parts": series detail shows
-#      "Seasons & parts" - every season with episode count + year.
-#   6. "load tons of contents in every filter / series don't all load":
-#      the strict vote bar (25 votes) dropped to 8 - regional and series
-#      shelves now pull MANY more titles, paging still infinite.
+#   1. CRASH "Null check operator" in _onUnknownRoute (Android pushes a
+#      route on task-restore / back stack; app had no route table):
+#      unknown routes now land on the normal home screen. Crash class
+#      CLOSED.
+#   2. "Spread fingers walks the fits but never goes into ZOOM": the
+#      ladder needed an impossible ~4.5x finger spread. Retuned: a normal
+#      phone pinch (~2.6x) now walks Fit -> Crop -> Stretch -> 16:9 ->
+#      4:3 -> Original and flows into ZOOM, pinch in walks back.
+#   3. "Fit button does not resize like VLC, landscape and portrait":
+#      the 16:9 / 4:3 modes now force the frame with our own
+#      Center+AspectRatio wrapper (engine-independent), identical in
+#      both orientations. Fit / Crop / Stretch still visibly different.
+#   4. "Series parts not showing": series whose TMDB data has only the
+#      counters now show the "N seasons, M episodes" line as a fallback.
+#   5. "Load infinite contents": when page 1 can't fill your screen, the
+#      next page now loads AUTOMATICALLY (no dead shelf).
+#   6. OLD-PHONE PACK: hardware decode fails -> ONE automatic retry of
+#      the same file in SOFTWARE (resumes at your position) instead of a
+#      dead black screen; thumbnail decoding capped at 2 jobs with one
+#      retry (low-RAM friendly).
 #
 # Safe to run twice. Run from the repo root:
-#   cd ~/IdeaProjects/maxplayer && bash update_maxplayer_v59.sh
+#   cd ~/IdeaProjects/maxplayer && bash update_maxplayer_v60.sh
 # ============================================================================
 set -euo pipefail
 if [ ! -d lib ] || [ ! -f pubspec.yaml ]; then
   echo "FAIL: run this from the repo root (cd ~/IdeaProjects/maxplayer)"; exit 1
 fi
-echo "Applying v59 (expand ladder + Discover rework)..."
+echo "Applying v60 (crash fix + ladder zoom + VLC fit + old-phone pack)..."
 
 mkdir -p "$(dirname "pubspec.yaml")"
-cat > "pubspec.yaml" <<'MAXV59_EOF_1'
+cat > "pubspec.yaml" <<'MAXV60_EOF_1'
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+55
+version: 1.0.0+56
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -73,11 +74,287 @@ flutter:
   assets:
     # Real-time Enhance shader loaded into mpv at runtime (v32).
     - assets/shaders/
-MAXV59_EOF_1
+MAXV60_EOF_1
 echo "  wrote pubspec.yaml"
 
+mkdir -p "$(dirname "lib/main.dart")"
+cat > "lib/main.dart" <<'MAXV60_EOF_2'
+import 'dart:async';
+import 'dart:io';
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:media_kit/media_kit.dart' hide VideoTrack;
+import 'package:path/path.dart' as p;
+
+import 'models/video_track.dart';
+import 'screens/library_screen.dart';
+import 'screens/player_screen.dart';
+import 'services/native_bridge.dart';
+import 'state/media_player_state.dart';
+import 'state/theme_state.dart';
+import 'state/video_library_state.dart';
+import 'utils/crash_log.dart';
+
+// Global keys so a native "Open with" callback can navigate + snackbar from
+// anywhere, without a BuildContext of its own.
+final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<ScaffoldMessengerState> _messengerKey =
+    GlobalKey<ScaffoldMessengerState>();
+
+void main() {
+  // Crash journal: rather than vanishing silently, record any Dart-side
+  // error and offer it as a copyable report on the next app launch -
+  // "app closed unexpectedly" becomes debuggable without a PC/logcat.
+  runZonedGuarded(() {
+    WidgetsFlutterBinding.ensureInitialized();
+    // v37: startup breadcrumbs - maxplayer_start.log (also in Android/
+    // data/...) shows how far a phone gets before dying.
+    unawaited(NativeBridge.crumb('dart_main'));
+    // Must be called before any media_kit Player is created.
+    MediaKit.ensureInitialized();
+    unawaited(NativeBridge.crumb('mediakit_ok'));
+    FlutterError.onError = (details) {
+      CrashLog.record(
+          'flutter', details.exceptionAsString(), details.stack);
+      FlutterError.presentError(details);
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      CrashLog.record('async', error.toString(), stack);
+      return true;
+    };
+    // Follow the phone's own rotation everywhere; the player's lock button
+    // temporarily restricts it (and restores on exit).
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    runApp(const MaxPlayerApp());
+  }, (error, stack) {
+    CrashLog.record('zone', error.toString(), stack);
+  });
+}
+
+class MaxPlayerApp extends StatefulWidget {
+  const MaxPlayerApp({super.key});
+
+  @override
+  State<MaxPlayerApp> createState() => _MaxPlayerAppState();
+}
+
+class _MaxPlayerAppState extends State<MaxPlayerApp> {
+  final library = VideoLibraryState();
+
+  // v37: created inside initState under a guard - if the playback engine's
+  // native library can't load on this device, show a readable error screen
+  // instead of dying with "Max Player has stopped" at startup.
+  MediaPlayerState? _player;
+  Object? _playerError;
+
+  @override
+  void initState() {
+    super.initState();
+    try {
+      _player = MediaPlayerState();
+      unawaited(NativeBridge.crumb('player_ok'));
+    } catch (e) {
+      _playerError = e;
+      unawaited(NativeBridge.crumb('player_FAIL: $e'));
+    }
+    // App-wide accent color (persisted).
+    themeState.load();
+    final mp = _player;
+    if (mp != null) {
+      // v22: the player's fallback for 4K/HDR thumbnails writes the cached
+      // image itself - swap it into the already-built library list so the
+      // tile updates without a rescan.
+      mp.onThumbnailCaptured =
+          (videoPath, thumbPath) => library.setThumbnail(videoPath, thumbPath);
+      // "Open with Max Player" from other apps: warm delivery ...
+      NativeBridge.configureCallbacks(
+        onOpenVideo: _openExternalVideo,
+        onOpenVideoFailed: _externalOpenFailed,
+      );
+      // ... and the cold-start case (app launched BY a VIEW intent).
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final initial = await NativeBridge.getInitialOpenVideo();
+        final path = initial['path'];
+        final failed = initial['failed'];
+        if (path != null) {
+          _openExternalVideo(path);
+        } else if (failed != null) {
+          _externalOpenFailed(failed);
+        }
+      });
+    }
+  }
+
+  /// Plays a video that another app sent us. Local files arrive as real
+  /// filesystem paths (resolved natively); http/rtsp-style links are treated
+  /// as network streams and handed to libmpv directly.
+  Future<void> _openExternalVideo(String path) async {
+    final mp = _player;
+    if (mp == null) return;
+    const streamSchemes = {'http', 'https', 'rtsp', 'rtmp', 'mms'};
+    final uri = Uri.tryParse(path);
+    if (uri != null && streamSchemes.contains(uri.scheme.toLowerCase())) {
+      final title =
+          uri.pathSegments.isNotEmpty && uri.pathSegments.last.isNotEmpty
+              ? Uri.decodeComponent(uri.pathSegments.last)
+              : uri.host;
+      await mp.playStream(path, title);
+      _navigateToPlayer();
+      return;
+    }
+    try {
+      await File(path).stat();
+    } catch (_) {
+      _externalOpenFailed(path);
+      return;
+    }
+    final meta = await NativeBridge.fetchMetadata(path);
+    final track = VideoTrack(
+      id: path,
+      title: p.basenameWithoutExtension(path),
+      path: path,
+      thumbnailPath: meta.thumbnailPath,
+      duration: meta.duration,
+      width: meta.width,
+      height: meta.height,
+    );
+    await mp.setPlaylistAndPlay([track], 0);
+    _navigateToPlayer();
+  }
+
+  /// Jump straight into the player, replacing an already-open one.
+  void _navigateToPlayer() {
+    final nav = _navigatorKey.currentState;
+    final mp = _player;
+    if (nav == null || mp == null) return;
+    nav.popUntil((route) => route.isFirst);
+    nav.push(MaterialPageRoute(builder: (_) => PlayerScreen(player: mp)));
+  }
+
+  void _externalOpenFailed(String target) {
+    _messengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text("Can't open '${p.basename(target)}' - "
+            'the file may be unavailable or storage access is off'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _player?.dispose();
+    library.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mp = _player;
+    // Rebuild the whole app when the accent color changes.
+    return AnimatedBuilder(
+      animation: themeState,
+      builder: (context, _) {
+        return MaterialApp(
+          navigatorKey: _navigatorKey,
+          scaffoldMessengerKey: _messengerKey,
+          title: 'Max Player',
+          debugShowCheckedModeBanner: false,
+          // v60 CRASH FIX (his report: "Null check operator used on a null
+          // value" in _onUnknownRoute): when Android pushes a route the
+          // app does not know (task restore / back stack / plugin intent),
+          // pushNamed returned null and Flutter crashed with a null-check.
+          // Unknown routes now land on the normal home screen.
+          onUnknownRoute: (settings) => MaterialPageRoute(
+            builder: (_) => mp == null
+                ? _StartupFailureScreen(error: _playerError)
+                : LibraryScreen(library: library, player: mp),
+          ),
+          theme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.dark,
+            scaffoldBackgroundColor: const Color(0xFF0a0a0f),
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: themeState.accent,
+              brightness: Brightness.dark,
+            ),
+          ),
+          home: mp == null
+              ? _StartupFailureScreen(error: _playerError)
+              : LibraryScreen(library: library, player: mp),
+        );
+      },
+    );
+  }
+}
+
+/// v37: shown if the playback engine itself failed to initialise (e.g. its
+/// native library could not load on this device). Much better than a silent
+/// "has stopped": the reason is visible + copyable, and the startup trace
+/// file pinpoints the exact stage.
+class _StartupFailureScreen extends StatelessWidget {
+  final Object? error;
+
+  const _StartupFailureScreen({this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    final detail = error?.toString() ?? 'unknown error';
+    return Scaffold(
+      backgroundColor: const Color(0xFF0a0a0f),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline,
+                  color: Colors.redAccent, size: 56),
+              const SizedBox(height: 16),
+              const Text(
+                'The video engine failed to start on this phone',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SelectableText(
+                detail,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Please send this text + the file\n'
+                'Android/data/com.hypertechlabs.maxplayer/files/maxplayer_start.log\n'
+                'to the developer.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white38, fontSize: 12.5),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () =>
+                    Clipboard.setData(ClipboardData(text: detail)),
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text('Copy error'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+MAXV60_EOF_2
+echo "  wrote lib/main.dart"
+
 mkdir -p "$(dirname "lib/state/video_zoom.dart")"
-cat > "lib/state/video_zoom.dart" <<'MAXV59_EOF_2'
+cat > "lib/state/video_zoom.dart" <<'MAXV60_EOF_3'
 /// Pure pinch-zoom math shared by the player screen and unit tests (v52).
 library;
 
@@ -122,8 +399,14 @@ bool twoFingerSnapsToFit({required String mode, required bool wasTap}) {
 // ---------------------------------------------------------------------------
 
 /// Spreading the fingers by this factor climbs exactly ONE ladder step.
-/// 1.35 feels like VLC/MX pinch speed.
-const double kFitLadderStepScale = 1.35;
+/// v60 retune (his phone report: the ladder never REACHED zoom - 1.35
+/// per step needed a ~4.5x finger spread): 1.20 per step puts the zoom
+/// region inside a normal phone pinch (~2.6x spread gets you there).
+const double kFitLadderStepScale = 1.20;
+
+/// Growth rate of the zoom REGION past the last fit (pos +1 == zoom
+/// 2^slope). 2.6 makes the zoom arrive fast once you cross Original.
+const double kFitLadderZoomSlope = 2.6;
 
 double _log2(double v) => math.log(v) / math.ln2;
 
@@ -135,8 +418,8 @@ double fitLadderPosOf({
   required double zoom,
 }) {
   if (zoom > kMinVideoZoom) {
-    final p = (fitCount - 1) + _log2(zoom) / 2; // zoom 1..4 -> +0..+1
-    return p.clamp(0.0, (fitCount - 1) + 1.0);
+    final p = (fitCount - 1) + _log2(zoom) / kFitLadderZoomSlope;
+    return p.clamp(0.0, (fitCount - 1) + _log2(kMaxVideoZoom) / kFitLadderZoomSlope);
   }
   return fitIndex.toDouble().clamp(0.0, (fitCount - 1).toDouble());
 }
@@ -149,7 +432,8 @@ double fitLadderPosFor({
   required int fitCount,
 }) {
   if (scale <= 0) return basePos;
-  final maxPos = (fitCount - 1) + 1.0; // top = 4x zoom over the last fit
+  final maxPos =
+      (fitCount - 1) + _log2(kMaxVideoZoom) / kFitLadderZoomSlope;
   return (basePos + _log2(scale) / _log2(kFitLadderStepScale))
       .clamp(0.0, maxPos);
 }
@@ -160,294 +444,17 @@ double fitLadderPosFor({
   if (pos <= fitCount - 1) {
     return (fitIndex: pos.round().clamp(0, fitCount - 1), zoom: kMinVideoZoom);
   }
-  final z = math.pow(2, (pos - (fitCount - 1)) * 2).toDouble();
+  final z = math.pow(2, (pos - (fitCount - 1)) * kFitLadderZoomSlope).toDouble();
   return (
     fitIndex: fitCount - 1,
     zoom: z.clamp(kMinVideoZoom, kMaxVideoZoom),
   );
 }
-MAXV59_EOF_2
+MAXV60_EOF_3
 echo "  wrote lib/state/video_zoom.dart"
 
-mkdir -p "$(dirname "lib/state/player_settings.dart")"
-cat > "lib/state/player_settings.dart" <<'MAXV59_EOF_3'
-import '../services/native_bridge.dart';
-
-/// Immutable snapshot of the customizable player settings (gestures, auto
-/// hide, resume). Persisted through the native settings store so only plain
-/// key/value strings cross the MethodChannel - no extra plugin deps.
-class PlayerSettings {
-  final bool doubleTapSeek;
-  final int seekSeconds;
-  final bool doubleTapPlayPause;
-  final bool volumeSwipe;
-  final bool brightnessSwipe;
-  final bool pinchZoom;
-
-  /// v52: which fit mode the player starts in (and a two-finger tap snaps
-  /// back to). 0 = Fit screen (the default); indexes match [kFitModeNames].
-  final int defaultFitIndex;
-
-  /// v55: what TWO FINGERS do on the video, chosen in Settings:
-  /// What two fingers do on the video - ONE at a time (the user's rule):
-  /// 'fit' (DEFAULT) = two fingers always snap the video back to fit
-  /// screen, pinch zoom is off; 'zoom' = two fingers pinch-zoom in/out
-  /// (a quick tap still snaps home so you are never stuck zoomed in).
-  /// Switch in Settings > Player > "Two-finger gesture".
-  /// See PlayerSettings.kTwoFingerModes.
-  final String twoFingerMode;
-
-  /// Hold a finger on the video to temporarily play faster.
-  final bool longPressSpeed;
-
-  /// Multiplier applied while long-pressing (1.5 / 2.0 / 2.5 / 3.0).
-  final double longPressMultiplier;
-
-  /// Seconds of inactivity before the controls vanish. 0 = never auto-hide.
-  final int autoHideSeconds;
-
-  /// Reopen a video where you left off (backed by the watch history).
-  final bool resumePlayback;
-
-  /// Drag horizontally anywhere on the video to scrub through it.
-  final bool horizontalSeek;
-
-  /// Show the "Cast to TV" (DLNA) button in the player top bar.
-  final bool castButton;
-
-  /// Show the screenshot button in the player top bar.
-  final bool screenshotButton;
-
-  /// Show the screen-lock (kids mode) button on the video.
-  final bool lockButton;
-
-  /// v21: playback extras.
-  /// Volume slider/drag may go past 100% up to 200% (mpv decoder gain).
-  final bool volumeBoost200;
-
-  /// mpv dynaudnorm: loud explosions and quiet dialogue evened out.
-  final bool volumeLeveling;
-
-  /// Karaoke-style word highlight for AI subtitles.
-  final bool karaokeSubs;
-
-  /// Offer a "Skip intro" chip when AI subtitles show the dialogue starts
-  /// noticeably after the video start.
-  final bool skipIntroChip;
-
-  /// v32: real-time picture enhancement (GPU sharpen + contrast + vibrance
-  /// shader, assets/shaders/mx_enhance.glsl).
-  final bool enhanceVideo;
-
-  /// v32: mpv tone-mapping curve for HDR sources ('auto' | 'clip' |
-  /// 'mobius' | 'hable' | 'bt.2390').
-  final String toneMapping;
-
-  const PlayerSettings({
-    this.doubleTapSeek = true,
-    this.seekSeconds = 10,
-    this.doubleTapPlayPause = true,
-    this.volumeSwipe = true,
-    this.brightnessSwipe = true,
-    this.pinchZoom = true,
-    this.defaultFitIndex = 0,
-    this.twoFingerMode = 'fit',
-    this.longPressSpeed = true,
-    this.longPressMultiplier = 2.0,
-    this.autoHideSeconds = 4,
-    this.resumePlayback = true,
-    this.horizontalSeek = true,
-    this.castButton = true,
-    this.screenshotButton = true,
-    this.lockButton = true,
-    // v22: ON by default ("volume up to 200% out of the box"); only people
-    // who explicitly turned it off keep it off (saved 'false' below).
-    this.volumeBoost200 = true,
-    this.volumeLeveling = false,
-    this.karaokeSubs = false,
-    this.skipIntroChip = true,
-    this.enhanceVideo = false,
-    this.toneMapping = 'auto',
-  });
-
-  // Persisted keys (MediaPlayerState reads the resume key directly).
-  static const String kDoubleTapSeek = 'player.doubleTapSeek';
-  static const String kSeekSeconds = 'player.seekSeconds';
-  static const String kDoubleTapPlayPause = 'player.doubleTapPlayPause';
-  static const String kVolumeSwipe = 'player.volumeSwipe';
-  static const String kBrightnessSwipe = 'player.brightnessSwipe';
-  static const String kPinchZoom = 'player.pinchZoom';
-  static const String kDefaultFitIndex = 'player.defaultFitIndex';
-  static const String kTwoFingerMode = 'player.twoFingerMode';
-
-  /// v58: backs the single "Two-finger pinch to zoom" switch in Settings
-  /// ('fit' = switch OFF, the default; 'zoom' = switch ON). ONLY ONE
-  /// works at a time, exactly as the user asked.
-  static const Map<String, String> kTwoFingerModes = {
-    'fit': 'Fit screen (default)',
-    'zoom': 'Zoom in & out',
-  };
-
-  /// Turn any stored value into a valid mode. Anything that is not
-  /// 'zoom' (legacy 'both'/'pinch', junk, or missing) falls back to the
-  /// fit-screen default.
-  static String normalizeTwoFingerMode(String? v) =>
-      v == 'zoom' ? 'zoom' : 'fit';
-
-  /// v52: fit modes offered in Settings. MUST stay in the same order as
-  /// PlayerScreen's private _fits/_fitNames lists (tested).
-  static const List<String> kFitModeNames = [
-    'Fit',
-    'Crop',
-    'Stretch',
-    '16:9',
-    '4:3',
-    'Original',
-  ];
-  static const String kLongPressSpeed = 'player.longPressSpeed';
-  static const String kLongPressMultiplier = 'player.longPressMultiplier';
-  static const String kAutoHideSeconds = 'player.autoHideSeconds';
-  static const String kResumePlayback = 'player.resumePlayback';
-  static const String kHorizontalSeek = 'player.horizontalSeek';
-  static const String kCastButton = 'player.castButton';
-  static const String kScreenshotButton = 'player.screenshotButton';
-  static const String kLockButton = 'player.lockButton';
-  static const String kVolumeBoost200 = 'player.volumeBoost200';
-  static const String kVolumeLeveling = 'player.volumeLeveling';
-  static const String kKaraokeSubs = 'player.karaokeSubs';
-  static const String kSkipIntroChip = 'player.skipIntroChip';
-  static const String kEnhanceVideo = 'player.enhanceVideo';
-  static const String kToneMapping = 'player.toneMapping';
-
-  static Future<PlayerSettings> load() async {
-    final s = await NativeBridge.loadSettings();
-    const d = PlayerSettings();
-    return PlayerSettings(
-      doubleTapSeek: s[kDoubleTapSeek] != 'false',
-      seekSeconds: int.tryParse(s[kSeekSeconds] ?? '') ?? d.seekSeconds,
-      doubleTapPlayPause: s[kDoubleTapPlayPause] != 'false',
-      volumeSwipe: s[kVolumeSwipe] != 'false',
-      brightnessSwipe: s[kBrightnessSwipe] != 'false',
-      pinchZoom: s[kPinchZoom] != 'false',
-      defaultFitIndex: (int.tryParse(s[kDefaultFitIndex] ?? '') ??
-              d.defaultFitIndex)
-          .clamp(0, kFitModeNames.length - 1),
-      twoFingerMode: normalizeTwoFingerMode(s[kTwoFingerMode]),
-      longPressSpeed: s[kLongPressSpeed] != 'false',
-      longPressMultiplier:
-          double.tryParse(s[kLongPressMultiplier] ?? '') ??
-          d.longPressMultiplier,
-      autoHideSeconds:
-          int.tryParse(s[kAutoHideSeconds] ?? '') ?? d.autoHideSeconds,
-      resumePlayback: s[kResumePlayback] != 'false',
-      horizontalSeek: s[kHorizontalSeek] != 'false',
-      castButton: s[kCastButton] != 'false',
-      screenshotButton: s[kScreenshotButton] != 'false',
-      lockButton: s[kLockButton] != 'false',
-      volumeBoost200: s[kVolumeBoost200] != 'false', // v22: default on
-      volumeLeveling: s[kVolumeLeveling] == 'true',
-      karaokeSubs: s[kKaraokeSubs] == 'true',
-      skipIntroChip: s[kSkipIntroChip] != 'false',
-      enhanceVideo: s[kEnhanceVideo] == 'true',
-      toneMapping: kToneMappingModes.contains(s[kToneMapping])
-          ? s[kToneMapping]!
-          : d.toneMapping,
-    );
-  }
-
-  /// mpv accepts more algorithms, but these four+auto cover SDR phones to
-  /// HDR TVs without overwhelming the settings sheet.
-  static const List<String> kToneMappingModes = [
-    'auto',
-    'clip',
-    'mobius',
-    'hable',
-    'bt.2390',
-  ];
-
-  Future<void> save() {
-    NativeBridge.saveSetting(kDoubleTapSeek, '$doubleTapSeek');
-    NativeBridge.saveSetting(kSeekSeconds, '$seekSeconds');
-    NativeBridge.saveSetting(kDoubleTapPlayPause, '$doubleTapPlayPause');
-    NativeBridge.saveSetting(kVolumeSwipe, '$volumeSwipe');
-    NativeBridge.saveSetting(kBrightnessSwipe, '$brightnessSwipe');
-    NativeBridge.saveSetting(kPinchZoom, '$pinchZoom');
-    NativeBridge.saveSetting(kDefaultFitIndex, '$defaultFitIndex');
-    NativeBridge.saveSetting(kTwoFingerMode, twoFingerMode);
-    NativeBridge.saveSetting(kLongPressSpeed, '$longPressSpeed');
-    NativeBridge.saveSetting(
-      kLongPressMultiplier,
-      longPressMultiplier.toStringAsFixed(1),
-    );
-    NativeBridge.saveSetting(kAutoHideSeconds, '$autoHideSeconds');
-    NativeBridge.saveSetting(kResumePlayback, '$resumePlayback');
-    NativeBridge.saveSetting(kHorizontalSeek, '$horizontalSeek');
-    NativeBridge.saveSetting(kCastButton, '$castButton');
-    NativeBridge.saveSetting(kScreenshotButton, '$screenshotButton');
-    NativeBridge.saveSetting(kLockButton, '$lockButton');
-    NativeBridge.saveSetting(kVolumeBoost200, '$volumeBoost200');
-    NativeBridge.saveSetting(kVolumeLeveling, '$volumeLeveling');
-    NativeBridge.saveSetting(kKaraokeSubs, '$karaokeSubs');
-    NativeBridge.saveSetting(kSkipIntroChip, '$skipIntroChip');
-    NativeBridge.saveSetting(kEnhanceVideo, '$enhanceVideo');
-    return NativeBridge.saveSetting(kToneMapping, toneMapping);
-  }
-
-  PlayerSettings copyWith({
-    bool? doubleTapSeek,
-    int? seekSeconds,
-    bool? doubleTapPlayPause,
-    bool? volumeSwipe,
-    bool? brightnessSwipe,
-    bool? pinchZoom,
-    int? defaultFitIndex,
-    String? twoFingerMode,
-    bool? longPressSpeed,
-    double? longPressMultiplier,
-    int? autoHideSeconds,
-    bool? resumePlayback,
-    bool? horizontalSeek,
-    bool? castButton,
-    bool? screenshotButton,
-    bool? lockButton,
-    bool? volumeBoost200,
-    bool? volumeLeveling,
-    bool? karaokeSubs,
-    bool? skipIntroChip,
-    bool? enhanceVideo,
-    String? toneMapping,
-  }) {
-    return PlayerSettings(
-      doubleTapSeek: doubleTapSeek ?? this.doubleTapSeek,
-      seekSeconds: seekSeconds ?? this.seekSeconds,
-      doubleTapPlayPause: doubleTapPlayPause ?? this.doubleTapPlayPause,
-      volumeSwipe: volumeSwipe ?? this.volumeSwipe,
-      brightnessSwipe: brightnessSwipe ?? this.brightnessSwipe,
-      pinchZoom: pinchZoom ?? this.pinchZoom,
-      defaultFitIndex: defaultFitIndex ?? this.defaultFitIndex,
-      twoFingerMode: twoFingerMode ?? this.twoFingerMode,
-      longPressSpeed: longPressSpeed ?? this.longPressSpeed,
-      longPressMultiplier: longPressMultiplier ?? this.longPressMultiplier,
-      autoHideSeconds: autoHideSeconds ?? this.autoHideSeconds,
-      resumePlayback: resumePlayback ?? this.resumePlayback,
-      horizontalSeek: horizontalSeek ?? this.horizontalSeek,
-      castButton: castButton ?? this.castButton,
-      screenshotButton: screenshotButton ?? this.screenshotButton,
-      lockButton: lockButton ?? this.lockButton,
-      volumeBoost200: volumeBoost200 ?? this.volumeBoost200,
-      volumeLeveling: volumeLeveling ?? this.volumeLeveling,
-      karaokeSubs: karaokeSubs ?? this.karaokeSubs,
-      skipIntroChip: skipIntroChip ?? this.skipIntroChip,
-      enhanceVideo: enhanceVideo ?? this.enhanceVideo,
-      toneMapping: toneMapping ?? this.toneMapping,
-    );
-  }
-}
-MAXV59_EOF_3
-echo "  wrote lib/state/player_settings.dart"
-
 mkdir -p "$(dirname "lib/screens/player_screen.dart")"
-cat > "lib/screens/player_screen.dart" <<'MAXV59_EOF_4'
+cat > "lib/screens/player_screen.dart" <<'MAXV60_EOF_4'
 import 'dart:async';
 import 'dart:io';
 
@@ -1073,6 +1080,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     _onUserInteraction();
   }
 
+  /// v60: forces the 16:9 / 4:3 FRAME inside the screen like VLC's
+  /// resize button (Center + AspectRatio, engine-independent, identical
+  /// in landscape and portrait). Other fit modes pass straight through.
+  Widget _fitFrame({required Widget child}) {
+    final asp = _fitAspects[_fitIndex];
+    if (asp == null) return child;
+    return Center(child: AspectRatio(aspectRatio: asp, child: child));
+  }
+
   // ---------------------------------------------------------------------------
   // Unified scale recognizer (pinch zoom + ALL drag gestures)
   // ---------------------------------------------------------------------------
@@ -1485,16 +1501,20 @@ class _PlayerScreenState extends State<PlayerScreen>
                                           // bottom, near the seek bar.
                                           child: Stack(
                                             children: [
-                                              Video(
-                                                controller: _controller,
-                                                controls: NoVideoControls,
-                                                fit: _fits[_fitIndex],
-                                                // v20: forces the frame to
-                                                // 16:9 / 4:3 in those fit
-                                                // modes; null keeps the
-                                                // video's own ratio.
-                                                aspectRatio:
-                                                    _fitAspects[_fitIndex],
+                                              // v60 (user: "fit button does
+                                              // not resize like VLC"): the
+                                              // 16:9 / 4:3 modes force the
+                                              // FRAME inside the screen with
+                                              // OUR OWN Center+AspectRatio
+                                              // wrapper - engine-independent,
+                                              // identical in landscape and
+                                              // portrait on every build.
+                                              _fitFrame(
+                                                child: Video(
+                                                  controller: _controller,
+                                                  controls: NoVideoControls,
+                                                  fit: _fits[_fitIndex],
+                                                  aspectRatio: null,
                                                 // v26/v27: karaoke <=>
                                                 // normal subtitles. The
                                                 // engine's own Flutter
@@ -1515,6 +1535,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                                       visible: !_settings
                                                           .karaokeSubs,
                                                     ),
+                                                  ),
                                               ),
                                               if (_settings.karaokeSubs &&
                                                   !_isPip)
@@ -2186,441 +2207,2210 @@ class _MarqueeTitleState extends State<_MarqueeTitle> {
     );
   }
 }
-MAXV59_EOF_4
+MAXV60_EOF_4
 echo "  wrote lib/screens/player_screen.dart"
 
-mkdir -p "$(dirname "lib/widgets/player_settings_sheet.dart")"
-cat > "lib/widgets/player_settings_sheet.dart" <<'MAXV59_EOF_5'
+mkdir -p "$(dirname "lib/screens/discover_screen.dart")"
+cat > "lib/screens/discover_screen.dart" <<'MAXV60_EOF_5'
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
-import '../state/player_settings.dart';
+import '../services/native_bridge.dart';
+import '../services/tmdb_client.dart';
+import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
+import '../state/video_library_state.dart';
+import '../utils/movie_match.dart';
+import '../widgets/ai_suggest_sheet.dart';
+import '../widgets/movie_detail_sheet.dart';
+import '../widgets/tmdb_image.dart';
 
-/// "Player settings" sheet - customize every gesture and playback behavior.
-/// Changes are saved immediately and picked up by the open PlayerScreen.
-class PlayerSettingsSheet extends StatefulWidget {
-  const PlayerSettingsSheet({super.key});
+/// v44 "Discover": a legal movie-discovery section, now MUCH bigger.
+///
+/// - MANY filters (Trending, Hollywood, Bollywood, Tamil, Telugu, Action,
+///   Comedy, Drama, Horror, Romance, Thriller, Sci-Fi) instead of v43's 3.
+/// - Its own SEARCH bar -> TMDB's whole catalogue.
+/// - INFINITE SCROLL: every section pages through thousands of movies
+///   (TMDB serves up to 500 pages per query, 20 per page).
+/// - Pull-to-refresh REALLY reloads (and v44 fixes wrong/stale posters).
+///
+/// SOURCE: TMDB's free API (licensed for this, needs only the credit line -
+/// we do NOT copy IMDb numbers). Posters + data cache on disk for 24h, so
+/// the section refreshes itself daily and works fully offline in between.
+///
+/// TRAILERS: a tap opens the official YouTube app (Play-policy-safe). We
+/// never play YouTube streams through our own player.
+/// v58 grew it further: WEB SERIES got their own shelf (Movies | Series
+/// switch + /tv endpoints), the grid paints INSTANTLY from the disk cache
+/// on slow networks (live data then replaces it), and the ✨ AI Suggestor
+/// turns "funny action like Dhoom" into real, tappable posters.
+class DiscoverScreen extends StatefulWidget {
+  final VideoLibraryState library;
+  final MediaPlayerState player;
 
-  static Color get _accent => themeState.accent;
-  static const Color _surface = Color(0xFF1a1a24);
-
-  static Future<void> show(BuildContext context) {
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: _surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => const PlayerSettingsSheet(),
-    );
-  }
+  const DiscoverScreen({
+    super.key,
+    required this.library,
+    required this.player,
+  });
 
   @override
-  State<PlayerSettingsSheet> createState() => _PlayerSettingsSheetState();
+  State<DiscoverScreen> createState() => _DiscoverScreenState();
 }
 
-class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
-  PlayerSettings _settings = const PlayerSettings();
-  bool _loaded = false;
+class _DiscoverScreenState extends State<DiscoverScreen> {
+  final _client = TmdbClient();
+  final _scroll = ScrollController();
+  final _searchCtrl = TextEditingController();
+  Timer? _debounce;
+
+  DiscoverFilter _filter = kAllFilters.first;
+  final List<TmdbMovie> _movies = [];
+  final Set<int> _seenIds = {};
+  int _page = 0;
+  int _totalPages = 1;
+  int _totalResults = 0;
+  bool _initialLoading = true;
+  bool _loadingMore = false;
+  String? _error;
+  bool _keyMissing = false;
+
+  /// v45: "search is poor - show related movies": similar titles of the
+  /// top search hit, shown under the results in search mode.
+  List<TmdbMovie> _related = const [];
+
+  /// Bumped every time the MODE (filter/search) changes; stale in-flight
+  /// page loads check it and drop their results (no mixed-up grids).
+  int _loadToken = 0;
+  String _searchQuery = '';
+  bool get _searching => _searchQuery.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _scroll.addListener(_maybeLoadMore);
+    _boot();
   }
 
-  Future<void> _load() async {
-    final s = await PlayerSettings.load();
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _scroll.dispose();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _boot() async {
+    final cachePath = await NativeBridge.cacheDirPath();
+    TmdbImage.configure(cachePath);
+    if (cachePath != null) _client.cacheDir = Directory(cachePath);
     if (!mounted) return;
+    if (kTmdbApiKey.isEmpty) {
+      setState(() {
+        _keyMissing = true;
+        _initialLoading = false;
+      });
+      return;
+    }
+    await _loadPage(1, force: true);
+  }
+
+  /// Loads ONE page of the current mode and appends it (deduped by id).
+  Future<void> _loadPage(int page, {bool force = false}) async {
+    final token = _loadToken;
+    if (page == 1) {
+      if (mounted) setState(() => _initialLoading = true);
+      // v58: instant first paint on bad networks - show the cached page
+      // from disk RIGHT AWAY; the live fetch below replaces it.
+      if (!_searching && _movies.isEmpty) {
+        final cached = await _client.cachedBrowseFirstPage(_filter);
+        if (!mounted || token != _loadToken) return;
+        if (cached != null && _movies.isEmpty) {
+          setState(() {
+            for (final m in cached.items) {
+              if (_seenIds.add(m.id)) _movies.add(m);
+            }
+            _error = null;
+          });
+        }
+      }
+    } else {
+      if (mounted) setState(() => _loadingMore = true);
+    }
+    TmdbPage result;
+    try {
+      // v59: multi-search finds it in ALL shelves - movies AND series.
+      result = _searching
+          ? await _client.searchMulti(_searchQuery, page: page, force: force)
+          : await _client.browse(_filter, page: page, force: force);
+    } catch (_) {
+      result = const TmdbPage();
+    }
+    if (!mounted || token != _loadToken) return;
     setState(() {
-      _settings = s;
-      _loaded = true;
+      _initialLoading = false;
+      _loadingMore = false;
+      _page = result.page;
+      _totalPages = result.totalPages;
+      _totalResults = result.totalResults;
+      for (final m in result.items) {
+        if (_seenIds.add(m.id)) _movies.add(m);
+      }
+      if (page == 1 && _movies.isEmpty) {
+        _error = _searching
+            ? 'No movies or series match "$_searchQuery" on TMDB.'
+            : 'Could not load movies or series - connect the internet once, '
+                'then pull down to retry.';
+      } else if (_movies.isNotEmpty) {
+        _error = null;
+      }
+    });
+    // v45: in search mode, also fetch "you may also like" from the top
+    // hit - a plain search word finds few direct matches otherwise.
+    if (_searching && page == 1 && result.items.isNotEmpty) {
+      _loadRelated(result.items.first.id, token,
+          kind: result.items.first.kind);
+    }
+    // v60: "I am saying from the beginning - load INFINITE contents":
+    // if page 1 alone doesn't fill the screen (few results / tall
+    // display), pull the NEXT page right away instead of waiting for a
+    // scroll that can never start.
+    if (page == 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && token == _loadToken) _maybeLoadMore();
+      });
+    }
+  }
+
+  Future<void> _loadRelated(int movieId, int token,
+      {String kind = 'movie'}) async {
+    List<TmdbMovie> rel;
+    try {
+      rel = await _client.similar(movieId, kind: kind);
+    } catch (_) {
+      rel = const [];
+    }
+    if (!mounted || token != _loadToken || !_searching) return;
+    setState(() => _related = rel.take(12).toList());
+  }
+
+  /// Hard switch of browse/search mode: clears the grid, invalidates any
+  /// in-flight loads, then fetches page 1. [force] skips the 24h cache.
+  void _switchTo({DiscoverFilter? filter, String? query, bool force = false}) {
+    _loadToken++;
+    setState(() {
+      if (filter != null) _filter = filter;
+      if (query != null) _searchQuery = query;
+      _movies.clear();
+      _seenIds.clear();
+      _page = 0;
+      _totalPages = 1;
+      _totalResults = 0;
+      _error = null;
+      _related = const [];
+    });
+    _loadPage(1, force: force);
+  }
+
+  void _selectFilter(DiscoverFilter f) {
+    if (!_searching && _filter == f) return;
+    _searchCtrl.clear(); // leaving search mode when a chip is tapped
+    _switchTo(filter: f, query: '');
+  }
+
+  void _onSearchChanged(String v) {
+    setState(() {}); // show/hide the clear (x) button immediately
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      final q = v.trim();
+      if (q == _searchQuery) return;
+      _switchTo(query: q);
     });
   }
 
-  void _update(PlayerSettings s) {
-    setState(() => _settings = s);
-    s.save(); // fire-and-forget persistence
+  /// v44: infinite scroll - near the bottom? fetch the next page.
+  void _maybeLoadMore() {
+    if (!_scroll.hasClients || _initialLoading || _loadingMore) return;
+    if (_page >= _totalPages) return;
+    final pos = _scroll.position;
+    if (pos.pixels >= pos.maxScrollExtent - 350) {
+      _loadPage(_page + 1);
+    }
+  }
+
+  Future<void> _refresh() async {
+    _switchTo(force: true);
+    // Let RefreshIndicator stay up until page 1 actually finished.
+    while (_initialLoading && mounted) {
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+    }
+  }
+
+  void _openMovie(TmdbMovie movie) {
+    // Match against the ALREADY-scanned library (read-only - the video
+    // scan is not touched by Discover at all).
+    final match =
+        findLocalMovie(movie.title, movie.year, widget.library.allVideos);
+    MovieDetailSheet.show(
+      context,
+      movie: movie,
+      localMatch: match,
+      player: widget.player,
+      detailLoader: () => _client.fullDetail(movie.id, kind: movie.kind),
+    );
+  }
+
+  /// v58/v59: the AI Suggestor - "describe your movie type" -> real
+  /// posters. Lives in the AppBar (user: "move AI suggest to the top").
+  Future<void> _openAiSuggest() async {
+    final pick = await AiSuggestSheet.show(context);
+    if (!mounted || pick == null) return;
+    _openMovie(pick);
   }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    return Scaffold(
+      backgroundColor: const Color(0xFF12121a),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF12121a),
+        title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(top: 10),
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+            const Text('Discover', style: TextStyle(fontSize: 18)),
+            if (_totalResults > 0)
+              Text(
+                _searching
+                    ? '${_movies.length} of ~${formatVoteCount(_totalResults)} results'
+                    : '${formatVoteCount(_totalResults)} titles - scroll for more',
+                style: const TextStyle(color: Colors.white38, fontSize: 11),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
-              child: Text(
-                'Player settings',
-                style: TextStyle(
-                  color: PlayerSettingsSheet._accent,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            if (!_loaded)
-              Padding(
-                padding: const EdgeInsets.all(32),
-                child: Center(
-                  child: CircularProgressIndicator(
-                    color: PlayerSettingsSheet._accent,
-                  ),
-                ),
-              )
-            else ...[
-              const _SectionHeader('Gesture controls'),
-              _SwitchTile(
-                icon: Icons.touch_app_outlined,
-                label: 'Double-tap sides to seek',
-                subtitle: 'Double-tap left/right edge',
-                value: _settings.doubleTapSeek,
-                onChanged: (v) => _update(_settings.copyWith(doubleTapSeek: v)),
-                trailing: _settings.doubleTapSeek
-                    ? _MiniDropdown<int>(
-                        value: _settings.seekSeconds,
-                        entries: const {
-                          5: '5s',
-                          10: '10s',
-                          15: '15s',
-                          30: '30s',
-                        },
-                        onChanged: (v) =>
-                            _update(_settings.copyWith(seekSeconds: v ?? 10)),
-                      )
-                    : null,
-              ),
-              _SwitchTile(
-                icon: Icons.play_circle_outline,
-                label: 'Double-tap middle to play/pause',
-                value: _settings.doubleTapPlayPause,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(doubleTapPlayPause: v)),
-              ),
-              _SwitchTile(
-                icon: Icons.volume_up_outlined,
-                label: 'Swipe right side for volume',
-                value: _settings.volumeSwipe,
-                onChanged: (v) => _update(_settings.copyWith(volumeSwipe: v)),
-              ),
-              _SwitchTile(
-                icon: Icons.brightness_6_outlined,
-                label: 'Swipe left side for brightness',
-                value: _settings.brightnessSwipe,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(brightnessSwipe: v)),
-              ),
-              _SwitchTile(
-                icon: Icons.swap_horizontal_circle_outlined,
-                label: 'Horizontal swipe to seek',
-                subtitle: 'Drag sideways anywhere to scrub (±90s per screen)',
-                value: _settings.horizontalSeek,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(horizontalSeek: v)),
-              ),
-              // v58 (user's redesign): ONE switch only - the old
-              // "Pinch to zoom" switch, "Two-finger gesture" dropdown and
-              // "Default video fit" dropdown are GONE. OFF (default) =
-              // two fingers step through ALL fits; ON = two fingers zoom.
-              _SwitchTile(
-                icon: Icons.pinch_outlined,
-                label: 'Two-finger pinch to zoom',
-                subtitle: 'OFF (default): spread 2 fingers = Fit, Crop, '
-                    'Stretch, 16:9... then keep spreading to zoom in. '
-                    'ON: pinch zooms straight away. 2-finger tap = Fit.',
-                value: _settings.twoFingerMode == 'zoom',
-                onChanged: (v) => _update(
-                    _settings.copyWith(twoFingerMode: v ? 'zoom' : 'fit')),
-              ),
-              _SwitchTile(
-                icon: Icons.fast_forward,
-                label: 'Long-press to speed up',
-                subtitle: 'Hold finger on the video',
-                value: _settings.longPressSpeed,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(longPressSpeed: v)),
-                trailing: _settings.longPressSpeed
-                    ? _MiniDropdown<double>(
-                        value: _settings.longPressMultiplier,
-                        entries: {
-                          1.5: '1.5x',
-                          2.0: '2x',
-                          2.5: '2.5x',
-                          3.0: '3x',
-                        },
-                        onChanged: (v) => _update(
-                          _settings.copyWith(longPressMultiplier: v ?? 2.0),
-                        ),
-                      )
-                    : null,
-              ),
-              const _SectionHeader('Playback'),
-              _SwitchTile(
-                icon: Icons.timer_off_outlined,
-                label: 'Auto-hide controls',
-                subtitle: 'Hide during playback after inactivity',
-                value: _settings.autoHideSeconds > 0,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(autoHideSeconds: v ? 4 : 0)),
-                trailing: _settings.autoHideSeconds > 0
-                    ? _MiniDropdown<int>(
-                        value: _settings.autoHideSeconds,
-                        entries: const {3: '3s', 4: '4s', 5: '5s', 6: '6s'},
-                        onChanged: (v) => _update(
-                          _settings.copyWith(autoHideSeconds: v ?? 4),
-                        ),
-                      )
-                    : null,
-              ),
-              _SwitchTile(
-                icon: Icons.history,
-                label: 'Resume playback',
-                subtitle: 'Continue videos where you left off',
-                value: _settings.resumePlayback,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(resumePlayback: v)),
-              ),
-              const _SectionHeader('Picture'),
-              _SwitchTile(
-                icon: Icons.auto_fix_high_outlined,
-                label: 'Enhance video (real-time)',
-                subtitle: 'GPU sharpen + contrast + colour boost',
-                value: _settings.enhanceVideo,
-                onChanged: (v) => _update(_settings.copyWith(enhanceVideo: v)),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 2,
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.hdr_on_outlined,
-                      color: Colors.white70,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 16),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'HDR tone-mapping',
-                            style: TextStyle(color: Colors.white, fontSize: 15),
-                          ),
-                          Text(
-                            'How HDR10/Dolby sources fit your screen',
-                            style: TextStyle(
-                              color: Colors.white38,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    _MiniDropdown<String>(
-                      value: _settings.toneMapping,
-                      entries: const {
-                        'auto': 'Auto',
-                        'mobius': 'Mobius',
-                        'hable': 'Hable',
-                        'bt.2390': 'BT.2390',
-                      },
-                      onChanged: (v) =>
-                          _update(_settings.copyWith(toneMapping: v ?? 'auto')),
-                    ),
-                  ],
-                ),
-              ),
-              const _SectionHeader('Player buttons'),
-              _SwitchTile(
-                icon: Icons.cast_outlined,
-                label: 'Cast to TV (DLNA)',
-                subtitle: 'Show the cast button in the player top bar',
-                value: _settings.castButton,
-                onChanged: (v) => _update(_settings.copyWith(castButton: v)),
-              ),
-              _SwitchTile(
-                icon: Icons.camera_alt_outlined,
-                label: 'Screenshot button',
-                subtitle: 'Save the current frame to the gallery',
-                value: _settings.screenshotButton,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(screenshotButton: v)),
-              ),
-              _SwitchTile(
-                icon: Icons.lock_outline,
-                label: 'Screen lock (kids mode)',
-                subtitle: 'Lock button on the video edge locks every touch',
-                value: _settings.lockButton,
-                onChanged: (v) => _update(_settings.copyWith(lockButton: v)),
-              ),
-              const _SectionHeader('Sound & subtitles'),
-              _SwitchTile(
-                icon: Icons.volume_up,
-                label: 'Volume boost up to 200%',
-                subtitle:
-                    'ON by default - the swipe just continues past '
-                    '100% for quiet videos',
-                value: _settings.volumeBoost200,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(volumeBoost200: v)),
-              ),
-              _SwitchTile(
-                icon: Icons.graphic_eq,
-                label: 'Volume leveling',
-                subtitle:
-                    'Steady loudness: soft dialogue and loud '
-                    'explosions evened out',
-                value: _settings.volumeLeveling,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(volumeLeveling: v)),
-              ),
-              // v26: the karaoke switch no longer lives in settings - it
-              // exists ONLY in the player's tracks sheet (the "tune"
-              // button beside play), per user request.
-              _SwitchTile(
-                icon: Icons.fast_forward,
-                label: 'Skip intro chip',
-                subtitle:
-                    'Offer to jump when subtitles (AI or the video\'s '
-                    'own .srt file) show the dialogue starts later',
-                value: _settings.skipIntroChip,
-                onChanged: (v) => _update(_settings.copyWith(skipIntroChip: v)),
-              ),
-            ],
-            const SizedBox(height: 8),
           ],
         ),
+        // v59 (user): AI Suggest moved to the TOP.
+        actions: [
+          IconButton(
+            tooltip: 'AI Suggest - describe your movie type',
+            icon: Icon(Icons.auto_awesome, color: themeState.accent),
+            onPressed: _openAiSuggest,
+          ),
+        ],
       ),
+      body: _keyMissing
+          ? const _SetupNote()
+          : Column(
+              children: [
+                // v44: the section's own search bar (TMDB-wide).
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    onChanged: _onSearchChanged,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: 'Search movies & series...',
+                      hintStyle: const TextStyle(color: Colors.white38),
+                      prefixIcon: Icon(Icons.search,
+                          color: themeState.accent, size: 20),
+                      suffixIcon: _searchCtrl.text.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.close,
+                                  color: Colors.white54, size: 18),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                _switchTo(query: '');
+                              },
+                            ),
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.06),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                // v59 (user): ONE filter row with EVERYTHING - movie
+                // chips AND web series chips side by side (the old
+                // Movies|Series toggle is gone).
+                SizedBox(
+                  height: 40,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    children: [
+                      for (final f in kAllFilters) ...[
+                        _FilterChip(
+                          label: f.label,
+                          selected: !_searching && _filter == f,
+                          onTap: () => _selectFilter(f),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Expanded(
+                  child: RefreshIndicator(
+                    color: themeState.accent,
+                    onRefresh: _refresh,
+                    child: _buildBody(),
+                  ),
+                ),
+              ],
+            ),
     );
   }
-}
 
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  const _SectionHeader(this.title);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-      child: Text(
-        title,
-        style: TextStyle(
-          color: PlayerSettingsSheet._accent,
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
+  Widget _buildBody() {
+    if (_initialLoading && _movies.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_movies.isEmpty) {
+      // Kept scrollable so pull-to-refresh always works.
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          const SizedBox(height: 120),
+          Icon(Icons.cloud_off_outlined,
+              size: 44, color: Colors.white.withValues(alpha: 0.3)),
+          const SizedBox(height: 14),
+          Text(
+            _error ?? 'No movies to show yet.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54, height: 1.4),
+          ),
+        ],
+      );
+    }
+    return Stack(
+      children: [
+        CustomScrollView(
+          controller: _scroll,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.all(10),
+              sliver: SliverGrid.builder(
+                // v45: BIGGER cards (150 -> 200 wide) so posters actually
+                // read like a movie app, not stamps.
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 200,
+                  childAspectRatio: 0.60,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                ),
+                itemCount: _movies.length,
+                itemBuilder: (context, i) {
+                  final movie = _movies[i];
+                  return _PosterCard(
+                    // v44: stable per-MOVIE key -> a recycled cell never
+                    // flashes the previous movie's poster after refresh.
+                    key: ValueKey(movie.id),
+                    movie: movie,
+                    onTap: () => _openMovie(movie),
+                  );
+                },
+              ),
+            ),
+            // v45: related movies under search results.
+            if (_searching && _related.isNotEmpty) ...[
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(12, 10, 12, 8),
+                  child: Text(
+                    'Related to your search',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 224,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: _related.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    itemBuilder: (context, i) => SizedBox(
+                      width: 128,
+                      child: _PosterCard(
+                        key: ValueKey('rel_${_related[i].id}'),
+                        movie: _related[i],
+                        onTap: () => _openMovie(_related[i]),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            const SliverToBoxAdapter(child: SizedBox(height: 16)),
+          ],
         ),
-      ),
+        if (_loadingMore)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: LinearProgressIndicator(
+              minHeight: 3,
+              color: themeState.accent,
+              backgroundColor: Colors.transparent,
+            ),
+          ),
+      ],
     );
   }
 }
 
-class _SwitchTile extends StatelessWidget {
-  final IconData icon;
+class _FilterChip extends StatelessWidget {
   final String label;
-  final String? subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-  final Widget? trailing;
+  final bool selected;
+  final VoidCallback onTap;
 
-  const _SwitchTile({
-    required this.icon,
+  const _FilterChip({
     required this.label,
-    this.subtitle,
-    required this.value,
-    required this.onChanged,
-    this.trailing,
+    required this.selected,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      child: Row(
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected
+              ? themeState.accent
+              : Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? themeState.onAccent : Colors.white70,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PosterCard extends StatelessWidget {
+  final TmdbMovie movie;
+  final VoidCallback onTap;
+
+  const _PosterCard({super.key, required this.movie, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: Colors.white70, size: 22),
-          const SizedBox(width: 16),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
-                ),
-                if (subtitle != null)
-                  Text(
-                    subtitle!,
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  TmdbImage(url: tmdbPosterUrl(movie.posterPath)),
+                  Positioned(
+                    top: 6,
+                    left: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '⭐ ${tmdbRatingText(movie.rating)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
                   ),
-              ],
+                ],
+              ),
             ),
           ),
-          if (trailing != null) trailing!,
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: PlayerSettingsSheet._accent,
+          const SizedBox(height: 5),
+          Text(
+            movie.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
           ),
+          if (movie.year != null)
+            Text(
+              '${movie.year}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 11,
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
-class _MiniDropdown<T> extends StatelessWidget {
-  final T value;
-  final Map<T, String> entries;
-  final ValueChanged<T?> onChanged;
-
-  const _MiniDropdown({
-    required this.value,
-    required this.entries,
-    required this.onChanged,
-  });
+/// Shown in local/dev builds where no TMDB key was injected (the store /
+/// testers' builds from Codemagic have it). Never a crash, always a note.
+class _SetupNote extends StatelessWidget {
+  const _SetupNote();
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButton<T>(
-      value: value,
-      dropdownColor: const Color(0xFF26262f),
-      underline: const SizedBox.shrink(),
-      isDense: true,
-      style: const TextStyle(color: Colors.white70, fontSize: 13),
-      items: [
-        for (final e in entries.entries)
-          DropdownMenuItem(value: e.key, child: Text(e.value)),
-      ],
-      onChanged: onChanged,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.movie_filter,
+                size: 44, color: Colors.white.withValues(alpha: 0.3)),
+            const SizedBox(height: 14),
+            const Text(
+              'Discover starts in the store build.\n\n'
+              '(Developer note: pass the TMDB key via\n'
+              '--dart-define=TMDB_API_KEY=... - see README. '
+              'Everything else in the app works without it.)',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white54, height: 1.5),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
-MAXV59_EOF_5
-echo "  wrote lib/widgets/player_settings_sheet.dart"
+MAXV60_EOF_5
+echo "  wrote lib/screens/discover_screen.dart"
+
+mkdir -p "$(dirname "lib/state/media_player_state.dart")"
+cat > "lib/state/media_player_state.dart" <<'MAXV60_EOF_6'
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+import 'dart:ui' as ui;
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:media_kit/media_kit.dart' hide VideoTrack;
+import 'package:media_kit_video/media_kit_video.dart';
+import 'package:path/path.dart' as p;
+
+import '../models/history_entry.dart';
+import '../models/video_track.dart';
+import '../services/native_bridge.dart';
+import '../utils/formatters.dart';
+import '../utils/srt.dart';
+import 'player_settings.dart';
+
+/// v30: merge picked videos into the play queue, skipping entries whose id
+/// is already queued. Pure so the playlist "+" logic is unit-testable.
+List<VideoTrack> mergeQueueVideos(
+  List<VideoTrack> queue,
+  List<VideoTrack> added,
+) {
+  final out = [...queue];
+  final have = queue.map((v) => v.id).toSet();
+  for (final v in added) {
+    if (have.add(v.id)) out.add(v);
+  }
+  return out;
+}
+
+/// Mirrors the web app's useMediaPlayer hook, backed by media_kit's Player.
+class MediaPlayerState extends ChangeNotifier {
+  final Player player = Player();
+
+  /// ONE video controller for the app's lifetime, created lazily.
+  /// PlayerScreen used to construct a new VideoController on every visit and
+  /// (with media_kit_video 1.3.x having no public dispose) those stacked up
+  /// on the same player - one source of the fullscreen glitches.
+  late final VideoController videoController = VideoController(player);
+
+  List<VideoTrack> playlist = [];
+  int currentIndex = 0;
+  bool isPlaying = false;
+  Duration position = Duration.zero;
+  Duration duration = Duration.zero;
+  double volume = 0.75; // 0..1
+  bool isMuted = false;
+  double playbackRate = 1.0;
+  RepeatMode repeatMode = RepeatMode.none;
+  bool isShuffled = false;
+  bool isLoading = false;
+  List<int> _shuffledOrder = [];
+
+  // Available tracks of the currently loaded media (populated from streams).
+  List<AudioTrack> audioTracks = [];
+  List<SubtitleTrack> subtitleTracks = [];
+  AudioTrack? currentAudioTrack;
+  SubtitleTrack? currentSubtitleTrack;
+
+  /// Short user-facing notices ("Resumed 12:34" etc) - the player screen
+  /// shows these as a transient overlay indicator.
+  final _notices = StreamController<String>.broadcast();
+  Stream<String> get notices => _notices.stream;
+
+  /// Periodic bookmark saver ("resume from where you left off").
+  Timer? _bookmarkTimer;
+
+  /// Last-used app-local brightness (left-half swipe in the player).
+  double brightness = 1.0;
+  bool _brightnessSynced = false;
+
+  // --- A-B loop ---
+  Duration? loopA;
+  Duration? loopB;
+  bool get abLoopActive => loopA != null && loopB != null;
+
+  // --- Long-press speed boost ---
+  double? _preBoostRate;
+
+  /// True while the long-press speed boost is engaged; the player shows a
+  /// persistent "Nx" badge for the whole boost, not just a flash.
+  bool get isSpeedBoosting => _preBoostRate != null;
+
+  // --- Equalizer (libmpv lavfi filter chain) ---
+  static const List<int> eqFrequencies = [60, 230, 910, 3600, 14000];
+  List<double> eqGains = List.filled(eqFrequencies.length, 0);
+  bool eqEnabled = false;
+
+  // --- Watch-time stats ---
+  int _watchTodaySecs = 0;
+  String _todayStatsKey = '';
+
+  /// v27: cumulative watch seconds PER VIDEO (path -> seconds), powering
+  /// the Statistics screen's "Most watched" list. Persisted as one small
+  /// JSON map, capped at the 60 heaviest entries so it never grows wild.
+  Map<String, int> _watchByVideo = const {};
+  static const String _kWatchByVideoKey = 'stats.video';
+  static const int _kWatchByVideoMax = 60;
+
+  // --- Watch history (drives the home History screen + resume playback) ---
+  final List<HistoryEntry> _history = [];
+  bool _historyLoaded = false;
+  static const String _kHistoryKey = 'history';
+  static const int _kHistoryMax = 150;
+
+  List<HistoryEntry> get history => List.unmodifiable(_history);
+
+  VideoTrack? get currentTrack =>
+      playlist.isNotEmpty && currentIndex < playlist.length
+      ? playlist[currentIndex]
+      : null;
+
+  final _rand = Random();
+  Timer? _uiTicker;
+  late final List<StreamSubscription> _subs;
+
+  MediaPlayerState() {
+    // v51: cap mpv's demuxer cache once. Without explicit values some
+    // builds fall back to mpv's desktop-oriented defaults, which wastes
+    // RAM on 3-4 GB phones for zero benefit on a handset screen.
+    final capPlat = player.platform;
+    if (capPlat is NativePlayer) {
+      for (final e in kMpvCacheCapProps.entries) {
+        unawaited(capPlat.setProperty(e.key, e.value));
+      }
+    }
+    _subs = [
+      player.stream.playing.listen((v) {
+        isPlaying = v;
+        notifyListeners();
+        // Keep the PiP window's play/pause remote action in sync
+        // (native side ignores this when not in PiP).
+        NativeBridge.setPipPlaying(v);
+      }),
+      player.stream.position.listen((v) {
+        position = v;
+        // Enforce the A-B loop window.
+        final a = loopA;
+        final b = loopB;
+        if (a != null && b != null && b > a && v >= b) {
+          player.seek(a);
+        }
+        _checkSleepAtEnd(v); // "sleep at end of video" timer
+        _maybeCaptureThumb(v); // 4K/HDR thumbnail fallback (v22)
+        notifyListeners();
+      }),
+      player.stream.duration.listen((v) {
+        duration = v;
+        notifyListeners();
+        // Kick off scrub-preview thumbnail generation (idempotent - runs
+        // once per file, cached on disk afterwards).
+        _ensureThumbStrip();
+      }),
+      player.stream.buffering.listen((v) {
+        isLoading = v;
+        notifyListeners();
+      }),
+      player.stream.completed.listen((completed) {
+        if (completed) _handleEnded();
+      }),
+      // Repopulates whenever a new media is opened.
+      player.stream.tracks.listen((t) {
+        audioTracks = t.audio;
+        subtitleTracks = t.subtitle;
+        notifyListeners();
+      }),
+      player.stream.track.listen((t) {
+        currentAudioTrack = t.audio;
+        currentSubtitleTrack = t.subtitle;
+        // Karaoke mode: switching to a real subtitle track flips the
+        // overlay on (and mpv's own rendering off) immediately.
+        if (karaokeMode) unawaited(_applySubVisibility());
+        notifyListeners();
+      }),
+      // v60 (old-phone pack): any decode/render failure phones home here.
+      player.stream.error.listen(_onPlaybackError),
+    ];
+    // libmpv stays at 100%: loudness is driven by the DEVICE media volume
+    // (MX Player / VLC style) so the swipe can always reach the phone's
+    // true maximum, no matter where the system volume started.
+    player.setVolume(100);
+    // Play/pause from the picture-in-picture window's own button.
+    NativeBridge.configureCallbacks(onPipAction: togglePlay);
+    _init();
+    // Persist the resume point + watch time every few seconds.
+    _bookmarkTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _saveBookmark();
+      _trackWatchTime();
+    });
+    // v19: guaranteed UI pulse - the mini player / scrub bar / time labels
+    // keep ticking even if the position stream coalesces (the home-screen
+    // mini player's progress bar looked frozen because of that).
+    _uiTicker = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      // v22: also pulse while a sleep timer runs so the under-title
+      // countdown keeps counting even when playback is paused.
+      if (!isPlaying && !sleepTimerActive) return;
+      final p = player.state.position;
+      if (p != position || sleepTimerActive) {
+        position = p;
+        _maybeCaptureThumb(p);
+        notifyListeners();
+      }
+    });
+    _startLiveSubObserver();
+  }
+
+  Future<void> _init() async {
+    await _ensureHistoryLoaded();
+    final s = await NativeBridge.loadSettings();
+    // Restore today's accumulated watch time (+ the v27 per-video totals).
+    _todayStatsKey = statsKeyFor(DateTime.now());
+    _watchTodaySecs = int.tryParse(s[_todayStatsKey] ?? '') ?? 0;
+    try {
+      final raw = s[_kWatchByVideoKey] ?? '';
+      if (raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          _watchByVideo = {
+            for (final e in decoded.entries)
+              if (e.value is num) '${e.key}': (e.value as num).toInt(),
+          };
+        }
+      }
+    } catch (_) {
+      _watchByVideo = const {}; // corrupt payload -> start fresh
+    }
+    // Restore equalizer.
+    eqEnabled = s[_kEqEnabledKey] == 'true';
+    final gainsRaw = (s[_kEqGainsKey] ?? '').split(',');
+    for (var i = 0; i < eqFrequencies.length && i < gainsRaw.length; i++) {
+      eqGains[i] = double.tryParse(gainsRaw[i]) ?? 0;
+    }
+    if (eqEnabled) _applyEqFilter();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Watch history
+  // ---------------------------------------------------------------------------
+
+  Future<void> _ensureHistoryLoaded() async {
+    if (_historyLoaded) return;
+    _historyLoaded = true;
+    try {
+      final s = await NativeBridge.loadSettings();
+      final raw = s[_kHistoryKey];
+      if (raw == null || raw.isEmpty) return;
+      final list = jsonDecode(raw) as List<dynamic>;
+      _history
+        ..clear()
+        ..addAll([
+          for (final e in list)
+            HistoryEntry.fromJson(Map<String, dynamic>.from(e as Map)),
+        ]);
+      notifyListeners();
+    } catch (_) {
+      // Corrupt payload -> start with an empty history.
+    }
+  }
+
+  void _persistHistory() {
+    final capped = _history.length > _kHistoryMax
+        ? _history.sublist(0, _kHistoryMax)
+        : _history;
+    NativeBridge.saveSetting(
+      _kHistoryKey,
+      jsonEncode([for (final e in capped) e.toJson()]),
+    );
+  }
+
+  HistoryEntry? _historyEntryFor(String path) {
+    for (final e in _history) {
+      if (e.path == path) return e;
+    }
+    return null;
+  }
+
+  /// Move the just-opened video to the top of the history, preserving its
+  /// previous resume position.
+  Future<void> _recordOpen(VideoTrack track) async {
+    try {
+      await _ensureHistoryLoaded();
+      final prevPos = _historyEntryFor(track.path)?.lastPositionSecs ?? 0;
+      _history.removeWhere((e) => e.path == track.path);
+      _history.insert(
+        0,
+        HistoryEntry(
+          path: track.path,
+          title: track.title,
+          thumbnailPath: track.thumbnailPath,
+          durationSecs: track.duration?.inSeconds ?? 0,
+          lastPositionSecs: prevPos,
+          playedAtMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      _persistHistory();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  void clearHistory() {
+    _history.clear();
+    _persistHistory();
+    notifyListeners();
+  }
+
+  void removeHistoryEntry(String path) {
+    _history.removeWhere((e) => e.path == path);
+    _persistHistory();
+    notifyListeners();
+  }
+
+  /// Play a single video straight from a history row.
+  Future<void> playHistoryEntry(HistoryEntry entry) async {
+    final track = VideoTrack(
+      id: entry.path,
+      title: entry.title,
+      path: entry.path,
+      thumbnailPath: entry.thumbnailPath,
+      duration: entry.durationSecs > 0
+          ? Duration(seconds: entry.durationSecs)
+          : null,
+    );
+    await setPlaylistAndPlay([track], 0);
+  }
+
+  /// Play a network stream URL (http/https/rtsp/rtmp). Handled directly by
+  /// libmpv - the local-file metadata pipeline is skipped upstream.
+  Future<void> playStream(String url, String title) async {
+    final track = VideoTrack(id: url, title: title, path: url);
+    await setPlaylistAndPlay([track], 0);
+  }
+
+  List<int> _generateShuffledOrder(int length, int currentIdx) {
+    final indices = List.generate(length, (i) => i)..remove(currentIdx);
+    indices.shuffle(_rand);
+    return [currentIdx, ...indices];
+  }
+
+  int _getNextIndex({required bool forward}) {
+    if (playlist.isEmpty) return 0;
+    if (isShuffled && _shuffledOrder.isNotEmpty) {
+      final pos = _shuffledOrder.indexOf(currentIndex);
+      final len = _shuffledOrder.length;
+      return forward
+          ? _shuffledOrder[(pos + 1) % len]
+          : _shuffledOrder[(pos - 1 + len) % len];
+    }
+    final len = playlist.length;
+    return forward ? (currentIndex + 1) % len : (currentIndex - 1 + len) % len;
+  }
+
+  /// Replace the whole queue and start playing at [startIndex].
+  Future<void> setPlaylistAndPlay(
+    List<VideoTrack> videos, [
+    int startIndex = 0,
+  ]) async {
+    playlist = videos;
+    currentIndex = startIndex.clamp(0, videos.isEmpty ? 0 : videos.length - 1);
+    notifyListeners();
+    await _loadCurrent(autoplay: true);
+  }
+
+  /// v30: "+" in the playlist sheet - appends the picked videos to the
+  /// current queue without changing what is playing. Duplicates are
+  /// skipped. The player keeps showing only the playlist: previous/next
+  /// never leave these entries.
+  void addToPlaylist(List<VideoTrack> videos) {
+    final merged = mergeQueueVideos(playlist, videos);
+    if (merged.length == playlist.length) return;
+    playlist = merged;
+    // The shuffle order is keyed to queue positions - rebuild it so the
+    // new entries become reachable in shuffle mode too.
+    if (isShuffled) {
+      _shuffledOrder = _generateShuffledOrder(playlist.length, currentIndex);
+    }
+    notifyListeners();
+  }
+
+  Future<void> playTrack(int index) async {
+    if (index < 0 || index >= playlist.length) return;
+    currentIndex = index;
+    notifyListeners();
+    await _loadCurrent(autoplay: true);
+  }
+
+  /// v60 (old-phone pack): path of the file that already FAILED once on
+  /// the hardware decoder and was moved to software. Reset per new file
+  /// by usage in _loadCurrent; the audio-only fallback insight: many
+  /// cheap SoCs (buggy HEVC) just can not do hardware decode.
+  String? _hwFallbackForPath;
+
+  /// Fires on mpv decode/render errors. Cheap-SoC hardware decoders
+  /// (H.265 especially) die here - so we flip the SAME file to SOFTWARE
+  /// decoding once and continue right where playback stopped, instead
+  /// of the dead black screen users reported.
+  void _onPlaybackError(Object e) {
+    final track = currentTrack;
+    if (track == null) return;
+    if (_hwFallbackForPath == track.path) return; // already retried once
+    _hwFallbackForPath = track.path;
+    final plat = player.platform;
+    if (plat is NativePlayer) {
+      unawaited(plat.setProperty('hwdec', 'no')); // software from now on
+    }
+    final resume = player.state.position;
+    unawaited(player.open(Media(track.path), play: true).then((_) {
+      if (resume > Duration.zero && resume < player.state.duration) {
+        player.seek(resume);
+      }
+    }).catchError((_) {}));
+    notifyListeners();
+  }
+
+  Future<void> _loadCurrent({required bool autoplay}) async {
+    final track = currentTrack;
+    if (track == null) return;
+    // A new file invalidates any A-B loop points from the previous one.
+    loopA = null;
+    loopB = null;
+    final plat = player.platform;
+    if (plat is NativePlayer) {
+      // v60: this exact file failed on the hardware decoder before ->
+      // start it in SOFTWARE straight away.
+      if (_hwFallbackForPath == track.path) {
+        unawaited(plat.setProperty('hwdec', 'no'));
+      }
+      // Head-room for the 200% volume boost + re-apply the current gain /
+      // leveling filter for the new file.
+      unawaited(plat.setProperty('volume-max', '200'));
+      // v38: keep the Enhance pipeline asserted for every new file.
+      if (_enhanceApplied && _enhanceShaderPath != null) {
+        unawaited(plat.setProperty('glsl-shaders', _enhanceShaderPath!));
+        unawaited(plat.setProperty('hwdec', MediaPlayerState.kEnhanceHwdec));
+      }
+      // Force the sub-visibility to be re-pushed for the new file (mpv may
+      // reset it at open, while our cache would think it's still applied).
+      _appliedSubVisibility = null;
+    }
+    await player.open(Media(track.path), play: autoplay);
+    await player.setRate(playbackRate);
+    await _applyMpvVolume();
+    await _applyAudioFilters(); // equalizer + leveling survive file changes
+    await _attachSidecarSubtitles(track.path);
+    await _recordOpen(track);
+    await _restoreBookmark(track);
+    // v25: re-verify karaoke's subtitle hiding after the demuxer settles -
+    // the track listener can fire before the subtitle selection is known.
+    if (karaokeMode) {
+      Future<void>.delayed(const Duration(milliseconds: 800), () {
+        _appliedSubVisibility = null; // force a fresh push (engine may reset)
+        _applySubVisibility();
+      });
+    }
+    // v22: if this file has no cached thumbnail AND Android's metadata
+    // engine could not make one, remember it - after ~1.5 s of playback a
+    // frame is captured through mpv instead (see _maybeCaptureThumb).
+    _pendingThumbFor =
+        (track.thumbnailPath == null && !track.path.contains('://'))
+        ? track.path
+        : null;
+  }
+
+  /// Re-attaches previously generated AI subtitles ("<video>.maxai.srt"
+  /// next to the video) so they survive closing/reopening the app - they
+  /// are written to disk, only the player session forgot them.
+  /// v21: cues of the AI sidecar currently attached (null when none or the
+  /// file is a stream). Feeds the karaoke word-highlight overlay.
+  List<SrtCue>? aiCues;
+
+  /// v22: cues parsed from the video's OWN same-name subtitle file
+  /// ("movie.srt", "movie.en.srt" - the files mpv auto-loads). Used when
+  /// there is no AI sidecar, so karaoke + skip-intro work on ordinary
+  /// subtitled videos too.
+  List<SrtCue>? sidecarCues;
+
+  /// v21 skip-intro chip: where the dialogue actually starts, when
+  /// subtitles (AI sidecar or same-name .srt) show speech begins
+  /// noticeably late (see computeSkipIntro).
+  Duration? skipIntroAt;
+
+  Future<void> _attachSidecarSubtitles(String videoPath) async {
+    aiCues = null;
+    sidecarCues = null;
+    skipIntroAt = null;
+    liveSubCue = null;
+    if (videoPath.contains('://')) return; // no sidecars for streams
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    try {
+      final srt = srtPathForVideo(videoPath);
+      if (File(srt).existsSync()) {
+        // "select" makes it the active track right away.
+        await platform.command(['sub-add', srt, 'select']);
+        await refreshAiCues(videoPath);
+      }
+    } catch (_) {
+      // Missing/unreadable sidecar is not fatal.
+    }
+    // v22: no AI captions -> look for the video's own subtitle file and
+    // use it as the skip-intro + karaoke source instead.
+    if (aiCues == null) {
+      try {
+        final cues = await _loadSidecarCues(videoPath);
+        if (cues != null && cues.isNotEmpty) sidecarCues = cues;
+      } catch (_) {
+        // An unreadable sibling file must never break playback.
+      }
+    }
+    _recomputeSkipIntro();
+    await _applySubVisibility();
+    notifyListeners();
+  }
+
+  /// Parses the best same-name .srt sitting next to [videoPath], if any.
+  Future<List<SrtCue>?> _loadSidecarCues(String videoPath) async {
+    final dir = Directory(p.dirname(videoPath));
+    if (!dir.existsSync()) return null;
+    final names = <String>[];
+    await for (final e in dir.list(followLinks: false)) {
+      if (e is File) names.add(p.basename(e.path));
+    }
+    final candidates = sidecarSrtCandidates(names, videoPath);
+    if (candidates.isEmpty) return null;
+    final cues = parseSrt(
+      await File(p.join(dir.path, candidates.first)).readAsString(),
+    );
+    return cues.isEmpty ? null : cues;
+  }
+
+  void _recomputeSkipIntro() {
+    // AI captions win (word-accurate); same-name .srt is the fallback.
+    final cues = aiCues ?? sidecarCues;
+    skipIntroAt = cues == null ? null : computeSkipIntro(cues);
+  }
+
+  /// (Re)parses the AI sidecar for karaoke + skip-intro. Called when a track
+  /// attaches its sidecar, and by the AI runner right after it finishes
+  /// writing new subtitles.
+  Future<void> refreshAiCues(String videoPath) async {
+    aiCues = null;
+    if (videoPath.contains('://')) return;
+    try {
+      final srt = File(srtPathForVideo(videoPath));
+      if (!srt.existsSync()) return;
+      final cues = parseSrt(await srt.readAsString());
+      if (cues.isEmpty) return;
+      aiCues = cues;
+    } catch (_) {
+      // A corrupt sidecar must never break playback.
+    }
+    _recomputeSkipIntro();
+    await _applySubVisibility();
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Karaoke mode + live subtitle reading (v22)
+  // ---------------------------------------------------------------------------
+
+  /// Whether karaoke rendering is enabled (mirrors the player setting).
+  bool karaokeMode = false;
+
+  /// The subtitle line mpv is showing RIGHT NOW (from its `sub-text` /
+  /// `sub-start` / `sub-end` properties), with real cue timing. This makes
+  /// karaoke work with ANY subtitle - embedded mkv tracks included - not
+  /// just ones we can parse as files.
+  SrtCue? liveSubCue;
+
+  /// Last sub-visibility value we pushed to mpv (avoids redundant sets).
+  String? _appliedSubVisibility;
+
+  Future<void> _startLiveSubObserver() async {
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    try {
+      await platform.observeProperty('sub-text', (text) async {
+        final plat = player.platform;
+        if (text.trim().isEmpty || plat is! NativePlayer) {
+          if (liveSubCue != null) {
+            liveSubCue = null;
+            notifyListeners();
+          }
+          return;
+        }
+        var startMs = 0;
+        var endMs = 0;
+        try {
+          startMs =
+              ((double.tryParse(await plat.getProperty('sub-start')) ?? 0) *
+                      1000)
+                  .round();
+          endMs =
+              ((double.tryParse(await plat.getProperty('sub-end')) ?? 0) * 1000)
+                  .round();
+        } catch (_) {}
+        if (endMs <= startMs) endMs = startMs + 2000; // sane fallback
+        final clean = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+        liveSubCue = isMusicOnlyText(clean)
+            ? null
+            : SrtCue(startMs, endMs, clean);
+        notifyListeners();
+      });
+    } catch (_) {
+      // Older engine - karaoke simply falls back to parsed cue files.
+    }
+  }
+
+  /// Player-settings-driven: turn karaoke mode on/off. Hides mpv's own
+  /// subtitle rendering (our overlay takes over) whenever a usable
+  /// subtitle source exists.
+  Future<void> setKaraokeMode(bool on) async {
+    karaokeMode = on;
+    await _applySubVisibility();
+  }
+
+  Future<void> _applySubVisibility() async {
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    final hide =
+        karaokeMode &&
+        (subtitlesActive || aiCues != null || sidecarCues != null);
+    final want = hide ? 'no' : 'yes';
+    if (want == _appliedSubVisibility) return;
+    _appliedSubVisibility = want;
+    // v25 hardening (user report: the normal subtitle line stayed visible
+    // next to karaoke): verify the property actually flipped; on engines
+    // where setProperty silently no-ops, issue the raw mpv command too.
+    try {
+      await platform.setProperty('sub-visibility', want);
+      final applied = await platform.getProperty('sub-visibility');
+      if (applied != want) {
+        await platform.command(['set', 'sub-visibility', want]);
+      }
+    } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------------------
+  // 4K/HDR thumbnail fallback (v22)
+  //
+  // Android's MediaMetadataRetriever gives up on some 4K/HDR (10-bit HEVC,
+  // certain mkv) files, so their library tiles stayed placeholder-grey.
+  // mpv plays those same files fine - so once such a video has been playing
+  // for ~1.5 s we ask mpv for a frame and write it to the exact cache file
+  // the native scanner uses, then shrink it to the standard 320px width.
+  // ---------------------------------------------------------------------------
+
+  /// Video awaiting a playback-captured thumbnail.
+  String? _pendingThumbFor;
+
+  /// Wired by main.dart: (videoPath, thumbPath) -> live-updates the
+  /// library tile so the image appears without a rescan.
+  void Function(String videoPath, String thumbPath)? onThumbnailCaptured;
+
+  void _maybeCaptureThumb(Duration pos) {
+    final path = _pendingThumbFor;
+    if (path == null || pos < const Duration(milliseconds: 1500)) return;
+    _pendingThumbFor = null;
+    unawaited(_captureThumbWithMpv(path));
+  }
+
+  Future<void> _captureThumbWithMpv(String videoPath) async {
+    try {
+      final platform = player.platform;
+      if (platform is! NativePlayer) return;
+      final target = await NativeBridge.thumbnailPathFor(videoPath);
+      if (target == null) return;
+      final thumb = File(target);
+      if (thumb.existsSync()) return; // scanner beat us to it meanwhile
+      final tmp = File('$target.capture');
+      if (tmp.existsSync()) await tmp.delete();
+      await platform.setProperty('screenshot-format', 'jpg');
+      await platform.setProperty('screenshot-jpeg-quality', '82');
+      await platform.command(['screenshot-to-file', tmp.path, 'video']);
+      // mpv encodes the shot asynchronously - wait briefly for the file.
+      for (var i = 0; i < 25; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        if (tmp.existsSync() && tmp.lengthSync() > 0) break;
+      }
+      if (!tmp.existsSync() || tmp.lengthSync() == 0) return;
+      // A 4K screenshot decodes to a ~33 MB bitmap; shrink to the same
+      // 320px width the native scanner writes, so scrolling the library
+      // never decodes a giant image.
+      final data = await tmp.readAsBytes();
+      final codec = await ui.instantiateImageCodec(data, targetWidth: 320);
+      final frame = await codec.getNextFrame();
+      final png = await frame.image.toByteData(format: ui.ImageByteFormat.png);
+      frame.image.dispose();
+      codec.dispose();
+      if (png == null) return;
+      await thumb.writeAsBytes(png.buffer.asUint8List(), flush: true);
+      await tmp.delete();
+      onThumbnailCaptured?.call(videoPath, target);
+    } catch (_) {
+      // Worst case: the tile keeps its movie-icon placeholder.
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sleep timer (v21)
+  // ---------------------------------------------------------------------------
+
+  Timer? _sleepTimer;
+  DateTime? _sleepFireAt;
+  bool _sleepAtEndOfVideo = false;
+
+  bool get sleepTimerActive => _sleepFireAt != null || _sleepAtEndOfVideo;
+
+  /// Short label for menus ("12 min" / "end of video"); null when inactive.
+  String? get sleepTimerLabel {
+    if (_sleepAtEndOfVideo) return 'end of video';
+    final at = _sleepFireAt;
+    if (at == null) return null;
+    final left = at.difference(DateTime.now()).inSeconds;
+    if (left <= 0) return null;
+    return '${(left + 30) ~/ 60} min'; // rounded while counting down
+  }
+
+  /// v22: precise live countdown for the player top bar ("23:41" or
+  /// "end of video"); null when no timer runs. The state pulses every
+  /// 500 ms while a timer is active, so this ticks visibly.
+  String? get sleepTimerCountdown {
+    if (_sleepAtEndOfVideo) return 'end of video';
+    final at = _sleepFireAt;
+    if (at == null) return null;
+    final left = at.difference(DateTime.now());
+    return left.inSeconds <= 0 ? null : formatCountdown(left.inSeconds);
+  }
+
+  void setSleepTimer({Duration? forDuration, bool atEndOfVideo = false}) {
+    cancelSleepTimer();
+    if (atEndOfVideo) {
+      _sleepAtEndOfVideo = true;
+    } else if (forDuration != null) {
+      _sleepFireAt = DateTime.now().add(forDuration);
+      _sleepTimer = Timer(forDuration, _fireSleepTimer);
+    }
+    notifyListeners();
+  }
+
+  void cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepFireAt = null;
+    _sleepAtEndOfVideo = false;
+    notifyListeners();
+  }
+
+  Future<void> _fireSleepTimer() async {
+    cancelSleepTimer();
+    _notices.add('Sleep timer paused playback');
+    await pause();
+  }
+
+  void _checkSleepAtEnd(Duration pos) {
+    if (!_sleepAtEndOfVideo || duration <= Duration.zero) return;
+    if (duration - pos <= const Duration(milliseconds: 1500)) {
+      cancelSleepTimer();
+      _notices.add('Sleep timer: stopped at end of video');
+      pause();
+    }
+  }
+
+  /// Jump to where the user left off last time this file was open. The saved
+  /// position lives in the watch history; honours the "Resume playback"
+  /// player setting.
+  Future<void> _restoreBookmark(VideoTrack track) async {
+    try {
+      final settings = await NativeBridge.loadSettings();
+      if (settings[PlayerSettings.kResumePlayback] == 'false') return;
+      final secs = _historyEntryFor(track.path)?.lastPositionSecs ?? 0;
+      if (secs < 10) return; // ignore tiny offsets
+
+      var d = duration;
+      if (d == Duration.zero) {
+        // Wait briefly for the demuxer to report the length.
+        d = await player.stream.duration
+            .firstWhere((v) => v > Duration.zero)
+            .timeout(
+              const Duration(seconds: 3),
+              onTimeout: () => Duration.zero,
+            );
+      }
+      if (d == Duration.zero) return;
+      // Almost-finished videos start from the beginning again.
+      if (secs >= d.inSeconds - 15) {
+        final e = _historyEntryFor(track.path);
+        if (e != null) {
+          e.lastPositionSecs = 0;
+          _persistHistory();
+        }
+        return;
+      }
+      // User may have switched tracks while we waited.
+      if (currentTrack?.path != track.path) return;
+      await player.seek(Duration(seconds: secs));
+      _notices.add('Resumed ${formatDuration(Duration(seconds: secs))}');
+    } catch (_) {
+      // Resume is best-effort.
+    }
+  }
+
+  void _saveBookmark() {
+    final track = currentTrack;
+    if (track == null || !isPlaying) return;
+    final secs = position.inSeconds;
+    if (secs <= 0) return;
+    final entry = _historyEntryFor(track.path);
+    if (entry != null && entry.lastPositionSecs != secs) {
+      entry.lastPositionSecs = secs;
+      _persistHistory();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Brightness (left-half swipe in the player)
+  // ---------------------------------------------------------------------------
+
+  /// Reads the current override once so the first drag starts from the real
+  /// screen brightness instead of a guess.
+  Future<double> currentBrightness() async {
+    if (!_brightnessSynced) {
+      brightness = await NativeBridge.getBrightness();
+      _brightnessSynced = true;
+      notifyListeners();
+    }
+    return brightness;
+  }
+
+  Future<void> setBrightness(double v) async {
+    brightness = v.clamp(0.0, 1.0);
+    notifyListeners();
+    await NativeBridge.setBrightness(brightness);
+  }
+
+  Future<void> resetBrightness() async {
+    brightness = 1.0;
+    _brightnessSynced = false;
+    notifyListeners();
+    await NativeBridge.resetBrightness();
+  }
+
+  Future<void> togglePlay() async {
+    // v19: optimistic UI - flip the icon instantly; the playing stream
+    // confirms (or corrects) a moment later. Kills the visible tap->icon
+    // lag that made the play/pause button feel delayed.
+    final wantPlay = !isPlaying;
+    isPlaying = wantPlay;
+    notifyListeners();
+    if (wantPlay) {
+      await player.play();
+    } else {
+      await pause();
+    }
+  }
+
+  /// Unconditional resume (used when handing playback back from a TV cast
+  /// session - togglePlay would pause if the user already resumed).
+  Future<void> resumePlayback() => player.play();
+
+  /// Saves the CURRENT video frame exactly as shown (subtitles included)
+  /// as a PNG into /storage/emulated/0/Pictures/Max Player and registers it
+  /// with the media scanner so gallery apps see it immediately.
+  ///
+  /// Returns the saved path, or null when there is nothing to capture
+  /// (no video, or a network stream) or the capture failed.
+  Future<String?> captureScreenshot() async {
+    final track = currentTrack;
+    if (track == null) return null;
+    if (track.path.startsWith('http')) return null; // stream: nothing on disk
+    final platform = player.platform;
+    if (platform is! NativePlayer) return null;
+    try {
+      final dir = Directory('/storage/emulated/0/Pictures/Max Player');
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final out =
+          '${dir.path}/MaxPlayer_${DateTime.now().millisecondsSinceEpoch}.png';
+      // libmpv command; plain (non-async) screenshot-to-file blocks mpv's
+      // core until the PNG is written, then we verify from Dart.
+      await platform.command(['screenshot-to-file', out]);
+      final f = File(out);
+      for (var i = 0; i < 20; i++) {
+        if (f.existsSync() && f.lengthSync() > 0) {
+          await NativeBridge.scanFile(out);
+          return out;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> pause() async {
+    // v20: pause FIRST so the video freezes instantly. The previous order
+    // (boost cleanup + bookmark disk write BEFORE pausing) added a visible
+    // delay between tapping pause and the video actually stopping.
+    await player.pause();
+    // Pausing always ends an active long-press boost (and its badge).
+    await stopSpeedBoost();
+    _saveBookmark();
+  }
+
+  Future<void> seek(Duration to) => player.seek(to);
+
+  /// Relative seek (e.g. ±10s), clamped to the media bounds.
+  Future<void> seekBy(int seconds) async {
+    if (currentTrack == null) return;
+    var target = position + Duration(seconds: seconds);
+    if (target < Duration.zero) target = Duration.zero;
+    if (duration > Duration.zero && target > duration) target = duration;
+    await player.seek(target);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Volume (device MEDIA volume, MX Player / VLC style)
+  // ---------------------------------------------------------------------------
+
+  bool _volumeSynced = false;
+  double _preMuteVolume = 0.5;
+
+  /// Reads the real device media volume once so the player swipe starts
+  /// from the true level (mirrors [currentBrightness]).
+  Future<double> currentVolume() async {
+    if (!_volumeSynced) {
+      volume = await NativeBridge.getMediaVolume();
+      isMuted = volume <= 0;
+      _volumeSynced = true;
+      notifyListeners();
+    }
+    return volume;
+  }
+
+  /// v21: when the setting is on, the volume range becomes 0..200%.
+  /// The device volume covers 0..100%; mpv's decoder gain (volume-max=200
+  /// is set when a track opens) covers the 100..200% boost region.
+  bool volumeBoost200 = false;
+
+  /// Current volume upper limit for the swipe gesture / slider math.
+  double get volumeCap => volumeBoost200 ? 2.0 : 1.0;
+
+  Future<void> setVolume(double v) async {
+    volume = v.clamp(0.0, volumeCap);
+    if (volume > 0) {
+      isMuted = false;
+      _preMuteVolume = volume;
+    }
+    await NativeBridge.setMediaVolume(isMuted ? 0 : volume.clamp(0.0, 1.0));
+    await _applyMpvVolume();
+    notifyListeners();
+  }
+
+  Future<void> _applyMpvVolume() async {
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    final pct = volume <= 1 ? 100.0 : volume * 100.0;
+    try {
+      await platform.setProperty('volume', pct.toStringAsFixed(0));
+    } catch (_) {}
+  }
+
+  /// Settings toggle: enable/disable the 200% boost region. Turning it off
+  /// while boosted pulls the volume back to 100%.
+  Future<void> setVolumeBoost200(bool on) async {
+    volumeBoost200 = on;
+    if (!on && volume > 1.0) await setVolume(1.0);
+    if (!on) await _applyMpvVolume();
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Volume leveling (v21) - mpv dynaudnorm: quiet dialogue and loud
+  // explosions come out at a steady level.
+  // v22: merged with the equalizer into ONE mpv `af` chain (both used to
+  // overwrite the whole property, silently cancelling each other), the
+  // window was widened so the effect is actually audible, and the applied
+  // chain is read back once - if this engine build lacks dynaudnorm the
+  // user is told instead of the toggle doing nothing.
+  // ---------------------------------------------------------------------------
+
+  static const String kLevelingFilter = 'dynaudnorm=f=150:g=15:m=5:p=0.95';
+  bool _levelingOn = false;
+  bool _levelingWarned = false;
+  bool get volumeLeveling => _levelingOn;
+
+  Future<void> setVolumeLeveling(bool on) async {
+    _levelingOn = on;
+    notifyListeners();
+    await _applyAudioFilters();
+  }
+
+  /// v32: mpv tone-mapping curve for HDR sources ("How does an HDR10 or
+  /// Dolby Vision file render on this screen"). Values validated in
+  /// PlayerSettings - anything unknown becomes 'auto' upstream.
+  Future<void> setToneMapping(String mode) async {
+    final plat = player.platform;
+    if (plat is! NativePlayer) return;
+    try {
+      await plat.setProperty('tone-mapping', mode);
+    } catch (_) {}
+  }
+
+  /// v32/v38: real-time picture enhancement. The shader is a tiny one-pass
+  /// sharpen+contrast+vibrance GLSL hook (assets/shaders/mx_enhance.glsl)
+  /// written to a cache file and given to mpv via glsl-shaders. Off simply
+  /// clears the list. Any failure (missing shader, old output driver) is
+  /// silent - playback continues untouched.
+  ///
+  /// v38 reality check ("video enhance is not effective"): with hardware
+  /// DIRECT rendering the decoder pushes frames straight to the screen and
+  /// user shaders are skipped completely - the toggle did nothing visible.
+  /// Switching to copy-back decode routes every frame through the shader
+  /// pipeline, so the effect is real. mpv itself falls back to software
+  /// decode when a codec cannot copy back, so nothing breaks.
+  static const String kEnhanceHwdec = 'mediacodec-copy';
+
+  /// Pure so tests can pin the decode-mode switch.
+  static String enhanceHwdecFor(bool on) => on ? kEnhanceHwdec : 'auto';
+
+  /// v51: one-time mpv cache caps applied in the constructor. 32 MiB of
+  /// forward buffer still smooths 4K remux files; an 8 MiB back buffer
+  /// keeps instant seek-back; cache-secs bounds network-stream caching by
+  /// time so live http links cannot pile up RAM. (The 800 MB storage
+  /// bloat was on-disk seek strips - fixed natively in MainActivity.)
+  static const Map<String, String> kMpvCacheCapProps = {
+    'demuxer-max-bytes': '32MiB',
+    'demuxer-max-back-bytes': '8MiB',
+    'cache-secs': '10',
+  };
+
+  bool _enhanceApplied = false;
+  String? _enhanceShaderPath;
+
+  Future<void> setEnhanceVideo(bool on) async {
+    final plat = player.platform;
+    if (plat is! NativePlayer) return;
+    try {
+      final f = File('${Directory.systemTemp.path}/mx_enhance.glsl');
+      if (on) {
+        const asset = 'assets/shaders/mx_enhance.glsl';
+        final src = await rootBundle.loadString(asset);
+        if (!f.existsSync() || await f.readAsString() != src) {
+          await f.writeAsString(src, flush: true);
+        }
+        _enhanceShaderPath = f.path;
+      }
+      await plat.setProperty('glsl-shaders', on ? (_enhanceShaderPath ?? '') : '');
+      await plat.setProperty('hwdec', enhanceHwdecFor(on));
+    } catch (_) {
+      return;
+    }
+    if (on == _enhanceApplied) return;
+    _enhanceApplied = on;
+    // v38: the decode mode only changes for the NEXT opened file - reload
+    // the current video in place (position + play/pause kept) so toggling
+    // Enhance is visible immediately, not just on the next video.
+    if (playlist.isEmpty || currentTrack == null) return;
+    final pos = player.state.position;
+    final wasPlaying = player.state.playing;
+    await _loadCurrent(autoplay: wasPlaying);
+    if (pos > Duration.zero) {
+      // mpv finishes opening asynchronously; pin the position shortly after.
+      Future<void>.delayed(const Duration(milliseconds: 350), () {
+        player.seek(pos);
+      });
+    }
+  }
+
+  /// The single writer of mpv's `af` property: equalizer bands + leveling
+  /// combined. Replaces the old pair of writers that clobbered each other.
+  Future<void> _applyAudioFilters() async {
+    final platform = player.platform;
+    if (platform is! NativePlayer) return;
+    final chain = <String>[
+      if (eqEnabled) buildEqualizerFilter(eqGains),
+      if (_levelingOn) kLevelingFilter,
+    ].join(',');
+    try {
+      await platform.setProperty('af', chain);
+      if (_levelingOn && !_levelingWarned) {
+        final applied = await platform.getProperty('af');
+        if (!applied.contains('dynaudnorm')) {
+          _levelingWarned = true;
+          _notices.add(
+            'Volume leveling is not supported by this video engine build',
+          );
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> toggleMute() async {
+    if (isMuted) {
+      isMuted = false;
+      if (volume <= 0) volume = _preMuteVolume;
+      await NativeBridge.setMediaVolume(volume);
+    } else {
+      if (volume > 0) _preMuteVolume = volume;
+      isMuted = true;
+      await NativeBridge.setMediaVolume(0);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setPlaybackRate(double rate) async {
+    playbackRate = rate;
+    await player.setRate(rate);
+    notifyListeners();
+  }
+
+  /// Switch to a different audio track (e.g. Hindi / English in dual-audio
+  /// files). Pass an entry of [audioTracks].
+  void selectAudioTrack(AudioTrack track) => player.setAudioTrack(track);
+
+  /// Switch subtitle track; pass SubtitleTrack.no() to turn subtitles off.
+  void selectSubtitleTrack(SubtitleTrack track) =>
+      player.setSubtitleTrack(track);
+
+  /// True when a real subtitle track (not "no"/off) is currently active.
+  bool get subtitlesActive =>
+      currentSubtitleTrack != null && currentSubtitleTrack!.id != 'no';
+
+  // ---------------------------------------------------------------------------
+  // A-B loop
+  // ---------------------------------------------------------------------------
+
+  /// Button callback: 1st tap sets A, 2nd sets B (loop starts), 3rd clears.
+  /// Returns a short message for the on-screen indicator.
+  String tapLoopPoint() {
+    if (loopA == null) {
+      loopA = position;
+      notifyListeners();
+      return 'A set ${formatDuration(position)}';
+    }
+    if (loopB == null) {
+      // Ignore a B that's not after A (user double-tapped by accident).
+      if (position <= loopA! + const Duration(seconds: 1)) {
+        loopA = position;
+        notifyListeners();
+        return 'A set ${formatDuration(position)}';
+      }
+      loopB = position;
+      notifyListeners();
+      return 'Looping ${formatDuration(loopA!)} → ${formatDuration(loopB!)}';
+    }
+    loopA = null;
+    loopB = null;
+    notifyListeners();
+    return 'A-B loop cleared';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Long-press speed boost (customizable multiplier)
+  // ---------------------------------------------------------------------------
+
+  Future<void> startSpeedBoost(double multiplier) async {
+    if (_preBoostRate != null) return; // already boosting
+    if (!isPlaying) return; // no boost/badge while paused
+    _preBoostRate = playbackRate;
+    playbackRate = multiplier;
+    await player.setRate(multiplier);
+    notifyListeners();
+  }
+
+  Future<void> stopSpeedBoost() async {
+    final restore = _preBoostRate;
+    if (restore == null) return;
+    _preBoostRate = null;
+    playbackRate = restore;
+    await player.setRate(restore);
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Equalizer (libmpv `af` lavfi chain)
+  // ---------------------------------------------------------------------------
+
+  static const String _kEqEnabledKey = 'eq.enabled';
+  static const String _kEqGainsKey = 'eq.gains';
+
+  /// Builds the lavfi audio-filter chain, skipping bands at 0 dB.
+  /// Pure + testable.
+  static String buildEqualizerFilter(List<double> gains) {
+    final parts = <String>[];
+    for (var i = 0; i < eqFrequencies.length && i < gains.length; i++) {
+      if (gains[i] == 0) continue;
+      parts.add(
+        'equalizer=f=${eqFrequencies[i]}:t=q:w=1.0:g=${gains[i].toStringAsFixed(1)}',
+      );
+    }
+    return parts.isEmpty ? '' : 'lavfi=[${parts.join(',')}]';
+  }
+
+  Future<void> applyEqualizer(List<double> gains, bool enabled) async {
+    eqGains = List.of(gains);
+    eqEnabled = enabled;
+    NativeBridge.saveSetting(_kEqEnabledKey, '$enabled');
+    NativeBridge.saveSetting(
+      _kEqGainsKey,
+      gains.map((g) => g.toStringAsFixed(1)).join(','),
+    );
+    notifyListeners();
+    await _applyEqFilter();
+  }
+
+  Future<void> _applyEqFilter() => _applyAudioFilters(); // v22: shared chain
+
+  // ---------------------------------------------------------------------------
+  // Watch-time stats
+  // ---------------------------------------------------------------------------
+
+  /// Persisted key for a day bucket, e.g. stats.20260811. Pure + testable.
+  static String statsKeyFor(DateTime d) =>
+      'stats.${d.year * 10000 + d.month * 100 + d.day}';
+
+  void _trackWatchTime() {
+    if (!isPlaying) return;
+    final key = statsKeyFor(DateTime.now());
+    if (key != _todayStatsKey) {
+      // Day rolled over while playing.
+      _todayStatsKey = key;
+      _watchTodaySecs = 0;
+    }
+    _watchTodaySecs += 5;
+    NativeBridge.saveSetting(key, '$_watchTodaySecs');
+    // v27: per-video totals for the "Most watched" list (same 5s tick,
+    // trimmed to the heaviest entries so the stored blob stays tiny).
+    final path = currentTrack?.path;
+    if (path != null) {
+      final map = Map<String, int>.of(_watchByVideo);
+      map[path] = (map[path] ?? 0) + 5;
+      if (map.length > _kWatchByVideoMax) {
+        final sorted = map.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+        map
+          ..clear()
+          ..addEntries(sorted.take(_kWatchByVideoMax));
+      }
+      _watchByVideo = map;
+      NativeBridge.saveSetting(_kWatchByVideoKey, jsonEncode(map));
+    }
+  }
+
+  /// Last 7 days of watch time (index 0 = 6 days ago, last = today).
+  Future<List<WatchDay>> getWeekStats() async {
+    final s = await NativeBridge.loadSettings();
+    final now = DateTime.now();
+    final todayKey = statsKeyFor(now);
+    final days = <WatchDay>[];
+    for (var i = 6; i >= 0; i--) {
+      final d = now.subtract(Duration(days: i));
+      final key = statsKeyFor(d);
+      var secs = int.tryParse(s[key] ?? '') ?? 0;
+      if (key == todayKey && _watchTodaySecs > secs) secs = _watchTodaySecs;
+      days.add(WatchDay(d, secs));
+    }
+    return days;
+  }
+
+  /// v27 advanced stats: total watch seconds over the last [days] days
+  /// (including today's in-progress count).
+  Future<int> getWatchSecondsForLastDays(int days) async {
+    final s = await NativeBridge.loadSettings();
+    final now = DateTime.now();
+    final todayKey = statsKeyFor(now);
+    var total = 0;
+    for (var i = days - 1; i >= 0; i--) {
+      final key = statsKeyFor(now.subtract(Duration(days: i)));
+      var secs = int.tryParse(s[key] ?? '') ?? 0;
+      if (key == todayKey && _watchTodaySecs > secs) secs = _watchTodaySecs;
+      total += secs;
+    }
+    return total;
+  }
+
+  /// v27: how many days IN A ROW something was watched (today counts when
+  /// already non-zero; the chain may start yesterday and still count).
+  Future<int> getWatchStreakDays() async {
+    final s = await NativeBridge.loadSettings();
+    final now = DateTime.now();
+    final todayKey = statsKeyFor(now);
+    final todaySecs = _watchTodaySecs > (int.tryParse(s[todayKey] ?? '') ?? 0)
+        ? _watchTodaySecs
+        : (int.tryParse(s[todayKey] ?? '') ?? 0);
+    var streak = 0;
+    var offset = todaySecs > 0
+        ? 0
+        : 1; // no watching today yet -> start yesterday
+    while (true) {
+      final key = statsKeyFor(now.subtract(Duration(days: offset)));
+      final secs = int.tryParse(s[key] ?? '') ?? 0;
+      if (secs <= 0) break;
+      streak++;
+      offset++;
+      if (offset > 3650) break; // paranoia guard
+    }
+    return streak;
+  }
+
+  /// v27: the [limit] most-watched videos (path -> total seconds),
+  /// heaviest first. Uses the in-memory map restored in [_init].
+  List<MapEntry<String, int>> getTopWatchedVideos({int limit = 5}) {
+    final entries = _watchByVideo.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entries.take(limit).toList();
+  }
+
+  /// Display title for a path: the history entry's title when known,
+  /// else the file name.
+  String titleForPath(String path) {
+    for (final e in _history) {
+      if (e.path == path) return e.title;
+    }
+    return path.split('/').last;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Scrub preview thumbnail strip (v19)
+  // ---------------------------------------------------------------------------
+
+  /// Frames generated per video - must match the native generator
+  /// (MainActivity.thumbStripEnsureSync).
+  static const int thumbStripCount = 72;
+
+  String? _thumbStripFor;
+  String? _thumbStripDir;
+
+  void _ensureThumbStrip() {
+    final track = currentTrack;
+    if (track == null) return;
+    final path = track.path;
+    if (path.startsWith('http')) return; // streams: nothing on disk to scan
+    if (_thumbStripFor == path) return; // already requested for this file
+    _thumbStripFor = path;
+    _thumbStripDir = null;
+    NativeBridge.thumbStripEnsure(path).then((dir) {
+      if (dir != null && _thumbStripFor == path) {
+        _thumbStripDir = dir;
+        notifyListeners();
+      }
+    });
+  }
+
+  /// Thumbnail file for the preview bubble at [fraction] (0..1 of the
+  /// video), or null while that frame hasn't been generated yet (the
+  /// bubble then shows the timestamp only).
+  String? scrubThumbPath(double fraction) {
+    final dir = _thumbStripDir;
+    if (dir == null) return null;
+    final i = (fraction.clamp(0.0, 1.0) * (thumbStripCount - 1)).round();
+    final f = File('$dir/f_${i.toString().padLeft(3, '0')}.jpg');
+    return f.existsSync() ? f.path : null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mini player
+  // ---------------------------------------------------------------------------
+
+  /// Dismisses the mini player: clears the queue and stops playback.
+  Future<void> stopMini() async {
+    playlist = [];
+    currentIndex = 0;
+    notifyListeners();
+    await player.stop();
+  }
+
+  Future<void> nextTrack() async {
+    if (playlist.length <= 1) return;
+    await playTrack(_getNextIndex(forward: true));
+  }
+
+  Future<void> prevTrack() async {
+    if (position.inSeconds > 3) {
+      await seek(Duration.zero);
+      return;
+    }
+    if (playlist.length <= 1) return;
+    await playTrack(_getNextIndex(forward: false));
+  }
+
+  void toggleRepeat() {
+    repeatMode = switch (repeatMode) {
+      RepeatMode.none => RepeatMode.all,
+      RepeatMode.all => RepeatMode.one,
+      RepeatMode.one => RepeatMode.none,
+    };
+    notifyListeners();
+  }
+
+  void toggleShuffle() {
+    isShuffled = !isShuffled;
+    if (isShuffled) {
+      _shuffledOrder = _generateShuffledOrder(playlist.length, currentIndex);
+    }
+    notifyListeners();
+  }
+
+  Future<void> removeFromPlaylist(int index) async {
+    final wasCurrent = index == currentIndex;
+    playlist = [...playlist]..removeAt(index);
+    if (playlist.isEmpty) {
+      currentIndex = 0;
+      await player.stop();
+    } else if (wasCurrent) {
+      currentIndex = currentIndex.clamp(0, playlist.length - 1);
+      await _loadCurrent(autoplay: false);
+    } else if (index < currentIndex) {
+      currentIndex -= 1;
+    }
+    notifyListeners();
+  }
+
+  Future<void> _handleEnded() async {
+    // Completed video: reset its saved position so it replays from the start.
+    final track = currentTrack;
+    if (track != null) {
+      final e = _historyEntryFor(track.path);
+      if (e != null) {
+        e.lastPositionSecs = 0;
+        _persistHistory();
+      }
+    }
+    if (repeatMode == RepeatMode.one) {
+      await player.seek(Duration.zero);
+      await player.play();
+    } else if (repeatMode == RepeatMode.all ||
+        currentIndex < playlist.length - 1) {
+      await nextTrack();
+    }
+  }
+
+  @override
+  void dispose() {
+    _uiTicker?.cancel();
+    _bookmarkTimer?.cancel();
+    _notices.close();
+    for (final s in _subs) {
+      s.cancel();
+    }
+    player.dispose();
+    super.dispose();
+  }
+}
+
+/// One day of watch time for the stats screen.
+class WatchDay {
+  final DateTime day;
+  final int seconds;
+  const WatchDay(this.day, this.seconds);
+}
+MAXV60_EOF_6
+echo "  wrote lib/state/media_player_state.dart"
+
+mkdir -p "$(dirname "lib/widgets/video_thumb.dart")"
+cat > "lib/widgets/video_thumb.dart" <<'MAXV60_EOF_7'
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+
+import '../models/video_track.dart';
+import '../services/native_bridge.dart';
+
+/// v47: the shared video thumbnail for the home grid / list / search.
+///
+/// FIX "no thumbnails on the home screen from the start": before, if the
+/// scan-time frame capture came back null, the tile showed the placeholder
+/// FOREVER and nothing ever tried again. Now every tile asks ONE more time
+/// when it becomes visible (native regenerates + disk-caches the JPEG, so
+/// this costs a retriever read only once per video), and the answer is
+/// remembered for the session.
+class VideoThumb extends StatefulWidget {
+  final VideoTrack track;
+  final int cacheWidth;
+
+  const VideoThumb({super.key, required this.track, this.cacheWidth = 360});
+
+  /// path -> resolved thumbnail path (null = asked, still none)
+  static final Map<String, String?> _lazy = {};
+  static final Set<String> _inFlight = {};
+
+  /// v60 (old-phone pack): at most TWO native frame decodes running -
+  /// one task per visible grid tile was spiking low-RAM phones. Queued
+  /// tiles just keep the placeholder a moment longer.
+  static int _thumbJobsRunning = 0;
+  static final List<Completer<void>> _thumbWaiters = [];
+
+  static Future<void> acquireThumbSlot() async {
+    if (_thumbJobsRunning < 2) {
+      _thumbJobsRunning++;
+      return;
+    }
+    final c = Completer<void>();
+    _thumbWaiters.add(c);
+    await c.future;
+  }
+
+  static void releaseThumbSlot() {
+    if (_thumbWaiters.isNotEmpty) {
+      _thumbWaiters.removeAt(0).complete();
+    } else {
+      _thumbJobsRunning--;
+    }
+  }
+
+  @override
+  State<VideoThumb> createState() => _VideoThumbState();
+}
+
+class _VideoThumbState extends State<VideoThumb> {
+  String? _thumbPath;
+  bool _asked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant VideoThumb oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.track.path != widget.track.path) {
+      _thumbPath = null;
+      _asked = false;
+      _resolve();
+    }
+  }
+
+  void _resolve() {
+    final t = widget.track.thumbnailPath;
+    if (t != null) {
+      _thumbPath = t;
+      return;
+    }
+    final cached = VideoThumb._lazy[widget.track.path];
+    if (cached != null) {
+      _thumbPath = cached;
+      return;
+    }
+    if (_asked || !VideoThumb._inFlight.add(widget.track.path)) return;
+    _asked = true;
+    () async {
+      await VideoThumb.acquireThumbSlot();
+      try {
+        var meta = await NativeBridge.fetchMetadata(widget.track.path);
+        if (meta.thumbnailPath == null) {
+          // v60: ONE retry after a breath - some files expose a frame a
+          // beat late. Never loops forever, never crashes over a thumb.
+          await Future<void>.delayed(const Duration(milliseconds: 350));
+          if (mounted) {
+            meta = await NativeBridge.fetchMetadata(widget.track.path);
+          }
+        }
+        VideoThumb._lazy[widget.track.path] = meta.thumbnailPath;
+        if (meta.thumbnailPath == null) return;
+        if (mounted) setState(() => _thumbPath = meta.thumbnailPath);
+      } catch (_) {
+        // keep the placeholder - nothing crashes over a thumbnail
+      } finally {
+        VideoThumb._inFlight.remove(widget.track.path);
+        VideoThumb.releaseThumbSlot();
+      }
+    }();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = _thumbPath;
+    if (p != null) {
+      return Image.file(
+        File(p),
+        fit: BoxFit.cover,
+        cacheWidth: widget.cacheWidth,
+        errorBuilder: (_, __, ___) => const VideoThumbPlaceholder(),
+      );
+    }
+    return const VideoThumbPlaceholder();
+  }
+}
+
+class VideoThumbPlaceholder extends StatelessWidget {
+  const VideoThumbPlaceholder({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFF1e1e2a),
+      alignment: Alignment.center,
+      child: Icon(Icons.videocam_outlined,
+          size: 40, color: Colors.white.withValues(alpha: 0.18)),
+    );
+  }
+}
+MAXV60_EOF_7
+echo "  wrote lib/widgets/video_thumb.dart"
 
 mkdir -p "$(dirname "lib/services/tmdb_client.dart")"
-cat > "lib/services/tmdb_client.dart" <<'MAXV59_EOF_6'
+cat > "lib/services/tmdb_client.dart" <<'MAXV60_EOF_8'
 import 'dart:convert';
 import 'dart:io';
 
@@ -2906,6 +4696,24 @@ List<TmdbSeason> parseTmdbSeasons(String jsonBody) {
         episodes: eps,
         year: air.length >= 4 ? int.tryParse(air.substring(0, 4)) : null,
       ));
+    }
+    // v60 belt & braces (his report: "series parts not showing"): some
+    // /tv payloads carry ONLY the counters, no seasons array - still
+    // show the one summary line instead of nothing at all.
+    if (out.isEmpty) {
+      final ns = decoded['number_of_seasons'] is num
+          ? (decoded['number_of_seasons'] as num).toInt()
+          : 0;
+      final ne = decoded['number_of_episodes'] is num
+          ? (decoded['number_of_episodes'] as num).toInt()
+          : 0;
+      if (ns > 0) {
+        out.add(TmdbSeason(
+          number: ns,
+          name: '$ns season${ns == 1 ? '' : 's'} in total',
+          episodes: ne,
+        ));
+      }
     }
     return out;
   } catch (_) {
@@ -3574,1980 +5382,11 @@ class TmdbClient {
     return body == null ? const [] : parseTmdbList(body, kind: kind);
   }
 }
-MAXV59_EOF_6
+MAXV60_EOF_8
 echo "  wrote lib/services/tmdb_client.dart"
 
-mkdir -p "$(dirname "lib/services/ai_suggest.dart")"
-cat > "lib/services/ai_suggest.dart" <<'MAXV59_EOF_7'
-import 'dart:convert';
-import 'dart:io';
-
-import 'movie_ai.dart';
-import 'tmdb_client.dart';
-
-/// One title the AI picked, before we resolve it to a real TMDB movie.
-class AiTitlePick {
-  final String title;
-  final int? year;
-
-  const AiTitlePick(this.title, this.year);
-}
-
-/// Extracts the model's `[{"title": ..., "year": ...}]` list even when it
-/// wrapped it in prose or a ```json fence. Never throws; garbage -> [].
-/// Pure for tests.
-List<AiTitlePick> parseAiSuggestionJson(String raw) {
-  final start = raw.indexOf('[');
-  final end = raw.lastIndexOf(']');
-  if (start < 0 || end <= start) return const [];
-  try {
-    final decoded = jsonDecode(raw.substring(start, end + 1));
-    if (decoded is! List) return const [];
-    final out = <AiTitlePick>[];
-    for (final e in decoded) {
-      if (e is! Map) continue;
-      final t = '${e['title'] ?? ''}'.trim();
-      if (t.isEmpty) continue;
-      final y = e['year'];
-      out.add(AiTitlePick(t, y is num ? y.toInt() : int.tryParse('$y')));
-      if (out.length >= 10) break;
-    }
-    return out;
-  } catch (_) {
-    return const [];
-  }
-}
-
-/// The system prompt - forces REAL, famous titles as bare JSON so the
-/// parser and TMDB resolution always have something solid to work with.
-const String kAiSuggestSystemPrompt =
-    'You are the movie recommender inside the Max Player app. The user '
-    'describes the kind of movies they want. Reply with ONLY a JSON array '
-    'of up to 10 objects like [{"title":"3 Idiots","year":2009}] - real, '
-    'well-known films that genuinely match the taste described, mixing '
-    'Indian and international cinema when it fits. No commentary, no '
-    'markdown, no code fence - just the JSON array.';
-
-/// v58: "AI Suggestor" - the user DESCRIBES their taste in plain words
-/// ("funny action like Dhoom", "sad Korean love story") and this resolves
-/// the AI's picks to REAL TMDB movies with posters. Reuses the movie Q&A
-/// OpenRouter key + model fallback chain (movie_ai.dart).
-class AiSuggestor {
-  static const String _url = 'https://openrouter.ai/api/v1/chat/completions';
-
-  static final HttpClient _http = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 8);
-
-  final TmdbClient tmdb;
-
-  AiSuggestor(this.tmdb);
-
-  /// Suggests up to 10 real movies for a free-text taste description.
-  /// Null on any failure (the sheet then shows a friendly error).
-  Future<List<TmdbMovie>?> suggest(String taste) async {
-    final q = taste.trim();
-    if (q.isEmpty) return null;
-    final picks = await _askModels(q);
-    if (picks == null || picks.isEmpty) return null;
-    // Resolve every AI title to a REAL movie on TMDB, in parallel.
-    final resolved = await Future.wait(picks.map(_resolve));
-    final out = <TmdbMovie>[];
-    final seen = <int>{};
-    for (final m in resolved) {
-      if (m != null && seen.add(m.id)) out.add(m);
-    }
-    return out.isEmpty ? null : out;
-  }
-
-  /// Walks the same free-model fallback chain as the movie Q&A.
-  Future<List<AiTitlePick>?> _askModels(String q) async {
-    if (kOpenRouterApiKey.isEmpty) return null;
-    for (final model in kOpenRouterModels) {
-      try {
-        final req = await _http.postUrl(Uri.parse(_url));
-        req.headers.set('content-type', 'application/json');
-        req.headers.set('authorization', 'Bearer $kOpenRouterApiKey');
-        req.headers.set('x-title', 'Max Player');
-        req.write(jsonEncode(openRouterChatBody(
-          model: model,
-          system: kAiSuggestSystemPrompt,
-          question: 'I want: $q',
-        )));
-        final res = await req.close().timeout(const Duration(seconds: 25));
-        if (res.statusCode != 200) {
-          await res.drain<void>();
-          continue; // rate-limited / model down -> next in the chain
-        }
-        final text =
-            parseOpenRouterAnswer(await res.transform(utf8.decoder).join());
-        if (text == null) continue;
-        final picks = parseAiSuggestionJson(text);
-        if (picks.isNotEmpty) return picks;
-      } catch (_) {
-        // network blip for this model -> try the next one
-      }
-    }
-    return null;
-  }
-
-  /// Finds the best-matching REAL movie for an AI title: exact year wins,
-  /// otherwise the top search hit (TMDB ranks those well).
-  Future<TmdbMovie?> _resolve(AiTitlePick pick) async {
-    try {
-      final page = await tmdb.searchMovies(pick.title);
-      if (page.items.isEmpty) return null;
-      if (pick.year != null) {
-        for (final m in page.items) {
-          if (m.year == pick.year) return m;
-        }
-      }
-      return page.items.first;
-    } catch (_) {
-      return null;
-    }
-  }
-}
-MAXV59_EOF_7
-echo "  wrote lib/services/ai_suggest.dart"
-
-mkdir -p "$(dirname "lib/widgets/ai_suggest_sheet.dart")"
-cat > "lib/widgets/ai_suggest_sheet.dart" <<'MAXV59_EOF_8'
-import 'package:flutter/material.dart';
-
-import '../services/ai_suggest.dart';
-import '../services/tmdb_client.dart';
-import '../state/theme_state.dart';
-import 'tmdb_image.dart';
-
-/// v58: the "AI Suggestor" sheet (a real user request: "a button where
-/// the user describes their movie type and you suggest the best movies").
-///
-/// The user types their taste in plain words - or taps a mood chip - the
-/// AI names real films, and each pick appears as a tappable TMDB poster.
-/// Popping a pick hands it back to Discover, which opens the detail
-/// sheet (local library match included).
-class AiSuggestSheet extends StatefulWidget {
-  const AiSuggestSheet({super.key});
-
-  /// Returns the tapped movie, or null when the sheet was dismissed.
-  static Future<TmdbMovie?> show(BuildContext context) {
-    return showModalBottomSheet<TmdbMovie>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF1a1a24),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => Padding(
-        // keyboard pushes the sheet up instead of covering the field
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom),
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.75,
-          minChildSize: 0.5,
-          maxChildSize: 0.95,
-          builder: (_, controller) =>
-              SingleChildScrollView(controller: controller, child: const AiSuggestSheet()),
-        ),
-      ),
-    );
-  }
-
-  @override
-  State<AiSuggestSheet> createState() => _AiSuggestSheetState();
-}
-
-class _AiSuggestSheetState extends State<AiSuggestSheet> {
-  final _suggestor = AiSuggestor(TmdbClient());
-  final _tasteCtrl = TextEditingController();
-
-  bool _busy = false;
-  String? _error;
-  List<TmdbMovie> _picks = const [];
-  int _token = 0;
-
-  /// One-tap moods - nobody likes typing on a TV remote-style keyboard.
-  static const List<String> _moods = [
-    'Funny action like Dhoom',
-    'Mind-bending thriller',
-    'Bollywood romance',
-    'K-drama vibes (movies)',
-    'Horror night',
-    'Feel-good family',
-    'South Indian mass action',
-    'True story / biopic',
-  ];
-
-  @override
-  void dispose() {
-    _tasteCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _suggest([String? preset]) async {
-    final q = (preset ?? _tasteCtrl.text).trim();
-    if (q.isEmpty || _busy) return;
-    if (preset != null) _tasteCtrl.text = preset;
-    final token = ++_token;
-    setState(() {
-      _busy = true;
-      _error = null;
-      _picks = const [];
-    });
-    final picks = await _suggestor.suggest(q);
-    if (!mounted || token != _token) return;
-    setState(() {
-      _busy = false;
-      if (picks == null) {
-        _error =
-            'AI is not reachable right now - check the internet and try again.';
-      } else {
-        _picks = picks;
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = themeState.accent;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Icon(Icons.auto_awesome, color: accent, size: 22),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'AI Suggestor',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Describe your movie type - AI suggests the best ones for you.',
-            style: TextStyle(color: Colors.white54, fontSize: 12.5),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _tasteCtrl,
-            minLines: 1,
-            maxLines: 3,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
-            onSubmitted: (_) => _suggest(),
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: 'e.g. funny action like Dhoom',
-              hintStyle: const TextStyle(color: Colors.white38),
-              filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.06),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              suffixIcon: IconButton(
-                icon: Icon(Icons.send_rounded, color: accent, size: 20),
-                onPressed: _busy ? null : () => _suggest(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final m in _moods)
-                GestureDetector(
-                  onTap: _busy ? null : () => _suggest(m),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(18),
-                      border:
-                          Border.all(color: accent.withValues(alpha: 0.35)),
-                    ),
-                    child: Text(
-                      m,
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          if (_busy)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 30),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_error != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Center(
-                child: Text(
-                  _error!,
-                  textAlign: TextAlign.center,
-                  style:
-                      const TextStyle(color: Colors.white54, fontSize: 13),
-                ),
-              ),
-            )
-          else if (_picks.isNotEmpty) ...[
-            Text(
-              '${_picks.length} picks for you',
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 225,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: _picks.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (_, i) => _PickCard(
-                  movie: _picks[i],
-                  onTap: () => Navigator.of(context).pop(_picks[i]),
-                ),
-              ),
-            ),
-          ] else
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 18),
-              child: Center(
-                child: Text(
-                  'Tap a mood above or describe your own.',
-                  style: TextStyle(color: Colors.white30, fontSize: 12.5),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PickCard extends StatelessWidget {
-  final TmdbMovie movie;
-  final VoidCallback onTap;
-
-  const _PickCard({required this.movie, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: SizedBox(
-        width: 110,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: SizedBox(
-                width: 110,
-                height: 160,
-                child: TmdbImage(url: tmdbPosterUrl(movie.posterPath)),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              movie.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-            ),
-            if (movie.year != null)
-              Text(
-                '${movie.year}',
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-MAXV59_EOF_8
-echo "  wrote lib/widgets/ai_suggest_sheet.dart"
-
-mkdir -p "$(dirname "lib/screens/discover_screen.dart")"
-cat > "lib/screens/discover_screen.dart" <<'MAXV59_EOF_9'
-import 'dart:async';
-import 'dart:io';
-
-import 'package:flutter/material.dart';
-
-import '../services/native_bridge.dart';
-import '../services/tmdb_client.dart';
-import '../state/media_player_state.dart';
-import '../state/theme_state.dart';
-import '../state/video_library_state.dart';
-import '../utils/movie_match.dart';
-import '../widgets/ai_suggest_sheet.dart';
-import '../widgets/movie_detail_sheet.dart';
-import '../widgets/tmdb_image.dart';
-
-/// v44 "Discover": a legal movie-discovery section, now MUCH bigger.
-///
-/// - MANY filters (Trending, Hollywood, Bollywood, Tamil, Telugu, Action,
-///   Comedy, Drama, Horror, Romance, Thriller, Sci-Fi) instead of v43's 3.
-/// - Its own SEARCH bar -> TMDB's whole catalogue.
-/// - INFINITE SCROLL: every section pages through thousands of movies
-///   (TMDB serves up to 500 pages per query, 20 per page).
-/// - Pull-to-refresh REALLY reloads (and v44 fixes wrong/stale posters).
-///
-/// SOURCE: TMDB's free API (licensed for this, needs only the credit line -
-/// we do NOT copy IMDb numbers). Posters + data cache on disk for 24h, so
-/// the section refreshes itself daily and works fully offline in between.
-///
-/// TRAILERS: a tap opens the official YouTube app (Play-policy-safe). We
-/// never play YouTube streams through our own player.
-/// v58 grew it further: WEB SERIES got their own shelf (Movies | Series
-/// switch + /tv endpoints), the grid paints INSTANTLY from the disk cache
-/// on slow networks (live data then replaces it), and the ✨ AI Suggestor
-/// turns "funny action like Dhoom" into real, tappable posters.
-class DiscoverScreen extends StatefulWidget {
-  final VideoLibraryState library;
-  final MediaPlayerState player;
-
-  const DiscoverScreen({
-    super.key,
-    required this.library,
-    required this.player,
-  });
-
-  @override
-  State<DiscoverScreen> createState() => _DiscoverScreenState();
-}
-
-class _DiscoverScreenState extends State<DiscoverScreen> {
-  final _client = TmdbClient();
-  final _scroll = ScrollController();
-  final _searchCtrl = TextEditingController();
-  Timer? _debounce;
-
-  DiscoverFilter _filter = kAllFilters.first;
-  final List<TmdbMovie> _movies = [];
-  final Set<int> _seenIds = {};
-  int _page = 0;
-  int _totalPages = 1;
-  int _totalResults = 0;
-  bool _initialLoading = true;
-  bool _loadingMore = false;
-  String? _error;
-  bool _keyMissing = false;
-
-  /// v45: "search is poor - show related movies": similar titles of the
-  /// top search hit, shown under the results in search mode.
-  List<TmdbMovie> _related = const [];
-
-  /// Bumped every time the MODE (filter/search) changes; stale in-flight
-  /// page loads check it and drop their results (no mixed-up grids).
-  int _loadToken = 0;
-  String _searchQuery = '';
-  bool get _searching => _searchQuery.isNotEmpty;
-
-  @override
-  void initState() {
-    super.initState();
-    _scroll.addListener(_maybeLoadMore);
-    _boot();
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _scroll.dispose();
-    _searchCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _boot() async {
-    final cachePath = await NativeBridge.cacheDirPath();
-    TmdbImage.configure(cachePath);
-    if (cachePath != null) _client.cacheDir = Directory(cachePath);
-    if (!mounted) return;
-    if (kTmdbApiKey.isEmpty) {
-      setState(() {
-        _keyMissing = true;
-        _initialLoading = false;
-      });
-      return;
-    }
-    await _loadPage(1, force: true);
-  }
-
-  /// Loads ONE page of the current mode and appends it (deduped by id).
-  Future<void> _loadPage(int page, {bool force = false}) async {
-    final token = _loadToken;
-    if (page == 1) {
-      if (mounted) setState(() => _initialLoading = true);
-      // v58: instant first paint on bad networks - show the cached page
-      // from disk RIGHT AWAY; the live fetch below replaces it.
-      if (!_searching && _movies.isEmpty) {
-        final cached = await _client.cachedBrowseFirstPage(_filter);
-        if (!mounted || token != _loadToken) return;
-        if (cached != null && _movies.isEmpty) {
-          setState(() {
-            for (final m in cached.items) {
-              if (_seenIds.add(m.id)) _movies.add(m);
-            }
-            _error = null;
-          });
-        }
-      }
-    } else {
-      if (mounted) setState(() => _loadingMore = true);
-    }
-    TmdbPage result;
-    try {
-      // v59: multi-search finds it in ALL shelves - movies AND series.
-      result = _searching
-          ? await _client.searchMulti(_searchQuery, page: page, force: force)
-          : await _client.browse(_filter, page: page, force: force);
-    } catch (_) {
-      result = const TmdbPage();
-    }
-    if (!mounted || token != _loadToken) return;
-    setState(() {
-      _initialLoading = false;
-      _loadingMore = false;
-      _page = result.page;
-      _totalPages = result.totalPages;
-      _totalResults = result.totalResults;
-      for (final m in result.items) {
-        if (_seenIds.add(m.id)) _movies.add(m);
-      }
-      if (page == 1 && _movies.isEmpty) {
-        _error = _searching
-            ? 'No movies or series match "$_searchQuery" on TMDB.'
-            : 'Could not load movies or series - connect the internet once, '
-                'then pull down to retry.';
-      } else if (_movies.isNotEmpty) {
-        _error = null;
-      }
-    });
-    // v45: in search mode, also fetch "you may also like" from the top
-    // hit - a plain search word finds few direct matches otherwise.
-    if (_searching && page == 1 && result.items.isNotEmpty) {
-      _loadRelated(result.items.first.id, token,
-          kind: result.items.first.kind);
-    }
-  }
-
-  Future<void> _loadRelated(int movieId, int token,
-      {String kind = 'movie'}) async {
-    List<TmdbMovie> rel;
-    try {
-      rel = await _client.similar(movieId, kind: kind);
-    } catch (_) {
-      rel = const [];
-    }
-    if (!mounted || token != _loadToken || !_searching) return;
-    setState(() => _related = rel.take(12).toList());
-  }
-
-  /// Hard switch of browse/search mode: clears the grid, invalidates any
-  /// in-flight loads, then fetches page 1. [force] skips the 24h cache.
-  void _switchTo({DiscoverFilter? filter, String? query, bool force = false}) {
-    _loadToken++;
-    setState(() {
-      if (filter != null) _filter = filter;
-      if (query != null) _searchQuery = query;
-      _movies.clear();
-      _seenIds.clear();
-      _page = 0;
-      _totalPages = 1;
-      _totalResults = 0;
-      _error = null;
-      _related = const [];
-    });
-    _loadPage(1, force: force);
-  }
-
-  void _selectFilter(DiscoverFilter f) {
-    if (!_searching && _filter == f) return;
-    _searchCtrl.clear(); // leaving search mode when a chip is tapped
-    _switchTo(filter: f, query: '');
-  }
-
-  void _onSearchChanged(String v) {
-    setState(() {}); // show/hide the clear (x) button immediately
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () {
-      final q = v.trim();
-      if (q == _searchQuery) return;
-      _switchTo(query: q);
-    });
-  }
-
-  /// v44: infinite scroll - near the bottom? fetch the next page.
-  void _maybeLoadMore() {
-    if (!_scroll.hasClients || _initialLoading || _loadingMore) return;
-    if (_page >= _totalPages) return;
-    final pos = _scroll.position;
-    if (pos.pixels >= pos.maxScrollExtent - 350) {
-      _loadPage(_page + 1);
-    }
-  }
-
-  Future<void> _refresh() async {
-    _switchTo(force: true);
-    // Let RefreshIndicator stay up until page 1 actually finished.
-    while (_initialLoading && mounted) {
-      await Future<void>.delayed(const Duration(milliseconds: 60));
-    }
-  }
-
-  void _openMovie(TmdbMovie movie) {
-    // Match against the ALREADY-scanned library (read-only - the video
-    // scan is not touched by Discover at all).
-    final match =
-        findLocalMovie(movie.title, movie.year, widget.library.allVideos);
-    MovieDetailSheet.show(
-      context,
-      movie: movie,
-      localMatch: match,
-      player: widget.player,
-      detailLoader: () => _client.fullDetail(movie.id, kind: movie.kind),
-    );
-  }
-
-  /// v58/v59: the AI Suggestor - "describe your movie type" -> real
-  /// posters. Lives in the AppBar (user: "move AI suggest to the top").
-  Future<void> _openAiSuggest() async {
-    final pick = await AiSuggestSheet.show(context);
-    if (!mounted || pick == null) return;
-    _openMovie(pick);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF12121a),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF12121a),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Discover', style: TextStyle(fontSize: 18)),
-            if (_totalResults > 0)
-              Text(
-                _searching
-                    ? '${_movies.length} of ~${formatVoteCount(_totalResults)} results'
-                    : '${formatVoteCount(_totalResults)} titles - scroll for more',
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
-              ),
-          ],
-        ),
-        // v59 (user): AI Suggest moved to the TOP.
-        actions: [
-          IconButton(
-            tooltip: 'AI Suggest - describe your movie type',
-            icon: Icon(Icons.auto_awesome, color: themeState.accent),
-            onPressed: _openAiSuggest,
-          ),
-        ],
-      ),
-      body: _keyMissing
-          ? const _SetupNote()
-          : Column(
-              children: [
-                // v44: the section's own search bar (TMDB-wide).
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-                  child: TextField(
-                    controller: _searchCtrl,
-                    onChanged: _onSearchChanged,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      hintText: 'Search movies & series...',
-                      hintStyle: const TextStyle(color: Colors.white38),
-                      prefixIcon: Icon(Icons.search,
-                          color: themeState.accent, size: 20),
-                      suffixIcon: _searchCtrl.text.isEmpty
-                          ? null
-                          : IconButton(
-                              icon: const Icon(Icons.close,
-                                  color: Colors.white54, size: 18),
-                              onPressed: () {
-                                _searchCtrl.clear();
-                                _switchTo(query: '');
-                              },
-                            ),
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.06),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                ),
-                // v59 (user): ONE filter row with EVERYTHING - movie
-                // chips AND web series chips side by side (the old
-                // Movies|Series toggle is gone).
-                SizedBox(
-                  height: 40,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    children: [
-                      for (final f in kAllFilters) ...[
-                        _FilterChip(
-                          label: f.label,
-                          selected: !_searching && _filter == f,
-                          onTap: () => _selectFilter(f),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Expanded(
-                  child: RefreshIndicator(
-                    color: themeState.accent,
-                    onRefresh: _refresh,
-                    child: _buildBody(),
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_initialLoading && _movies.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_movies.isEmpty) {
-      // Kept scrollable so pull-to-refresh always works.
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          const SizedBox(height: 120),
-          Icon(Icons.cloud_off_outlined,
-              size: 44, color: Colors.white.withValues(alpha: 0.3)),
-          const SizedBox(height: 14),
-          Text(
-            _error ?? 'No movies to show yet.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white54, height: 1.4),
-          ),
-        ],
-      );
-    }
-    return Stack(
-      children: [
-        CustomScrollView(
-          controller: _scroll,
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.all(10),
-              sliver: SliverGrid.builder(
-                // v45: BIGGER cards (150 -> 200 wide) so posters actually
-                // read like a movie app, not stamps.
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 200,
-                  childAspectRatio: 0.60,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                ),
-                itemCount: _movies.length,
-                itemBuilder: (context, i) {
-                  final movie = _movies[i];
-                  return _PosterCard(
-                    // v44: stable per-MOVIE key -> a recycled cell never
-                    // flashes the previous movie's poster after refresh.
-                    key: ValueKey(movie.id),
-                    movie: movie,
-                    onTap: () => _openMovie(movie),
-                  );
-                },
-              ),
-            ),
-            // v45: related movies under search results.
-            if (_searching && _related.isNotEmpty) ...[
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(12, 10, 12, 8),
-                  child: Text(
-                    'Related to your search',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 224,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    itemCount: _related.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 10),
-                    itemBuilder: (context, i) => SizedBox(
-                      width: 128,
-                      child: _PosterCard(
-                        key: ValueKey('rel_${_related[i].id}'),
-                        movie: _related[i],
-                        onTap: () => _openMovie(_related[i]),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
-          ],
-        ),
-        if (_loadingMore)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: LinearProgressIndicator(
-              minHeight: 3,
-              color: themeState.accent,
-              backgroundColor: Colors.transparent,
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected
-              ? themeState.accent
-              : Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? themeState.onAccent : Colors.white70,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PosterCard extends StatelessWidget {
-  final TmdbMovie movie;
-  final VoidCallback onTap;
-
-  const _PosterCard({super.key, required this.movie, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  TmdbImage(url: tmdbPosterUrl(movie.posterPath)),
-                  Positioned(
-                    top: 6,
-                    left: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.65),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '⭐ ${tmdbRatingText(movie.rating)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            movie.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
-          if (movie.year != null)
-            Text(
-              '${movie.year}',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
-                fontSize: 11,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Shown in local/dev builds where no TMDB key was injected (the store /
-/// testers' builds from Codemagic have it). Never a crash, always a note.
-class _SetupNote extends StatelessWidget {
-  const _SetupNote();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.movie_filter,
-                size: 44, color: Colors.white.withValues(alpha: 0.3)),
-            const SizedBox(height: 14),
-            const Text(
-              'Discover starts in the store build.\n\n'
-              '(Developer note: pass the TMDB key via\n'
-              '--dart-define=TMDB_API_KEY=... - see README. '
-              'Everything else in the app works without it.)',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white54, height: 1.5),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-MAXV59_EOF_9
-echo "  wrote lib/screens/discover_screen.dart"
-
-mkdir -p "$(dirname "lib/widgets/discover_banner.dart")"
-cat > "lib/widgets/discover_banner.dart" <<'MAXV59_EOF_10'
-import 'dart:async';
-import 'dart:io';
-
-import 'package:flutter/material.dart';
-
-import '../services/native_bridge.dart';
-import '../services/tmdb_client.dart';
-import '../state/theme_state.dart';
-import 'tmdb_image.dart';
-
-/// v44: the library's "Discover" button - a wide banner whose BACKGROUND is
-/// a strip of the latest trending movie posters (dark scrim on top so the
-/// text always reads). It replaced the old search TextField (search moved
-/// to an icon in the app bar).
-///
-/// v47: the poster background now MOVES - a slow marquee that slides one
-/// poster every couple of seconds in a seamless loop (the set is drawn
-/// twice, so wrapping back one full set is invisible). The strip is also
-/// draggable by hand; auto-scrolling pauses while the user is holding it.
-///
-/// Posters come from the same 24h disk cache as the Discover screen, so
-/// after the first online visit the banner also works fully offline. With
-/// no key / no posters yet it quietly falls back to a themed gradient.
-class DiscoverBanner extends StatefulWidget {
-  final VoidCallback onTap;
-
-  const DiscoverBanner({super.key, required this.onTap});
-
-  @override
-  State<DiscoverBanner> createState() => _DiscoverBannerState();
-}
-
-class _DiscoverBannerState extends State<DiscoverBanner> {
-  /// Width of one poster tile = one marquee step per tick.
-  static const double _step = 74;
-
-  final _client = TmdbClient();
-  final _ctrl = ScrollController();
-  Timer? _timer;
-  List<String> _posters = const [];
-  bool _userHolding = false;
-  int _bootTries = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _boot();
-    _timer =
-        Timer.periodic(const Duration(milliseconds: 2200), (_) => _tick());
-  }
-
-  Future<void> _boot() async {
-    final cachePath = await NativeBridge.cacheDirPath();
-    TmdbImage.configure(cachePath);
-    if (cachePath != null) _client.cacheDir = Directory(cachePath);
-    if (!mounted || kTmdbApiKey.isEmpty) return;
-    List<TmdbMovie> list;
-    try {
-      // Trending page 1 - cached 24h, so this is instant after first load
-      // and refreshes itself on the next day.
-      list = (await _client.browse(kDiscoverFilters.first)).items;
-    } catch (_) {
-      list = const [];
-    }
-    if (!mounted) return;
-    setState(() {
-      _posters = [
-        for (final m in list.take(10))
-          if (m.posterPath != null) tmdbPosterUrl(m.posterPath),
-      ];
-    });
-    // v55: if the first open happened on a rough/blocked network the
-    // poster strip stayed empty forever (flat gradient). Retry a few
-    // times - each retry re-enters through the 24h cache/dual-host client.
-    if (_posters.isEmpty && _bootTries < 3 && kTmdbApiKey.isNotEmpty) {
-      _bootTries++;
-      Timer(const Duration(seconds: 8), () {
-        if (mounted && _posters.isEmpty) _boot();
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  void _tick() {
-    if (_userHolding || !_ctrl.hasClients || _posters.length < 2) return;
-    final double loopWidth = _step * _posters.length;
-    final pos = _ctrl.position;
-    var from = pos.pixels;
-    // Wrap point: the strip contains the same poster set twice, so at
-    // loopWidth the visible content is identical to offset 0 and jumping
-    // back one full set is invisible. On very wide screens the content can
-    // be shorter than one set; then wrap at the end instead.
-    final wrapAt =
-        loopWidth <= pos.maxScrollExtent ? loopWidth : pos.maxScrollExtent;
-    if (wrapAt > 0 && from >= wrapAt) {
-      from -= loopWidth;
-      if (from < 0) from = 0;
-      if (from > pos.maxScrollExtent) from = pos.maxScrollExtent;
-      _ctrl.jumpTo(from);
-    }
-    _ctrl.animateTo(
-      from + _step,
-      duration: const Duration(milliseconds: 700),
-      curve: Curves.easeInOut,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: widget.onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Ink(
-          height: 118,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            // Fallback when posters have not loaded yet.
-            gradient: const LinearGradient(
-              colors: [Color(0xFF241d3d), Color(0xFF16222e)],
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (_posters.length >= 2)
-                  Listener(
-                    onPointerDown: (_) => _userHolding = true,
-                    onPointerUp: (_) => _userHolding = false,
-                    onPointerCancel: (_) => _userHolding = false,
-                    child: ListView(
-                      controller: _ctrl,
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        // Two copies of the same set = seamless wrap.
-                        for (final url in [..._posters, ..._posters])
-                          SizedBox(
-                            width: _step,
-                            child: Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: TmdbImage(url: url),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  )
-                else if (_posters.isNotEmpty)
-                  Row(
-                    children: [
-                      for (final url in _posters)
-                        Expanded(child: TmdbImage(url: url)),
-                    ],
-                  ),
-                // Scrim: strong on the left (text side), light on the right
-                // so the posters still shine through.
-                const DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [Color(0xE6000000), Color(0x59000000)],
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Discover movies',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Latest posters, ratings & trailers',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.7),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: themeState.accent,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(Icons.arrow_forward,
-                            color: themeState.onAccent, size: 18),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-MAXV59_EOF_10
-echo "  wrote lib/widgets/discover_banner.dart"
-
-mkdir -p "$(dirname "lib/widgets/movie_detail_sheet.dart")"
-cat > "lib/widgets/movie_detail_sheet.dart" <<'MAXV59_EOF_11'
-import 'dart:io';
-
-import 'package:flutter/material.dart';
-
-import '../models/video_track.dart';
-import '../screens/player_screen.dart';
-import '../services/native_bridge.dart';
-import '../services/tmdb_client.dart';
-import '../state/media_player_state.dart';
-import '../state/theme_state.dart';
-import '../services/subtitle_langs.dart';
-import 'ask_ai_sheet.dart';
-import 'tmdb_image.dart';
-
-/// v44: the Discover detail sheet - poster, TMDB rating (with credit),
-/// and now the FULL story: tagline, runtime, genres, director, cast,
-/// vote count, plus the same two actions:
-///
-///  - "Watch trailer on YouTube": opens the official YouTube app on the
-///    trailer (Play-policy-safe; we never stream YouTube in-app).
-///  - "In my library": shown ONLY when the movie is already on the phone -
-///    then Max Player plays it instantly, offline.
-///
-/// DraggableScrollableSheet like every other sheet since v35 (landscape
-/// safe, every control stays reachable).
-class MovieDetailSheet extends StatefulWidget {
-  final TmdbMovie movie;
-  final VideoTrack? localMatch;
-  final MediaPlayerState player;
-
-  /// Lazily resolves trailer + extras in ONE call (detail is cached 24h).
-  final Future<TmdbFull?> Function() detailLoader;
-
-  const MovieDetailSheet({
-    super.key,
-    required this.movie,
-    required this.localMatch,
-    required this.player,
-    required this.detailLoader,
-  });
-
-  static Future<void> show(
-    BuildContext context, {
-    required TmdbMovie movie,
-    required VideoTrack? localMatch,
-    required MediaPlayerState player,
-    required Future<TmdbFull?> Function() detailLoader,
-  }) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF1a1a24),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.62,
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        builder: (_, controller) => SingleChildScrollView(
-          controller: controller,
-          child: MovieDetailSheet(
-            movie: movie,
-            localMatch: localMatch,
-            player: player,
-            detailLoader: detailLoader,
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  State<MovieDetailSheet> createState() => _MovieDetailSheetState();
-}
-
-class _MovieDetailSheetState extends State<MovieDetailSheet> {
-  // Fired once - never inside build(), so no refetch on every rebuild.
-  // v45: NOT final - a failed load (was common on slow networks) now has
-  // a visible Retry instead of needing sheet close/open rounds.
-  late Future<TmdbFull?> _detailFuture = widget.detailLoader();
-
-  void _retryDetail() {
-    setState(() {
-      _detailFuture = widget.detailLoader();
-    });
-  }
-
-  Future<void> _playLocal(BuildContext context) async {
-    final track = widget.localMatch;
-    if (track == null) return;
-    await widget.player.setPlaylistAndPlay([track], 0);
-    if (!context.mounted) return;
-    Navigator.of(context).pop();
-    Navigator.of(context).push(
-      MaterialPageRoute(
-          builder: (_) => PlayerScreen(player: widget.player)),
-    );
-  }
-
-  Future<void> _openTrailer(String key) async {
-    final ok = await NativeBridge.openYouTube(key);
-    if (!ok) {
-      // Exceptionally rare (no browser?!) - keep it silent, the button
-      // simply does nothing visible instead of crashing the sheet.
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final movie = widget.movie;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 110,
-                height: 165,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: TmdbImage(
-                      url: tmdbPosterUrl(movie.posterPath, big: true)),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      movie.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        height: 1.2,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      [
-                        if (movie.year != null) '${movie.year}',
-                        '⭐ ${tmdbRatingText(movie.rating)} / 10',
-                      ].join('  ·  '),
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Rating & data: TMDB',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.35),
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          // v44: the extra facts arrive with the trailer lookup (one call).
-          // v45: that same call also brings the screenshots row, and a
-          // failure offers Retry instead of a dead sheet.
-          FutureBuilder<TmdbFull?>(
-            future: _detailFuture,
-            builder: (context, snap) {
-              if (snap.connectionState != ConnectionState.done) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Text(
-                    'Loading details...',
-                    style: TextStyle(color: Colors.white38, fontSize: 12),
-                  ),
-                );
-              }
-              final full = snap.data;
-              if (full == null) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Details could not load (network was busy).',
-                          style:
-                              TextStyle(color: Colors.white38, fontSize: 12),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _retryDetail,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (full.screenshots.isNotEmpty)
-                    _ScreenshotsRow(paths: full.screenshots),
-                  _ExtrasBlock(extras: full.extras),
-                  // v59 (user): web series must mention ALL their parts.
-                  if (full.seasons.isNotEmpty)
-                    _SeasonsBlock(seasons: full.seasons),
-                  if (!full.watch.isEmpty) _WatchBlock(info: full.watch),
-                  _AllDataBlock(extras: full.extras, movieId: movie.id),
-                ],
-              );
-            },
-          ),
-          if (movie.overview.isNotEmpty)
-            Text(
-              movie.overview,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-                height: 1.5,
-              ),
-            )
-          else
-            Text(
-              'No story summary available for this movie yet.',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
-                fontSize: 13,
-                height: 1.5,
-              ),
-            ),
-          const SizedBox(height: 18),
-          SizedBox(
-            width: double.infinity,
-            child: FutureBuilder<TmdbFull?>(
-              future: _detailFuture,
-              builder: (context, snap) {
-                if (snap.connectionState != ConnectionState.done) {
-                  return OutlinedButton.icon(
-                    onPressed: null,
-                    icon: const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    label: const Text('Finding trailer...'),
-                  );
-                }
-                final key = snap.data?.movie.trailerKey;
-                if (key == null || key.isEmpty) {
-                  return const Text(
-                    'No official trailer is available for this one.',
-                    style: TextStyle(color: Colors.white38, fontSize: 12),
-                  );
-                }
-                return FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: themeState.accent,
-                    foregroundColor: themeState.onAccent,
-                  ),
-                  onPressed: () => _openTrailer(key),
-                  icon: const Icon(Icons.smart_display),
-                  label: const Text('Watch trailer on YouTube'),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 10),
-          // v45: movie-restricted AI chat (free OpenRouter models).
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.tonalIcon(
-              onPressed: () =>
-                  AskAiSheet.show(context, movie: widget.movie),
-              icon: const Icon(Icons.auto_awesome),
-              label: const Text('Ask with AI about this movie'),
-            ),
-          ),
-          if (widget.localMatch != null) ...[
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.tonalIcon(
-                onPressed: () => _playLocal(context),
-                icon: const Icon(Icons.video_library),
-                label: Text(
-                    'In my library - play "${widget.localMatch!.title}" now',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-              ),
-            ),
-          ],
-          // v46: real TMDB user reviews (was asked: "real reviews").
-          FutureBuilder<TmdbFull?>(
-            future: _detailFuture,
-            builder: (context, snap) {
-              final full = snap.data;
-              if (snap.connectionState != ConnectionState.done ||
-                  full == null ||
-                  full.reviews.isEmpty) {
-                return const SizedBox.shrink();
-              }
-              return _ReviewsBlock(reviews: full.reviews);
-            },
-          ),
-          const SizedBox(height: 14),
-          Center(
-            child: Text(
-              // v46: short attribution line (the full legal phrasing lives
-              // in the README and the Play listing, as TMDB requires).
-              'Movie data & ratings: TMDB',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.3),
-                fontSize: 10,
-                height: 1.5,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// v45: a horizontal strip of scene "screenshots" (TMDB backdrops) so the
-/// sheet shows the movie, not just tells it.
-class _ScreenshotsRow extends StatelessWidget {
-  final List<String> paths;
-
-  const _ScreenshotsRow({required this.paths});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: SizedBox(
-        height: 104,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: paths.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (context, i) => ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: 176,
-              child: TmdbImage(url: tmdbScreenshotUrl(paths[i])),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// v44: tagline, runtime, genres, votes, director, cast - everything TMDB
-/// gives us beyond the poster. Any missing piece is simply skipped.
-class _ExtrasBlock extends StatelessWidget {
-  final TmdbDetailExtras extras;
-
-  const _ExtrasBlock({required this.extras});
-
-  @override
-  Widget build(BuildContext context) {
-    final meta = <String>[
-      if (formatRuntime(extras.runtimeMinutes).isNotEmpty)
-        formatRuntime(extras.runtimeMinutes),
-      if (extras.voteCount > 0) '${formatVoteCount(extras.voteCount)} votes',
-      if (extras.status.isNotEmpty && extras.status != 'Released')
-        extras.status,
-    ];
-    return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (extras.tagline.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                '"${extras.tagline}"',
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 13,
-                  fontStyle: FontStyle.italic,
-                  height: 1.4,
-                ),
-              ),
-            ),
-          if (meta.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                meta.join('  ·  '),
-                style: const TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-            ),
-          // v46: audio languages + our own subtitle capability line.
-          if (extras.spokenLanguages.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 3),
-              child: Text(
-                'Languages: ${extras.spokenLanguages.join(' · ')}',
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ),
-          if (extras.genres.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final g in extras.genres.take(4))
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Text(
-                        g,
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 11),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          if (extras.director.isNotEmpty)
-            Text(
-              'Director: ${extras.director}',
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-          if (extras.cast.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 3),
-              child: Text(
-                'Cast: ${extras.cast.join(', ')}',
-                style: const TextStyle(
-                    color: Colors.white54, fontSize: 12, height: 1.4),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// v46: "Where to watch" (India) with the compare split - Stream / Rent /
-/// Buy provider names from TMDB's JustWatch-powered data.
-/// v59: "in web series, when we select a content mention ALL parts of
-/// the series in the detail" - every season as one clean line:
-/// Season 1 · 8 episodes · 2011.
-class _SeasonsBlock extends StatelessWidget {
-  final List<TmdbSeason> seasons;
-
-  const _SeasonsBlock({required this.seasons});
-
-  @override
-  Widget build(BuildContext context) {
-    final totalEps = seasons.fold<int>(0, (a, s) => a + s.episodes);
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Seasons & parts - ${seasons.length} season'
-            '${seasons.length == 1 ? '' : 's'}, $totalEps episodes total',
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          for (final s in seasons)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      s.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 13),
-                    ),
-                  ),
-                  Text(
-                    '${s.episodes} ep'
-                    '${s.year != null ? '  ·  ${s.year}' : ''}',
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WatchBlock extends StatelessWidget {
-  final TmdbWatchInfo info;
-
-  const _WatchBlock({required this.info});
-
-  @override
-  Widget build(BuildContext context) {
-    Widget row(String label, List<String> names, Color color) {
-      if (names.isEmpty) return const SizedBox.shrink();
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 56,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: color, fontSize: 10, fontWeight: FontWeight.w700),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                names.join(' · '),
-                style: const TextStyle(color: Colors.white70, fontSize: 12,
-                    height: 1.4),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Where to watch (India)',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.75),
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          row('Stream', info.stream, const Color(0xFF4ade80)),
-          row('Rent', info.rent, const Color(0xFFfacc15)),
-          row('Buy', info.buy, const Color(0xFF60a5fa)),
-        ],
-      ),
-    );
-  }
-}
-
-/// v46: real TMDB user reviews, trimmed, with the author's rating.
-class _ReviewsBlock extends StatelessWidget {
-  final List<TmdbReview> reviews;
-
-  const _ReviewsBlock({required this.reviews});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'User reviews',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.75),
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          for (final r in reviews)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    [
-                      if (r.author.isNotEmpty) r.author else 'TMDB user',
-                      if (r.rating != null)
-                        '⭐ ${tmdbRatingText(r.rating!)}',
-                    ].join('  ·  '),
-                    style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    r.text,
-                    style: const TextStyle(
-                        color: Colors.white54, fontSize: 12, height: 1.45),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// v47: EVERYTHING TMDB knows - dates, certificate, money, companies,
-/// countries and ALL supported languages.
-class _AllDataBlock extends StatelessWidget {
-  final TmdbDetailExtras extras;
-  final int movieId;
-  const _AllDataBlock({required this.extras, required this.movieId});
-  @override
-  Widget build(BuildContext context) {
-    Widget row(String l, String v) => Padding(
-        padding: const EdgeInsets.only(bottom: 3),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(width: 78, child: Text(l, style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.4), fontSize: 11))),
-          Expanded(child: Text(v, style: const TextStyle(
-              color: Colors.white70, fontSize: 12))),
-        ]));
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (extras.releaseDate.isNotEmpty) row('Release', extras.releaseDate),
-        if (extras.certification.isNotEmpty) row('Certificate', extras.certification),
-        if (extras.originalTitle.isNotEmpty) row('Original', extras.originalTitle),
-        if (extras.budgetUsd > 0) row('Budget', '\$${formatVoteCount(extras.budgetUsd)}'),
-        if (extras.revenueUsd > 0) row('Revenue', '\$${formatVoteCount(extras.revenueUsd)}'),
-        if (extras.companies.isNotEmpty) row('Studio', extras.companies.join('  ')),
-        if (extras.countries.isNotEmpty) row('Country', extras.countries.join('  ')),
-        if (extras.allLanguages.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text('Languages supported (${extras.allLanguages.length})',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.75),
-                  fontSize: 12, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Wrap(spacing: 6, runSpacing: 4, children: [
-            for (final l in extras.allLanguages)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.07),
-                    borderRadius: BorderRadius.circular(10)),
-                child: Text(l, style: const TextStyle(color: Colors.white54, fontSize: 10)),
-              ),
-          ]),
-          const SizedBox(height: 6),
-        ],
-        _RealSubtitlesBlock(movieId: movieId),
-      ]),
-    );
-  }
-}
-
-/// v47: REAL subtitle availability (OpenSubtitles).
-class _RealSubtitlesBlock extends StatefulWidget {
-  final int movieId;
-  const _RealSubtitlesBlock({required this.movieId});
-  @override
-  State<_RealSubtitlesBlock> createState() => _RealSubtitlesBlockState();
-}
-
-class _RealSubtitlesBlockState extends State<_RealSubtitlesBlock> {
-  final _client = OpenSubtitlesClient();
-  List<String>? _langs;
-  @override
-  void initState() { super.initState(); _boot(); }
-  Future<void> _boot() async {
-    final cachePath = await NativeBridge.cacheDirPath();
-    if (cachePath != null) _client.cacheDir = Directory(cachePath);
-    final langs = await _client.languagesFor(widget.movieId);
-    if (mounted) setState(() => _langs = langs);
-  }
-  @override
-  Widget build(BuildContext context) {
-    if (kOpenSubtitlesApiKey.isEmpty) return const SizedBox.shrink();
-    final langs = _langs;
-    if (langs == null || langs.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text('Subtitles available: ${langs.join('  ')}',
-          style: const TextStyle(color: Colors.white54, fontSize: 11)),
-    );
-  }
-}
-MAXV59_EOF_11
-echo "  wrote lib/widgets/movie_detail_sheet.dart"
-
 mkdir -p "$(dirname "test/widget_test.dart")"
-cat > "test/widget_test.dart" <<'MAXV59_EOF_12'
+cat > "test/widget_test.dart" <<'MAXV60_EOF_9'
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -5567,6 +5406,7 @@ import 'package:maxplayer/services/movie_ai.dart';
 import 'package:maxplayer/services/ai_suggest.dart';
 import 'package:maxplayer/services/subtitle_langs.dart';
 import 'package:maxplayer/widgets/video_search_delegate.dart';
+import 'package:maxplayer/widgets/video_thumb.dart';
 import 'package:maxplayer/state/media_player_state.dart';
 import 'package:maxplayer/state/video_zoom.dart';
 import 'package:maxplayer/state/player_settings.dart';
@@ -7309,11 +7149,16 @@ void main() {
       expect(twoFingerSnapsToFit(mode: 'junk', wasTap: false), isTrue);
     });
 
-    test('v59 expand ladder: ALL fits by spreading, then ZOOM keeps going', () {
+    test('v60 expand ladder: reachable on a phone pinch, then ZOOM', () {
       const n = 6; // Fit, Crop, Stretch, 16:9, 4:3, Original
-      // One 1.35x spread from Fit climbs exactly one fit step (Crop).
-      var pos = fitLadderPosFor(basePos: 0, scale: 1.35, fitCount: n);
+      // One kFitLadderStepScale spread from Fit climbs exactly one step.
+      var pos =
+          fitLadderPosFor(basePos: 0, scale: kFitLadderStepScale, fitCount: n);
       expect(pos, closeTo(1.0, 0.01));
+      // v60 phone report was "the ladder never REACHED zoom": a normal
+      // firm phone pinch (~2.6x spread) must get PAST Original into zoom.
+      final phonePinch = fitLadderPosFor(basePos: 0, scale: 2.6, fitCount: n);
+      expect(phonePinch, greaterThan(n - 1)); // inside the zoom region
       // Two steps -> Stretch; decode rounds inside the fit region.
       pos = fitLadderPosFor(
           basePos: 0,
@@ -7322,16 +7167,15 @@ void main() {
       expect(fitLadderDecode(pos, n).fitIndex, 2);
       expect(fitLadderDecode(pos, n).zoom, 1.0);
       expect(fitLadderDecode(0.4, n).fitIndex, 0);
-      // Past the last fit the ladder flows into SMOOTH zoom (this is
-      // the "zooming is not working" fix - it just keeps going).
+      // Zoom region: slope 2.6 -> fast but smooth, clamped at 4x.
       expect(fitLadderDecode(n - 1, n).zoom, 1.0);
-      expect(fitLadderDecode((n - 1) + 0.5, n).zoom, closeTo(2.0, 0.01));
+      expect(fitLadderDecode((n - 1) + 0.5, n).zoom, closeTo(2.462, 0.01));
       expect(fitLadderDecode((n - 1) + 9, n).zoom, kMaxVideoZoom);
       expect(fitLadderDecode((n - 1) + 0.5, n).fitIndex, n - 1);
       // State -> base anchor round trips.
       expect(fitLadderPosOf(fitIndex: 3, fitCount: n, zoom: 1.0), 3.0);
       expect(fitLadderPosOf(fitIndex: 5, fitCount: n, zoom: 4.0),
-          closeTo((n - 1) + 1.0, 0.001));
+          closeTo((n - 1) + 0.769, 0.01));
       // Pinching IN (scale < 1) walks back DOWN the ladder.
       final down = fitLadderPosFor(
           basePos: 3, scale: 1 / kFitLadderStepScale, fitCount: n);
@@ -7382,6 +7226,30 @@ void main() {
       expect(parseTmdbSeasons('garbage'), isEmpty);
     });
 
+    test('v60 parseTmdbSeasons falls back to the counters line', () {
+      // some /tv payloads carry ONLY counters, no seasons array
+      final s = parseTmdbSeasons(
+          '{"seasons":[],"number_of_seasons":3,"number_of_episodes":24}');
+      expect(s.single.name, contains('3 seasons'));
+      expect(s.single.episodes, 24);
+      expect(parseTmdbSeasons('{"seasons":[],"number_of_seasons":0}'),
+          isEmpty);
+    });
+
+    test('v60 thumbnail slots cap at 2 and hand over in order', () async {
+      await VideoThumb.acquireThumbSlot();
+      await VideoThumb.acquireThumbSlot();
+      var thirdDone = false;
+      final third =
+          VideoThumb.acquireThumbSlot().then((_) => thirdDone = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(thirdDone, isFalse); // third waits - the cap holds
+      VideoThumb.releaseThumbSlot(); // frees -> third gets the slot
+      await third;
+      expect(thirdDone, isTrue);
+      VideoThumb.releaseThumbSlot();
+    });
+
     test('v58 series filters drive the TMDB /tv endpoints', () {
       final t = kSeriesFilters.firstWhere((f) => f.key == 'tv_hindi');
       expect(kSeriesFilters.every((f) => f.tv), isTrue);
@@ -7427,29 +7295,26 @@ void main() {
     });
   });
 }
-MAXV59_EOF_12
+MAXV60_EOF_9
 echo "  wrote test/widget_test.dart"
 
-for f in update_maxplayer_v*.sh; do [ "$f" = "update_maxplayer_v59.sh" ] || rm -f "$f"; done
+for f in update_maxplayer_v*.sh; do [ "$f" = "update_maxplayer_v60.sh" ] || rm -f "$f"; done
 echo ""
 echo "==== VERIFY ===="
 OK=0; FAIL=0
-if grep -q 'version: 1.0.0+55' "pubspec.yaml" 2>/dev/null; then echo "OK   pubspec.yaml"; OK=$((OK+1)); else echo "FAIL pubspec.yaml"; FAIL=$((FAIL+1)); fi
-if grep -q 'fitLadderDecode' "lib/state/video_zoom.dart" 2>/dev/null; then echo "OK   lib/state/video_zoom.dart"; OK=$((OK+1)); else echo "FAIL lib/state/video_zoom.dart"; FAIL=$((FAIL+1)); fi
-if grep -q 'normalizeTwoFingerMode' "lib/state/player_settings.dart" 2>/dev/null; then echo "OK   lib/state/player_settings.dart"; OK=$((OK+1)); else echo "FAIL lib/state/player_settings.dart"; FAIL=$((FAIL+1)); fi
-if grep -q 'fitLadderPosFor' "lib/screens/player_screen.dart" 2>/dev/null; then echo "OK   lib/screens/player_screen.dart"; OK=$((OK+1)); else echo "FAIL lib/screens/player_screen.dart"; FAIL=$((FAIL+1)); fi
-if grep -q 'keep spreading to zoom' "lib/widgets/player_settings_sheet.dart" 2>/dev/null; then echo "OK   lib/widgets/player_settings_sheet.dart"; OK=$((OK+1)); else echo "FAIL lib/widgets/player_settings_sheet.dart"; FAIL=$((FAIL+1)); fi
-if grep -q 'kAllFilters' "lib/services/tmdb_client.dart" 2>/dev/null; then echo "OK   lib/services/tmdb_client.dart"; OK=$((OK+1)); else echo "FAIL lib/services/tmdb_client.dart"; FAIL=$((FAIL+1)); fi
-if grep -q 'parseAiSuggestionJson' "lib/services/ai_suggest.dart" 2>/dev/null; then echo "OK   lib/services/ai_suggest.dart"; OK=$((OK+1)); else echo "FAIL lib/services/ai_suggest.dart"; FAIL=$((FAIL+1)); fi
-if grep -q 'AI Suggestor' "lib/widgets/ai_suggest_sheet.dart" 2>/dev/null; then echo "OK   lib/widgets/ai_suggest_sheet.dart"; OK=$((OK+1)); else echo "FAIL lib/widgets/ai_suggest_sheet.dart"; FAIL=$((FAIL+1)); fi
-if grep -q 'searchMulti' "lib/screens/discover_screen.dart" 2>/dev/null; then echo "OK   lib/screens/discover_screen.dart"; OK=$((OK+1)); else echo "FAIL lib/screens/discover_screen.dart"; FAIL=$((FAIL+1)); fi
-if grep -q '_bootTries' "lib/widgets/discover_banner.dart" 2>/dev/null; then echo "OK   lib/widgets/discover_banner.dart"; OK=$((OK+1)); else echo "FAIL lib/widgets/discover_banner.dart"; FAIL=$((FAIL+1)); fi
-if grep -q '_SeasonsBlock' "lib/widgets/movie_detail_sheet.dart" 2>/dev/null; then echo "OK   lib/widgets/movie_detail_sheet.dart"; OK=$((OK+1)); else echo "FAIL lib/widgets/movie_detail_sheet.dart"; FAIL=$((FAIL+1)); fi
-if grep -q 'v59 expand ladder' "test/widget_test.dart" 2>/dev/null; then echo "OK   test/widget_test.dart"; OK=$((OK+1)); else echo "FAIL test/widget_test.dart"; FAIL=$((FAIL+1)); fi
+if grep -q 'version: 1.0.0+56' "pubspec.yaml" 2>/dev/null; then echo "OK   pubspec.yaml"; OK=$((OK+1)); else echo "FAIL pubspec.yaml"; FAIL=$((FAIL+1)); fi
+if grep -q 'onUnknownRoute' "lib/main.dart" 2>/dev/null; then echo "OK   lib/main.dart"; OK=$((OK+1)); else echo "FAIL lib/main.dart"; FAIL=$((FAIL+1)); fi
+if grep -q 'kFitLadderZoomSlope' "lib/state/video_zoom.dart" 2>/dev/null; then echo "OK   lib/state/video_zoom.dart"; OK=$((OK+1)); else echo "FAIL lib/state/video_zoom.dart"; FAIL=$((FAIL+1)); fi
+if grep -q '_fitFrame' "lib/screens/player_screen.dart" 2>/dev/null; then echo "OK   lib/screens/player_screen.dart"; OK=$((OK+1)); else echo "FAIL lib/screens/player_screen.dart"; FAIL=$((FAIL+1)); fi
+if grep -q 'addPostFrameCallback' "lib/screens/discover_screen.dart" 2>/dev/null; then echo "OK   lib/screens/discover_screen.dart"; OK=$((OK+1)); else echo "FAIL lib/screens/discover_screen.dart"; FAIL=$((FAIL+1)); fi
+if grep -q '_onPlaybackError' "lib/state/media_player_state.dart" 2>/dev/null; then echo "OK   lib/state/media_player_state.dart"; OK=$((OK+1)); else echo "FAIL lib/state/media_player_state.dart"; FAIL=$((FAIL+1)); fi
+if grep -q 'acquireThumbSlot' "lib/widgets/video_thumb.dart" 2>/dev/null; then echo "OK   lib/widgets/video_thumb.dart"; OK=$((OK+1)); else echo "FAIL lib/widgets/video_thumb.dart"; FAIL=$((FAIL+1)); fi
+if grep -q 'number_of_seasons' "lib/services/tmdb_client.dart" 2>/dev/null; then echo "OK   lib/services/tmdb_client.dart"; OK=$((OK+1)); else echo "FAIL lib/services/tmdb_client.dart"; FAIL=$((FAIL+1)); fi
+if grep -q 'v60 expand ladder' "test/widget_test.dart" 2>/dev/null; then echo "OK   test/widget_test.dart"; OK=$((OK+1)); else echo "FAIL test/widget_test.dart"; FAIL=$((FAIL+1)); fi
 
 echo ""
-if [ "$FAIL" -eq 0 ] && [ "$OK" -eq 12 ]; then
-  echo "== v59 APPLIED: $OK/$OK checks OK, 0 FAIL =="
+if [ "$FAIL" -eq 0 ] && [ "$OK" -eq 9 ]; then
+  echo "== v60 APPLIED: $OK/$OK checks OK, 0 FAIL =="
 else
   echo "== PROBLEM: $FAIL check(s) failed - paste me ALL of this output =="; exit 1
 fi
@@ -7457,18 +7322,18 @@ cat <<'NOTE'
 
 Next:
   git add -A
-  git commit -m "v59: two-finger expand ladder (fits then zoom), one filter row + series, AI Suggest on top, multi-search, series seasons (1.0.0+55)"
+  git commit -m "v60: unknown-route crash fix, reachable ladder zoom, VLC-style fit frames, hw software fallback, thumb cap, auto-fill shelves (1.0.0+56)"
   git push
-Then wait for the Codemagic build and install it (About shows 1.0.0+55).
+Then wait for the Codemagic build and install it (About shows 1.0.0+56).
 
 PHONE TEST CHECKLIST:
-  [ ] Play a video, spread 2 fingers: Fit -> Crop -> Stretch -> 16:9 ->
-      4:3 -> Original -> and KEEP spreading = it ZOOMS (finally works)
-  [ ] Pinch fingers IN walks back down; quick 2-finger tap = Fit
-  [ ] Player settings: only ONE switch "Two-finger pinch to zoom"
-  [ ] Discover: ONE filter row incl. series chips (no Movies|Series toggle)
-  [ ] Sparkle (AI Suggest) icon is in the TOP bar
-  [ ] Search "Mirzapur" or any series name -> it appears
-  [ ] Open a series -> "Seasons & parts" lists all seasons + episodes
-  [ ] Genre/regional shelves show MANY more titles than before
+  [ ] App does NOT crash on back-button / task switching any more
+  [ ] Spread 2 fingers firmly: Fit -> Crop -> ... -> Original -> ZOOM
+      actually engages (pinch in comes back down)
+  [ ] Fit button: 16:9 and 4:3 now visibly reshape the frame in BOTH
+      landscape and portrait (black side bars appear)
+  [ ] Series detail shows "Seasons & parts" (or the seasons count line)
+  [ ] Shelves keep loading more content as you reach the end
+  [ ] A video that showed a black screen before now plays (software
+      fallback kicks in automatically)
 NOTE
