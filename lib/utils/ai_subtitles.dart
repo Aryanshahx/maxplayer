@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as p;
 
 import '../services/native_bridge.dart';
+import '../services/notification_service.dart';
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
 import 'srt.dart';
@@ -155,7 +156,18 @@ class AiSubtitleRunner {
     }
 
     NativeBridge.configureCallbacks(
-      onAiProgress: (stage, percent) => progress.value = (stage, percent),
+      onAiProgress: (stage, percent) {
+        progress.value = (stage, percent);
+        // v63: mirror progress to a low-priority notification so a long
+        // AI job (model download + transcription) keeps the user informed
+        // when they switch away from the app.
+        if (percent > 0 || stage != 'starting') {
+          unawaited(NotificationService.notifyAiSubsProgress(
+            videoTitle: track.title,
+            percent: percent,
+          ));
+        }
+      },
       onAiDone: (s) {
         segments = s;
         closeDialog();
@@ -203,9 +215,19 @@ class AiSubtitleRunner {
 
     if (error != null && error != 'cancelled') {
       _snack(context, 'AI subtitles failed: $error');
+      // v63: also surface the failure as a notification (the user may have
+      // backgrounded the app during the long job).
+      unawaited(NotificationService.notifyAiSubsFailed(
+        videoTitle: track.title,
+        reason: error!,
+      ));
       return;
     }
-    if (error == 'cancelled' || segments == null) return;
+    if (error == 'cancelled') {
+      unawaited(NotificationService.cancelAiSubs());
+      return;
+    }
+    if (segments == null) return;
 
     if (segments!.isEmpty) {
       _snack(context,
@@ -246,6 +268,12 @@ class AiSubtitleRunner {
       } catch (_) {}
     }
     await player.refreshAiCues(track.path);
+    // v63: "AI subtitles ready" notification - tapping it opens this video
+    // with the fresh subtitles (handled by main.dart's video: deep link).
+    unawaited(NotificationService.notifyAiSubsReady(
+      videoTitle: track.title,
+      videoPath: track.path,
+    ));
     if (context.mounted) {
       _snack(context, '✨ AI subtitles ready - pick them in the subtitle list');
     }

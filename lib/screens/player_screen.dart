@@ -7,6 +7,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 import '../cast/cast_state.dart';
 import '../services/native_bridge.dart';
+import '../services/notification_service.dart';
 import '../state/media_player_state.dart';
 import '../state/player_settings.dart';
 import '../state/video_zoom.dart';
@@ -274,6 +275,15 @@ class _PlayerScreenState extends State<PlayerScreen>
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
       widget.player.pause();
+      // v63 Phase 2: when the user leaves the player mid-video, offer a
+      // "Continue watching" notification (only if the video is actually
+      // resumable; the service enforces the 5%..95% + cool-down rules).
+      unawaited(
+        NotificationService.notifyContinueWatching(widget.player.history),
+      );
+    } else if (state == AppLifecycleState.resumed) {
+      // Coming back to the app: the resume nudge is no longer needed.
+      unawaited(NotificationService.cancelContinueWatching());
     }
   }
 
@@ -961,11 +971,16 @@ class _PlayerScreenState extends State<PlayerScreen>
       onCastStarted: () {
         widget.player.pause(); // the TV is playing; phone becomes remote
         _showIndicator('Casting to TV', Icons.cast_connected);
+        // v63 Phase 2: ongoing "Casting to <TV>" notification; tapping it
+        // brings the app (and its remote controls) back to the front.
+        final tvName = _castState.current?.name ?? '';
+        unawaited(NotificationService.notifyCasting(tvName));
       },
       onCastStopped: (tvPos) async {
         // Hand playback back to the phone at the TV's position.
         if (tvPos > Duration.zero) await widget.player.seek(tvPos);
         await widget.player.resumePlayback();
+        unawaited(NotificationService.cancelCasting());
         if (mounted) _showIndicator('Back on this phone', Icons.smartphone);
       },
     );

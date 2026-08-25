@@ -11,6 +11,7 @@ import 'models/video_track.dart';
 import 'screens/library_screen.dart';
 import 'screens/player_screen.dart';
 import 'services/native_bridge.dart';
+import 'services/notification_service.dart';
 import 'state/media_player_state.dart';
 import 'state/theme_state.dart';
 import 'state/video_library_state.dart';
@@ -171,16 +172,32 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
     );
   }
 
-  /// v62 Phase 1: a Max Player notification was tapped. Phase 1 only routes
-  /// the payload and confirms it arrived; later phases (AI-subs-ready,
-  /// continue watching, new episodes) attach real deep-link handling here.
+  /// v62/v63: a Max Player notification was tapped. Routes the payload as a
+  /// deep link: "video:<path>" opens the video in the player (used by
+  /// AI-subtitles-ready and Continue watching); "cast:" brings the app to the
+  /// foreground for cast controls; "test:..." (About-sheet button) just
+  /// confirms delivery.
   void _handleNotificationTap(String payload) {
-    _messengerKey.currentState?.showSnackBar(
-      SnackBar(
-        content: Text('Notification: $payload'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    final action = NotificationAction.parse(payload);
+    switch (action) {
+      case VideoNotificationAction(path: final path):
+        if (path.isNotEmpty) {
+          _openExternalVideo(path);
+        }
+      case CastNotificationAction():
+        // The app is already in the foreground from the tap; the cast
+        // controls are where the user left them. Nothing more to do.
+        break;
+      case TestNotificationAction(tag: final tag):
+        _messengerKey.currentState?.showSnackBar(
+          SnackBar(
+            content: Text('Notification: $tag'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      case UnknownNotificationAction():
+        break;
+    }
   }
 
   @override
