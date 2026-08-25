@@ -91,8 +91,11 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
       NativeBridge.configureCallbacks(
         onOpenVideo: _openExternalVideo,
         onOpenVideoFailed: _externalOpenFailed,
+        // v62 Phase 1: a notification was tapped while the app was running.
+        onNotificationTap: _handleNotificationTap,
       );
-      // ... and the cold-start case (app launched BY a VIEW intent).
+      // ... and the cold-start cases (app launched BY a VIEW intent or a
+      // notification tap).
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         final initial = await NativeBridge.getInitialOpenVideo();
         final path = initial['path'];
@@ -101,6 +104,12 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
           _openExternalVideo(path);
         } else if (failed != null) {
           _externalOpenFailed(failed);
+        }
+        // Cold start from a notification tap.
+        final notifPayload =
+            await NativeBridge.getInitialNotificationPayload();
+        if (notifPayload != null) {
+          _handleNotificationTap(notifPayload);
         }
       });
     }
@@ -157,6 +166,18 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
       SnackBar(
         content: Text("Can't open '${p.basename(target)}' - "
             'the file may be unavailable or storage access is off'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// v62 Phase 1: a Max Player notification was tapped. Phase 1 only routes
+  /// the payload and confirms it arrived; later phases (AI-subs-ready,
+  /// continue watching, new episodes) attach real deep-link handling here.
+  void _handleNotificationTap(String payload) {
+    _messengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text('Notification: $payload'),
         behavior: SnackBarBehavior.floating,
       ),
     );

@@ -1,0 +1,12 @@
+<!-- v62: monochrome status-bar glyph for notifications (Android 5+ requires
+     a white-on-transparent silhouette; a color/photo icon renders as a white
+     square). A simple rounded rectangle with a play triangle. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,5.5v13l11,-6.5z" />
+</vector>

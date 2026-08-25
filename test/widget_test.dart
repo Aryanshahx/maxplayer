@@ -1941,4 +1941,70 @@ void main() {
       expect(parseAiSuggestionJson('[]'), isEmpty);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // v62 Phase 1: notification foundation
+  // -------------------------------------------------------------------------
+  group('v62 notifications', () {
+    test('five distinct channels exist and match the native constants', () {
+      // Keep these strings in sync with Notifications.CHANNEL_* in
+      // MainActivity.kt / Notifications.kt - a typo would silently route a
+      // notification to the wrong channel on Android.
+      expect(NotificationChannels.all, hasLength(5));
+      expect(NotificationChannels.aiSubs, 'ai_subs');
+      expect(NotificationChannels.continueWatching, 'continue');
+      expect(NotificationChannels.newEpisodes, 'new_episodes');
+      expect(NotificationChannels.playback, 'playback');
+      expect(NotificationChannels.general, 'general');
+      expect(NotificationChannels.all.toSet().length, 5,
+          reason: 'channel ids must be unique');
+    });
+
+    test('notification calls are plugin-safe (no channel -> no throw)', () {
+      // In the Dart VM test there is no Android side, so every call must
+      // resolve cleanly to its safe default rather than throw.
+      expect(NativeBridge.notificationsEnabled(), completion(isFalse));
+      expect(NativeBridge.requestNotifications(), completion(isFalse));
+      expect(
+        NativeBridge.showNotification(
+          channel: NotificationChannels.aiSubs,
+          title: 'Subtitles ready',
+          body: 'AI subtitles for Dhoom 3 finished.',
+          payload: 'ai:42',
+        ),
+        completion(0),
+      );
+      expect(NativeBridge.cancelNotification(99), completes);
+      expect(NativeBridge.cancelAllNotifications(), completes);
+      expect(NativeBridge.getInitialNotificationPayload(), completion(isNull));
+    });
+
+    test('AndroidManifest declares POST_NOTIFICATIONS (Android 13+)', () {
+      final manifest =
+          File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      expect(manifest.contains('android.permission.POST_NOTIFICATIONS'), isTrue,
+          reason: 'v62 needs the runtime notification permission');
+    });
+
+    test('notification helper files are wired into the project', () {
+      expect(File('lib/services/native_bridge.dart').existsSync(), isTrue);
+      final bridge =
+          File('lib/services/native_bridge.dart').readAsStringSync();
+      expect(bridge, contains('notifyShow'));
+      expect(bridge, contains('onNotificationTap'));
+      expect(bridge, contains('getInitialNotificationPayload'));
+      // The native helper + status-bar glyph must exist.
+      expect(
+        File('android/app/src/main/kotlin/com/hypertechlabs/maxplayer/'
+                'Notifications.kt')
+            .existsSync(),
+        isTrue,
+      );
+      expect(
+        File('android/app/src/main/res/drawable/ic_stat_notify.xml')
+            .existsSync(),
+        isTrue,
+      );
+    });
+  });
 }

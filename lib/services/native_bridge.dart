@@ -79,6 +79,11 @@ class NativeBridge {
   static void Function(List<AiSegment> segments)? _onAiDone;
   static void Function(String error)? _onAiFailed;
 
+  /// v62 Phase 1: a notification was tapped. The argument is the opaque
+  /// payload string the feature passed when it posted the notification -
+  /// treat it like a deep link (e.g. "ai:<jobId>" or "video:<path>").
+  static void Function(String payload)? _onNotificationTap;
+
   /// v48: one finished cloud slice - raw .srt text at an absolute offset.
   static bool _handlerRegistered = false;
 
@@ -95,6 +100,9 @@ class NativeBridge {
     void Function(String stage, int percent)? onAiProgress,
     void Function(List<AiSegment> segments)? onAiDone,
     void Function(String error)? onAiFailed,
+
+    /// v62 Phase 1: a posted notification was tapped by the user.
+    void Function(String payload)? onNotificationTap,
   }) {
     if (onOpenVideo != null) _onOpenVideo = onOpenVideo;
     if (onOpenVideoFailed != null) _onOpenVideoFailed = onOpenVideoFailed;
@@ -103,6 +111,7 @@ class NativeBridge {
     if (onAiProgress != null) _onAiProgress = onAiProgress;
     if (onAiDone != null) _onAiDone = onAiDone;
     if (onAiFailed != null) _onAiFailed = onAiFailed;
+    if (onNotificationTap != null) _onNotificationTap = onNotificationTap;
     if (_handlerRegistered) return;
     _handlerRegistered = true;
     _channel.setMethodCallHandler(_dispatch);
@@ -152,6 +161,10 @@ class NativeBridge {
       case 'onAiSubtitleFailed':
         final m = call.arguments as Map?;
         _onAiFailed?.call('${m?['message'] ?? 'failed'}');
+        break;
+      case 'onNotificationTap':
+        final p = call.arguments as String?;
+        if (p != null && p.isNotEmpty) _onNotificationTap?.call(p);
         break;
     }
     return null;
@@ -583,6 +596,122 @@ class NativeBridge {
       return false;
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // v62 Phase 1: notifications
+  // ---------------------------------------------------------------------------
+
+  /// Whether notifications are currently allowed. On Android 12 and below
+  /// this is true at install time; on Android 13+ it reflects the runtime
+  /// POST_NOTIFICATIONS grant. Always false on desktop/tests (no channel).
+  static Future<bool> notificationsEnabled() async {
+    try {
+      return await _channel.invokeMethod<bool>('notificationsEnabled') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Shows the Android 13+ runtime notification permission dialog. On older
+  /// versions (or if already granted) returns the current state without
+  /// prompting. Returns whether notifications are enabled afterwards.
+  static Future<bool> requestNotifications() async {
+    try {
+      return await _channel.invokeMethod<bool>('requestNotifications') ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Posts (or replaces) a notification and returns the system id used
+  /// (pass 0 to let the native side allocate one).
+  ///
+  /// [channel] must be one of the [NotificationChannels] constants. Tapping
+  /// the notification delivers [payload] to the `onNotificationTap` callback
+  /// (use it as a deep link, e.g. "ai:<jobId>"). [ongoing] notifications
+  /// can't be swiped away; [progress] (0..100) shows a progress bar.
+  static Future<int> showNotification({
+    required String channel,
+    required String title,
+    required String body,
+    int id = 0,
+    String? payload,
+    bool ongoing = false,
+    int? progress,
+  }) async {
+    try {
+      final res = await _channel.invokeMethod<int>('notifyShow', {
+        'channel': channel,
+        'title': title,
+        'body': body,
+        'id': id,
+        if (payload != null) 'payload': payload,
+        'ongoing': ongoing,
+        if (progress != null) 'progress': progress,
+      });
+      return res ?? id;
+    } catch (_) {
+      return id;
+    }
+  }
+
+  /// Cancels one notification by [id].
+  static Future<void> cancelNotification(int id) async {
+    try {
+      await _channel.invokeMethod('notifyCancel', {'id': id});
+    } catch (_) {}
+  }
+
+  /// Clears every Max Player notification.
+  static Future<void> cancelAllNotifications() async {
+    try {
+      await _channel.invokeMethod('notifyCancelAll');
+    } catch (_) {}
+  }
+
+  /// Cold-start payload from a notification tap that launched the app
+  /// (null when the app was already running or launched normally). The
+  /// value is consumed once.
+  static Future<String?> getInitialNotificationPayload() async {
+    try {
+      final res =
+          await _channel.invokeMethod<String>('getInitialNotificationPayload');
+      return (res != null && res.isNotEmpty) ? res : null;
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// v62 Phase 1: the notification channels Max Player creates. Matches the
+/// native `Notifications.CHANNEL_*` constants. Pick the channel that fits
+/// the feature so users can mute each kind independently in system settings.
+class NotificationChannels {
+  /// An on-device AI subtitle job finished (low urgency).
+  static const String aiSubs = 'ai_subs';
+
+  /// "Continue watching" jump-back-into-a-video reminders.
+  static const String continueWatching = 'continue';
+
+  /// A followed series has a new season/episode.
+  static const String newEpisodes = 'new_episodes';
+
+  /// Ongoing playback / now-playing (low, persistent).
+  static const String playback = 'playback';
+
+  /// Anything that doesn't fit the above.
+  static const String general = 'general';
+
+  static const List<String> all = [
+    aiSubs,
+    continueWatching,
+    newEpisodes,
+    playback,
+    general,
+  ];
+
+  const NotificationChannels._();
 }
 
 /// v31: device internal-storage totals for the cleaner's storage graph.

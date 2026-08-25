@@ -37,6 +37,8 @@ import android.os.StatFs
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.WindowManager
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import dev.ffmpegkit.whisper.Whisper
 import dev.ffmpegkit.whisper.WhisperConfig
 import dev.ffmpegkit.whisper.WhisperModel
@@ -105,6 +107,19 @@ class MainActivity : FlutterActivity() {
     // --- DLNA casting: multicast lock held during SSDP discovery ---
     private var multicastLock: WifiManager.MulticastLock? = null
 
+    // v62 Phase 1: notification permission (Android 13+) request in flight.
+    private var pendingNotificationResult: MethodChannel.Result? = null
+    private val notificationPermissionLauncher: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val r = pendingNotificationResult
+            pendingNotificationResult = null
+            r?.success(granted)
+        }
+
+    // v62 Phase 1: a notification tap that arrived before Dart attached to
+    // the channel; getInitialNotificationPayload picks it up after attach.
+    private var pendingNotificationPayload: String? = null
+
     /** Thrown by the model downloader when the user cancels the job. */
     private class AiCancelledException : Exception("cancelled")
 
@@ -119,6 +134,9 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         CrashCrumbs.mark(this, "activity_create_begin")
         super.onCreate(savedInstanceState)
+        // v62 Phase 1: create all notification channels once, before any
+        // feature (AI-subs-ready, continue watching, ...) posts one.
+        Notifications.ensureChannels(applicationContext)
         CrashCrumbs.mark(this, "activity_create_ok")
         handleIncomingIntent(intent)
     }
@@ -542,6 +560,63 @@ class MainActivity : FlutterActivity() {
                     }
                     result.success(true)
                 }
+                // v62 Phase 1: notification foundation ----------------------
+                "notifyShow" -> {
+                    val id = (call.argument<Number>("id")?.toInt()) ?: 0
+                    val outId = try {
+                        Notifications.show(
+                            context = applicationContext,
+                            channel = call.argument<String>("channel")
+                                ?: Notifications.CHANNEL_GENERAL,
+                            id = id,
+                            title = call.argument<String>("title") ?: "Max Player",
+                            body = call.argument<String>("body") ?: "",
+                            payload = call.argument<String>("payload"),
+                            ongoing = call.argument<Boolean>("ongoing") ?: false,
+                            progress = call.argument<Number>("progress")?.toInt(),
+                        )
+                    } catch (e: Exception) {
+                        result.error("notify", e.message, null); return@setMethodCallHandler
+                    }
+                    result.success(outId)
+                }
+                "notifyCancel" -> {
+                    val id = call.argument<Number>("id")?.toInt()
+                    if (id != null) Notifications.cancel(applicationContext, id)
+                    result.success(true)
+                }
+                "notifyCancelAll" -> {
+                    Notifications.cancelAll(applicationContext)
+                    result.success(true)
+                }
+                "notificationsEnabled" -> {
+                    result.success(Notifications.areEnabled(applicationContext))
+                }
+                "requestNotifications" -> {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                        // No runtime permission below Android 13 - always on.
+                        result.success(Notifications.areEnabled(applicationContext))
+                    } else if (Notifications.areEnabled(applicationContext)) {
+                        result.success(true)
+                    } else if (pendingNotificationResult != null) {
+                        result.error("busy", "a permission request is already showing", null)
+                    } else {
+                        pendingNotificationResult = result
+                        try {
+                            notificationPermissionLauncher.launch(
+                                android.Manifest.permission.POST_NOTIFICATIONS
+                            )
+                        } catch (e: Exception) {
+                            pendingNotificationResult = null
+                            result.success(false)
+                        }
+                    }
+                }
+                "getInitialNotificationPayload" -> {
+                    val p = pendingNotificationPayload
+                    pendingNotificationPayload = null
+                    result.success(p)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -554,6 +629,10 @@ class MainActivity : FlutterActivity() {
         pendingOpenFailed?.let {
             channel?.invokeMethod("onOpenVideoFailed", it)
             pendingOpenFailed = null
+        }
+        pendingNotificationPayload?.let {
+            channel?.invokeMethod("onNotificationTap", it)
+            pendingNotificationPayload = null
         }
     }
 
@@ -679,6 +758,14 @@ class MainActivity : FlutterActivity() {
 
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
+        // v62 Phase 1: a notification tap carries an opaque PAYLOAD string
+        // (deep-link for the feature that posted it). Consume it once and
+        // hand it to Dart (cold start via pending field, warm via channel).
+        val notifPayload = intent.getStringExtra(Notifications.EXTRA_PAYLOAD)
+        if (!notifPayload.isNullOrEmpty()) {
+            intent.removeExtra(Notifications.EXTRA_PAYLOAD)
+            deliverNotificationPayload(notifPayload)
+        }
         val uri: Uri = when (intent.action) {
             Intent.ACTION_VIEW -> intent.data ?: return
             Intent.ACTION_SEND -> extractSendUri(intent) ?: return
@@ -715,6 +802,15 @@ class MainActivity : FlutterActivity() {
             // Dart side not attached yet - getInitialOpenVideo picks this up.
             if (resolved != null) pendingOpenPath = resolved
             else if (failed != null) pendingOpenFailed = failed
+        }
+    }
+
+    /** v62 Phase 1: hand a notification-tap payload to Dart. */
+    private fun deliverNotificationPayload(payload: String) {
+        if (channel != null) {
+            channel?.invokeMethod("onNotificationTap", payload)
+        } else {
+            pendingNotificationPayload = payload
         }
     }
 

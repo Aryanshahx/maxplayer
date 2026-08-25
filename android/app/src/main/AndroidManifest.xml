@@ -19,6 +19,11 @@
     <!-- DLNA/UPnP casting: SSDP device discovery needs the multicast lock -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
+    <!-- v62 Phase 1: notifications (AI-subs-ready, continue watching, new
+         episodes, now-playing). Only needed on Android 13+; below that
+         notifications post without a runtime prompt. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- v42 COMPAT AUDIT:
          1) WRITE_EXTERNAL_STORAGE (Android 10 and older only): READ alone is
             not enough for raw-path WRITES - moving a video into/out of the
