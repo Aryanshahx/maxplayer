@@ -1747,26 +1747,89 @@ void main() {
       expect(s.pinchZoom, isTrue);
     });
 
-    test('v57 twoFingerSnapsToFit: fit default always snaps; zoom on tap', () {
-      // fit (DEFAULT): EVERY two-finger gesture snaps back to fit screen.
-      expect(twoFingerSnapsToFit(mode: 'fit', wasTap: false), isTrue);
+    test('v59 twoFingerSnapsToFit: only a TAP snaps home, pinch stays', () {
+      // v59 (his v58 phone report "zooming is not working"): a real
+      // pinch is NEVER undone - the ladder keeps its fit/zoom; only a
+      // quick two-finger tap snaps back to fit, in BOTH modes.
       expect(twoFingerSnapsToFit(mode: 'fit', wasTap: true), isTrue);
-      // zoom: a real pinch KEEPS the zoom; a quick tap snaps home so you
-      // are never stuck zoomed in.
-      expect(twoFingerSnapsToFit(mode: 'zoom', wasTap: false), isFalse);
+      expect(twoFingerSnapsToFit(mode: 'fit', wasTap: false), isFalse);
       expect(twoFingerSnapsToFit(mode: 'zoom', wasTap: true), isTrue);
-      // unknown stored value behaves like the fit default.
+      expect(twoFingerSnapsToFit(mode: 'zoom', wasTap: false), isFalse);
+      // unknown stored value conservatively snaps home.
       expect(twoFingerSnapsToFit(mode: 'junk', wasTap: false), isTrue);
     });
 
-    test('v58 nextFitIndex walks the fit list and wraps both ways', () {
-      // Fit, Crop, Stretch, 16:9, 4:3, Original (6 entries).
-      const n = 6;
-      expect(nextFitIndex(cur: 0, dir: 1, length: n), 1); // Fit -> Crop
-      expect(nextFitIndex(cur: 1, dir: 1, length: n), 2); // -> Stretch
-      expect(nextFitIndex(cur: 5, dir: 1, length: n), 0); // wraps to Fit
-      expect(nextFitIndex(cur: 0, dir: -1, length: n), 5); // pinch IN wraps
-      expect(nextFitIndex(cur: 2, dir: -1, length: n), 1);
+    test('v59 expand ladder: ALL fits by spreading, then ZOOM keeps going', () {
+      const n = 6; // Fit, Crop, Stretch, 16:9, 4:3, Original
+      // One 1.35x spread from Fit climbs exactly one fit step (Crop).
+      var pos = fitLadderPosFor(basePos: 0, scale: 1.35, fitCount: n);
+      expect(pos, closeTo(1.0, 0.01));
+      // Two steps -> Stretch; decode rounds inside the fit region.
+      pos = fitLadderPosFor(
+          basePos: 0,
+          scale: kFitLadderStepScale * kFitLadderStepScale,
+          fitCount: n);
+      expect(fitLadderDecode(pos, n).fitIndex, 2);
+      expect(fitLadderDecode(pos, n).zoom, 1.0);
+      expect(fitLadderDecode(0.4, n).fitIndex, 0);
+      // Past the last fit the ladder flows into SMOOTH zoom (this is
+      // the "zooming is not working" fix - it just keeps going).
+      expect(fitLadderDecode(n - 1, n).zoom, 1.0);
+      expect(fitLadderDecode((n - 1) + 0.5, n).zoom, closeTo(2.0, 0.01));
+      expect(fitLadderDecode((n - 1) + 9, n).zoom, kMaxVideoZoom);
+      expect(fitLadderDecode((n - 1) + 0.5, n).fitIndex, n - 1);
+      // State -> base anchor round trips.
+      expect(fitLadderPosOf(fitIndex: 3, fitCount: n, zoom: 1.0), 3.0);
+      expect(fitLadderPosOf(fitIndex: 5, fitCount: n, zoom: 4.0),
+          closeTo((n - 1) + 1.0, 0.001));
+      // Pinching IN (scale < 1) walks back DOWN the ladder.
+      final down = fitLadderPosFor(
+          basePos: 3, scale: 1 / kFitLadderStepScale, fitCount: n);
+      expect(down, closeTo(2.0, 0.01));
+    });
+
+    test('v59 kAllFilters: ONE row, movies AND web series together', () {
+      expect(kAllFilters.length,
+          kDiscoverFilters.length + kSeriesFilters.length);
+      expect(kAllFilters.first.trending, isTrue);
+      expect(kAllFilters.any((f) => f.tv), isTrue);
+      expect(kAllFilters.any((f) => !f.tv), isTrue);
+      // every chip still resolves to a valid endpoint + cache name
+      for (final f in kAllFilters) {
+        expect(tmdbEndpointPath(f), startsWith('/3/'));
+        expect(discoverCacheName(f, 1), endsWith('_p1.json'));
+      }
+    });
+
+    test('v59 tmdbDiscoverQuery loads TONS more (vote bar relaxed)', () {
+      final q = tmdbDiscoverQuery(kDiscoverFilters.first, 1);
+      expect(q['vote_count.gte'], '8'); // was 25 - cut regional/series
+    });
+
+    test('v59 parseTmdbMultiPage: movies+series in, people out', () {
+      final page = parseTmdbMultiPage(
+          '{"page":1,"total_pages":4,"total_results":3,"results":['
+          '{"id":1,"media_type":"movie","title":"Dhoom","release_date":"2004-01-01"},'
+          '{"id":2,"media_type":"tv","name":"Mirzapur","first_air_date":"2018-11-16"},'
+          '{"id":3,"media_type":"person","name":"Some Actor"}]}');
+      expect(page.items.length, 2);
+      expect(page.items[0].kind, 'movie');
+      expect(page.items[1].kind, 'tv');
+      expect(page.items[1].title, 'Mirzapur');
+      expect(page.items[1].year, 2018);
+    });
+
+    test('v59 parseTmdbSeasons: all parts of a series', () {
+      final seasons = parseTmdbSeasons('{"seasons":['
+          '{"season_number":0,"name":"Specials","episode_count":2,"air_date":null},'
+          '{"season_number":1,"name":"Season 1","episode_count":9,"air_date":"2018-11-16"},'
+          '{"season_number":2,"episode_count":10,"air_date":"2020-10-23"}]}');
+      expect(seasons.length, 3);
+      expect(seasons[0].name, 'Specials');
+      expect(seasons[1].episodes, 9);
+      expect(seasons[1].year, 2018);
+      expect(seasons[2].name, 'Season 2'); // fallback naming
+      expect(parseTmdbSeasons('garbage'), isEmpty);
     });
 
     test('v58 series filters drive the TMDB /tv endpoints', () {

@@ -1,53 +1,44 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Max Player v58 (1.0.0+54) - ONE zoom/fit switch + Web Series + AI Suggestor
+# Max Player v59 (1.0.0+55) - The expand ladder + Discover rework (YOUR way)
 # ----------------------------------------------------------------------------
-# YOUR DESIGN (you described it, you picked the options):
+# Built from YOUR phone-test report of v58. Verbatim demands -> what changed:
 #
-#   SETTINGS - removed 3 things, added 1 thing:
-#     [x] 'Pinch to zoom (two fingers)' switch       -> REMOVED
-#     [x] 'Two-finger gesture' dropdown              -> REMOVED
-#     [x] 'Default video fit' dropdown               -> REMOVED
-#     [+] ONE switch: 'Two-finger pinch to zoom'
-#           OFF (default): two-finger pinch STEPS through ALL the fits -
-#             Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original
-#             (spread fingers = next, pinch in = previous),
-#             quick 2-finger tap = jump straight back to Fit.
-#           ON: two-finger pinch = smooth zoom in & out,
-#             quick 2-finger tap = back to fit.
-#
-#   DISCOVER - your 3 complaints fixed:
-#     * "Web series are not showing" -> NEW Movies | Web Series switch
-#       (Trending / Hindi / English / K-Drama / Anime shelves, series
-#       search, series detail with where-to-watch).
-#     * "Not loading / very slow / crashes on many networks" -> first paint
-#       is INSTANT from the disk cache, live data replaces it; TMDB tries
-#       BOTH server hosts; one failed call can no longer blank the page.
-#     * "A button where user describes their movie type" -> 'AI Suggest'
-#       chip in Discover: type your taste (or tap a mood chip) -> AI picks
-#       real films -> real TMDB posters you can tap.
+#   1. "make all (fit, crop, stretch, etc) fit screen by expanding fingers
+#      AND ZOOMING IS NOT WORKING":
+#      ONE continuous gesture now - spread two fingers and the video walks
+#      Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original and KEEPS GOING
+#      into smooth zoom (up to 4x). Pinch IN walks back down. The ladder
+#      NEVER undoes your pinch (that was the "zoom not working" bug).
+#      Quick two-finger tap = snap back to Fit. The Settings switch stays:
+#      ON = classic direct pinch zoom.
+#   2. "remove movies filter, add web series filter with all filter row":
+#      the Movies|Series TOGGLE IS GONE - ONE row with every chip (all
+#      movie filters + Trending/Hindi/English/K-Drama/Anime series).
+#   3. "move AI suggest to top": now the sparkle icon in the top AppBar.
+#   4. "search finds from all filters": the search bar now multi-searches
+#      movies AND series together (people results dropped).
+#   5. "in web series detail mention all parts": series detail shows
+#      "Seasons & parts" - every season with episode count + year.
+#   6. "load tons of contents in every filter / series don't all load":
+#      the strict vote bar (25 votes) dropped to 8 - regional and series
+#      shelves now pull MANY more titles, paging still infinite.
 #
 # Safe to run twice. Run from the repo root:
-#   cd ~/IdeaProjects/maxplayer && bash update_maxplayer_v58.sh
-# Then:  git add -A && git commit -m "v58: one zoom/fit switch (pinch steps
-#        all fits), Web Series shelf, AI Suggestor, instant Discover (1.0.0+54)"
-#        && git push
+#   cd ~/IdeaProjects/maxplayer && bash update_maxplayer_v59.sh
 # ============================================================================
 set -euo pipefail
-
 if [ ! -d lib ] || [ ! -f pubspec.yaml ]; then
-  echo "FAIL: run this from the repo root (cd ~/IdeaProjects/maxplayer)"
-  exit 1
+  echo "FAIL: run this from the repo root (cd ~/IdeaProjects/maxplayer)"; exit 1
 fi
-
-echo "Applying v58 (zoom/fit switch + Web Series + AI Suggestor)..."
+echo "Applying v59 (expand ladder + Discover rework)..."
 
 mkdir -p "$(dirname "pubspec.yaml")"
-cat > "pubspec.yaml" <<'MAXV58_EOF_1'
+cat > "pubspec.yaml" <<'MAXV59_EOF_1'
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+54
+version: 1.0.0+55
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -82,13 +73,15 @@ flutter:
   assets:
     # Real-time Enhance shader loaded into mpv at runtime (v32).
     - assets/shaders/
-MAXV58_EOF_1
+MAXV59_EOF_1
 echo "  wrote pubspec.yaml"
 
 mkdir -p "$(dirname "lib/state/video_zoom.dart")"
-cat > "lib/state/video_zoom.dart" <<'MAXV58_EOF_2'
+cat > "lib/state/video_zoom.dart" <<'MAXV59_EOF_2'
 /// Pure pinch-zoom math shared by the player screen and unit tests (v52).
 library;
+
+import 'dart:math' as math;
 
 /// Pinch range: 1.0 = fit screen (the DEFAULT), up to 4x zoomed in.
 const double kMinVideoZoom = 1.0;
@@ -108,30 +101,76 @@ bool isTwoFingerTapReset({
 }) =>
     !scaled && travelPx < 24 && durationMs <= 400;
 
-/// v57/v58: what a finished two-finger gesture should do, from the
-/// Settings choice (PlayerSettings.kTwoFingerModes). DEFAULT is 'fit':
-/// every two-finger gesture ends up at fit screen (pinch zoom is off;
-/// pinch STEPS through the fits instead - see nextFitIndex). 'zoom':
-/// pinch keeps its zoom; only a quick two-finger TAP snaps home so the
-/// user is never stuck zoomed in. Legacy/unknown values = 'fit' default.
+/// v59 (user's final design, after he phone-tested v58): finished
+/// two-finger gesture -> snap home ONLY on a quick tap. The expand
+/// ladder keeps whatever fit/zoom the pinch landed on; a real pinch is
+/// never undone. Legacy/unknown values conservatively snap home.
 bool twoFingerSnapsToFit({required String mode, required bool wasTap}) {
-  if (mode == 'zoom') return wasTap;
-  return true; // 'fit' (DEFAULT) and any legacy/unknown value
+  if (mode == 'fit' || mode == 'zoom') return wasTap;
+  return true; // legacy/unknown stored value
 }
 
-/// v58 (user's design): with the zoom switch OFF, a two-finger pinch
-/// STEPS through the fit list (Fit, Crop, Stretch, 16:9, 4:3, Original):
-/// dir=+1 = pinch OUT -> next fit, dir=-1 = pinch IN -> previous fit.
-/// Wraps around both ways. Pure for tests.
-int nextFitIndex({required int cur, required int dir, required int length}) {
-  final n = (cur + dir) % length;
-  return n < 0 ? n + length : n;
+// ---------------------------------------------------------------------------
+// v59 THE EXPAND LADDER - "make ALL fits reachable by expanding fingers,
+// and zooming must work afterwards". Spreading two fingers walks up:
+//
+//   Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original -> smooth ZOOM (4x)
+//
+// Pinching IN walks back down the same ladder. Fit steps live at integer
+// positions 0..fitCount-1; everything above fitCount-1 is the zoom region
+// (pos (fitCount-1)+1.0 == kMaxVideoZoom over the top fit).
+// ---------------------------------------------------------------------------
+
+/// Spreading the fingers by this factor climbs exactly ONE ladder step.
+/// 1.35 feels like VLC/MX pinch speed.
+const double kFitLadderStepScale = 1.35;
+
+double _log2(double v) => math.log(v) / math.ln2;
+
+/// The ladder position of the CURRENT UI state (gesture start anchor):
+/// zoomed in -> up in the zoom region; otherwise the plain fit index.
+double fitLadderPosOf({
+  required int fitIndex,
+  required int fitCount,
+  required double zoom,
+}) {
+  if (zoom > kMinVideoZoom) {
+    final p = (fitCount - 1) + _log2(zoom) / 2; // zoom 1..4 -> +0..+1
+    return p.clamp(0.0, (fitCount - 1) + 1.0);
+  }
+  return fitIndex.toDouble().clamp(0.0, (fitCount - 1).toDouble());
 }
-MAXV58_EOF_2
+
+/// Maps a live pinch [scale] to an absolute ladder position, given the
+/// [basePos] captured when the fingers landed. Pure for tests.
+double fitLadderPosFor({
+  required double basePos,
+  required double scale,
+  required int fitCount,
+}) {
+  if (scale <= 0) return basePos;
+  final maxPos = (fitCount - 1) + 1.0; // top = 4x zoom over the last fit
+  return (basePos + _log2(scale) / _log2(kFitLadderStepScale))
+      .clamp(0.0, maxPos);
+}
+
+/// Turns a ladder position back into UI state: inside the fit region
+/// (-> nearest fit, zoom 1x), above it -> smooth zoom over the top fit.
+({int fitIndex, double zoom}) fitLadderDecode(double pos, int fitCount) {
+  if (pos <= fitCount - 1) {
+    return (fitIndex: pos.round().clamp(0, fitCount - 1), zoom: kMinVideoZoom);
+  }
+  final z = math.pow(2, (pos - (fitCount - 1)) * 2).toDouble();
+  return (
+    fitIndex: fitCount - 1,
+    zoom: z.clamp(kMinVideoZoom, kMaxVideoZoom),
+  );
+}
+MAXV59_EOF_2
 echo "  wrote lib/state/video_zoom.dart"
 
 mkdir -p "$(dirname "lib/state/player_settings.dart")"
-cat > "lib/state/player_settings.dart" <<'MAXV58_EOF_3'
+cat > "lib/state/player_settings.dart" <<'MAXV59_EOF_3'
 import '../services/native_bridge.dart';
 
 /// Immutable snapshot of the customizable player settings (gestures, auto
@@ -404,11 +443,11 @@ class PlayerSettings {
     );
   }
 }
-MAXV58_EOF_3
+MAXV59_EOF_3
 echo "  wrote lib/state/player_settings.dart"
 
 mkdir -p "$(dirname "lib/screens/player_screen.dart")"
-cat > "lib/screens/player_screen.dart" <<'MAXV58_EOF_4'
+cat > "lib/screens/player_screen.dart" <<'MAXV59_EOF_4'
 import 'dart:async';
 import 'dart:io';
 
@@ -571,9 +610,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // v52: two-finger TAP = snap back to fit screen. We measure the pinch
   // gesture's total travel / whether any real scaling happened.
-  // v58: in fit mode a pinch STEPS the fit mode once per gesture; this
-  // flag stops one long pinch from machine-gunning through the list.
-  bool _fitSteppedThisGesture = false;
+  // v59: the expand ladder's anchor - ladder position when the two
+  // fingers landed (see video_zoom.dart).
+  double _ladderBasePos = 0;
   int _scaleStartMs = 0;
   double _pinchTravelPx = 0;
   bool _pinchScaled = false;
@@ -1034,16 +1073,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     _onUserInteraction();
   }
 
-  /// v58: two-finger pinch STEPS through the fit list when the zoom
-  /// switch is off (pinch out = next, pinch in = previous, wraps both
-  /// ways). Mirrors _cycleFit's indicator so it feels identical.
-  void _stepFit(int dir) {
-    setState(() => _fitIndex =
-        nextFitIndex(cur: _fitIndex, dir: dir, length: _fits.length));
-    _showIndicator('Fit: ${_fitNames[_fitIndex]}', _fitIcons[_fitIndex]);
-    _onUserInteraction();
-  }
-
   // ---------------------------------------------------------------------------
   // Unified scale recognizer (pinch zoom + ALL drag gestures)
   // ---------------------------------------------------------------------------
@@ -1058,7 +1087,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _scaleStartMs = DateTime.now().millisecondsSinceEpoch;
     _pinchTravelPx = 0;
     _pinchScaled = false;
-    _fitSteppedThisGesture = false;
+    _ladderBasePos = fitLadderPosOf(
+        fitIndex: _fitIndex, fitCount: _fits.length, zoom: _zoom);
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
@@ -1067,17 +1097,30 @@ class _PlayerScreenState extends State<PlayerScreen>
       _scaleMode = _ScaleMode.zoom;
       _pinchTravelPx += details.focalPointDelta.distance;
       if ((details.scale - 1.0).abs() > 0.05) _pinchScaled = true;
-      // v58 (user's redesign): ONE Settings switch decides what two
-      // fingers do. Switch OFF (default): pinch OUT steps to the NEXT
-      // fit (Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original), pinch
-      // IN steps back - one step per pinch, a quick tap snaps home (see
-      // _onScaleEnd). Switch ON: smooth pinch zoom below.
+      // v59 (user's final design): ONE continuous gesture - spread two
+      // fingers and the video walks Fit -> Crop -> Stretch -> 16:9 ->
+      // 4:3 -> Original and KEEPS GOING into smooth zoom (up to 4x).
+      // Pinch IN walks back down. A quick two-finger tap snaps home
+      // (see _onScaleEnd). Applied live, no step thresholds.
       if (_settings.twoFingerMode == 'fit') {
-        if (!_fitSteppedThisGesture) {
-          final d = details.scale - 1.0;
-          if (d.abs() >= 0.18) {
-            _fitSteppedThisGesture = true;
-            _stepFit(d > 0 ? 1 : -1);
+        final pos = fitLadderPosFor(
+            basePos: _ladderBasePos,
+            scale: details.scale,
+            fitCount: _fits.length);
+        final step = fitLadderDecode(pos, _fits.length);
+        if (step.fitIndex != _fitIndex ||
+            (step.zoom - _zoom).abs() > 0.005) {
+          setState(() {
+            _fitIndex = step.fitIndex;
+            _zoom = step.zoom;
+            if (step.zoom == kMinVideoZoom) _pan = Offset.zero;
+          });
+          if (step.zoom > kMinVideoZoom) {
+            _showIndicator('Zoom ${step.zoom.toStringAsFixed(1)}x',
+                Icons.pinch_outlined);
+          } else {
+            _showIndicator('Fit: ${_fitNames[step.fitIndex]}',
+                _fitIcons[step.fitIndex]);
           }
         }
         return;
@@ -1235,12 +1278,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     if (mode == _ScaleMode.volume || mode == _ScaleMode.brightness) return;
-    // v57/v58: Settings decides when a finished two-finger gesture snaps
-    // home. 'fit' (DEFAULT) = tap snaps to fit (a pinch that STEPPED the
-    // fit mode keeps its new fit - hence the flag); 'zoom' = only a
-    // quick tap snaps home, a real pinch keeps its zoom.
+    // v59: a finished two-finger gesture snaps home ONLY on a quick
+    // tap - the expand ladder keeps the fit/zoom your pinch landed on
+    // (this is what "zooming is not working" meant: don't undo it!).
     if (mode == _ScaleMode.zoom &&
-        !_fitSteppedThisGesture &&
         twoFingerSnapsToFit(
           mode: _settings.twoFingerMode,
           wasTap: isTwoFingerTapReset(
@@ -2145,11 +2186,11 @@ class _MarqueeTitleState extends State<_MarqueeTitle> {
     );
   }
 }
-MAXV58_EOF_4
+MAXV59_EOF_4
 echo "  wrote lib/screens/player_screen.dart"
 
 mkdir -p "$(dirname "lib/widgets/player_settings_sheet.dart")"
-cat > "lib/widgets/player_settings_sheet.dart" <<'MAXV58_EOF_5'
+cat > "lib/widgets/player_settings_sheet.dart" <<'MAXV59_EOF_5'
 import 'package:flutter/material.dart';
 
 import '../state/player_settings.dart';
@@ -2302,9 +2343,9 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               _SwitchTile(
                 icon: Icons.pinch_outlined,
                 label: 'Two-finger pinch to zoom',
-                subtitle:
-                    'OFF: two fingers step Fit, Crop, Stretch, 16:9, 4:3 - '
-                    'tap with 2 fingers to return to Fit. ON: pinch to zoom.',
+                subtitle: 'OFF (default): spread 2 fingers = Fit, Crop, '
+                    'Stretch, 16:9... then keep spreading to zoom in. '
+                    'ON: pinch zooms straight away. 2-finger tap = Fit.',
                 value: _settings.twoFingerMode == 'zoom',
                 onChanged: (v) => _update(
                     _settings.copyWith(twoFingerMode: v ? 'zoom' : 'fit')),
@@ -2575,11 +2616,11 @@ class _MiniDropdown<T> extends StatelessWidget {
     );
   }
 }
-MAXV58_EOF_5
+MAXV59_EOF_5
 echo "  wrote lib/widgets/player_settings_sheet.dart"
 
 mkdir -p "$(dirname "lib/services/tmdb_client.dart")"
-cat > "lib/services/tmdb_client.dart" <<'MAXV58_EOF_6'
+cat > "lib/services/tmdb_client.dart" <<'MAXV59_EOF_6'
 import 'dart:convert';
 import 'dart:io';
 
@@ -2693,6 +2734,13 @@ const List<DiscoverFilter> kSeriesFilters = [
   DiscoverFilter(key: 'tv_anime', label: 'Anime', language: 'ja', tv: true),
 ];
 
+/// v59 (user): ONE combined filter row - no Movies|Series toggle, every
+/// chip in a single row; each chip knows its own endpoint ([tv] flag).
+const List<DiscoverFilter> kAllFilters = [
+  ...kDiscoverFilters,
+  ...kSeriesFilters,
+];
+
 /// Deterministic cache file name for one discover page (movie names are
 /// unchanged since v44; series get their own _tv files). Pure for tests.
 String discoverCacheName(DiscoverFilter f, int page) =>
@@ -2707,12 +2755,14 @@ String tmdbEndpointPath(DiscoverFilter f) => f.trending
         : (f.tv ? '/3/discover/tv' : '/3/discover/movie');
 
 /// Query params for one page of a NON-trending filter. Pure for tests.
+/// v59: vote bar 25 -> 8 ("load TONS of contents in EVERY filter") - the
+/// old bar cut most regional + series titles out entirely.
 Map<String, String> tmdbDiscoverQuery(DiscoverFilter f, int page) => {
       'language': 'en-US',
       'page': '$page',
       'include_adult': 'false',
       'sort_by': 'popularity.desc',
-      'vote_count.gte': '25',
+      'vote_count.gte': '8',
       if (f.language.isNotEmpty) 'with_original_language': f.language,
       if (f.genreId != null) 'with_genres': '${f.genreId}',
     };
@@ -2809,10 +2859,58 @@ class TmdbFull {
   final TmdbWatchInfo watch;
   final List<TmdbReview> reviews;
 
+  /// v59: WEB SERIES detail - "mention ALL parts of the series".
+  /// Empty for movies.
+  final List<TmdbSeason> seasons;
+
   const TmdbFull(this.movie, this.extras,
       {this.screenshots = const [],
       this.watch = const TmdbWatchInfo(),
-      this.reviews = const []});
+      this.reviews = const [],
+      this.seasons = const []});
+}
+
+/// One part (season) of a web series - v59.
+class TmdbSeason {
+  final int number;
+  final String name;
+  final int episodes;
+  final int? year;
+
+  const TmdbSeason({
+    required this.number,
+    required this.name,
+    required this.episodes,
+    this.year,
+  });
+}
+
+/// Parses the `seasons` array of a /tv detail response. Never throws;
+/// garbage -> empty list. Pure for tests.
+List<TmdbSeason> parseTmdbSeasons(String jsonBody) {
+  try {
+    final decoded = jsonDecode(jsonBody);
+    if (decoded is! Map) return const [];
+    final list = decoded['seasons'];
+    if (list is! List) return const [];
+    final out = <TmdbSeason>[];
+    for (final e in list) {
+      if (e is! Map) continue;
+      final n = e['season_number'] is num ? (e['season_number'] as num).toInt() : 0;
+      final name = '${e['name'] ?? ''}'.trim();
+      final eps = e['episode_count'] is num ? (e['episode_count'] as num).toInt() : 0;
+      final air = '${e['air_date'] ?? ''}';
+      out.add(TmdbSeason(
+        number: n,
+        name: name.isEmpty ? (n == 0 ? 'Specials' : 'Season $n') : name,
+        episodes: eps,
+        year: air.length >= 4 ? int.tryParse(air.substring(0, 4)) : null,
+      ));
+    }
+    return out;
+  } catch (_) {
+    return const [];
+  }
 }
 
 /// v46: where the movie can be watched in India (TMDB/JustWatch data):
@@ -2911,6 +3009,43 @@ TmdbPage parseTmdbPage(String jsonBody, {String kind = 'movie'}) {
     final items = <TmdbMovie>[];
     if (results is List) {
       for (final e in results) {
+        final m = _movieFromMap(e, kind: kind);
+        if (m != null) items.add(m);
+      }
+    }
+    var totalPages = decoded['total_pages'] is num
+        ? (decoded['total_pages'] as num).toInt()
+        : 1;
+    if (totalPages < 1) totalPages = 1;
+    if (totalPages > 500) totalPages = 500;
+    return TmdbPage(
+      items: items,
+      page: decoded['page'] is num ? (decoded['page'] as num).toInt() : 1,
+      totalPages: totalPages,
+      totalResults: decoded['total_results'] is num
+          ? (decoded['total_results'] as num).toInt()
+          : items.length,
+    );
+  } catch (_) {
+    return const TmdbPage();
+  }
+}
+
+/// v59: parses a /search/multi response - each item declares its own
+/// media_type; movies and series are kept (with the right [kind]),
+/// people/companies are dropped. Never throws. Pure for tests.
+TmdbPage parseTmdbMultiPage(String jsonBody) {
+  try {
+    final decoded = jsonDecode(jsonBody);
+    if (decoded is! Map) return const TmdbPage();
+    final results = decoded['results'];
+    final items = <TmdbMovie>[];
+    if (results is List) {
+      for (final e in results) {
+        if (e is! Map) continue;
+        final type = '${e['media_type'] ?? ''}';
+        final kind = type == 'tv' ? 'tv' : type == 'movie' ? 'movie' : null;
+        if (kind == null) continue; // people & friends -> out
         final m = _movieFromMap(e, kind: kind);
         if (m != null) items.add(m);
       }
@@ -3372,18 +3507,20 @@ class TmdbClient {
     return body == null ? const TmdbPage() : parseTmdbPage(body);
   }
 
-  /// v58: the SAME search bar but for WEB SERIES (/search/tv).
-  Future<TmdbPage> searchTv(String query,
+  /// v59 (user): "when we search any content, find it from ALL filters"
+  /// - ONE multi-search across movies AND series (people are dropped in
+  /// the parser).
+  Future<TmdbPage> searchMulti(String query,
       {int page = 1, bool force = false}) async {
     final q = query.trim();
     if (kTmdbApiKey.isEmpty || q.isEmpty) return const TmdbPage();
-    final uri = Uri.https(_host, '/3/search/tv', {
+    final uri = Uri.https(_host, '/3/search/multi', {
       'api_key': kTmdbApiKey,
       ...tmdbSearchQuery(q, page),
     });
-    final body = await _fetch(tmdbSearchCacheName('tv_$q', page), uri,
+    final body = await _fetch(tmdbSearchCacheName('multi_$q', page), uri,
         ttl: force ? Duration.zero : const Duration(hours: 24));
-    return body == null ? const TmdbPage() : parseTmdbPage(body, kind: 'tv');
+    return body == null ? const TmdbPage() : parseTmdbMultiPage(body);
   }
 
   /// v46: one call now also brings WATCH PROVIDERS (where to watch) and
@@ -3416,6 +3553,8 @@ class TmdbClient {
       screenshots: parseTmdbScreenshots(body),
       watch: parseTmdbWatchProviders(body),
       reviews: parseTmdbReviews(body),
+      // v59: every part (season) of the series, for the detail sheet.
+      seasons: isTv ? parseTmdbSeasons(body) : const [],
     );
   }
 
@@ -3435,11 +3574,11 @@ class TmdbClient {
     return body == null ? const [] : parseTmdbList(body, kind: kind);
   }
 }
-MAXV58_EOF_6
+MAXV59_EOF_6
 echo "  wrote lib/services/tmdb_client.dart"
 
 mkdir -p "$(dirname "lib/services/ai_suggest.dart")"
-cat > "lib/services/ai_suggest.dart" <<'MAXV58_EOF_7'
+cat > "lib/services/ai_suggest.dart" <<'MAXV59_EOF_7'
 import 'dart:convert';
 import 'dart:io';
 
@@ -3568,11 +3707,11 @@ class AiSuggestor {
     }
   }
 }
-MAXV58_EOF_7
+MAXV59_EOF_7
 echo "  wrote lib/services/ai_suggest.dart"
 
 mkdir -p "$(dirname "lib/widgets/ai_suggest_sheet.dart")"
-cat > "lib/widgets/ai_suggest_sheet.dart" <<'MAXV58_EOF_8'
+cat > "lib/widgets/ai_suggest_sheet.dart" <<'MAXV59_EOF_8'
 import 'package:flutter/material.dart';
 
 import '../services/ai_suggest.dart';
@@ -3851,11 +3990,11 @@ class _PickCard extends StatelessWidget {
     );
   }
 }
-MAXV58_EOF_8
+MAXV59_EOF_8
 echo "  wrote lib/widgets/ai_suggest_sheet.dart"
 
 mkdir -p "$(dirname "lib/screens/discover_screen.dart")"
-cat > "lib/screens/discover_screen.dart" <<'MAXV58_EOF_9'
+cat > "lib/screens/discover_screen.dart" <<'MAXV59_EOF_9'
 import 'dart:async';
 import 'dart:io';
 
@@ -3910,10 +4049,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
 
-  DiscoverFilter _filter = kDiscoverFilters.first;
-
-  /// v58: false = movie shelves, true = WEB SERIES shelves (/tv endpoints).
-  bool _seriesMode = false;
+  DiscoverFilter _filter = kAllFilters.first;
   final List<TmdbMovie> _movies = [];
   final Set<int> _seenIds = {};
   int _page = 0;
@@ -3988,10 +4124,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     }
     TmdbPage result;
     try {
+      // v59: multi-search finds it in ALL shelves - movies AND series.
       result = _searching
-          ? await (_seriesMode
-              ? _client.searchTv(_searchQuery, page: page, force: force)
-              : _client.searchMovies(_searchQuery, page: page, force: force))
+          ? await _client.searchMulti(_searchQuery, page: page, force: force)
           : await _client.browse(_filter, page: page, force: force);
     } catch (_) {
       result = const TmdbPage();
@@ -4008,8 +4143,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       }
       if (page == 1 && _movies.isEmpty) {
         _error = _searching
-            ? 'No ${_seriesMode ? 'series' : 'movies'} match "$_searchQuery" on TMDB.'
-            : 'Could not load ${_seriesMode ? 'series' : 'movies'} - connect the internet once, '
+            ? 'No movies or series match "$_searchQuery" on TMDB.'
+            : 'Could not load movies or series - connect the internet once, '
                 'then pull down to retry.';
       } else if (_movies.isNotEmpty) {
         _error = null;
@@ -4018,14 +4153,16 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     // v45: in search mode, also fetch "you may also like" from the top
     // hit - a plain search word finds few direct matches otherwise.
     if (_searching && page == 1 && result.items.isNotEmpty) {
-      _loadRelated(result.items.first.id, token);
+      _loadRelated(result.items.first.id, token,
+          kind: result.items.first.kind);
     }
   }
 
-  Future<void> _loadRelated(int movieId, int token) async {
+  Future<void> _loadRelated(int movieId, int token,
+      {String kind = 'movie'}) async {
     List<TmdbMovie> rel;
     try {
-      rel = await _client.similar(movieId, kind: _seriesMode ? 'tv' : 'movie');
+      rel = await _client.similar(movieId, kind: kind);
     } catch (_) {
       rel = const [];
     }
@@ -4099,16 +4236,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     );
   }
 
-  /// v58: Movies | Web Series master switch - swaps the chip shelf and
-  /// reloads page 1 of the right catalogue.
-  void _setSeriesMode(bool v) {
-    if (v == _seriesMode) return;
-    _seriesMode = v;
-    _switchTo(
-        filter: (v ? kSeriesFilters : kDiscoverFilters).first, force: true);
-  }
-
-  /// v58: the AI Suggestor - "describe your movie type" -> real posters.
+  /// v58/v59: the AI Suggestor - "describe your movie type" -> real
+  /// posters. Lives in the AppBar (user: "move AI suggest to the top").
   Future<void> _openAiSuggest() async {
     final pick = await AiSuggestSheet.show(context);
     if (!mounted || pick == null) return;
@@ -4129,11 +4258,19 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               Text(
                 _searching
                     ? '${_movies.length} of ~${formatVoteCount(_totalResults)} results'
-                    : '${formatVoteCount(_totalResults)} ${_seriesMode ? 'series' : 'movies'} - scroll for more',
+                    : '${formatVoteCount(_totalResults)} titles - scroll for more',
                 style: const TextStyle(color: Colors.white38, fontSize: 11),
               ),
           ],
         ),
+        // v59 (user): AI Suggest moved to the TOP.
+        actions: [
+          IconButton(
+            tooltip: 'AI Suggest - describe your movie type',
+            icon: Icon(Icons.auto_awesome, color: themeState.accent),
+            onPressed: _openAiSuggest,
+          ),
+        ],
       ),
       body: _keyMissing
           ? const _SetupNote()
@@ -4148,8 +4285,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: InputDecoration(
                       isDense: true,
-                      hintText:
-                          _seriesMode ? 'Search series...' : 'Search movies...',
+                      hintText: 'Search movies & series...',
                       hintStyle: const TextStyle(color: Colors.white38),
                       prefixIcon: Icon(Icons.search,
                           color: themeState.accent, size: 20),
@@ -4172,42 +4308,16 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     ),
                   ),
                 ),
-                // v58: Movies | Web Series master switch + the AI
-                // Suggestor entry - the row every user asked for.
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                  child: Row(
-                    children: [
-                      _FilterChip(
-                        label: 'Movies',
-                        selected: !_seriesMode,
-                        onTap: () => _setSeriesMode(false),
-                      ),
-                      const SizedBox(width: 8),
-                      _FilterChip(
-                        label: 'Web Series',
-                        selected: _seriesMode,
-                        onTap: () => _setSeriesMode(true),
-                      ),
-                      const Spacer(),
-                      _FilterChip(
-                        label: '✨ AI Suggest',
-                        selected: false,
-                        onTap: _openAiSuggest,
-                      ),
-                    ],
-                  ),
-                ),
-                // v44: MANY filters (was just All/Hollywood/Bollywood).
-                // v58: the shelf swaps with the Movies | Series switch.
+                // v59 (user): ONE filter row with EVERYTHING - movie
+                // chips AND web series chips side by side (the old
+                // Movies|Series toggle is gone).
                 SizedBox(
                   height: 40,
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     children: [
-                      for (final f
-                          in (_seriesMode ? kSeriesFilters : kDiscoverFilters)) ...[
+                      for (final f in kAllFilters) ...[
                         _FilterChip(
                           label: f.label,
                           selected: !_searching && _filter == f,
@@ -4468,11 +4578,11 @@ class _SetupNote extends StatelessWidget {
     );
   }
 }
-MAXV58_EOF_9
+MAXV59_EOF_9
 echo "  wrote lib/screens/discover_screen.dart"
 
 mkdir -p "$(dirname "lib/widgets/discover_banner.dart")"
-cat > "lib/widgets/discover_banner.dart" <<'MAXV58_EOF_10'
+cat > "lib/widgets/discover_banner.dart" <<'MAXV59_EOF_10'
 import 'dart:async';
 import 'dart:io';
 
@@ -4701,11 +4811,743 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
     );
   }
 }
-MAXV58_EOF_10
+MAXV59_EOF_10
 echo "  wrote lib/widgets/discover_banner.dart"
 
+mkdir -p "$(dirname "lib/widgets/movie_detail_sheet.dart")"
+cat > "lib/widgets/movie_detail_sheet.dart" <<'MAXV59_EOF_11'
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+
+import '../models/video_track.dart';
+import '../screens/player_screen.dart';
+import '../services/native_bridge.dart';
+import '../services/tmdb_client.dart';
+import '../state/media_player_state.dart';
+import '../state/theme_state.dart';
+import '../services/subtitle_langs.dart';
+import 'ask_ai_sheet.dart';
+import 'tmdb_image.dart';
+
+/// v44: the Discover detail sheet - poster, TMDB rating (with credit),
+/// and now the FULL story: tagline, runtime, genres, director, cast,
+/// vote count, plus the same two actions:
+///
+///  - "Watch trailer on YouTube": opens the official YouTube app on the
+///    trailer (Play-policy-safe; we never stream YouTube in-app).
+///  - "In my library": shown ONLY when the movie is already on the phone -
+///    then Max Player plays it instantly, offline.
+///
+/// DraggableScrollableSheet like every other sheet since v35 (landscape
+/// safe, every control stays reachable).
+class MovieDetailSheet extends StatefulWidget {
+  final TmdbMovie movie;
+  final VideoTrack? localMatch;
+  final MediaPlayerState player;
+
+  /// Lazily resolves trailer + extras in ONE call (detail is cached 24h).
+  final Future<TmdbFull?> Function() detailLoader;
+
+  const MovieDetailSheet({
+    super.key,
+    required this.movie,
+    required this.localMatch,
+    required this.player,
+    required this.detailLoader,
+  });
+
+  static Future<void> show(
+    BuildContext context, {
+    required TmdbMovie movie,
+    required VideoTrack? localMatch,
+    required MediaPlayerState player,
+    required Future<TmdbFull?> Function() detailLoader,
+  }) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1a1a24),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.62,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        builder: (_, controller) => SingleChildScrollView(
+          controller: controller,
+          child: MovieDetailSheet(
+            movie: movie,
+            localMatch: localMatch,
+            player: player,
+            detailLoader: detailLoader,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  State<MovieDetailSheet> createState() => _MovieDetailSheetState();
+}
+
+class _MovieDetailSheetState extends State<MovieDetailSheet> {
+  // Fired once - never inside build(), so no refetch on every rebuild.
+  // v45: NOT final - a failed load (was common on slow networks) now has
+  // a visible Retry instead of needing sheet close/open rounds.
+  late Future<TmdbFull?> _detailFuture = widget.detailLoader();
+
+  void _retryDetail() {
+    setState(() {
+      _detailFuture = widget.detailLoader();
+    });
+  }
+
+  Future<void> _playLocal(BuildContext context) async {
+    final track = widget.localMatch;
+    if (track == null) return;
+    await widget.player.setPlaylistAndPlay([track], 0);
+    if (!context.mounted) return;
+    Navigator.of(context).pop();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+          builder: (_) => PlayerScreen(player: widget.player)),
+    );
+  }
+
+  Future<void> _openTrailer(String key) async {
+    final ok = await NativeBridge.openYouTube(key);
+    if (!ok) {
+      // Exceptionally rare (no browser?!) - keep it silent, the button
+      // simply does nothing visible instead of crashing the sheet.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final movie = widget.movie;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 110,
+                height: 165,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: TmdbImage(
+                      url: tmdbPosterUrl(movie.posterPath, big: true)),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      movie.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      [
+                        if (movie.year != null) '${movie.year}',
+                        '⭐ ${tmdbRatingText(movie.rating)} / 10',
+                      ].join('  ·  '),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Rating & data: TMDB',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.35),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          // v44: the extra facts arrive with the trailer lookup (one call).
+          // v45: that same call also brings the screenshots row, and a
+          // failure offers Retry instead of a dead sheet.
+          FutureBuilder<TmdbFull?>(
+            future: _detailFuture,
+            builder: (context, snap) {
+              if (snap.connectionState != ConnectionState.done) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    'Loading details...',
+                    style: TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                );
+              }
+              final full = snap.data;
+              if (full == null) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Details could not load (network was busy).',
+                          style:
+                              TextStyle(color: Colors.white38, fontSize: 12),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _retryDetail,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (full.screenshots.isNotEmpty)
+                    _ScreenshotsRow(paths: full.screenshots),
+                  _ExtrasBlock(extras: full.extras),
+                  // v59 (user): web series must mention ALL their parts.
+                  if (full.seasons.isNotEmpty)
+                    _SeasonsBlock(seasons: full.seasons),
+                  if (!full.watch.isEmpty) _WatchBlock(info: full.watch),
+                  _AllDataBlock(extras: full.extras, movieId: movie.id),
+                ],
+              );
+            },
+          ),
+          if (movie.overview.isNotEmpty)
+            Text(
+              movie.overview,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            )
+          else
+            Text(
+              'No story summary available for this movie yet.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: FutureBuilder<TmdbFull?>(
+              future: _detailFuture,
+              builder: (context, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return OutlinedButton.icon(
+                    onPressed: null,
+                    icon: const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    label: const Text('Finding trailer...'),
+                  );
+                }
+                final key = snap.data?.movie.trailerKey;
+                if (key == null || key.isEmpty) {
+                  return const Text(
+                    'No official trailer is available for this one.',
+                    style: TextStyle(color: Colors.white38, fontSize: 12),
+                  );
+                }
+                return FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: themeState.accent,
+                    foregroundColor: themeState.onAccent,
+                  ),
+                  onPressed: () => _openTrailer(key),
+                  icon: const Icon(Icons.smart_display),
+                  label: const Text('Watch trailer on YouTube'),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+          // v45: movie-restricted AI chat (free OpenRouter models).
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: () =>
+                  AskAiSheet.show(context, movie: widget.movie),
+              icon: const Icon(Icons.auto_awesome),
+              label: const Text('Ask with AI about this movie'),
+            ),
+          ),
+          if (widget.localMatch != null) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: () => _playLocal(context),
+                icon: const Icon(Icons.video_library),
+                label: Text(
+                    'In my library - play "${widget.localMatch!.title}" now',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ),
+          ],
+          // v46: real TMDB user reviews (was asked: "real reviews").
+          FutureBuilder<TmdbFull?>(
+            future: _detailFuture,
+            builder: (context, snap) {
+              final full = snap.data;
+              if (snap.connectionState != ConnectionState.done ||
+                  full == null ||
+                  full.reviews.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return _ReviewsBlock(reviews: full.reviews);
+            },
+          ),
+          const SizedBox(height: 14),
+          Center(
+            child: Text(
+              // v46: short attribution line (the full legal phrasing lives
+              // in the README and the Play listing, as TMDB requires).
+              'Movie data & ratings: TMDB',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.3),
+                fontSize: 10,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// v45: a horizontal strip of scene "screenshots" (TMDB backdrops) so the
+/// sheet shows the movie, not just tells it.
+class _ScreenshotsRow extends StatelessWidget {
+  final List<String> paths;
+
+  const _ScreenshotsRow({required this.paths});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: SizedBox(
+        height: 104,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: paths.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (context, i) => ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              width: 176,
+              child: TmdbImage(url: tmdbScreenshotUrl(paths[i])),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// v44: tagline, runtime, genres, votes, director, cast - everything TMDB
+/// gives us beyond the poster. Any missing piece is simply skipped.
+class _ExtrasBlock extends StatelessWidget {
+  final TmdbDetailExtras extras;
+
+  const _ExtrasBlock({required this.extras});
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = <String>[
+      if (formatRuntime(extras.runtimeMinutes).isNotEmpty)
+        formatRuntime(extras.runtimeMinutes),
+      if (extras.voteCount > 0) '${formatVoteCount(extras.voteCount)} votes',
+      if (extras.status.isNotEmpty && extras.status != 'Released')
+        extras.status,
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (extras.tagline.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                '"${extras.tagline}"',
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          if (meta.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                meta.join('  ·  '),
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ),
+          // v46: audio languages + our own subtitle capability line.
+          if (extras.spokenLanguages.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(
+                'Languages: ${extras.spokenLanguages.join(' · ')}',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ),
+          if (extras.genres.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final g in extras.genres.take(4))
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        g,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 11),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          if (extras.director.isNotEmpty)
+            Text(
+              'Director: ${extras.director}',
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          if (extras.cast.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                'Cast: ${extras.cast.join(', ')}',
+                style: const TextStyle(
+                    color: Colors.white54, fontSize: 12, height: 1.4),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// v46: "Where to watch" (India) with the compare split - Stream / Rent /
+/// Buy provider names from TMDB's JustWatch-powered data.
+/// v59: "in web series, when we select a content mention ALL parts of
+/// the series in the detail" - every season as one clean line:
+/// Season 1 · 8 episodes · 2011.
+class _SeasonsBlock extends StatelessWidget {
+  final List<TmdbSeason> seasons;
+
+  const _SeasonsBlock({required this.seasons});
+
+  @override
+  Widget build(BuildContext context) {
+    final totalEps = seasons.fold<int>(0, (a, s) => a + s.episodes);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Seasons & parts - ${seasons.length} season'
+            '${seasons.length == 1 ? '' : 's'}, $totalEps episodes total',
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          for (final s in seasons)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      s.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 13),
+                    ),
+                  ),
+                  Text(
+                    '${s.episodes} ep'
+                    '${s.year != null ? '  ·  ${s.year}' : ''}',
+                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WatchBlock extends StatelessWidget {
+  final TmdbWatchInfo info;
+
+  const _WatchBlock({required this.info});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget row(String label, List<String> names, Color color) {
+      if (names.isEmpty) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 56,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: color, fontSize: 10, fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                names.join(' · '),
+                style: const TextStyle(color: Colors.white70, fontSize: 12,
+                    height: 1.4),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Where to watch (India)',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          row('Stream', info.stream, const Color(0xFF4ade80)),
+          row('Rent', info.rent, const Color(0xFFfacc15)),
+          row('Buy', info.buy, const Color(0xFF60a5fa)),
+        ],
+      ),
+    );
+  }
+}
+
+/// v46: real TMDB user reviews, trimmed, with the author's rating.
+class _ReviewsBlock extends StatelessWidget {
+  final List<TmdbReview> reviews;
+
+  const _ReviewsBlock({required this.reviews});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'User reviews',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          for (final r in reviews)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    [
+                      if (r.author.isNotEmpty) r.author else 'TMDB user',
+                      if (r.rating != null)
+                        '⭐ ${tmdbRatingText(r.rating!)}',
+                    ].join('  ·  '),
+                    style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    r.text,
+                    style: const TextStyle(
+                        color: Colors.white54, fontSize: 12, height: 1.45),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// v47: EVERYTHING TMDB knows - dates, certificate, money, companies,
+/// countries and ALL supported languages.
+class _AllDataBlock extends StatelessWidget {
+  final TmdbDetailExtras extras;
+  final int movieId;
+  const _AllDataBlock({required this.extras, required this.movieId});
+  @override
+  Widget build(BuildContext context) {
+    Widget row(String l, String v) => Padding(
+        padding: const EdgeInsets.only(bottom: 3),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SizedBox(width: 78, child: Text(l, style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4), fontSize: 11))),
+          Expanded(child: Text(v, style: const TextStyle(
+              color: Colors.white70, fontSize: 12))),
+        ]));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (extras.releaseDate.isNotEmpty) row('Release', extras.releaseDate),
+        if (extras.certification.isNotEmpty) row('Certificate', extras.certification),
+        if (extras.originalTitle.isNotEmpty) row('Original', extras.originalTitle),
+        if (extras.budgetUsd > 0) row('Budget', '\$${formatVoteCount(extras.budgetUsd)}'),
+        if (extras.revenueUsd > 0) row('Revenue', '\$${formatVoteCount(extras.revenueUsd)}'),
+        if (extras.companies.isNotEmpty) row('Studio', extras.companies.join('  ')),
+        if (extras.countries.isNotEmpty) row('Country', extras.countries.join('  ')),
+        if (extras.allLanguages.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text('Languages supported (${extras.allLanguages.length})',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.75),
+                  fontSize: 12, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Wrap(spacing: 6, runSpacing: 4, children: [
+            for (final l in extras.allLanguages)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(10)),
+                child: Text(l, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+              ),
+          ]),
+          const SizedBox(height: 6),
+        ],
+        _RealSubtitlesBlock(movieId: movieId),
+      ]),
+    );
+  }
+}
+
+/// v47: REAL subtitle availability (OpenSubtitles).
+class _RealSubtitlesBlock extends StatefulWidget {
+  final int movieId;
+  const _RealSubtitlesBlock({required this.movieId});
+  @override
+  State<_RealSubtitlesBlock> createState() => _RealSubtitlesBlockState();
+}
+
+class _RealSubtitlesBlockState extends State<_RealSubtitlesBlock> {
+  final _client = OpenSubtitlesClient();
+  List<String>? _langs;
+  @override
+  void initState() { super.initState(); _boot(); }
+  Future<void> _boot() async {
+    final cachePath = await NativeBridge.cacheDirPath();
+    if (cachePath != null) _client.cacheDir = Directory(cachePath);
+    final langs = await _client.languagesFor(widget.movieId);
+    if (mounted) setState(() => _langs = langs);
+  }
+  @override
+  Widget build(BuildContext context) {
+    if (kOpenSubtitlesApiKey.isEmpty) return const SizedBox.shrink();
+    final langs = _langs;
+    if (langs == null || langs.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text('Subtitles available: ${langs.join('  ')}',
+          style: const TextStyle(color: Colors.white54, fontSize: 11)),
+    );
+  }
+}
+MAXV59_EOF_11
+echo "  wrote lib/widgets/movie_detail_sheet.dart"
+
 mkdir -p "$(dirname "test/widget_test.dart")"
-cat > "test/widget_test.dart" <<'MAXV58_EOF_11'
+cat > "test/widget_test.dart" <<'MAXV59_EOF_12'
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -6455,26 +7297,89 @@ void main() {
       expect(s.pinchZoom, isTrue);
     });
 
-    test('v57 twoFingerSnapsToFit: fit default always snaps; zoom on tap', () {
-      // fit (DEFAULT): EVERY two-finger gesture snaps back to fit screen.
-      expect(twoFingerSnapsToFit(mode: 'fit', wasTap: false), isTrue);
+    test('v59 twoFingerSnapsToFit: only a TAP snaps home, pinch stays', () {
+      // v59 (his v58 phone report "zooming is not working"): a real
+      // pinch is NEVER undone - the ladder keeps its fit/zoom; only a
+      // quick two-finger tap snaps back to fit, in BOTH modes.
       expect(twoFingerSnapsToFit(mode: 'fit', wasTap: true), isTrue);
-      // zoom: a real pinch KEEPS the zoom; a quick tap snaps home so you
-      // are never stuck zoomed in.
-      expect(twoFingerSnapsToFit(mode: 'zoom', wasTap: false), isFalse);
+      expect(twoFingerSnapsToFit(mode: 'fit', wasTap: false), isFalse);
       expect(twoFingerSnapsToFit(mode: 'zoom', wasTap: true), isTrue);
-      // unknown stored value behaves like the fit default.
+      expect(twoFingerSnapsToFit(mode: 'zoom', wasTap: false), isFalse);
+      // unknown stored value conservatively snaps home.
       expect(twoFingerSnapsToFit(mode: 'junk', wasTap: false), isTrue);
     });
 
-    test('v58 nextFitIndex walks the fit list and wraps both ways', () {
-      // Fit, Crop, Stretch, 16:9, 4:3, Original (6 entries).
-      const n = 6;
-      expect(nextFitIndex(cur: 0, dir: 1, length: n), 1); // Fit -> Crop
-      expect(nextFitIndex(cur: 1, dir: 1, length: n), 2); // -> Stretch
-      expect(nextFitIndex(cur: 5, dir: 1, length: n), 0); // wraps to Fit
-      expect(nextFitIndex(cur: 0, dir: -1, length: n), 5); // pinch IN wraps
-      expect(nextFitIndex(cur: 2, dir: -1, length: n), 1);
+    test('v59 expand ladder: ALL fits by spreading, then ZOOM keeps going', () {
+      const n = 6; // Fit, Crop, Stretch, 16:9, 4:3, Original
+      // One 1.35x spread from Fit climbs exactly one fit step (Crop).
+      var pos = fitLadderPosFor(basePos: 0, scale: 1.35, fitCount: n);
+      expect(pos, closeTo(1.0, 0.01));
+      // Two steps -> Stretch; decode rounds inside the fit region.
+      pos = fitLadderPosFor(
+          basePos: 0,
+          scale: kFitLadderStepScale * kFitLadderStepScale,
+          fitCount: n);
+      expect(fitLadderDecode(pos, n).fitIndex, 2);
+      expect(fitLadderDecode(pos, n).zoom, 1.0);
+      expect(fitLadderDecode(0.4, n).fitIndex, 0);
+      // Past the last fit the ladder flows into SMOOTH zoom (this is
+      // the "zooming is not working" fix - it just keeps going).
+      expect(fitLadderDecode(n - 1, n).zoom, 1.0);
+      expect(fitLadderDecode((n - 1) + 0.5, n).zoom, closeTo(2.0, 0.01));
+      expect(fitLadderDecode((n - 1) + 9, n).zoom, kMaxVideoZoom);
+      expect(fitLadderDecode((n - 1) + 0.5, n).fitIndex, n - 1);
+      // State -> base anchor round trips.
+      expect(fitLadderPosOf(fitIndex: 3, fitCount: n, zoom: 1.0), 3.0);
+      expect(fitLadderPosOf(fitIndex: 5, fitCount: n, zoom: 4.0),
+          closeTo((n - 1) + 1.0, 0.001));
+      // Pinching IN (scale < 1) walks back DOWN the ladder.
+      final down = fitLadderPosFor(
+          basePos: 3, scale: 1 / kFitLadderStepScale, fitCount: n);
+      expect(down, closeTo(2.0, 0.01));
+    });
+
+    test('v59 kAllFilters: ONE row, movies AND web series together', () {
+      expect(kAllFilters.length,
+          kDiscoverFilters.length + kSeriesFilters.length);
+      expect(kAllFilters.first.trending, isTrue);
+      expect(kAllFilters.any((f) => f.tv), isTrue);
+      expect(kAllFilters.any((f) => !f.tv), isTrue);
+      // every chip still resolves to a valid endpoint + cache name
+      for (final f in kAllFilters) {
+        expect(tmdbEndpointPath(f), startsWith('/3/'));
+        expect(discoverCacheName(f, 1), endsWith('_p1.json'));
+      }
+    });
+
+    test('v59 tmdbDiscoverQuery loads TONS more (vote bar relaxed)', () {
+      final q = tmdbDiscoverQuery(kDiscoverFilters.first, 1);
+      expect(q['vote_count.gte'], '8'); // was 25 - cut regional/series
+    });
+
+    test('v59 parseTmdbMultiPage: movies+series in, people out', () {
+      final page = parseTmdbMultiPage(
+          '{"page":1,"total_pages":4,"total_results":3,"results":['
+          '{"id":1,"media_type":"movie","title":"Dhoom","release_date":"2004-01-01"},'
+          '{"id":2,"media_type":"tv","name":"Mirzapur","first_air_date":"2018-11-16"},'
+          '{"id":3,"media_type":"person","name":"Some Actor"}]}');
+      expect(page.items.length, 2);
+      expect(page.items[0].kind, 'movie');
+      expect(page.items[1].kind, 'tv');
+      expect(page.items[1].title, 'Mirzapur');
+      expect(page.items[1].year, 2018);
+    });
+
+    test('v59 parseTmdbSeasons: all parts of a series', () {
+      final seasons = parseTmdbSeasons('{"seasons":['
+          '{"season_number":0,"name":"Specials","episode_count":2,"air_date":null},'
+          '{"season_number":1,"name":"Season 1","episode_count":9,"air_date":"2018-11-16"},'
+          '{"season_number":2,"episode_count":10,"air_date":"2020-10-23"}]}');
+      expect(seasons.length, 3);
+      expect(seasons[0].name, 'Specials');
+      expect(seasons[1].episodes, 9);
+      expect(seasons[1].year, 2018);
+      expect(seasons[2].name, 'Season 2'); // fallback naming
+      expect(parseTmdbSeasons('garbage'), isEmpty);
     });
 
     test('v58 series filters drive the TMDB /tv endpoints', () {
@@ -6522,54 +7427,48 @@ void main() {
     });
   });
 }
-MAXV58_EOF_11
+MAXV59_EOF_12
 echo "  wrote test/widget_test.dart"
 
-# ---- remove stale update scripts (keep only v58) ----
-for f in update_maxplayer_v*.sh; do
-  [ "$f" = "update_maxplayer_v58.sh" ] || rm -f "$f"
-done
-
+for f in update_maxplayer_v*.sh; do [ "$f" = "update_maxplayer_v59.sh" ] || rm -f "$f"; done
 echo ""
 echo "==== VERIFY ===="
 OK=0; FAIL=0
-if grep -q 'version: 1.0.0+54' "pubspec.yaml" 2>/dev/null; then echo "OK   pubspec.yaml"; OK=$((OK+1)); else echo "FAIL pubspec.yaml"; FAIL=$((FAIL+1)); fi
-if grep -q 'nextFitIndex' "lib/state/video_zoom.dart" 2>/dev/null; then echo "OK   lib/state/video_zoom.dart"; OK=$((OK+1)); else echo "FAIL lib/state/video_zoom.dart"; FAIL=$((FAIL+1)); fi
+if grep -q 'version: 1.0.0+55' "pubspec.yaml" 2>/dev/null; then echo "OK   pubspec.yaml"; OK=$((OK+1)); else echo "FAIL pubspec.yaml"; FAIL=$((FAIL+1)); fi
+if grep -q 'fitLadderDecode' "lib/state/video_zoom.dart" 2>/dev/null; then echo "OK   lib/state/video_zoom.dart"; OK=$((OK+1)); else echo "FAIL lib/state/video_zoom.dart"; FAIL=$((FAIL+1)); fi
 if grep -q 'normalizeTwoFingerMode' "lib/state/player_settings.dart" 2>/dev/null; then echo "OK   lib/state/player_settings.dart"; OK=$((OK+1)); else echo "FAIL lib/state/player_settings.dart"; FAIL=$((FAIL+1)); fi
-if grep -q '_stepFit' "lib/screens/player_screen.dart" 2>/dev/null; then echo "OK   lib/screens/player_screen.dart"; OK=$((OK+1)); else echo "FAIL lib/screens/player_screen.dart"; FAIL=$((FAIL+1)); fi
-if grep -q 'Two-finger pinch to zoom' "lib/widgets/player_settings_sheet.dart" 2>/dev/null; then echo "OK   lib/widgets/player_settings_sheet.dart"; OK=$((OK+1)); else echo "FAIL lib/widgets/player_settings_sheet.dart"; FAIL=$((FAIL+1)); fi
-if grep -q 'kSeriesFilters' "lib/services/tmdb_client.dart" 2>/dev/null; then echo "OK   lib/services/tmdb_client.dart"; OK=$((OK+1)); else echo "FAIL lib/services/tmdb_client.dart"; FAIL=$((FAIL+1)); fi
+if grep -q 'fitLadderPosFor' "lib/screens/player_screen.dart" 2>/dev/null; then echo "OK   lib/screens/player_screen.dart"; OK=$((OK+1)); else echo "FAIL lib/screens/player_screen.dart"; FAIL=$((FAIL+1)); fi
+if grep -q 'keep spreading to zoom' "lib/widgets/player_settings_sheet.dart" 2>/dev/null; then echo "OK   lib/widgets/player_settings_sheet.dart"; OK=$((OK+1)); else echo "FAIL lib/widgets/player_settings_sheet.dart"; FAIL=$((FAIL+1)); fi
+if grep -q 'kAllFilters' "lib/services/tmdb_client.dart" 2>/dev/null; then echo "OK   lib/services/tmdb_client.dart"; OK=$((OK+1)); else echo "FAIL lib/services/tmdb_client.dart"; FAIL=$((FAIL+1)); fi
 if grep -q 'parseAiSuggestionJson' "lib/services/ai_suggest.dart" 2>/dev/null; then echo "OK   lib/services/ai_suggest.dart"; OK=$((OK+1)); else echo "FAIL lib/services/ai_suggest.dart"; FAIL=$((FAIL+1)); fi
 if grep -q 'AI Suggestor' "lib/widgets/ai_suggest_sheet.dart" 2>/dev/null; then echo "OK   lib/widgets/ai_suggest_sheet.dart"; OK=$((OK+1)); else echo "FAIL lib/widgets/ai_suggest_sheet.dart"; FAIL=$((FAIL+1)); fi
-if grep -q '_setSeriesMode' "lib/screens/discover_screen.dart" 2>/dev/null; then echo "OK   lib/screens/discover_screen.dart"; OK=$((OK+1)); else echo "FAIL lib/screens/discover_screen.dart"; FAIL=$((FAIL+1)); fi
+if grep -q 'searchMulti' "lib/screens/discover_screen.dart" 2>/dev/null; then echo "OK   lib/screens/discover_screen.dart"; OK=$((OK+1)); else echo "FAIL lib/screens/discover_screen.dart"; FAIL=$((FAIL+1)); fi
 if grep -q '_bootTries' "lib/widgets/discover_banner.dart" 2>/dev/null; then echo "OK   lib/widgets/discover_banner.dart"; OK=$((OK+1)); else echo "FAIL lib/widgets/discover_banner.dart"; FAIL=$((FAIL+1)); fi
-if grep -q 'v58 nextFitIndex walks the fit list' "test/widget_test.dart" 2>/dev/null; then echo "OK   test/widget_test.dart"; OK=$((OK+1)); else echo "FAIL test/widget_test.dart"; FAIL=$((FAIL+1)); fi
+if grep -q '_SeasonsBlock' "lib/widgets/movie_detail_sheet.dart" 2>/dev/null; then echo "OK   lib/widgets/movie_detail_sheet.dart"; OK=$((OK+1)); else echo "FAIL lib/widgets/movie_detail_sheet.dart"; FAIL=$((FAIL+1)); fi
+if grep -q 'v59 expand ladder' "test/widget_test.dart" 2>/dev/null; then echo "OK   test/widget_test.dart"; OK=$((OK+1)); else echo "FAIL test/widget_test.dart"; FAIL=$((FAIL+1)); fi
 
 echo ""
-if [ "$FAIL" -eq 0 ] && [ "$OK" -eq 11 ]; then
-  echo "== v58 APPLIED: $OK/$OK checks OK, 0 FAIL =="
+if [ "$FAIL" -eq 0 ] && [ "$OK" -eq 12 ]; then
+  echo "== v59 APPLIED: $OK/$OK checks OK, 0 FAIL =="
 else
-  echo "== PROBLEM: $FAIL check(s) failed - paste me ALL of this output =="
-  exit 1
+  echo "== PROBLEM: $FAIL check(s) failed - paste me ALL of this output =="; exit 1
 fi
-
 cat <<'NOTE'
 
 Next:
   git add -A
-  git commit -m "v58: one zoom/fit switch (pinch steps all fits), Web Series shelf, AI Suggestor, instant Discover (1.0.0+54)"
+  git commit -m "v59: two-finger expand ladder (fits then zoom), one filter row + series, AI Suggest on top, multi-search, series seasons (1.0.0+55)"
   git push
-Then wait for the Codemagic build and install it.
+Then wait for the Codemagic build and install it (About shows 1.0.0+55).
 
-PHONE TEST CHECKLIST (About must show 1.0.0+54):
-  [ ] Player gear icon: only ONE switch "Two-finger pinch to zoom"
-      (old pinch switch / gesture dropdown / default-fit dropdown GONE)
-  [ ] Switch OFF (default): spread 2 fingers -> Fit, Crop, Stretch,
-      16:9, 4:3, Original (one step per pinch); pinch in = back one;
-      quick 2-finger tap = plain Fit
-  [ ] Switch ON: 2 fingers pinch = smooth zoom; tap snaps back to fit
-  [ ] Discover: "Movies | Web Series" switch at top; Series shows real
-      shows (Trending/Hindi/English/K-Drama/Anime)
-  [ ] Discover loads INSTANTLY on second open (cached), refreshes live
-  [ ] "AI Suggest" chip: type "funny action like Dhoom" -> posters appear
+PHONE TEST CHECKLIST:
+  [ ] Play a video, spread 2 fingers: Fit -> Crop -> Stretch -> 16:9 ->
+      4:3 -> Original -> and KEEP spreading = it ZOOMS (finally works)
+  [ ] Pinch fingers IN walks back down; quick 2-finger tap = Fit
+  [ ] Player settings: only ONE switch "Two-finger pinch to zoom"
+  [ ] Discover: ONE filter row incl. series chips (no Movies|Series toggle)
+  [ ] Sparkle (AI Suggest) icon is in the TOP bar
+  [ ] Search "Mirzapur" or any series name -> it appears
+  [ ] Open a series -> "Seasons & parts" lists all seasons + episodes
+  [ ] Genre/regional shelves show MANY more titles than before
 NOTE

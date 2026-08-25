@@ -111,6 +111,13 @@ const List<DiscoverFilter> kSeriesFilters = [
   DiscoverFilter(key: 'tv_anime', label: 'Anime', language: 'ja', tv: true),
 ];
 
+/// v59 (user): ONE combined filter row - no Movies|Series toggle, every
+/// chip in a single row; each chip knows its own endpoint ([tv] flag).
+const List<DiscoverFilter> kAllFilters = [
+  ...kDiscoverFilters,
+  ...kSeriesFilters,
+];
+
 /// Deterministic cache file name for one discover page (movie names are
 /// unchanged since v44; series get their own _tv files). Pure for tests.
 String discoverCacheName(DiscoverFilter f, int page) =>
@@ -125,12 +132,14 @@ String tmdbEndpointPath(DiscoverFilter f) => f.trending
         : (f.tv ? '/3/discover/tv' : '/3/discover/movie');
 
 /// Query params for one page of a NON-trending filter. Pure for tests.
+/// v59: vote bar 25 -> 8 ("load TONS of contents in EVERY filter") - the
+/// old bar cut most regional + series titles out entirely.
 Map<String, String> tmdbDiscoverQuery(DiscoverFilter f, int page) => {
       'language': 'en-US',
       'page': '$page',
       'include_adult': 'false',
       'sort_by': 'popularity.desc',
-      'vote_count.gte': '25',
+      'vote_count.gte': '8',
       if (f.language.isNotEmpty) 'with_original_language': f.language,
       if (f.genreId != null) 'with_genres': '${f.genreId}',
     };
@@ -227,10 +236,58 @@ class TmdbFull {
   final TmdbWatchInfo watch;
   final List<TmdbReview> reviews;
 
+  /// v59: WEB SERIES detail - "mention ALL parts of the series".
+  /// Empty for movies.
+  final List<TmdbSeason> seasons;
+
   const TmdbFull(this.movie, this.extras,
       {this.screenshots = const [],
       this.watch = const TmdbWatchInfo(),
-      this.reviews = const []});
+      this.reviews = const [],
+      this.seasons = const []});
+}
+
+/// One part (season) of a web series - v59.
+class TmdbSeason {
+  final int number;
+  final String name;
+  final int episodes;
+  final int? year;
+
+  const TmdbSeason({
+    required this.number,
+    required this.name,
+    required this.episodes,
+    this.year,
+  });
+}
+
+/// Parses the `seasons` array of a /tv detail response. Never throws;
+/// garbage -> empty list. Pure for tests.
+List<TmdbSeason> parseTmdbSeasons(String jsonBody) {
+  try {
+    final decoded = jsonDecode(jsonBody);
+    if (decoded is! Map) return const [];
+    final list = decoded['seasons'];
+    if (list is! List) return const [];
+    final out = <TmdbSeason>[];
+    for (final e in list) {
+      if (e is! Map) continue;
+      final n = e['season_number'] is num ? (e['season_number'] as num).toInt() : 0;
+      final name = '${e['name'] ?? ''}'.trim();
+      final eps = e['episode_count'] is num ? (e['episode_count'] as num).toInt() : 0;
+      final air = '${e['air_date'] ?? ''}';
+      out.add(TmdbSeason(
+        number: n,
+        name: name.isEmpty ? (n == 0 ? 'Specials' : 'Season $n') : name,
+        episodes: eps,
+        year: air.length >= 4 ? int.tryParse(air.substring(0, 4)) : null,
+      ));
+    }
+    return out;
+  } catch (_) {
+    return const [];
+  }
 }
 
 /// v46: where the movie can be watched in India (TMDB/JustWatch data):
@@ -329,6 +386,43 @@ TmdbPage parseTmdbPage(String jsonBody, {String kind = 'movie'}) {
     final items = <TmdbMovie>[];
     if (results is List) {
       for (final e in results) {
+        final m = _movieFromMap(e, kind: kind);
+        if (m != null) items.add(m);
+      }
+    }
+    var totalPages = decoded['total_pages'] is num
+        ? (decoded['total_pages'] as num).toInt()
+        : 1;
+    if (totalPages < 1) totalPages = 1;
+    if (totalPages > 500) totalPages = 500;
+    return TmdbPage(
+      items: items,
+      page: decoded['page'] is num ? (decoded['page'] as num).toInt() : 1,
+      totalPages: totalPages,
+      totalResults: decoded['total_results'] is num
+          ? (decoded['total_results'] as num).toInt()
+          : items.length,
+    );
+  } catch (_) {
+    return const TmdbPage();
+  }
+}
+
+/// v59: parses a /search/multi response - each item declares its own
+/// media_type; movies and series are kept (with the right [kind]),
+/// people/companies are dropped. Never throws. Pure for tests.
+TmdbPage parseTmdbMultiPage(String jsonBody) {
+  try {
+    final decoded = jsonDecode(jsonBody);
+    if (decoded is! Map) return const TmdbPage();
+    final results = decoded['results'];
+    final items = <TmdbMovie>[];
+    if (results is List) {
+      for (final e in results) {
+        if (e is! Map) continue;
+        final type = '${e['media_type'] ?? ''}';
+        final kind = type == 'tv' ? 'tv' : type == 'movie' ? 'movie' : null;
+        if (kind == null) continue; // people & friends -> out
         final m = _movieFromMap(e, kind: kind);
         if (m != null) items.add(m);
       }
@@ -790,18 +884,20 @@ class TmdbClient {
     return body == null ? const TmdbPage() : parseTmdbPage(body);
   }
 
-  /// v58: the SAME search bar but for WEB SERIES (/search/tv).
-  Future<TmdbPage> searchTv(String query,
+  /// v59 (user): "when we search any content, find it from ALL filters"
+  /// - ONE multi-search across movies AND series (people are dropped in
+  /// the parser).
+  Future<TmdbPage> searchMulti(String query,
       {int page = 1, bool force = false}) async {
     final q = query.trim();
     if (kTmdbApiKey.isEmpty || q.isEmpty) return const TmdbPage();
-    final uri = Uri.https(_host, '/3/search/tv', {
+    final uri = Uri.https(_host, '/3/search/multi', {
       'api_key': kTmdbApiKey,
       ...tmdbSearchQuery(q, page),
     });
-    final body = await _fetch(tmdbSearchCacheName('tv_$q', page), uri,
+    final body = await _fetch(tmdbSearchCacheName('multi_$q', page), uri,
         ttl: force ? Duration.zero : const Duration(hours: 24));
-    return body == null ? const TmdbPage() : parseTmdbPage(body, kind: 'tv');
+    return body == null ? const TmdbPage() : parseTmdbMultiPage(body);
   }
 
   /// v46: one call now also brings WATCH PROVIDERS (where to watch) and
@@ -834,6 +930,8 @@ class TmdbClient {
       screenshots: parseTmdbScreenshots(body),
       watch: parseTmdbWatchProviders(body),
       reviews: parseTmdbReviews(body),
+      // v59: every part (season) of the series, for the detail sheet.
+      seasons: isTv ? parseTmdbSeasons(body) : const [],
     );
   }
 

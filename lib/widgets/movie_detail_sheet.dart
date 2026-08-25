@@ -219,6 +219,9 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                   if (full.screenshots.isNotEmpty)
                     _ScreenshotsRow(paths: full.screenshots),
                   _ExtrasBlock(extras: full.extras),
+                  // v59 (user): web series must mention ALL their parts.
+                  if (full.seasons.isNotEmpty)
+                    _SeasonsBlock(seasons: full.seasons),
                   if (!full.watch.isEmpty) _WatchBlock(info: full.watch),
                   _AllDataBlock(extras: full.extras, movieId: movie.id),
                 ],
@@ -464,6 +467,59 @@ class _ExtrasBlock extends StatelessWidget {
 
 /// v46: "Where to watch" (India) with the compare split - Stream / Rent /
 /// Buy provider names from TMDB's JustWatch-powered data.
+/// v59: "in web series, when we select a content mention ALL parts of
+/// the series in the detail" - every season as one clean line:
+/// Season 1 · 8 episodes · 2011.
+class _SeasonsBlock extends StatelessWidget {
+  final List<TmdbSeason> seasons;
+
+  const _SeasonsBlock({required this.seasons});
+
+  @override
+  Widget build(BuildContext context) {
+    final totalEps = seasons.fold<int>(0, (a, s) => a + s.episodes);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Seasons & parts - ${seasons.length} season'
+            '${seasons.length == 1 ? '' : 's'}, $totalEps episodes total',
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          for (final s in seasons)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      s.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 13),
+                    ),
+                  ),
+                  Text(
+                    '${s.episodes} ep'
+                    '${s.year != null ? '  ·  ${s.year}' : ''}',
+                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _WatchBlock extends StatelessWidget {
   final TmdbWatchInfo info;
 

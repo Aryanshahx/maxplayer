@@ -52,10 +52,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
 
-  DiscoverFilter _filter = kDiscoverFilters.first;
-
-  /// v58: false = movie shelves, true = WEB SERIES shelves (/tv endpoints).
-  bool _seriesMode = false;
+  DiscoverFilter _filter = kAllFilters.first;
   final List<TmdbMovie> _movies = [];
   final Set<int> _seenIds = {};
   int _page = 0;
@@ -130,10 +127,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     }
     TmdbPage result;
     try {
+      // v59: multi-search finds it in ALL shelves - movies AND series.
       result = _searching
-          ? await (_seriesMode
-              ? _client.searchTv(_searchQuery, page: page, force: force)
-              : _client.searchMovies(_searchQuery, page: page, force: force))
+          ? await _client.searchMulti(_searchQuery, page: page, force: force)
           : await _client.browse(_filter, page: page, force: force);
     } catch (_) {
       result = const TmdbPage();
@@ -150,8 +146,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       }
       if (page == 1 && _movies.isEmpty) {
         _error = _searching
-            ? 'No ${_seriesMode ? 'series' : 'movies'} match "$_searchQuery" on TMDB.'
-            : 'Could not load ${_seriesMode ? 'series' : 'movies'} - connect the internet once, '
+            ? 'No movies or series match "$_searchQuery" on TMDB.'
+            : 'Could not load movies or series - connect the internet once, '
                 'then pull down to retry.';
       } else if (_movies.isNotEmpty) {
         _error = null;
@@ -160,14 +156,16 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     // v45: in search mode, also fetch "you may also like" from the top
     // hit - a plain search word finds few direct matches otherwise.
     if (_searching && page == 1 && result.items.isNotEmpty) {
-      _loadRelated(result.items.first.id, token);
+      _loadRelated(result.items.first.id, token,
+          kind: result.items.first.kind);
     }
   }
 
-  Future<void> _loadRelated(int movieId, int token) async {
+  Future<void> _loadRelated(int movieId, int token,
+      {String kind = 'movie'}) async {
     List<TmdbMovie> rel;
     try {
-      rel = await _client.similar(movieId, kind: _seriesMode ? 'tv' : 'movie');
+      rel = await _client.similar(movieId, kind: kind);
     } catch (_) {
       rel = const [];
     }
@@ -241,16 +239,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     );
   }
 
-  /// v58: Movies | Web Series master switch - swaps the chip shelf and
-  /// reloads page 1 of the right catalogue.
-  void _setSeriesMode(bool v) {
-    if (v == _seriesMode) return;
-    _seriesMode = v;
-    _switchTo(
-        filter: (v ? kSeriesFilters : kDiscoverFilters).first, force: true);
-  }
-
-  /// v58: the AI Suggestor - "describe your movie type" -> real posters.
+  /// v58/v59: the AI Suggestor - "describe your movie type" -> real
+  /// posters. Lives in the AppBar (user: "move AI suggest to the top").
   Future<void> _openAiSuggest() async {
     final pick = await AiSuggestSheet.show(context);
     if (!mounted || pick == null) return;
@@ -271,11 +261,19 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               Text(
                 _searching
                     ? '${_movies.length} of ~${formatVoteCount(_totalResults)} results'
-                    : '${formatVoteCount(_totalResults)} ${_seriesMode ? 'series' : 'movies'} - scroll for more',
+                    : '${formatVoteCount(_totalResults)} titles - scroll for more',
                 style: const TextStyle(color: Colors.white38, fontSize: 11),
               ),
           ],
         ),
+        // v59 (user): AI Suggest moved to the TOP.
+        actions: [
+          IconButton(
+            tooltip: 'AI Suggest - describe your movie type',
+            icon: Icon(Icons.auto_awesome, color: themeState.accent),
+            onPressed: _openAiSuggest,
+          ),
+        ],
       ),
       body: _keyMissing
           ? const _SetupNote()
@@ -290,8 +288,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: InputDecoration(
                       isDense: true,
-                      hintText:
-                          _seriesMode ? 'Search series...' : 'Search movies...',
+                      hintText: 'Search movies & series...',
                       hintStyle: const TextStyle(color: Colors.white38),
                       prefixIcon: Icon(Icons.search,
                           color: themeState.accent, size: 20),
@@ -314,42 +311,16 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     ),
                   ),
                 ),
-                // v58: Movies | Web Series master switch + the AI
-                // Suggestor entry - the row every user asked for.
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                  child: Row(
-                    children: [
-                      _FilterChip(
-                        label: 'Movies',
-                        selected: !_seriesMode,
-                        onTap: () => _setSeriesMode(false),
-                      ),
-                      const SizedBox(width: 8),
-                      _FilterChip(
-                        label: 'Web Series',
-                        selected: _seriesMode,
-                        onTap: () => _setSeriesMode(true),
-                      ),
-                      const Spacer(),
-                      _FilterChip(
-                        label: '✨ AI Suggest',
-                        selected: false,
-                        onTap: _openAiSuggest,
-                      ),
-                    ],
-                  ),
-                ),
-                // v44: MANY filters (was just All/Hollywood/Bollywood).
-                // v58: the shelf swaps with the Movies | Series switch.
+                // v59 (user): ONE filter row with EVERYTHING - movie
+                // chips AND web series chips side by side (the old
+                // Movies|Series toggle is gone).
                 SizedBox(
                   height: 40,
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     children: [
-                      for (final f
-                          in (_seriesMode ? kSeriesFilters : kDiscoverFilters)) ...[
+                      for (final f in kAllFilters) ...[
                         _FilterChip(
                           label: f.label,
                           selected: !_searching && _filter == f,

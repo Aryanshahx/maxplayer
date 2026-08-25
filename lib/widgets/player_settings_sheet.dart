@@ -150,9 +150,9 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               _SwitchTile(
                 icon: Icons.pinch_outlined,
                 label: 'Two-finger pinch to zoom',
-                subtitle:
-                    'OFF: two fingers step Fit, Crop, Stretch, 16:9, 4:3 - '
-                    'tap with 2 fingers to return to Fit. ON: pinch to zoom.',
+                subtitle: 'OFF (default): spread 2 fingers = Fit, Crop, '
+                    'Stretch, 16:9... then keep spreading to zoom in. '
+                    'ON: pinch zooms straight away. 2-finger tap = Fit.',
                 value: _settings.twoFingerMode == 'zoom',
                 onChanged: (v) => _update(
                     _settings.copyWith(twoFingerMode: v ? 'zoom' : 'fit')),

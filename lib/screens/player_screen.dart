@@ -160,9 +160,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // v52: two-finger TAP = snap back to fit screen. We measure the pinch
   // gesture's total travel / whether any real scaling happened.
-  // v58: in fit mode a pinch STEPS the fit mode once per gesture; this
-  // flag stops one long pinch from machine-gunning through the list.
-  bool _fitSteppedThisGesture = false;
+  // v59: the expand ladder's anchor - ladder position when the two
+  // fingers landed (see video_zoom.dart).
+  double _ladderBasePos = 0;
   int _scaleStartMs = 0;
   double _pinchTravelPx = 0;
   bool _pinchScaled = false;
@@ -623,16 +623,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     _onUserInteraction();
   }
 
-  /// v58: two-finger pinch STEPS through the fit list when the zoom
-  /// switch is off (pinch out = next, pinch in = previous, wraps both
-  /// ways). Mirrors _cycleFit's indicator so it feels identical.
-  void _stepFit(int dir) {
-    setState(() => _fitIndex =
-        nextFitIndex(cur: _fitIndex, dir: dir, length: _fits.length));
-    _showIndicator('Fit: ${_fitNames[_fitIndex]}', _fitIcons[_fitIndex]);
-    _onUserInteraction();
-  }
-
   // ---------------------------------------------------------------------------
   // Unified scale recognizer (pinch zoom + ALL drag gestures)
   // ---------------------------------------------------------------------------
@@ -647,7 +637,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _scaleStartMs = DateTime.now().millisecondsSinceEpoch;
     _pinchTravelPx = 0;
     _pinchScaled = false;
-    _fitSteppedThisGesture = false;
+    _ladderBasePos = fitLadderPosOf(
+        fitIndex: _fitIndex, fitCount: _fits.length, zoom: _zoom);
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
@@ -656,17 +647,30 @@ class _PlayerScreenState extends State<PlayerScreen>
       _scaleMode = _ScaleMode.zoom;
       _pinchTravelPx += details.focalPointDelta.distance;
       if ((details.scale - 1.0).abs() > 0.05) _pinchScaled = true;
-      // v58 (user's redesign): ONE Settings switch decides what two
-      // fingers do. Switch OFF (default): pinch OUT steps to the NEXT
-      // fit (Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original), pinch
-      // IN steps back - one step per pinch, a quick tap snaps home (see
-      // _onScaleEnd). Switch ON: smooth pinch zoom below.
+      // v59 (user's final design): ONE continuous gesture - spread two
+      // fingers and the video walks Fit -> Crop -> Stretch -> 16:9 ->
+      // 4:3 -> Original and KEEPS GOING into smooth zoom (up to 4x).
+      // Pinch IN walks back down. A quick two-finger tap snaps home
+      // (see _onScaleEnd). Applied live, no step thresholds.
       if (_settings.twoFingerMode == 'fit') {
-        if (!_fitSteppedThisGesture) {
-          final d = details.scale - 1.0;
-          if (d.abs() >= 0.18) {
-            _fitSteppedThisGesture = true;
-            _stepFit(d > 0 ? 1 : -1);
+        final pos = fitLadderPosFor(
+            basePos: _ladderBasePos,
+            scale: details.scale,
+            fitCount: _fits.length);
+        final step = fitLadderDecode(pos, _fits.length);
+        if (step.fitIndex != _fitIndex ||
+            (step.zoom - _zoom).abs() > 0.005) {
+          setState(() {
+            _fitIndex = step.fitIndex;
+            _zoom = step.zoom;
+            if (step.zoom == kMinVideoZoom) _pan = Offset.zero;
+          });
+          if (step.zoom > kMinVideoZoom) {
+            _showIndicator('Zoom ${step.zoom.toStringAsFixed(1)}x',
+                Icons.pinch_outlined);
+          } else {
+            _showIndicator('Fit: ${_fitNames[step.fitIndex]}',
+                _fitIcons[step.fitIndex]);
           }
         }
         return;
@@ -824,12 +828,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     if (mode == _ScaleMode.volume || mode == _ScaleMode.brightness) return;
-    // v57/v58: Settings decides when a finished two-finger gesture snaps
-    // home. 'fit' (DEFAULT) = tap snaps to fit (a pinch that STEPPED the
-    // fit mode keeps its new fit - hence the flag); 'zoom' = only a
-    // quick tap snaps home, a real pinch keeps its zoom.
+    // v59: a finished two-finger gesture snaps home ONLY on a quick
+    // tap - the expand ladder keeps the fit/zoom your pinch landed on
+    // (this is what "zooming is not working" meant: don't undo it!).
     if (mode == _ScaleMode.zoom &&
-        !_fitSteppedThisGesture &&
         twoFingerSnapsToFit(
           mode: _settings.twoFingerMode,
           wasTap: isTwoFingerTapReset(
