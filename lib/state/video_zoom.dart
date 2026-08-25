@@ -1,4 +1,5 @@
-/// Pure pinch-zoom math shared by the player screen and unit tests (v52).
+/// Pure pinch-zoom + fit-ladder math shared by the player screen and unit
+/// tests.
 library;
 
 import 'dart:math' as math;
@@ -21,75 +22,75 @@ bool isTwoFingerTapReset({
 }) =>
     !scaled && travelPx < 24 && durationMs <= 400;
 
-/// v59 (user's final design, after he phone-tested v58): finished
-/// two-finger gesture -> snap home ONLY on a quick tap. The expand
-/// ladder keeps whatever fit/zoom the pinch landed on; a real pinch is
-/// never undone. Legacy/unknown values conservatively snap home.
+/// v61 (user's final design, after phone-testing v59/v60): what a finished
+/// two-finger gesture does depends ONLY on whether it was a quick tap.
+///
+///   - a quick two-finger TAP always snaps back to the default fit screen
+///     (so you are never stuck zoomed in / on a weird fit);
+///   - a real pinch is NEVER undone - the player keeps whatever fit/zoom
+///     the fingers landed on.
+///
+/// Works identically in BOTH toggle modes ('fit' loop and 'zoom' free
+/// zoom). Legacy/unknown stored values conservatively snap home.
 bool twoFingerSnapsToFit({required String mode, required bool wasTap}) {
   if (mode == 'fit' || mode == 'zoom') return wasTap;
   return true; // legacy/unknown stored value
 }
 
 // ---------------------------------------------------------------------------
-// v59 THE EXPAND LADDER - "make ALL fits reachable by expanding fingers,
-// and zooming must work afterwards". Spreading two fingers walks up:
+// v61 THE TWO-FINGER TOGGLE - "when toggle is off then only fit screens in
+// loop; when toggle is on then only zoom". The old v59/v60 continuous
+// ladder (Fit -> ... -> Original -> smooth ZOOM) is GONE: it buried zoom at
+// the top behind a ~2.6x spread, so on a real phone zoom was effectively
+// unreachable. Now the two modes are cleanly separate:
 //
-//   Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original -> smooth ZOOM (4x)
+//   TOGGLE OFF ('fit'): a spread walks the six fit modes in a LOOP -
+//     Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original -> back to Fit ->
+//     ... and a pinch walks back down the same loop. It NEVER zooms
+//     (zoom stays exactly 1.0 the whole time).
 //
-// Pinching IN walks back down the same ladder. Fit steps live at integer
-// positions 0..fitCount-1; everything above fitCount-1 is the zoom region
-// (pos (fitCount-1)+1.0 == kMaxVideoZoom over the top fit).
+//   TOGGLE ON ('zoom'): a pinch does ONLY free zoom, 1.0x..4.0x, exactly
+//     like a map app: zoom = clamp(baseZoom * scale). No fit cycling at
+//     all. A quick two-finger tap resets to 1.0x.
 // ---------------------------------------------------------------------------
 
-/// Spreading the fingers by this factor climbs exactly ONE ladder step.
-/// v60 retune (his phone report: the ladder never REACHED zoom - 1.35
-/// per step needed a ~4.5x finger spread): 1.20 per step puts the zoom
-/// region inside a normal phone pinch (~2.6x spread gets you there).
+/// Spreading the fingers by this factor climbs exactly ONE fit step in the
+/// toggle-OFF loop. Kept moderate so all six fits are reachable inside a
+/// normal phone pinch; the wrap-around means a firm spread just loops.
 const double kFitLadderStepScale = 1.20;
-
-/// Growth rate of the zoom REGION past the last fit (pos +1 == zoom
-/// 2^slope). 2.6 makes the zoom arrive fast once you cross Original.
-const double kFitLadderZoomSlope = 2.6;
 
 double _log2(double v) => math.log(v) / math.ln2;
 
-/// The ladder position of the CURRENT UI state (gesture start anchor):
-/// zoomed in -> up in the zoom region; otherwise the plain fit index.
-double fitLadderPosOf({
-  required int fitIndex,
-  required int fitCount,
-  required double zoom,
-}) {
-  if (zoom > kMinVideoZoom) {
-    final p = (fitCount - 1) + _log2(zoom) / kFitLadderZoomSlope;
-    return p.clamp(0.0, (fitCount - 1) + _log2(kMaxVideoZoom) / kFitLadderZoomSlope);
-  }
-  return fitIndex.toDouble().clamp(0.0, (fitCount - 1).toDouble());
-}
-
-/// Maps a live pinch [scale] to an absolute ladder position, given the
-/// [basePos] captured when the fingers landed. Pure for tests.
+/// v61 toggle-OFF: maps a live pinch [scale] to a fit-ladder position,
+/// given the [basePos] (integer fit index) captured when the fingers
+/// landed. The position is UNBOUNDED on purpose - callers wrap it with
+/// [wrapFitLadderPos] so the ladder loops Original -> Fit. Pure for tests.
 double fitLadderPosFor({
   required double basePos,
   required double scale,
-  required int fitCount,
 }) {
   if (scale <= 0) return basePos;
-  final maxPos =
-      (fitCount - 1) + _log2(kMaxVideoZoom) / kFitLadderZoomSlope;
-  return (basePos + _log2(scale) / _log2(kFitLadderStepScale))
-      .clamp(0.0, maxPos);
+  return basePos + _log2(scale) / _log2(kFitLadderStepScale);
 }
 
-/// Turns a ladder position back into UI state: inside the fit region
-/// (-> nearest fit, zoom 1x), above it -> smooth zoom over the top fit.
-({int fitIndex, double zoom}) fitLadderDecode(double pos, int fitCount) {
-  if (pos <= fitCount - 1) {
-    return (fitIndex: pos.round().clamp(0, fitCount - 1), zoom: kMinVideoZoom);
-  }
-  final z = math.pow(2, (pos - (fitCount - 1)) * kFitLadderZoomSlope).toDouble();
-  return (
-    fitIndex: fitCount - 1,
-    zoom: z.clamp(kMinVideoZoom, kMaxVideoZoom),
-  );
+/// Wraps an unbounded ladder position into 0..[fitCount]-1 with
+/// wrap-around (pos fitCount wraps back to 0; pos -1 wraps to
+/// fitCount-1). This is what makes Original -> Fit loop.
+int wrapFitLadderPos(double pos, int fitCount) {
+  if (fitCount <= 0) return 0;
+  var rounded = pos.round();
+  rounded = rounded % fitCount;
+  if (rounded < 0) rounded += fitCount;
+  return rounded;
 }
+
+/// v61 toggle-ON: the direct free-zoom map. Zoom = the zoom level captured
+/// when the fingers landed ([baseZoom]) times the live pinch [scale],
+/// clamped to 1.0x..4.0x. This is the whole map-app behavior in one line;
+/// it makes zoom work from the FIRST millimetre of the pinch instead of
+/// being hidden at the top of a ladder.
+double freeZoomFor({
+  required double baseZoom,
+  required double scale,
+}) =>
+    clampVideoZoom(baseZoom * scale);

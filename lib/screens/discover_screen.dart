@@ -63,6 +63,21 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   String? _error;
   bool _keyMissing = false;
 
+  // v61 (user: "show infinite contents in EVERY filter"): page 1 alone
+  // rarely fills a tall phone, and v60's single post-frame
+  // _maybeLoadMore() only pulled ONE extra page. We now CHAIN page loads
+  // after each page lands, until the grid is scrollable/fills the
+  // viewport OR we hit the safety cap - then the normal scroll listener
+  // at maxScrollExtent-350 takes over for "forever" paging.
+  //
+  // [_endlessPaging] is the in-flight guard (never two page requests at
+  // once); [_endlessBurst] counts chained auto-loads so one burst can't
+  // spin forever. Each chain captures the current [_loadToken], so
+  // switching filters/search drops a stale chain on the next frame.
+  bool _endlessPaging = false;
+  int _endlessBurst = 0;
+  static const int _kEndlessBurstCap = 5;
+
   /// v45: "search is poor - show related movies": similar titles of the
   /// top search hit, shown under the results in search mode.
   List<TmdbMovie> _related = const [];
@@ -159,15 +174,57 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       _loadRelated(result.items.first.id, token,
           kind: result.items.first.kind);
     }
-    // v60: "I am saying from the beginning - load INFINITE contents":
-    // if page 1 alone doesn't fill the screen (few results / tall
-    // display), pull the NEXT page right away instead of waiting for a
-    // scroll that can never start.
-    if (page == 1) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && token == _loadToken) _maybeLoadMore();
-      });
+    // v61: "show infinite contents in EVERY filter" - after EVERY page
+    // lands (not just page 1), schedule a post-frame check that keeps
+    // loading the next page until the grid fills the viewport / becomes
+    // scrollable or we hit the burst cap. The existing scroll listener
+    // (_maybeLoadMore at maxScrollExtent-350) then keeps paging forever
+    // as the user scrolls. [token] ties the chain to this filter/search.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && token == _loadToken) _scheduleEndlessFill(token);
+    });
+  }
+
+  /// v61: chained auto-fill. Called after each page paints; if the grid
+  /// still doesn't fill the viewport (or the user is already near the
+  /// bottom) and more pages exist, fetch the next one - looping up to
+  /// [_kEndlessBurstCap] pages per burst so we never fire unbounded
+  /// requests. The in-flight [_loadingMore] guard plus [_endlessPaging]
+  /// makes duplicate requests impossible.
+  void _scheduleEndlessFill(int token) {
+    if (!mounted || token != _loadToken) return;
+    if (_initialLoading || _loadingMore || _endlessPaging) return;
+    if (_page >= _totalPages) return; // nothing more to fetch
+    if (_searching) {
+      // Search keeps its single related-fetch behavior; no auto-chain
+      // (results are usually specific enough to fill the screen).
+      if (_endlessBurst != 0) _endlessBurst = 0;
+      return;
     }
+    // Decide whether the current content still needs more.
+    var needsMore = true;
+    if (_scroll.hasClients) {
+      final pos = _scroll.position;
+      // Content already comfortably fills / overflows the viewport AND
+      // we're not near the bottom -> the scroll listener will take over,
+      // so stop the auto-chain.
+      needsMore = pos.maxScrollExtent <= pos.viewportDimension + 24 ||
+          pos.pixels >= pos.maxScrollExtent - 350;
+    }
+    if (!needsMore) {
+      _endlessBurst = 0; // screen is full; hand off to the scroll listener
+      return;
+    }
+    if (_endlessBurst >= _kEndlessBurstCap) {
+      // Safety stop for one burst; the next real scroll resumes paging.
+      _endlessBurst = 0;
+      return;
+    }
+    _endlessPaging = true;
+    _endlessBurst++;
+    _loadPage(_page + 1).whenComplete(() {
+      if (mounted) _endlessPaging = false;
+    });
   }
 
   Future<void> _loadRelated(int movieId, int token,
@@ -186,6 +243,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   /// in-flight loads, then fetches page 1. [force] skips the 24h cache.
   void _switchTo({DiscoverFilter? filter, String? query, bool force = false}) {
     _loadToken++;
+    _endlessPaging = false; // v61: cancel any in-flight auto-fill chain
+    _endlessBurst = 0;
     setState(() {
       if (filter != null) _filter = filter;
       if (query != null) _searchQuery = query;
@@ -217,11 +276,15 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 
   /// v44: infinite scroll - near the bottom? fetch the next page.
+  /// v61: a real user scroll resets the auto-fill burst counter so
+  /// scrolling can keep paging "forever" (the cap only bounds the
+  /// automatic burst right after a filter is opened).
   void _maybeLoadMore() {
     if (!_scroll.hasClients || _initialLoading || _loadingMore) return;
     if (_page >= _totalPages) return;
     final pos = _scroll.position;
     if (pos.pixels >= pos.maxScrollExtent - 350) {
+      _endlessBurst = 0;
       _loadPage(_page + 1);
     }
   }

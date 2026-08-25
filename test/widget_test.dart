@@ -1760,37 +1760,73 @@ void main() {
       expect(twoFingerSnapsToFit(mode: 'junk', wasTap: false), isTrue);
     });
 
-    test('v60 expand ladder: reachable on a phone pinch, then ZOOM', () {
+    // v61 (user: "when toggle is off then only fit screens in loop; when
+    // toggle is on then only zoom ... zoom is still not working"). The old
+    // continuous ladder put zoom at the END behind a ~2.6x spread, which
+    // made it unreachable on a phone. The two modes are now split: toggle
+    // OFF = fit loop (never zooms, wraps around); toggle ON = pure free
+    // zoom from the first millimetre (1.0x..4.0x).
+    test('v61 toggle OFF: fit loop steps one per spread and NEVER zooms', () {
       const n = 6; // Fit, Crop, Stretch, 16:9, 4:3, Original
-      // One kFitLadderStepScale spread from Fit climbs exactly one step.
-      var pos =
-          fitLadderPosFor(basePos: 0, scale: kFitLadderStepScale, fitCount: n);
-      expect(pos, closeTo(1.0, 0.01));
-      // v60 phone report was "the ladder never REACHED zoom": a normal
-      // firm phone pinch (~2.6x spread) must get PAST Original into zoom.
-      final phonePinch = fitLadderPosFor(basePos: 0, scale: 2.6, fitCount: n);
-      expect(phonePinch, greaterThan(n - 1)); // inside the zoom region
-      // Two steps -> Stretch; decode rounds inside the fit region.
-      pos = fitLadderPosFor(
-          basePos: 0,
-          scale: kFitLadderStepScale * kFitLadderStepScale,
-          fitCount: n);
-      expect(fitLadderDecode(pos, n).fitIndex, 2);
-      expect(fitLadderDecode(pos, n).zoom, 1.0);
-      expect(fitLadderDecode(0.4, n).fitIndex, 0);
-      // Zoom region: slope 2.6 -> fast but smooth, clamped at 4x.
-      expect(fitLadderDecode(n - 1, n).zoom, 1.0);
-      expect(fitLadderDecode((n - 1) + 0.5, n).zoom, closeTo(2.462, 0.01));
-      expect(fitLadderDecode((n - 1) + 9, n).zoom, kMaxVideoZoom);
-      expect(fitLadderDecode((n - 1) + 0.5, n).fitIndex, n - 1);
-      // State -> base anchor round trips.
-      expect(fitLadderPosOf(fitIndex: 3, fitCount: n, zoom: 1.0), 3.0);
-      expect(fitLadderPosOf(fitIndex: 5, fitCount: n, zoom: 4.0),
-          closeTo((n - 1) + 0.769, 0.01));
-      // Pinching IN (scale < 1) walks back DOWN the ladder.
-      final down = fitLadderPosFor(
-          basePos: 3, scale: 1 / kFitLadderStepScale, fitCount: n);
-      expect(down, closeTo(2.0, 0.01));
+      double posAt(int base, double scale) =>
+          fitLadderPosFor(basePos: base.toDouble(), scale: scale);
+
+      // One kFitLadderStepScale spread from Fit lands on Crop (index 1).
+      expect(wrapFitLadderPos(posAt(0, kFitLadderStepScale), n), 1);
+      // Two spreads -> Stretch (index 2).
+      expect(
+          wrapFitLadderPos(
+              posAt(0, kFitLadderStepScale * kFitLadderStepScale), n),
+          2);
+      // Walking all SIX fits from Fit brings us back to Fit (the loop).
+      var p = 0.0;
+      for (var i = 0; i < n; i++) {
+        p = posAt(p.round(), kFitLadderStepScale);
+      }
+      expect(wrapFitLadderPos(p, n), 0);
+      // The CRITICAL rule: spreading ALL the way (even a huge 10x gesture)
+      // only ever produces a fit index 0..n-1 - it can NEVER enter zoom,
+      // because the loop wraps. There is no zoom value produced here at all.
+      final huge = wrapFitLadderPos(posAt(0, 10.0), n);
+      expect(huge, inInclusiveRange(0, n - 1));
+      // ...and pinching IN walks back down (Fit -> Original via wrap).
+      final in1 = wrapFitLadderPos(posAt(0, 1 / kFitLadderStepScale), n);
+      expect(in1, n - 1); // Original
+      final in2 = wrapFitLadderPos(
+          posAt(0, 1 / (kFitLadderStepScale * kFitLadderStepScale)), n);
+      expect(in2, n - 2); // 4:3
+    });
+
+    test('v61 toggle OFF: wrap-around Original -> Fit is explicit', () {
+      const n = 6;
+      // Just past the last fit (index 5 == Original) wraps straight to
+      // index 0 (Fit) - this is the "loop" the user asked for.
+      expect(wrapFitLadderPos(5.6, n), 0);
+      expect(wrapFitLadderPos(6.0, n), 0);
+      expect(wrapFitLadderPos(11.4, n), 5); // two full loops + Original
+      // Negative positions (pinch in from Fit) wrap to the top.
+      expect(wrapFitLadderPos(-0.6, n), 5); // -1 mod 6 -> Original
+      expect(wrapFitLadderPos(-1.6, n), 4); // -2 mod 6 -> 4:3
+      // Staying inside a step keeps the same fit.
+      expect(wrapFitLadderPos(0.4, n), 0);
+      expect(wrapFitLadderPos(2.4, n), 2);
+    });
+
+    test('v61 toggle ON: free zoom maps directly and clamps at 4.0x', () {
+      // Zoom works from the FIRST millimetre - no ladder to climb.
+      expect(freeZoomFor(baseZoom: 1.0, scale: 1.0), 1.0);
+      expect(freeZoomFor(baseZoom: 1.0, scale: 1.5), closeTo(1.5, 0.001));
+      expect(freeZoomFor(baseZoom: 1.0, scale: 2.0), closeTo(2.0, 0.001));
+      // A tiny spread already zooms (this is what was broken before).
+      expect(freeZoomFor(baseZoom: 1.0, scale: 1.05), closeTo(1.05, 0.001));
+      // Clamps at the 4.0x ceiling, no matter how hard you spread.
+      expect(freeZoomFor(baseZoom: 1.0, scale: 5.0), kMaxVideoZoom);
+      expect(freeZoomFor(baseZoom: 1.0, scale: 100.0), kMaxVideoZoom);
+      // Pinching in from 1.0 clamps at the 1.0x floor (fit screen).
+      expect(freeZoomFor(baseZoom: 1.0, scale: 0.1), kMinVideoZoom);
+      // Zooming on top of an already-zoomed base multiplies.
+      expect(freeZoomFor(baseZoom: 2.0, scale: 1.5), closeTo(3.0, 0.001));
+      expect(freeZoomFor(baseZoom: 2.0, scale: 3.0), kMaxVideoZoom);
     });
 
     test('v59 kAllFilters: ONE row, movies AND web series together', () {

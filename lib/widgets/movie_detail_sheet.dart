@@ -670,24 +670,12 @@ class _AllDataBlock extends StatelessWidget {
         if (extras.revenueUsd > 0) row('Revenue', '\$${formatVoteCount(extras.revenueUsd)}'),
         if (extras.companies.isNotEmpty) row('Studio', extras.companies.join('  ')),
         if (extras.countries.isNotEmpty) row('Country', extras.countries.join('  ')),
-        if (extras.allLanguages.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text('Languages supported (${extras.allLanguages.length})',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.75),
-                  fontSize: 12, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Wrap(spacing: 6, runSpacing: 4, children: [
-            for (final l in extras.allLanguages)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.07),
-                    borderRadius: BorderRadius.circular(10)),
-                child: Text(l, style: const TextStyle(color: Colors.white54, fontSize: 10)),
-              ),
-          ]),
-          const SizedBox(height: 6),
-        ],
+        // v61 (user: "why you showing two languages section in details"):
+        // the spoken-audio "Languages: ..." line already lives in
+        // _ExtrasBlock above. The old chip-wrap that listed every TMDB
+        // *translation* language (often 30+ chips) read as a duplicate,
+        // so it is removed - there is now exactly ONE language line.
+        // Cast / watch / reviews / seasons all stay untouched.
         _RealSubtitlesBlock(movieId: movieId),
       ]),
     );

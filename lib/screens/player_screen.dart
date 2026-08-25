@@ -160,9 +160,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // v52: two-finger TAP = snap back to fit screen. We measure the pinch
   // gesture's total travel / whether any real scaling happened.
-  // v59: the expand ladder's anchor - ladder position when the two
-  // fingers landed (see video_zoom.dart).
-  double _ladderBasePos = 0;
+  // v61: the fit LOOP's anchor - which fit index was showing when the two
+  // fingers landed (see video_zoom.dart). The loop never zooms.
+  int _ladderBaseIndex = 0;
   int _scaleStartMs = 0;
   double _pinchTravelPx = 0;
   bool _pinchScaled = false;
@@ -646,8 +646,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _scaleStartMs = DateTime.now().millisecondsSinceEpoch;
     _pinchTravelPx = 0;
     _pinchScaled = false;
-    _ladderBasePos = fitLadderPosOf(
-        fitIndex: _fitIndex, fitCount: _fits.length, zoom: _zoom);
+    // v61: the fit LOOP starts from whatever fit is currently showing.
+    _ladderBaseIndex = _fitIndex;
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
@@ -656,41 +656,43 @@ class _PlayerScreenState extends State<PlayerScreen>
       _scaleMode = _ScaleMode.zoom;
       _pinchTravelPx += details.focalPointDelta.distance;
       if ((details.scale - 1.0).abs() > 0.05) _pinchScaled = true;
-      // v59 (user's final design): ONE continuous gesture - spread two
-      // fingers and the video walks Fit -> Crop -> Stretch -> 16:9 ->
-      // 4:3 -> Original and KEEPS GOING into smooth zoom (up to 4x).
-      // Pinch IN walks back down. A quick two-finger tap snaps home
-      // (see _onScaleEnd). Applied live, no step thresholds.
+      // v61 (user's final design): the two-finger toggle does ONE thing,
+      // never both:
+      //
+      //   TOGGLE OFF ('fit') -> two fingers cycle the fit modes in a
+      //     LOOP (Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original ->
+      //     back to Fit ...). It NEVER zooms - zoom stays at 1.0x the
+      //     whole time. A quick two-finger tap still snaps home.
+      //
+      //   TOGGLE ON ('zoom') -> two fingers do ONLY free zoom, 1.0x..4x,
+      //     from the FIRST millimetre of the pinch (zoom = clamp(baseZoom
+      //     * scale)), exactly like a map app. The fit never changes.
+      //
+      // The old v59/v60 continuous ladder put zoom at the END behind a
+      // ~2.6x spread, which is why on a real phone "zoom is not working".
       if (_settings.twoFingerMode == 'fit') {
         final pos = fitLadderPosFor(
-            basePos: _ladderBasePos,
-            scale: details.scale,
-            fitCount: _fits.length);
-        final step = fitLadderDecode(pos, _fits.length);
-        if (step.fitIndex != _fitIndex ||
-            (step.zoom - _zoom).abs() > 0.005) {
+            basePos: _ladderBaseIndex.toDouble(), scale: details.scale);
+        final nextIndex = wrapFitLadderPos(pos, _fits.length);
+        if (nextIndex != _fitIndex) {
           setState(() {
-            _fitIndex = step.fitIndex;
-            _zoom = step.zoom;
-            if (step.zoom == kMinVideoZoom) _pan = Offset.zero;
+            _fitIndex = nextIndex;
+            // The fit loop never zooms - keep any stray zoom/pan reset so
+            // the frame stays exactly the chosen fit.
+            _zoom = kMinVideoZoom;
+            _pan = Offset.zero;
           });
-          if (step.zoom > kMinVideoZoom) {
-            _showIndicator('Zoom ${step.zoom.toStringAsFixed(1)}x',
-                Icons.pinch_outlined);
-          } else {
-            _showIndicator('Fit: ${_fitNames[step.fitIndex]}',
-                _fitIcons[step.fitIndex]);
-          }
+          _showIndicator('Fit: ${_fitNames[nextIndex]}', _fitIcons[nextIndex]);
         }
         return;
       }
-      if (!_settings.pinchZoom) return;
+      // TOGGLE ON: pure free zoom, no fit cycling, no ladder.
 
       // Focal-anchored transform: the content point that was under the
       // fingers when the pinch started stays glued to the CURRENT focal
       // point. Because we track the live focal point, moving both fingers
       // together pans the zoomed video for free.
-      final z = clampVideoZoom(_zoomBase * details.scale);
+      final z = freeZoomFor(baseZoom: _zoomBase, scale: details.scale);
       final contentV = (_focalBase - _panBase) / _zoomBase;
       final pan = _clampPan(details.localFocalPoint - contentV * z, z);
 
@@ -853,7 +855,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       _resetToFitScreen();
       return;
     }
-    if (!_settings.pinchZoom && mode != _ScaleMode.pan) return;
+    if (mode == _ScaleMode.zoom && _settings.twoFingerMode != 'zoom' &&
+        !_settings.pinchZoom) {
+      return;
+    }
     // Snap back when barely zoomed.
     if (_zoom < 1.1) {
       if (_zoom != 1.0 || _pan != Offset.zero) {
