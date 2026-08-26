@@ -176,12 +176,53 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {}
     }
 
+    private fun setImmersive(enabled: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(!enabled)
+            val controller = window.insetsController ?: return
+            if (enabled) {
+                controller.hide(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
+                controller.systemBarsBehavior =
+                    android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                controller.show(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            if (enabled) {
+                window.decorView.systemUiVisibility = (
+                    android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                )
+            } else {
+                window.decorView.systemUiVisibility = (
+                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                )
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         CrashCrumbs.mark(this, "activity_create_begin")
         super.onCreate(savedInstanceState)
+        // v68: Cutout / notch handling - allow drawing under the notch
+        // on short edges for true edge-to-edge borderless display (VLC style).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
         // v62 Phase 1: create all notification channels once, before any
         // feature (AI-subs-ready, continue watching, ...) posts one.
         Notifications.ensureChannels(applicationContext)
+        // v68 B1/B2: wire foreground media service actions to Flutter channel.
+        MediaPlaybackService.onMediaAction = { action ->
+            mainHandler.post { channel?.invokeMethod("onMediaAction", action) }
+        }
         CrashCrumbs.mark(this, "activity_create_ok")
         handleIncomingIntent(intent)
     }
@@ -690,23 +731,27 @@ class MainActivity : FlutterActivity() {
                     val subtitle = call.argument<String>("subtitle") ?: ""
                     val isPlaying = call.argument<Boolean>("isPlaying") ?: true
                     val path = call.argument<String>("path") ?: ""
-                    ensureMediaReceiver()
-                    val id = Notifications.showNowPlaying(
+                    MediaPlaybackService.startOrUpdate(
                         applicationContext,
                         title,
                         subtitle,
                         isPlaying,
-                        if (path.isNotEmpty()) "video:$path" else null,
+                        path
                     )
-                    result.success(id)
+                    result.success(MediaPlaybackService.NOTIF_ID)
                 }
                 "nowPlayingCancel" -> {
-                    Notifications.cancel(applicationContext, Notifications.NOTIF_ID_NOW_PLAYING)
+                    MediaPlaybackService.stop(applicationContext)
                     result.success(true)
                 }
                 "setWakeLock" -> {
                     val enable = call.argument<Boolean>("enable") ?: false
                     setWakeLock(enable)
+                    result.success(true)
+                }
+                "setImmersive" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    setImmersive(enabled)
                     result.success(true)
                 }
                 else -> result.notImplemented()

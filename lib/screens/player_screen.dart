@@ -192,6 +192,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     // (MX Player / VLC style). The lock chip pins the current orientation;
     // dispose() hands control back to the system.
     unawaited(NativeBridge.enableSensorRotate());
+    // v68: VLC-style immersive mode with notch cutout support.
+    unawaited(NativeBridge.setImmersive(true));
     _noticeSub = widget.player.notices.listen((m) {
       // v65: the player state posts "Skipped credits" after the auto-skip;
       // surface the Undo chip instead of the generic indicator.
@@ -264,6 +266,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (_isFullscreen) _exitFullscreen();
     // Hand rotation control back to the system; never leave a lock behind.
     unawaited(NativeBridge.disableSensorRotate());
+    unawaited(NativeBridge.setImmersive(false));
     // Do NOT keep the audio running after leaving the player screen, and
     // hand brightness control back to the system.
     unawaited(widget.player.pause());
@@ -310,7 +313,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       });
     }
     // v21: push the playback-extras settings into the player state.
-    unawaited(widget.player.setVolumeBoost300(s.volumeBoost300));
+    unawaited(widget.player.setVolumeBoost200(s.volumeBoost200));
     widget.player.setBackgroundAudio(s.backgroundAudio);
     unawaited(widget.player.setVolumeLeveling(s.volumeLeveling));
     // v32: picture settings - HDR tone-mapping curve + Enhance shader.

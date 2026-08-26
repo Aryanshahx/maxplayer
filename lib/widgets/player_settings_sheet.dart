@@ -284,13 +284,13 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               const _SectionHeader('Sound & subtitles'),
               _SwitchTile(
                 icon: Icons.volume_up,
-                label: 'Volume boost up to 300%',
+                label: 'Volume boost up to 200%',
                 subtitle:
                     'ON by default - the swipe continues past 100% '
                     'for quiet videos',
-                value: _settings.volumeBoost300,
+                value: _settings.volumeBoost200,
                 onChanged: (v) =>
-                    _update(_settings.copyWith(volumeBoost300: v)),
+                    _update(_settings.copyWith(volumeBoost200: v)),
               ),
               _SwitchTile(
                 icon: Icons.headset_outlined,

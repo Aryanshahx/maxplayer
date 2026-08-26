@@ -747,6 +747,18 @@ class NativeBridge {
       await _channel.invokeMethod('setWakeLock', {'enable': enable});
     } catch (_) {}
   }
+
+  // ---------------------------------------------------------------------------
+  // v68: VLC-style immersive mode (WindowInsetsController / cutout mode)
+  // ---------------------------------------------------------------------------
+
+  /// Hides status and navigation bars with swipe-to-reveal transient behavior
+  /// and enables full-bleed drawing under camera notches/cutouts.
+  static Future<void> setImmersive(bool enabled) async {
+    try {
+      await _channel.invokeMethod('setImmersive', {'enabled': enabled});
+    } catch (_) {}
+  }
 }
 
 /// v62 Phase 1: the notification channels Max Player creates. Matches the

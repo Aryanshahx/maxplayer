@@ -432,9 +432,9 @@ class MediaPlayerState extends ChangeNotifier {
       if (_hwFallbackForPath == track.path) {
         unawaited(plat.setProperty('hwdec', 'no'));
       }
-      // Head-room for the 300% volume boost + re-apply the current gain /
+      // Head-room for the 200% volume boost + re-apply the current gain /
       // leveling filter for the new file.
-      unawaited(plat.setProperty('volume-max', '300'));
+      unawaited(plat.setProperty('volume-max', '200'));
       // v38: keep the Enhance pipeline asserted for every new file.
       if (_enhanceApplied && _enhanceShaderPath != null) {
         unawaited(plat.setProperty('glsl-shaders', _enhanceShaderPath!));
@@ -984,13 +984,13 @@ class MediaPlayerState extends ChangeNotifier {
     return volume;
   }
 
-  /// v65: when the setting is on, the volume range becomes 0..300%.
-  /// The device volume covers 0..100%; mpv's decoder gain (volume-max=300
-  /// is set when a track opens) covers the 100..300% boost region.
-  bool volumeBoost300 = false;
+  /// When the setting is on, the volume range becomes 0..200%.
+  /// The device volume covers 0..100%; mpv's decoder gain (volume-max=200
+  /// is set when a track opens) covers the 100..200% boost region.
+  bool volumeBoost200 = false;
 
   /// Current volume upper limit for the swipe gesture / slider math.
-  double get volumeCap => volumeBoost300 ? 3.0 : 1.0;
+  double get volumeCap => volumeBoost200 ? 2.0 : 1.0;
 
   Future<void> setVolume(double v) async {
     volume = v.clamp(0.0, volumeCap);
@@ -1012,10 +1012,10 @@ class MediaPlayerState extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Settings toggle: enable/disable the 300% boost region. Turning it off
+  /// Settings toggle: enable/disable the 200% boost region. Turning it off
   /// while boosted pulls the volume back to 100%.
-  Future<void> setVolumeBoost300(bool on) async {
-    volumeBoost300 = on;
+  Future<void> setVolumeBoost200(bool on) async {
+    volumeBoost200 = on;
     if (!on && volume > 1.0) await setVolume(1.0);
     if (!on) await _applyMpvVolume();
     notifyListeners();

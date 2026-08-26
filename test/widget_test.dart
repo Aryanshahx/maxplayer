@@ -2126,24 +2126,23 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // v65 features: audio boost 300%, A1 smart skip (intro + credits),
+  // v65 features: audio boost 200%, A1 smart skip (intro + credits),
   // A2 ask AI about this video, A6 because-you-watched recommendations.
   // -------------------------------------------------------------------------
   group('v65 features', () {
-    test('audio boost 300% setting default and copyWith', () {
+    test('audio boost 200% setting default and copyWith', () {
       const s = PlayerSettings();
-      expect(s.volumeBoost300, isTrue);
-      expect(PlayerSettings.kVolumeBoost300, 'player.volumeBoost300');
-      expect(PlayerSettings.kVolumeBoost200Legacy, 'player.volumeBoost200');
-      final s2 = s.copyWith(volumeBoost300: false);
-      expect(s2.volumeBoost300, isFalse);
+      expect(s.volumeBoost200, isTrue);
+      expect(PlayerSettings.kVolumeBoost200, 'player.volumeBoost200');
+      final s2 = s.copyWith(volumeBoost200: false);
+      expect(s2.volumeBoost200, isFalse);
 
       final stateFile =
           File('lib/state/media_player_state.dart').readAsStringSync();
-      expect(stateFile, contains("'volume-max', '300'"));
-      expect(stateFile, contains('volumeBoost300'));
+      expect(stateFile, contains("'volume-max', '200'"));
+      expect(stateFile, contains('volumeBoost200'));
       expect(stateFile,
-          contains('double get volumeCap => volumeBoost300 ? 3.0 : 1.0;'));
+          contains('double get volumeCap => volumeBoost200 ? 2.0 : 1.0;'));
     });
 
     test('smart skip credits heuristic detects trailing credit roll', () {
@@ -2378,6 +2377,22 @@ void main() {
       expect(stateCode, contains('showNowPlaying'));
       expect(stateCode, contains('cancelNowPlaying'));
       expect(stateCode, contains('setWakeLock'));
+    });
+
+    test('MediaPlaybackService and VLC-style edge-to-edge immersive mode', () {
+      expect(manifest, contains('MediaPlaybackService'));
+      expect(mainActivity, contains('MediaPlaybackService'));
+      expect(mainActivity, contains('LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES'));
+      expect(mainActivity, contains('setImmersive'));
+      expect(mainActivity, contains('BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE'));
+
+      final serviceFile = File(
+        'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/'
+        'MediaPlaybackService.kt',
+      ).readAsStringSync();
+      expect(serviceFile, contains('class MediaPlaybackService : Service()'));
+      expect(serviceFile, contains('MediaSession'));
+      expect(serviceFile, contains('startForeground'));
     });
   });
 }

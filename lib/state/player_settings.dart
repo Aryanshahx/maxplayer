@@ -48,9 +48,8 @@ class PlayerSettings {
   /// Show the screen-lock (kids mode) button on the video.
   final bool lockButton;
 
-  /// v65: playback extras.
-  /// Volume slider/drag may go past 100% up to 300% (mpv decoder gain).
-  final bool volumeBoost300;
+  /// Volume slider/drag may go past 100% up to 200% (mpv decoder gain).
+  final bool volumeBoost200;
 
   /// v67 B2: keep playing audio when the screen is turned off or app minimised.
   final bool backgroundAudio;
@@ -86,9 +85,7 @@ class PlayerSettings {
     this.castButton = true,
     this.screenshotButton = true,
     this.lockButton = true,
-    // v65: ON by default ("volume up to 300% out of the box"); only people
-    // who explicitly turned it off keep it off (saved 'false' below).
-    this.volumeBoost300 = true,
+    this.volumeBoost200 = true,
     // v67 B2: ON by default (background audio playback).
     this.backgroundAudio = true,
     this.volumeLeveling = false,
@@ -139,12 +136,8 @@ class PlayerSettings {
   static const String kCastButton = 'player.castButton';
   static const String kScreenshotButton = 'player.screenshotButton';
   static const String kLockButton = 'player.lockButton';
-  static const String kVolumeBoost300 = 'player.volumeBoost300';
+  static const String kVolumeBoost200 = 'player.volumeBoost200';
   static const String kBackgroundAudio = 'player.backgroundAudio';
-
-  /// v65 migration: the old 200%-boost preference. Read once so users who
-  /// turned boost OFF keep it off; the new 300% key is then authoritative.
-  static const String kVolumeBoost200Legacy = 'player.volumeBoost200';
   static const String kVolumeLeveling = 'player.volumeLeveling';
   static const String kKaraokeSubs = 'player.karaokeSubs';
   static const String kEnhanceVideo = 'player.enhanceVideo';
@@ -175,11 +168,7 @@ class PlayerSettings {
       castButton: s[kCastButton] != 'false',
       screenshotButton: s[kScreenshotButton] != 'false',
       lockButton: s[kLockButton] != 'false',
-      // v65: 300% boost. Honor the new key; if it was never set, migrate
-      // from the old 200% key so users who turned boost OFF stay off.
-      volumeBoost300: s.containsKey(kVolumeBoost300)
-          ? s[kVolumeBoost300] != 'false'
-          : s[kVolumeBoost200Legacy] != 'false',
+      volumeBoost200: s[kVolumeBoost200] != 'false',
       backgroundAudio: s[kBackgroundAudio] != 'false',
       volumeLeveling: s[kVolumeLeveling] == 'true',
       karaokeSubs: s[kKaraokeSubs] == 'true',
@@ -220,7 +209,7 @@ class PlayerSettings {
     NativeBridge.saveSetting(kCastButton, '$castButton');
     NativeBridge.saveSetting(kScreenshotButton, '$screenshotButton');
     NativeBridge.saveSetting(kLockButton, '$lockButton');
-    NativeBridge.saveSetting(kVolumeBoost300, '$volumeBoost300');
+    NativeBridge.saveSetting(kVolumeBoost200, '$volumeBoost200');
     NativeBridge.saveSetting(kBackgroundAudio, '$backgroundAudio');
     NativeBridge.saveSetting(kVolumeLeveling, '$volumeLeveling');
     NativeBridge.saveSetting(kKaraokeSubs, '$karaokeSubs');
@@ -245,7 +234,7 @@ class PlayerSettings {
     bool? castButton,
     bool? screenshotButton,
     bool? lockButton,
-    bool? volumeBoost300,
+    bool? volumeBoost200,
     bool? backgroundAudio,
     bool? volumeLeveling,
     bool? karaokeSubs,
@@ -269,7 +258,7 @@ class PlayerSettings {
       castButton: castButton ?? this.castButton,
       screenshotButton: screenshotButton ?? this.screenshotButton,
       lockButton: lockButton ?? this.lockButton,
-      volumeBoost300: volumeBoost300 ?? this.volumeBoost300,
+      volumeBoost200: volumeBoost200 ?? this.volumeBoost200,
       backgroundAudio: backgroundAudio ?? this.backgroundAudio,
       volumeLeveling: volumeLeveling ?? this.volumeLeveling,
       karaokeSubs: karaokeSubs ?? this.karaokeSubs,
