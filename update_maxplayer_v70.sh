@@ -1,35 +1,36 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  Max Player  -  v70  (1.0.0+64)  - Master Release
+#  Max Player  -  v70  (1.0.0+65)  - Complete Master Release
 #
 #  Fixes & features included:
 #  ---------------------------------------------------------------------------
-#  1. Kotlin Compiler Fix:
-#     - Renamed private helper to applyImmersiveMode to eliminate Activity
-#       supertype method collision.
+#  1. Audio Glitch & Audio Focus Fix:
+#     - Managed Android AudioFocus (AudioManager.AUDIOFOCUS_GAIN with
+#       AudioAttributes.USAGE_MEDIA / CONTENT_TYPE_MOVIE) so media playback
+#       audio routes seamlessly to speaker/earphones with zero audio drops.
+#     - Fixed mpv audio filter syntax for volume leveling (dynaudnorm inside lavfi).
+#     - Clean 200% volume boost.
 #
-#  2. VLC Borderless Edge-to-Edge & Cutout Layout:
-#     - shortEdges window layout in styles.xml and WindowManager layoutParams.
-#     - Removed body SafeArea constraints so video texture bleeds 100% under notch.
-#     - WindowInsetsController immersive mode with swipe-to-reveal bars.
+#  2. True Borderless Edge-to-Edge Punch-Hole & Notch Display:
+#     - shortEdges window cutout mode in styles.xml (LaunchTheme + NormalTheme).
+#     - WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES.
+#     - Video layer uses MediaQuery.removePadding so the video texture bleeds
+#       100% under punch-hole camera cutouts without any black letterbox borders.
 #
-#  3. Fixed Now-Playing Notification & Media Controls (B1):
-#     - Displays video thumbnail (largeIcon and MediaMetadata album art).
-#     - Displays exact video duration / length.
-#     - Interactive playbar / seekbar in notification and lockscreen via MediaSession.
-#     - Wear OS / Smartwatch media tile integration.
+#  3. Fixed Now-Playing Notification & Media Controls:
+#     - Video thumbnail loaded as largeIcon and MediaMetadata album art.
+#     - Video duration & position displayed in notification.
+#     - Interactive playbar / seekbar in notification, lockscreen, and smartwatches.
 #
-#  4. Fixed Volume Leveling:
-#     - Correctly wrapped ffmpeg dynaudnorm filter inside lavfi=[...] container.
+#  4. Fixed Background & Screen-off Playback:
+#     - Native Android Foreground Service (MediaPlaybackService) with WakeLock.
 #
-#  5. Fixed Background Audio Playback (B2):
-#     - Android Foreground Service (MediaPlaybackService) with WakeLock.
-#
-#  6. C3: Wi-Fi Resume-Sync across local devices:
+#  5. C3: Wi-Fi Resume-Sync across devices (v69):
 #     - Zero-cloud UDP beacon discovery with one-tap Library banner.
 #
-#  7. C4: Wear OS / Smartwatch Companion REST API on port 52326.
-#  8. A5 Voice Search in Discover + 200% Clean Audio Boost + Smart Skip.
+#  6. C4: Wear OS / Smartwatch Companion REST API on port 52326.
+#  7. A5 Voice Search in Discover + A1 Smart Skip + A2 Ask AI + A6 Recommendations.
+#  8. Kotlin Activity.setImmersive method collision fix.
 #
 #  Run AS-IS from repo root:  bash update_maxplayer_v70.sh
 #  Idempotent - run twice; both must end "N/N checks OK".
@@ -37,7 +38,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 echo "============================================================"
-echo " Max Player v70 (1.0.0+64)"
+echo " Max Player v70 (1.0.0+65)"
 echo " Running from: $(pwd)"
 echo "============================================================"
 mkdir -p "$(dirname "android/app/src/main/AndroidManifest.xml")"
@@ -329,6 +330,8 @@ import android.graphics.Path
 import android.graphics.drawable.Icon
 import android.hardware.biometrics.BiometricManager
 import android.hardware.biometrics.BiometricPrompt
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.MediaCodec
@@ -487,7 +490,77 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {}
     }
 
+    private var audioFocusRequest: Any? = null
+
+    private fun requestAudioFocus() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val playbackAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                .build()
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(playbackAttributes)
+                .setAcceptsDelayedFocusGain(true)
+                .setOnAudioFocusChangeListener { focusChange ->
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
+                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                        mainHandler.post { channel?.invokeMethod("onMediaAction", "pause") }
+                    } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+                        mainHandler.post { channel?.invokeMethod("onMediaAction", "play") }
+                    }
+                }
+                .build()
+            audioFocusRequest = request
+            am.requestAudioFocus(request)
+        } else {
+            @Suppress("DEPRECATION")
+            am.requestAudioFocus(
+                { focusChange ->
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
+                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                        mainHandler.post { channel?.invokeMethod("onMediaAction", "pause") }
+                    } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+                        mainHandler.post { channel?.invokeMethod("onMediaAction", "play") }
+                    }
+                },
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = audioFocusRequest as? AudioFocusRequest
+            if (req != null) am.abandonAudioFocusRequest(req)
+        } else {
+            @Suppress("DEPRECATION")
+            am.abandonAudioFocus(null)
+        }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val lp = window.attributes
+            lp.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            window.attributes = lp
+        }
+    }
+
     private fun applyImmersiveMode(enabled: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val lp = window.attributes
+            lp.layoutInDisplayCutoutMode = if (enabled) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+            }
+            window.attributes = lp
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(!enabled)
             val controller = window.insetsController ?: return
@@ -1048,6 +1121,7 @@ class MainActivity : FlutterActivity() {
                     val thumbPath = call.argument<String>("thumbnailPath")
                     val posMs = call.argument<Number>("positionMs")?.toLong() ?: 0L
                     val durMs = call.argument<Number>("durationMs")?.toLong() ?: 0L
+                    if (isPlaying) requestAudioFocus()
                     MediaPlaybackService.startOrUpdate(
                         applicationContext,
                         title,
@@ -1061,6 +1135,7 @@ class MainActivity : FlutterActivity() {
                     result.success(MediaPlaybackService.NOTIF_ID)
                 }
                 "nowPlayingCancel" -> {
+                    abandonAudioFocus()
                     MediaPlaybackService.stop(applicationContext)
                     result.success(true)
                 }
@@ -3216,12 +3291,15 @@ echo "  wrote android/app/src/main/kotlin/com/hypertechlabs/maxplayer/Notificati
 mkdir -p "$(dirname "android/app/src/main/res/values/styles.xml")"
 cat > "android/app/src/main/res/values/styles.xml" <<'MAXV70_EOF_STYLES_XML'
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
     <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <!-- Show a splash screen on the activity. Automatically removed when
              the Flutter engine draws its first frame -->
         <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="p">shortEdges</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
     </style>
     <!-- Theme applied to the Android Window as soon as the process has started.
          This theme determines the color of the Android Window while your
@@ -3231,7 +3309,9 @@ cat > "android/app/src/main/res/values/styles.xml" <<'MAXV70_EOF_STYLES_XML'
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="p">shortEdges</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
     </style>
 </resources>
 MAXV70_EOF_STYLES_XML
@@ -3240,12 +3320,15 @@ echo "  wrote android/app/src/main/res/values/styles.xml"
 mkdir -p "$(dirname "android/app/src/main/res/values-night/styles.xml")"
 cat > "android/app/src/main/res/values-night/styles.xml" <<'MAXV70_EOF_STYLES_NIGHT_XML'
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is on -->
     <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <!-- Show a splash screen on the activity. Automatically removed when
              the Flutter engine draws its first frame -->
         <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="p">shortEdges</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
     </style>
     <!-- Theme applied to the Android Window as soon as the process has started.
          This theme determines the color of the Android Window while your
@@ -3255,7 +3338,9 @@ cat > "android/app/src/main/res/values-night/styles.xml" <<'MAXV70_EOF_STYLES_NI
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="p">shortEdges</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
     </style>
 </resources>
 MAXV70_EOF_STYLES_NIGHT_XML
@@ -11683,7 +11768,7 @@ cat > "pubspec.yaml" <<'MAXV70_EOF_PUBSPEC_YAML'
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+64
+version: 1.0.0+65
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -14177,12 +14262,25 @@ void main() {
       expect(serviceFile, contains('MediaMetadata'));
       expect(serviceFile, contains('METADATA_KEY_TITLE'));
       expect(serviceFile, contains('METADATA_KEY_ARTIST'));
+      expect(serviceFile, contains('METADATA_KEY_DURATION'));
       expect(serviceFile, contains('setMetadata'));
+      expect(serviceFile, contains('setLargeIcon'));
+      expect(serviceFile, contains('ACTION_SEEK_TO'));
+      expect(serviceFile, contains('onSeekTo'));
     });
 
-    test('MainActivity avoids Activity.setImmersive method collision', () {
+    test('MainActivity avoids Activity.setImmersive method collision and handles audio focus', () {
       expect(mainActivity, contains('applyImmersiveMode'));
       expect(mainActivity.contains('private fun setImmersive'), isFalse);
+      expect(mainActivity, contains('requestAudioFocus'));
+      expect(mainActivity, contains('abandonAudioFocus'));
+      expect(mainActivity, contains('onAttachedToWindow'));
+    });
+
+    test('styles.xml enables shortEdges cutout mode', () {
+      final styles = File('android/app/src/main/res/values/styles.xml').readAsStringSync();
+      expect(styles, contains('android:windowLayoutInDisplayCutoutMode'));
+      expect(styles, contains('shortEdges'));
     });
 
     test('ResumeSyncService provides REST endpoints for Wear OS / remote apps', () {
@@ -14212,6 +14310,7 @@ absent  "no ActivityResultLauncher field"      "ActivityResultLauncher"        "
 absent  "no ActivityResultContracts import"    "ActivityResultContracts"       "$K/MainActivity.kt"
 present "applyImmersiveMode in MainActivity"  "applyImmersiveMode"            "$K/MainActivity.kt"
 absent  "no Activity.setImmersive collision"  "private fun setImmersive"      "$K/MainActivity.kt"
+present "requestAudioFocus in MainActivity"   "requestAudioFocus"             "$K/MainActivity.kt"
 present "POST_NOTIFICATIONS declared"         "POST_NOTIFICATIONS"            "android/app/src/main/AndroidManifest.xml"
 present "RECORD_AUDIO declared"               "RECORD_AUDIO"                  "android/app/src/main/AndroidManifest.xml"
 present "WAKE_LOCK declared"                  "WAKE_LOCK"                     "android/app/src/main/AndroidManifest.xml"
@@ -14236,7 +14335,7 @@ present "ResumeSyncService class"             "class ResumeSyncService"       "l
 present "video ask sheet widget"              "class VideoAskSheet"           "lib/widgets/video_ask_sheet.dart"
 present "v69 test suite"                      "group('v69 Wi-Fi resume-sync'" test/widget_test.dart
 present "v70 test suite"                      "group('v70 Wear OS companion"  test/widget_test.dart
-present "pubspec version 1.0.0+64"             "^version: 1.0.0+64"            "pubspec.yaml"
+present "pubspec version 1.0.0+65"             "^version: 1.0.0+65"            "pubspec.yaml"
 echo ""
 if [ "$ok" -eq "$total" ]; then
   echo "==> $ok/$total checks OK - v70 applied cleanly."
@@ -14246,7 +14345,7 @@ fi
 
 echo ""
 echo "============================================================"
-echo " DONE. If 33/33 checks OK, run AS-IS (no hand edits):"
-echo "   git add -A && git commit -m \"v70: 200% volume, VLC edge-to-edge layout, fixed notification thumbnail & playbar, fixed volume leveling, Wi-Fi resume-sync, Wear OS companion (1.0.0+64)\" && git push"
+echo " DONE. If 34/34 checks OK, run AS-IS (no hand edits):"
+echo "   git add -A && git commit -m \"v70: 200% volume, fixed audio glitch & audio focus, borderless punch-hole display, fixed notification thumbnail & playbar, Wi-Fi resume-sync, Wear OS companion (1.0.0+65)\" && git push"
 echo " Then start a new Codemagic build."
 echo "============================================================"

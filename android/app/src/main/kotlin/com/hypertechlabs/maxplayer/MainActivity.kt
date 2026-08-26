@@ -18,6 +18,8 @@ import android.graphics.Path
 import android.graphics.drawable.Icon
 import android.hardware.biometrics.BiometricManager
 import android.hardware.biometrics.BiometricPrompt
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.MediaCodec
@@ -176,7 +178,77 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {}
     }
 
+    private var audioFocusRequest: Any? = null
+
+    private fun requestAudioFocus() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val playbackAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                .build()
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(playbackAttributes)
+                .setAcceptsDelayedFocusGain(true)
+                .setOnAudioFocusChangeListener { focusChange ->
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
+                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                        mainHandler.post { channel?.invokeMethod("onMediaAction", "pause") }
+                    } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+                        mainHandler.post { channel?.invokeMethod("onMediaAction", "play") }
+                    }
+                }
+                .build()
+            audioFocusRequest = request
+            am.requestAudioFocus(request)
+        } else {
+            @Suppress("DEPRECATION")
+            am.requestAudioFocus(
+                { focusChange ->
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
+                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                        mainHandler.post { channel?.invokeMethod("onMediaAction", "pause") }
+                    } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+                        mainHandler.post { channel?.invokeMethod("onMediaAction", "play") }
+                    }
+                },
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = audioFocusRequest as? AudioFocusRequest
+            if (req != null) am.abandonAudioFocusRequest(req)
+        } else {
+            @Suppress("DEPRECATION")
+            am.abandonAudioFocus(null)
+        }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val lp = window.attributes
+            lp.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            window.attributes = lp
+        }
+    }
+
     private fun applyImmersiveMode(enabled: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val lp = window.attributes
+            lp.layoutInDisplayCutoutMode = if (enabled) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+            }
+            window.attributes = lp
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(!enabled)
             val controller = window.insetsController ?: return
@@ -737,6 +809,7 @@ class MainActivity : FlutterActivity() {
                     val thumbPath = call.argument<String>("thumbnailPath")
                     val posMs = call.argument<Number>("positionMs")?.toLong() ?: 0L
                     val durMs = call.argument<Number>("durationMs")?.toLong() ?: 0L
+                    if (isPlaying) requestAudioFocus()
                     MediaPlaybackService.startOrUpdate(
                         applicationContext,
                         title,
@@ -750,6 +823,7 @@ class MainActivity : FlutterActivity() {
                     result.success(MediaPlaybackService.NOTIF_ID)
                 }
                 "nowPlayingCancel" -> {
+                    abandonAudioFocus()
                     MediaPlaybackService.stop(applicationContext)
                     result.success(true)
                 }

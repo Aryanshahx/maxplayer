@@ -2452,12 +2452,25 @@ void main() {
       expect(serviceFile, contains('MediaMetadata'));
       expect(serviceFile, contains('METADATA_KEY_TITLE'));
       expect(serviceFile, contains('METADATA_KEY_ARTIST'));
+      expect(serviceFile, contains('METADATA_KEY_DURATION'));
       expect(serviceFile, contains('setMetadata'));
+      expect(serviceFile, contains('setLargeIcon'));
+      expect(serviceFile, contains('ACTION_SEEK_TO'));
+      expect(serviceFile, contains('onSeekTo'));
     });
 
-    test('MainActivity avoids Activity.setImmersive method collision', () {
+    test('MainActivity avoids Activity.setImmersive method collision and handles audio focus', () {
       expect(mainActivity, contains('applyImmersiveMode'));
       expect(mainActivity.contains('private fun setImmersive'), isFalse);
+      expect(mainActivity, contains('requestAudioFocus'));
+      expect(mainActivity, contains('abandonAudioFocus'));
+      expect(mainActivity, contains('onAttachedToWindow'));
+    });
+
+    test('styles.xml enables shortEdges cutout mode', () {
+      final styles = File('android/app/src/main/res/values/styles.xml').readAsStringSync();
+      expect(styles, contains('android:windowLayoutInDisplayCutoutMode'));
+      expect(styles, contains('shortEdges'));
     });
 
     test('ResumeSyncService provides REST endpoints for Wear OS / remote apps', () {
