@@ -5,6 +5,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
@@ -154,6 +155,7 @@ class MediaPlaybackService : Service() {
         val path = intent?.getStringExtra(EXTRA_PATH) ?: ""
 
         updateSessionPlaybackState(isPlaying)
+        updateSessionMetadata(title, subtitle)
         val notif = buildNotification(title, subtitle, isPlaying, path)
 
         try {
@@ -181,6 +183,17 @@ class MediaPlaybackService : Service() {
                 .setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1.0f)
                 .build()
         )
+    }
+
+    private fun updateSessionMetadata(title: String, subtitle: String) {
+        try {
+            val metadata = MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, if (subtitle.isNotEmpty()) subtitle else "Max Player")
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, "Max Player")
+                .build()
+            mediaSession?.setMetadata(metadata)
+        } catch (_: Exception) {}
     }
 
     private fun buildNotification(

@@ -12,6 +12,7 @@ import 'screens/library_screen.dart';
 import 'screens/player_screen.dart';
 import 'services/native_bridge.dart';
 import 'services/notification_service.dart';
+import 'services/resume_sync_service.dart';
 import 'state/media_player_state.dart';
 import 'state/theme_state.dart';
 import 'state/video_library_state.dart';
@@ -88,6 +89,8 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
       // tile updates without a rescan.
       mp.onThumbnailCaptured =
           (videoPath, thumbPath) => library.setThumbnail(videoPath, thumbPath);
+      // v69 C3 / v70 C4: start Wi-Fi resume-sync and Wear OS companion service.
+      unawaited(ResumeSyncService.instance.start(mp));
       // "Open with Max Player" from other apps: warm delivery ...
       NativeBridge.configureCallbacks(
         onOpenVideo: _openExternalVideo,

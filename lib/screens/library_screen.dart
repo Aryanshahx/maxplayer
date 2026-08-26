@@ -7,6 +7,7 @@ import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
 import '../state/video_library_state.dart';
 import '../utils/crash_log.dart';
+import '../utils/formatters.dart';
 import '../utils/storage_permission.dart';
 import '../widgets/about_sheet.dart';
 import '../widgets/display_settings_sheet.dart';
@@ -14,6 +15,7 @@ import '../state/private_vault.dart';
 import '../widgets/mini_player.dart';
 import '../models/saved_server.dart';
 import '../services/native_bridge.dart';
+import '../services/resume_sync_service.dart';
 import '../widgets/cleaner_sheet.dart';
 import '../widgets/discover_banner.dart';
 import '../widgets/video_search_delegate.dart';
@@ -727,6 +729,84 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
             ),
+          ),
+          // v69 C3: Wi-Fi Resume-Sync Banner
+          ValueListenableBuilder<RemoteResumeBeacon?>(
+            valueListenable: ResumeSyncService.instance.remoteBeacon,
+            builder: (context, beacon, _) {
+              if (beacon == null) return const SizedBox.shrink();
+              final pos = formatDuration(Duration(seconds: beacon.positionSecs));
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: themeState.accent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: themeState.accent.withValues(alpha: 0.35)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.wifi_tethering, color: themeState.accent, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Playing on ${beacon.device}',
+                              style: TextStyle(
+                                color: themeState.accent,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              '${beacon.title} ($pos)',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          backgroundColor: themeState.accent,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () async {
+                          final ok = await ResumeSyncService.instance.resumeOnThisDevice(
+                            beacon,
+                            lib,
+                            widget.player,
+                          );
+                          if (!ok && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Could not find this video in your local library.'),
+                              ),
+                            );
+                          }
+                        },
+                        child: const Text('Resume', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white54, size: 16),
+                        onPressed: () => ResumeSyncService.instance.remoteBeacon.value = null,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
           // v28: active folder filter chip (set from the Folders tile).
           if (lib.folderFilter != null)

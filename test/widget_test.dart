@@ -14,6 +14,7 @@ import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/services/native_bridge.dart';
 import 'package:maxplayer/services/notification_service.dart';
 import 'package:maxplayer/services/recommendations.dart';
+import 'package:maxplayer/services/resume_sync_service.dart';
 import 'package:maxplayer/services/tmdb_client.dart';
 import 'package:maxplayer/widgets/tmdb_image.dart';
 import 'package:maxplayer/services/movie_ai.dart';
@@ -2393,6 +2394,78 @@ void main() {
       expect(serviceFile, contains('class MediaPlaybackService : Service()'));
       expect(serviceFile, contains('MediaSession'));
       expect(serviceFile, contains('startForeground'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v69: C3 Wi-Fi Resume-Sync across devices
+  // -------------------------------------------------------------------------
+  group('v69 Wi-Fi resume-sync', () {
+    test('RemoteResumeBeacon serializes and deserializes cleanly', () {
+      const beacon = RemoteResumeBeacon(
+        device: 'Pixel 8',
+        title: 'Oppenheimer',
+        path: '/v/oppenheimer.mp4',
+        positionSecs: 3600,
+        durationSecs: 10800,
+        timestampMs: 1700000000,
+        host: '192.168.1.10',
+      );
+      final json = beacon.toJson();
+      expect(json['app'], 'maxplayer');
+      expect(json['title'], 'Oppenheimer');
+      expect(json['positionSecs'], 3600);
+
+      final parsed = RemoteResumeBeacon.fromJson(json, '192.168.1.10');
+      expect(parsed.title, 'Oppenheimer');
+      expect(parsed.positionSecs, 3600);
+      expect(parsed.device, 'Pixel 8');
+      expect(parsed.host, '192.168.1.10');
+    });
+
+    test('LibraryScreen renders Wi-Fi resume-sync banner', () {
+      final libScreen =
+          File('lib/screens/library_screen.dart').readAsStringSync();
+      expect(libScreen, contains('ResumeSyncService'));
+      expect(libScreen, contains('ValueListenableBuilder<RemoteResumeBeacon?>'));
+      expect(libScreen, contains('Playing on'));
+      expect(libScreen, contains('Resume'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v70: C4 Wear OS / Smartwatch Companion & Remote Control
+  // -------------------------------------------------------------------------
+  group('v70 Wear OS companion & remote control', () {
+    final serviceFile = File(
+      'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/'
+      'MediaPlaybackService.kt',
+    ).readAsStringSync();
+    final mainActivity = File(
+      'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/'
+      'MainActivity.kt',
+    ).readAsStringSync();
+    final syncService =
+        File('lib/services/resume_sync_service.dart').readAsStringSync();
+
+    test('MediaPlaybackService updates MediaMetadata for smartwatch media tile', () {
+      expect(serviceFile, contains('MediaMetadata'));
+      expect(serviceFile, contains('METADATA_KEY_TITLE'));
+      expect(serviceFile, contains('METADATA_KEY_ARTIST'));
+      expect(serviceFile, contains('setMetadata'));
+    });
+
+    test('MainActivity avoids Activity.setImmersive method collision', () {
+      expect(mainActivity, contains('applyImmersiveMode'));
+      expect(mainActivity.contains('private fun setImmersive'), isFalse);
+    });
+
+    test('ResumeSyncService provides REST endpoints for Wear OS / remote apps', () {
+      expect(syncService, contains('/status'));
+      expect(syncService, contains('/play'));
+      expect(syncService, contains('/pause'));
+      expect(syncService, contains('/seek'));
+      expect(syncService, contains('/volume'));
     });
   });
 }

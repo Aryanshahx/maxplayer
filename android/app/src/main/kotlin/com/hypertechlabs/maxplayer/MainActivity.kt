@@ -176,7 +176,7 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {}
     }
 
-    private fun setImmersive(enabled: Boolean) {
+    private fun applyImmersiveMode(enabled: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(!enabled)
             val controller = window.insetsController ?: return
@@ -751,7 +751,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "setImmersive" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: false
-                    setImmersive(enabled)
+                    applyImmersiveMode(enabled)
                     result.success(true)
                 }
                 else -> result.notImplemented()
