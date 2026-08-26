@@ -345,6 +345,15 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     _openMovie(pick);
   }
 
+  /// v66 A5: voice search - launches system speech recognition and
+  /// populates the search bar.
+  Future<void> _startVoiceSearch() async {
+    final query = await NativeBridge.startVoiceSearch();
+    if (!mounted || query == null || query.isEmpty) return;
+    _searchCtrl.text = query;
+    _onSearchChanged(query);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -390,9 +399,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       hintStyle: const TextStyle(color: Colors.white38),
                       prefixIcon: Icon(Icons.search,
                           color: themeState.accent, size: 20),
-                      suffixIcon: _searchCtrl.text.isEmpty
-                          ? null
-                          : IconButton(
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_searchCtrl.text.isNotEmpty)
+                            IconButton(
                               icon: const Icon(Icons.close,
                                   color: Colors.white54, size: 18),
                               onPressed: () {
@@ -400,6 +411,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                                 _switchTo(query: '');
                               },
                             ),
+                          IconButton(
+                            icon: Icon(Icons.mic_none_outlined,
+                                color: themeState.accent, size: 20),
+                            tooltip: 'Voice search',
+                            onPressed: _startVoiceSearch,
+                          ),
+                        ],
+                      ),
                       filled: true,
                       fillColor: Colors.white.withValues(alpha: 0.06),
                       border: OutlineInputBorder(

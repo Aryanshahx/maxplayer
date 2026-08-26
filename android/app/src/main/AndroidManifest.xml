@@ -24,6 +24,14 @@
          notifications post without a runtime prompt. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- v66 A5: voice search in Discover movies section -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- v67 B1/B2: background / screen-off audio playback & media controls -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
     <!-- v42 COMPAT AUDIT:
          1) WRITE_EXTERNAL_STORAGE (Android 10 and older only): READ alone is
             not enough for raw-path WRITES - moving a video into/out of the
@@ -239,6 +247,10 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- v66 A5: speech recognizer query for voice search -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
         </intent>
     </queries>
 </manifest>

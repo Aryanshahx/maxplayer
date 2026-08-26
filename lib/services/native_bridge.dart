@@ -84,6 +84,9 @@ class NativeBridge {
   /// treat it like a deep link (e.g. "ai:<jobId>" or "video:<path>").
   static void Function(String payload)? _onNotificationTap;
 
+  /// v67 B1: media notification action tapped ('play_pause', 'next', 'prev', 'stop').
+  static void Function(String action)? _onMediaAction;
+
   /// v48: one finished cloud slice - raw .srt text at an absolute offset.
   static bool _handlerRegistered = false;
 
@@ -103,6 +106,9 @@ class NativeBridge {
 
     /// v62 Phase 1: a posted notification was tapped by the user.
     void Function(String payload)? onNotificationTap,
+
+    /// v67 B1: media notification action tapped.
+    void Function(String action)? onMediaAction,
   }) {
     if (onOpenVideo != null) _onOpenVideo = onOpenVideo;
     if (onOpenVideoFailed != null) _onOpenVideoFailed = onOpenVideoFailed;
@@ -112,6 +118,7 @@ class NativeBridge {
     if (onAiDone != null) _onAiDone = onAiDone;
     if (onAiFailed != null) _onAiFailed = onAiFailed;
     if (onNotificationTap != null) _onNotificationTap = onNotificationTap;
+    if (onMediaAction != null) _onMediaAction = onMediaAction;
     if (_handlerRegistered) return;
     _handlerRegistered = true;
     _channel.setMethodCallHandler(_dispatch);
@@ -165,6 +172,10 @@ class NativeBridge {
       case 'onNotificationTap':
         final p = call.arguments as String?;
         if (p != null && p.isNotEmpty) _onNotificationTap?.call(p);
+        break;
+      case 'onMediaAction':
+        final a = call.arguments as String?;
+        if (a != null && a.isNotEmpty) _onMediaAction?.call(a);
         break;
     }
     return null;
@@ -681,6 +692,60 @@ class NativeBridge {
     } catch (_) {
       return null;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // v66 A5: voice search in Discover
+  // ---------------------------------------------------------------------------
+
+  /// Launches the system speech recognition dialogue and returns the
+  /// recognized text query, or null if cancelled / unsupported.
+  static Future<String?> startVoiceSearch() async {
+    try {
+      final res = await _channel.invokeMethod<String>('startVoiceSearch');
+      return (res != null && res.trim().isNotEmpty) ? res.trim() : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // v67 B1/B2: now-playing controls & background / screen-off audio
+  // ---------------------------------------------------------------------------
+
+  /// Shows or updates the ongoing Now-Playing notification with Play/Pause,
+  /// Next, Previous and Stop actions.
+  static Future<int> showNowPlaying({
+    required String title,
+    String subtitle = 'Max Player',
+    required bool isPlaying,
+    required String path,
+  }) async {
+    try {
+      final res = await _channel.invokeMethod<int>('nowPlayingShow', {
+        'title': title,
+        'subtitle': subtitle,
+        'isPlaying': isPlaying,
+        'path': path,
+      });
+      return res ?? 1001;
+    } catch (_) {
+      return 1001;
+    }
+  }
+
+  /// Cancels the Now-Playing notification.
+  static Future<void> cancelNowPlaying() async {
+    try {
+      await _channel.invokeMethod('nowPlayingCancel');
+    } catch (_) {}
+  }
+
+  /// Acquires or releases a partial wake lock to keep background audio playing.
+  static Future<void> setWakeLock(bool enable) async {
+    try {
+      await _channel.invokeMethod('setWakeLock', {'enable': enable});
+    } catch (_) {}
   }
 }
 

@@ -33,9 +33,11 @@ import android.os.CancellationSignal
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.StatFs
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.speech.RecognizerIntent
 import android.view.WindowManager
 import dev.ffmpegkit.whisper.Whisper
 import dev.ffmpegkit.whisper.WhisperConfig
@@ -121,11 +123,57 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val ACTION_PIP_TOGGLE = "com.hypertechlabs.maxplayer.action.PIP_TOGGLE"
+        const val ACTION_MEDIA_CONTROL = "com.hypertechlabs.maxplayer.action.MEDIA_CONTROL"
+        const val EXTRA_MEDIA_ACTION = "action"
         private const val REQ_PIP_TOGGLE = 42
         private const val REQ_PIP_OPEN = 43
         private const val REQ_CONFIRM_CREDENTIAL = 44
         private const val REQ_NOTIF_PERMISSION = 45
+        private const val REQ_VOICE_SEARCH = 46
         private val STREAM_SCHEMES = setOf("http", "https", "rtsp", "rtmp", "mms")
+    }
+
+    private var pendingVoiceSearchResult: MethodChannel.Result? = null
+    private var mediaReceiverRegistered = false
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    private val mediaReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_MEDIA_CONTROL) {
+                val act = intent.getStringExtra(EXTRA_MEDIA_ACTION) ?: return
+                channel?.invokeMethod("onMediaAction", act)
+            }
+        }
+    }
+
+    private fun ensureMediaReceiver() {
+        if (mediaReceiverRegistered) return
+        mediaReceiverRegistered = true
+        val filter = IntentFilter(ACTION_MEDIA_CONTROL)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(mediaReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(mediaReceiver, filter)
+        }
+    }
+
+    private fun setWakeLock(enable: Boolean) {
+        try {
+            if (enable) {
+                if (wakeLock == null) {
+                    val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                    wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MaxPlayer::BackgroundAudioLock")
+                }
+                if (wakeLock?.isHeld == false) {
+                    wakeLock?.acquire(24 * 60 * 60 * 1000L)
+                }
+            } else {
+                if (wakeLock?.isHeld == true) {
+                    wakeLock?.release()
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -618,6 +666,48 @@ class MainActivity : FlutterActivity() {
                     val p = pendingNotificationPayload
                     pendingNotificationPayload = null
                     result.success(p)
+                }
+                "startVoiceSearch" -> {
+                    if (pendingVoiceSearchResult != null) {
+                        result.error("in_progress", "Voice search already running", null)
+                    } else {
+                        pendingVoiceSearchResult = result
+                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Search movies & series...")
+                            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                        }
+                        try {
+                            startActivityForResult(intent, REQ_VOICE_SEARCH)
+                        } catch (e: Exception) {
+                            pendingVoiceSearchResult = null
+                            result.error("unavailable", "Speech recognition not available on this device", null)
+                        }
+                    }
+                }
+                "nowPlayingShow" -> {
+                    val title = call.argument<String>("title") ?: "Max Player"
+                    val subtitle = call.argument<String>("subtitle") ?: ""
+                    val isPlaying = call.argument<Boolean>("isPlaying") ?: true
+                    val path = call.argument<String>("path") ?: ""
+                    ensureMediaReceiver()
+                    val id = Notifications.showNowPlaying(
+                        applicationContext,
+                        title,
+                        subtitle,
+                        isPlaying,
+                        if (path.isNotEmpty()) "video:$path" else null,
+                    )
+                    result.success(id)
+                }
+                "nowPlayingCancel" -> {
+                    Notifications.cancel(applicationContext, Notifications.NOTIF_ID_NOW_PLAYING)
+                    result.success(true)
+                }
+                "setWakeLock" -> {
+                    val enable = call.argument<Boolean>("enable") ?: false
+                    setWakeLock(enable)
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }
@@ -2177,6 +2267,16 @@ class MainActivity : FlutterActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_CONFIRM_CREDENTIAL) {
             finishCredentialPrompt(resultCode == RESULT_OK)
+        } else if (requestCode == REQ_VOICE_SEARCH) {
+            val pending = pendingVoiceSearchResult
+            pendingVoiceSearchResult = null
+            if (resultCode == RESULT_OK && data != null) {
+                val matches = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                val query = matches?.firstOrNull()?.trim()
+                pending?.success(query)
+            } else {
+                pending?.success(null)
+            }
         }
     }
 
@@ -2205,6 +2305,19 @@ class MainActivity : FlutterActivity() {
             } catch (_: Exception) {
             }
             pipReceiverRegistered = false
+        }
+        if (mediaReceiverRegistered) {
+            try {
+                unregisterReceiver(mediaReceiver)
+            } catch (_: Exception) {
+            }
+            mediaReceiverRegistered = false
+        }
+        if (wakeLock?.isHeld == true) {
+            try {
+                wakeLock?.release()
+            } catch (_: Exception) {
+            }
         }
         executor.shutdown()
         super.onDestroy()

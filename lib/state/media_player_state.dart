@@ -134,6 +134,7 @@ class MediaPlayerState extends ChangeNotifier {
         // Keep the PiP window's play/pause remote action in sync
         // (native side ignores this when not in PiP).
         NativeBridge.setPipPlaying(v);
+        _syncNowPlaying();
       }),
       player.stream.position.listen((v) {
         position = v;
@@ -1020,6 +1021,37 @@ class MediaPlayerState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// v67 B1/B2: syncs Now Playing notification and wake lock with playback state.
+  void _syncNowPlaying() {
+    final track = currentTrack;
+    if (track == null) {
+      unawaited(NativeBridge.cancelNowPlaying());
+      unawaited(NativeBridge.setWakeLock(false));
+      return;
+    }
+    if (backgroundAudio) {
+      unawaited(NativeBridge.showNowPlaying(
+        title: track.title,
+        subtitle: isPlaying ? 'Playing' : 'Paused',
+        isPlaying: isPlaying,
+        path: track.path,
+      ));
+      unawaited(NativeBridge.setWakeLock(isPlaying));
+    } else {
+      unawaited(NativeBridge.cancelNowPlaying());
+      unawaited(NativeBridge.setWakeLock(false));
+    }
+  }
+
+  /// v67 B2: background audio setting.
+  bool backgroundAudio = true;
+
+  void setBackgroundAudio(bool on) {
+    backgroundAudio = on;
+    _syncNowPlaying();
+    notifyListeners();
+  }
+
   // ---------------------------------------------------------------------------
   // Volume leveling (v21) - mpv dynaudnorm: quiet dialogue and loud
   // explosions come out at a steady level.
@@ -1412,6 +1444,7 @@ class MediaPlayerState extends ChangeNotifier {
   Future<void> stopMini() async {
     playlist = [];
     currentIndex = 0;
+    _syncNowPlaying();
     notifyListeners();
     await player.stop();
   }
@@ -1429,6 +1462,9 @@ class MediaPlayerState extends ChangeNotifier {
     if (playlist.length <= 1) return;
     await playTrack(_getNextIndex(forward: false));
   }
+
+  /// Alias for [prevTrack] used by media session / notifications.
+  Future<void> previousTrack() => prevTrack();
 
   void toggleRepeat() {
     repeatMode = switch (repeatMode) {

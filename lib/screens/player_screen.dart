@@ -284,7 +284,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
-      widget.player.pause();
+      if (!widget.player.backgroundAudio) {
+        widget.player.pause();
+      }
       // v63 Phase 2: when the user leaves the player mid-video, offer a
       // "Continue watching" notification (only if the video is actually
       // resumable; the service enforces the 5%..95% + cool-down rules).
@@ -309,6 +311,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     // v21: push the playback-extras settings into the player state.
     unawaited(widget.player.setVolumeBoost300(s.volumeBoost300));
+    widget.player.setBackgroundAudio(s.backgroundAudio);
     unawaited(widget.player.setVolumeLeveling(s.volumeLeveling));
     // v32: picture settings - HDR tone-mapping curve + Enhance shader.
     unawaited(widget.player.setToneMapping(s.toneMapping));

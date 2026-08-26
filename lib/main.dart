@@ -94,6 +94,26 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
         onOpenVideoFailed: _externalOpenFailed,
         // v62 Phase 1: a notification was tapped while the app was running.
         onNotificationTap: _handleNotificationTap,
+        // v67 B1: media notification controls (play/pause, next, prev, stop).
+        onMediaAction: (action) {
+          final p = _player;
+          if (p == null) return;
+          switch (action) {
+            case 'play_pause':
+              p.togglePlay();
+              break;
+            case 'next':
+              p.nextTrack();
+              break;
+            case 'prev':
+              p.previousTrack();
+              break;
+            case 'stop':
+              p.pause();
+              unawaited(NativeBridge.cancelNowPlaying());
+              break;
+          }
+        },
       );
       // ... and the cold-start cases (app launched BY a VIEW intent or a
       // notification tap).

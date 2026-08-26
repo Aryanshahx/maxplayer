@@ -2282,4 +2282,102 @@ void main() {
       expect(anchor?.title, 'Watching Movie 2');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // v66: A5 Voice search in Discover movies section
+  // -------------------------------------------------------------------------
+  group('v66 voice search', () {
+    final manifest =
+        File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+    final mainActivity = File(
+      'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/'
+      'MainActivity.kt',
+    ).readAsStringSync();
+    final discoverScreen =
+        File('lib/screens/discover_screen.dart').readAsStringSync();
+
+    test('manifest declares RECORD_AUDIO and speech recognizer query', () {
+      expect(manifest, contains('RECORD_AUDIO'));
+      expect(manifest, contains('RecognitionService'));
+    });
+
+    test('MainActivity handles startVoiceSearch and RecognizerIntent', () {
+      expect(mainActivity, contains('startVoiceSearch'));
+      expect(mainActivity, contains('RecognizerIntent.ACTION_RECOGNIZE_SPEECH'));
+      expect(mainActivity, contains('REQ_VOICE_SEARCH'));
+    });
+
+    test('DiscoverScreen wires voice search mic button', () {
+      expect(discoverScreen, contains('_startVoiceSearch'));
+      expect(discoverScreen, contains('Icons.mic_none_outlined'));
+      expect(discoverScreen, contains('Voice search'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v67: B1 + B2 Now-playing controls & background / screen-off audio
+  // -------------------------------------------------------------------------
+  group('v67 now-playing and background audio', () {
+    final manifest =
+        File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+    final mainActivity = File(
+      'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/'
+      'MainActivity.kt',
+    ).readAsStringSync();
+    final notifs = File(
+      'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/'
+      'Notifications.kt',
+    ).readAsStringSync();
+    final settingsCode =
+        File('lib/state/player_settings.dart').readAsStringSync();
+    final sheetCode =
+        File('lib/widgets/player_settings_sheet.dart').readAsStringSync();
+    final stateCode =
+        File('lib/state/media_player_state.dart').readAsStringSync();
+
+    test('manifest declares WAKE_LOCK and FOREGROUND_SERVICE permissions', () {
+      expect(manifest, contains('WAKE_LOCK'));
+      expect(manifest, contains('FOREGROUND_SERVICE'));
+      expect(manifest, contains('FOREGROUND_SERVICE_MEDIA_PLAYBACK'));
+    });
+
+    test('Notifications provides showNowPlaying with media control actions', () {
+      expect(notifs, contains('showNowPlaying'));
+      expect(notifs, contains('NOTIF_ID_NOW_PLAYING'));
+      expect(notifs, contains('ic_media_play'));
+      expect(notifs, contains('ic_media_pause'));
+      expect(notifs, contains('ic_media_next'));
+      expect(notifs, contains('ic_media_previous'));
+    });
+
+    test('MainActivity handles nowPlayingShow/Cancel, media actions and wake lock', () {
+      expect(mainActivity, contains('nowPlayingShow'));
+      expect(mainActivity, contains('nowPlayingCancel'));
+      expect(mainActivity, contains('ACTION_MEDIA_CONTROL'));
+      expect(mainActivity, contains('setWakeLock'));
+    });
+
+    test('PlayerSettings defaults backgroundAudio to true and supports copyWith', () {
+      expect(settingsCode, contains('backgroundAudio'));
+      const s = PlayerSettings();
+      expect(s.backgroundAudio, isTrue);
+      expect(PlayerSettings.kBackgroundAudio, 'player.backgroundAudio');
+      final s2 = s.copyWith(backgroundAudio: false);
+      expect(s2.backgroundAudio, isFalse);
+    });
+
+    test('PlayerSettingsSheet exposes Background audio playback toggle', () {
+      expect(sheetCode, contains('Background audio playback'));
+      expect(sheetCode, contains('backgroundAudio'));
+    });
+
+    test('MediaPlayerState manages backgroundAudio and _syncNowPlaying', () {
+      expect(stateCode, contains('bool backgroundAudio = true;'));
+      expect(stateCode, contains('setBackgroundAudio'));
+      expect(stateCode, contains('_syncNowPlaying'));
+      expect(stateCode, contains('showNowPlaying'));
+      expect(stateCode, contains('cancelNowPlaying'));
+      expect(stateCode, contains('setWakeLock'));
+    });
+  });
 }

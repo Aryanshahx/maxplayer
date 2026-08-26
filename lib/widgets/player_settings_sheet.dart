@@ -293,6 +293,16 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                     _update(_settings.copyWith(volumeBoost300: v)),
               ),
               _SwitchTile(
+                icon: Icons.headset_outlined,
+                label: 'Background audio playback',
+                subtitle:
+                    'Keep playing audio when screen is turned off '
+                    'or app is in background',
+                value: _settings.backgroundAudio,
+                onChanged: (v) =>
+                    _update(_settings.copyWith(backgroundAudio: v)),
+              ),
+              _SwitchTile(
                 icon: Icons.graphic_eq,
                 label: 'Volume leveling',
                 subtitle:

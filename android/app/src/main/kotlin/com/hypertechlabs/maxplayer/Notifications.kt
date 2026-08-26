@@ -121,6 +121,60 @@ object Notifications {
     fun areEnabled(context: Context): Boolean =
         NotificationManagerCompat.from(context).areNotificationsEnabled()
 
+    const val NOTIF_ID_NOW_PLAYING = 1001
+
+    /**
+     * v67 (B1): Rich now-playing notification with Play/Pause, Next, Previous,
+     * and Stop action buttons. Tap brings the player back to foreground.
+     */
+    fun showNowPlaying(
+        context: Context,
+        title: String,
+        artist: String,
+        isPlaying: Boolean,
+        payload: String?,
+    ): Int {
+        val tap = createLaunchIntent(context, payload)
+
+        fun makeActionIntent(action: String, reqCode: Int): PendingIntent {
+            val intent = Intent(MainActivity.ACTION_MEDIA_CONTROL).apply {
+                setPackage(context.packageName)
+                putExtra(MainActivity.EXTRA_MEDIA_ACTION, action)
+            }
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+            return PendingIntent.getBroadcast(context, reqCode, intent, flags)
+        }
+
+        val prevPending = makeActionIntent("prev", 101)
+        val playPausePending = makeActionIntent("play_pause", 102)
+        val nextPending = makeActionIntent("next", 103)
+        val stopPending = makeActionIntent("stop", 104)
+
+        val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        val playPauseLabel = if (isPlaying) "Pause" else "Play"
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_PLAYBACK)
+            .setSmallIcon(R.drawable.ic_stat_notify)
+            .setContentTitle(title)
+            .setContentText(artist)
+            .setContentIntent(tap)
+            .setOngoing(isPlaying)
+            .setAutoCancel(!isPlaying)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .addAction(android.R.drawable.ic_media_previous, "Previous", prevPending)
+            .addAction(playPauseIcon, playPauseLabel, playPausePending)
+            .addAction(android.R.drawable.ic_media_next, "Next", nextPending)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPending)
+
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_NOW_PLAYING, builder.build())
+        } catch (_: SecurityException) {
+        }
+        return NOTIF_ID_NOW_PLAYING
+    }
+
     /**
      * Builds the tap intent: opens/reuses MainActivity (singleTop) and
      * carries [payload] as [EXTRA_PAYLOAD]. MainActivity reads it in
