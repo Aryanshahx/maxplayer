@@ -7,6 +7,9 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -93,6 +96,57 @@ class MediaPlaybackService : Service() {
         Notifications.ensureChannels(applicationContext)
         acquireWakeLock()
         initMediaSession()
+    }
+
+    private var audioFocusRequest: Any? = null
+
+    private fun requestAudioFocus() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val playbackAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                .build()
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(playbackAttributes)
+                .setAcceptsDelayedFocusGain(true)
+                .setOnAudioFocusChangeListener { focusChange ->
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
+                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                        onMediaAction?.invoke("pause")
+                    } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+                        onMediaAction?.invoke("play")
+                    }
+                }
+                .build()
+            audioFocusRequest = request
+            am.requestAudioFocus(request)
+        } else {
+            @Suppress("DEPRECATION")
+            am.requestAudioFocus(
+                { focusChange ->
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
+                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                        onMediaAction?.invoke("pause")
+                    } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+                        onMediaAction?.invoke("play")
+                    }
+                },
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = audioFocusRequest as? AudioFocusRequest
+            if (req != null) am.abandonAudioFocusRequest(req)
+        } else {
+            @Suppress("DEPRECATION")
+            am.abandonAudioFocus(null)
+        }
     }
 
     private fun acquireWakeLock() {
@@ -185,6 +239,7 @@ class MediaPlaybackService : Service() {
 
         updateSessionPlaybackState(isPlaying, posMs)
         updateSessionMetadata(title, subtitle, durMs, thumbBmp)
+        if (isPlaying) requestAudioFocus()
         val notif = buildNotification(title, subtitle, isPlaying, path, thumbBmp, posMs, durMs)
 
         try {
@@ -313,6 +368,7 @@ class MediaPlaybackService : Service() {
             mediaSession?.release()
             mediaSession = null
         } catch (_: Exception) {}
+        abandonAudioFocus()
         releaseWakeLock()
         stopForegroundCompat()
         super.onDestroy()

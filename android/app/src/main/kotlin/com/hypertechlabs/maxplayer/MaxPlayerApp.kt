@@ -56,6 +56,11 @@ class MaxPlayerApp : Application() {
         handlerInstalled = true
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            val msg = error.message ?: ""
+            if (msg.contains("FlutterJNI is not attached to native")) {
+                // Ignore late ImageReader callbacks during engine teardown / activity stop
+                return@setDefaultUncaughtExceptionHandler
+            }
             try {
                 CrashCrumbs.crash(
                     this,

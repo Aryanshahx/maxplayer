@@ -1066,7 +1066,9 @@ class MediaPlayerState extends ChangeNotifier {
   // user is told instead of the toggle doing nothing.
   // ---------------------------------------------------------------------------
 
-  static const String kLevelingFilter = 'dynaudnorm=f=150:g=15:m=5:p=0.95';
+  /// v70: real-time audio dynamic compressor (instant leveling without buffer stalls).
+  static const String kLevelingFilter =
+      'acompressor=threshold=0.125:ratio=4:attack=5:release=50:makeup=2';
   bool _levelingOn = false;
   bool get volumeLeveling => _levelingOn;
 
@@ -1158,6 +1160,12 @@ class MediaPlayerState extends ChangeNotifier {
   Future<void> _applyAudioFilters() async {
     final platform = player.platform;
     if (platform is! NativePlayer) return;
+    if (!_levelingOn && !eqEnabled) {
+      try {
+        await platform.setProperty('af', '');
+      } catch (_) {}
+      return;
+    }
     final lavfiParts = <String>[
       if (eqEnabled) ...equalizerFilterParts(eqGains),
       if (_levelingOn) kLevelingFilter,
@@ -1165,7 +1173,11 @@ class MediaPlayerState extends ChangeNotifier {
     final af = lavfiParts.isEmpty ? '' : 'lavfi=[${lavfiParts.join(',')}]';
     try {
       await platform.setProperty('af', af);
-    } catch (_) {}
+    } catch (_) {
+      try {
+        await platform.setProperty('af', '');
+      } catch (_) {}
+    }
   }
 
   Future<void> toggleMute() async {

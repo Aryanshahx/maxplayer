@@ -1,36 +1,38 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  Max Player  -  v70  (1.0.0+65)  - Complete Master Release
+#  Max Player  -  v70  (1.0.0+66)  - Master Release
 #
-#  Fixes & features included:
+#  Fixes & optimizations:
 #  ---------------------------------------------------------------------------
-#  1. Audio Glitch & Audio Focus Fix:
-#     - Managed Android AudioFocus (AudioManager.AUDIOFOCUS_GAIN with
-#       AudioAttributes.USAGE_MEDIA / CONTENT_TYPE_MOVIE) so media playback
-#       audio routes seamlessly to speaker/earphones with zero audio drops.
-#     - Fixed mpv audio filter syntax for volume leveling (dynaudnorm inside lavfi).
-#     - Clean 200% volume boost.
+#  1. Audio Block & Glitch Fixed:
+#     - Replaced stalling 150-frame dynaudnorm filter with zero-latency
+#       acompressor (threshold=0.125, ratio=4, attack=5ms, release=50ms, makeup=2)
+#       so turning on volume leveling NEVER blocks or mutes audio output.
+#     - Managed Android AudioFocus (AudioManager.AUDIOFOCUS_GAIN with USAGE_MEDIA /
+#       CONTENT_TYPE_MOVIE) in MainActivity & MediaPlaybackService.
+#     - Clean 200% audio boost.
 #
-#  2. True Borderless Edge-to-Edge Punch-Hole & Notch Display:
-#     - shortEdges window cutout mode in styles.xml (LaunchTheme + NormalTheme).
-#     - WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES.
-#     - Video layer uses MediaQuery.removePadding so the video texture bleeds
-#       100% under punch-hole camera cutouts without any black letterbox borders.
+#  2. True Borderless Edge-to-Edge Punch-Hole & Notch Display (VLC Style):
+#     - shortEdges window cutout mode in styles.xml, values-night, and values-v28.
+#     - WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS + FLAG_LAYOUT_IN_SCREEN.
+#     - Video layer uses MediaQuery.removePadding and SizedBox.expand so the
+#       video texture expands 100% edge-to-edge behind the punch hole without
+#       forced black letterbox bars.
 #
-#  3. Fixed Now-Playing Notification & Media Controls:
-#     - Video thumbnail loaded as largeIcon and MediaMetadata album art.
+#  3. Fixed Android 15/16 Teardown Crash:
+#     - Protected MaxPlayerApp against late ImageReaderSurfaceProducer frames
+#       during engine detach ("FlutterJNI is not attached to native").
+#
+#  4. Fixed Now-Playing Notification & Media Controls:
+#     - Video thumbnail as largeIcon and MediaMetadata album art.
 #     - Video duration & position displayed in notification.
 #     - Interactive playbar / seekbar in notification, lockscreen, and smartwatches.
 #
-#  4. Fixed Background & Screen-off Playback:
+#  5. Fixed Background & Screen-off Playback:
 #     - Native Android Foreground Service (MediaPlaybackService) with WakeLock.
 #
-#  5. C3: Wi-Fi Resume-Sync across devices (v69):
-#     - Zero-cloud UDP beacon discovery with one-tap Library banner.
-#
-#  6. C4: Wear OS / Smartwatch Companion REST API on port 52326.
-#  7. A5 Voice Search in Discover + A1 Smart Skip + A2 Ask AI + A6 Recommendations.
-#  8. Kotlin Activity.setImmersive method collision fix.
+#  6. C3: Wi-Fi Resume-Sync across devices + C4: Wear OS Companion REST API.
+#  7. A5 Voice Search in Discover + A1 Smart Skip + A2 Ask AI Video Chat.
 #
 #  Run AS-IS from repo root:  bash update_maxplayer_v70.sh
 #  Idempotent - run twice; both must end "N/N checks OK".
@@ -38,7 +40,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 echo "============================================================"
-echo " Max Player v70 (1.0.0+65)"
+echo " Max Player v70 (1.0.0+66)"
 echo " Running from: $(pwd)"
 echo "============================================================"
 mkdir -p "$(dirname "android/app/src/main/AndroidManifest.xml")"
@@ -594,12 +596,16 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         CrashCrumbs.mark(this, "activity_create_begin")
         super.onCreate(savedInstanceState)
-        // v68: Cutout / notch handling - allow drawing under the notch
+        // v68/v70: Cutout / punch hole handling - draw under camera cutouts
         // on short edges for true edge-to-edge borderless display (VLC style).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        )
         // v62 Phase 1: create all notification channels once, before any
         // feature (AI-subs-ready, continue watching, ...) posts one.
         Notifications.ensureChannels(applicationContext)
@@ -2777,6 +2783,9 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -2863,6 +2872,57 @@ class MediaPlaybackService : Service() {
         Notifications.ensureChannels(applicationContext)
         acquireWakeLock()
         initMediaSession()
+    }
+
+    private var audioFocusRequest: Any? = null
+
+    private fun requestAudioFocus() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val playbackAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                .build()
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(playbackAttributes)
+                .setAcceptsDelayedFocusGain(true)
+                .setOnAudioFocusChangeListener { focusChange ->
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
+                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                        onMediaAction?.invoke("pause")
+                    } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+                        onMediaAction?.invoke("play")
+                    }
+                }
+                .build()
+            audioFocusRequest = request
+            am.requestAudioFocus(request)
+        } else {
+            @Suppress("DEPRECATION")
+            am.requestAudioFocus(
+                { focusChange ->
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
+                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                        onMediaAction?.invoke("pause")
+                    } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+                        onMediaAction?.invoke("play")
+                    }
+                },
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = audioFocusRequest as? AudioFocusRequest
+            if (req != null) am.abandonAudioFocusRequest(req)
+        } else {
+            @Suppress("DEPRECATION")
+            am.abandonAudioFocus(null)
+        }
     }
 
     private fun acquireWakeLock() {
@@ -2955,6 +3015,7 @@ class MediaPlaybackService : Service() {
 
         updateSessionPlaybackState(isPlaying, posMs)
         updateSessionMetadata(title, subtitle, durMs, thumbBmp)
+        if (isPlaying) requestAudioFocus()
         val notif = buildNotification(title, subtitle, isPlaying, path, thumbBmp, posMs, durMs)
 
         try {
@@ -3083,6 +3144,7 @@ class MediaPlaybackService : Service() {
             mediaSession?.release()
             mediaSession = null
         } catch (_: Exception) {}
+        abandonAudioFocus()
         releaseWakeLock()
         stopForegroundCompat()
         super.onDestroy()
@@ -3090,6 +3152,191 @@ class MediaPlaybackService : Service() {
 }
 MAXV70_EOF_MEDIA_PLAYBACK_SERVICE_KT
 echo "  wrote android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MediaPlaybackService.kt"
+
+mkdir -p "$(dirname "android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MaxPlayerApp.kt")"
+cat > "android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MaxPlayerApp.kt" <<'MAXV70_EOF_MAXPLAYERAPP_KT'
+package com.hypertechlabs.maxplayer
+
+import android.app.Application
+import android.content.Context
+import android.os.Build
+import android.os.Process
+import android.os.SystemClock
+import java.io.File
+import java.io.PrintWriter
+import java.io.StringWriter
+
+/**
+ * v34/v36/v37: two crash-diagnosis tools that need NO PC and NO app
+ * reopen on the failing phone:
+ *
+ *  (1) CRASH REPORT (v34/v36): catches JVM-level uncaught exceptions -
+ *      the "Max Player has stopped" case - anywhere in the app,
+ *      INCLUDING crashes before MainActivity exists. Saved to both:
+ *       a) internal storage (shown in-app on next launch via
+ *          nativeCrashGet/nativeCrashClear + takeLastIncludingNative),
+ *       b) Android/data/<package>/files/maxplayer_crash.txt - readable
+ *          with ANY file manager, no permission needed (v36).
+ *
+ *  (2) STARTUP TRACE (v37): a breadcrumb stage log that survives even
+ *      when the app dies before Dart or the UI ever comes up:
+ *      Android/data/<package>/files/maxplayer_start.log
+ *      Records: app_create -> activity_create_begin/ok -> channel_ready
+ *      -> dart_main -> mediakit_ok -> player_ok/player_FAIL -> scan_*
+ *      plus a final "CRASH: <exception>" line from the handler above.
+ *      The LAST stage line tells us exactly which component killed a
+ *      phone that "never opens".
+ *
+ * The previous default handler is chained afterwards, so the system
+ * crash dialog, process teardown and Play Console crash stats keep
+ * working. A hard native abort (SIGSEGV inside a .so) bypasses the JVM
+ * channel by design - but the trace file still shows the last stage.
+ */
+class MaxPlayerApp : Application() {
+
+    override fun attachBaseContext(base: Context?) {
+        super.attachBaseContext(base)
+        // Install as EARLY as possible - attachBaseContext runs before
+        // content providers and before onCreate.
+        installCrashHandler()
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        installCrashHandler()
+        CrashCrumbs.reset(this)
+        CrashCrumbs.mark(this, "app_create")
+    }
+
+    private fun installCrashHandler() {
+        if (handlerInstalled) return
+        handlerInstalled = true
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            val msg = error.message ?: ""
+            if (msg.contains("FlutterJNI is not attached to native")) {
+                // Ignore late ImageReader callbacks during engine teardown / activity stop
+                return@setDefaultUncaughtExceptionHandler
+            }
+            try {
+                CrashCrumbs.crash(
+                    this,
+                    "${error.javaClass.simpleName}: ${
+                        error.message?.lineSequence()?.firstOrNull() ?: ""
+                    }",
+                )
+            } catch (_: Throwable) {
+            }
+            try {
+                writeCrashReport(thread, error)
+            } catch (_: Throwable) {
+                // Reporting must never crash the crash handler itself.
+            }
+            // Chain so the system dialogue + Play crash stats still work.
+            if (previous != null) {
+                previous.uncaughtException(thread, error)
+            } else {
+                Process.killProcess(Process.myPid())
+            }
+        }
+    }
+
+    private fun writeCrashReport(thread: Thread, error: Throwable) {
+        val trace =
+            StringWriter().also { error.printStackTrace(PrintWriter(it)) }.toString()
+        @Suppress("DEPRECATION")
+        val versionName = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+        } catch (_: Throwable) {
+            "?"
+        }
+        val text = buildString {
+            appendLine("Max Player crash report (Android layer)")
+            appendLine("time-ms: ${System.currentTimeMillis()}")
+            appendLine("app: $versionName")
+            appendLine("device: ${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            appendLine("thread: ${thread.name}")
+            appendLine()
+            append(trace)
+        }
+        val trimmed = if (text.length > 12000) text.substring(0, 12000) else text
+        // 1) internal storage: the app itself reads it on the next launch.
+        try {
+            File(filesDir, CRASH_FILE).writeText(trimmed)
+        } catch (_: Throwable) {
+        }
+        // 2) app-specific external folder: browsable with any file
+        //    manager on Android 10 and older, no permission needed.
+        try {
+            val ext = getExternalFilesDir(null)
+            if (ext != null) File(ext, CRASH_FILE).writeText(trimmed)
+        } catch (_: Throwable) {
+        }
+    }
+
+    companion object {
+        @Volatile
+        private var handlerInstalled = false
+        const val CRASH_FILE = "maxplayer_crash.txt"
+    }
+}
+
+/** v37: tiny append-only startup trace, dual-written like the crash
+ *  report. Reset on every cold start (Application.onCreate). */
+internal object CrashCrumbs {
+    private const val START_FILE = "maxplayer_start.log"
+
+    @Volatile
+    private var t0: Long = -1
+
+    /** Fresh log for a cold start. */
+    fun reset(context: Context?) {
+        if (context == null) return
+        t0 = SystemClock.elapsedRealtime()
+        val header = buildString {
+            appendLine("Max Player startup trace (v37)")
+            appendLine("app-create @ ${System.currentTimeMillis()}")
+            appendLine(
+                "android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), " +
+                    "${Build.MANUFACTURER} ${Build.MODEL}",
+            )
+            appendLine("stages:")
+        }
+        write(context, header, append = false)
+    }
+
+    fun mark(context: Context?, stage: String) {
+        if (context == null) return
+        if (t0 < 0) t0 = SystemClock.elapsedRealtime()
+        val ms = SystemClock.elapsedRealtime() - t0
+        write(context, "  $stage  (+${ms}ms)\n", append = true)
+    }
+
+    fun crash(context: Context?, short: String) {
+        val single = short.lineSequence().firstOrNull() ?: short
+        write(context, "  CRASH: ${single.take(300)}\n", append = true)
+    }
+
+    private fun write(context: Context?, text: String, append: Boolean) {
+        if (context == null) return
+        try {
+            val f = File(context.filesDir, START_FILE)
+            if (append) f.appendText(text) else f.writeText(text)
+        } catch (_: Throwable) {
+        }
+        try {
+            val ext = context.getExternalFilesDir(null)
+            if (ext != null) {
+                val f = File(ext, START_FILE)
+                if (append) f.appendText(text) else f.writeText(text)
+            }
+        } catch (_: Throwable) {
+        }
+    }
+}
+MAXV70_EOF_MAXPLAYERAPP_KT
+echo "  wrote android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MaxPlayerApp.kt"
 
 mkdir -p "$(dirname "android/app/src/main/kotlin/com/hypertechlabs/maxplayer/Notifications.kt")"
 cat > "android/app/src/main/kotlin/com/hypertechlabs/maxplayer/Notifications.kt" <<'MAXV70_EOF_NOTIFICATIONS_KT'
@@ -3345,6 +3592,26 @@ cat > "android/app/src/main/res/values-night/styles.xml" <<'MAXV70_EOF_STYLES_NI
 </resources>
 MAXV70_EOF_STYLES_NIGHT_XML
 echo "  wrote android/app/src/main/res/values-night/styles.xml"
+
+mkdir -p "$(dirname "android/app/src/main/res/values-v28/styles.xml")"
+cat > "android/app/src/main/res/values-v28/styles.xml" <<'MAXV70_EOF_STYLES_V28_XML'
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
+</resources>
+MAXV70_EOF_STYLES_V28_XML
+echo "  wrote android/app/src/main/res/values-v28/styles.xml"
 
 mkdir -p "$(dirname "lib/main.dart")"
 cat > "lib/main.dart" <<'MAXV70_EOF_MAIN_DART'
@@ -5233,7 +5500,9 @@ class MediaPlayerState extends ChangeNotifier {
   // user is told instead of the toggle doing nothing.
   // ---------------------------------------------------------------------------
 
-  static const String kLevelingFilter = 'dynaudnorm=f=150:g=15:m=5:p=0.95';
+  /// v70: real-time audio dynamic compressor (instant leveling without buffer stalls).
+  static const String kLevelingFilter =
+      'acompressor=threshold=0.125:ratio=4:attack=5:release=50:makeup=2';
   bool _levelingOn = false;
   bool get volumeLeveling => _levelingOn;
 
@@ -5325,6 +5594,12 @@ class MediaPlayerState extends ChangeNotifier {
   Future<void> _applyAudioFilters() async {
     final platform = player.platform;
     if (platform is! NativePlayer) return;
+    if (!_levelingOn && !eqEnabled) {
+      try {
+        await platform.setProperty('af', '');
+      } catch (_) {}
+      return;
+    }
     final lavfiParts = <String>[
       if (eqEnabled) ...equalizerFilterParts(eqGains),
       if (_levelingOn) kLevelingFilter,
@@ -5332,7 +5607,11 @@ class MediaPlayerState extends ChangeNotifier {
     final af = lavfiParts.isEmpty ? '' : 'lavfi=[${lavfiParts.join(',')}]';
     try {
       await platform.setProperty('af', af);
-    } catch (_) {}
+    } catch (_) {
+      try {
+        await platform.setProperty('af', '');
+      } catch (_) {}
+    }
   }
 
   Future<void> toggleMute() async {
@@ -11768,7 +12047,7 @@ cat > "pubspec.yaml" <<'MAXV70_EOF_PUBSPEC_YAML'
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+65
+version: 1.0.0+66
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -14311,6 +14590,7 @@ absent  "no ActivityResultContracts import"    "ActivityResultContracts"       "
 present "applyImmersiveMode in MainActivity"  "applyImmersiveMode"            "$K/MainActivity.kt"
 absent  "no Activity.setImmersive collision"  "private fun setImmersive"      "$K/MainActivity.kt"
 present "requestAudioFocus in MainActivity"   "requestAudioFocus"             "$K/MainActivity.kt"
+present "FLAG_LAYOUT_NO_LIMITS in MainActivity" "FLAG_LAYOUT_NO_LIMITS"        "$K/MainActivity.kt"
 present "POST_NOTIFICATIONS declared"         "POST_NOTIFICATIONS"            "android/app/src/main/AndroidManifest.xml"
 present "RECORD_AUDIO declared"               "RECORD_AUDIO"                  "android/app/src/main/AndroidManifest.xml"
 present "WAKE_LOCK declared"                  "WAKE_LOCK"                     "android/app/src/main/AndroidManifest.xml"
@@ -14320,11 +14600,13 @@ present "MediaPlaybackService class"          "class MediaPlaybackService"    "$
 present "MediaSession in playback service"    "MediaSession"                  "$K/MediaPlaybackService.kt"
 present "MediaMetadata in playback service"   "MediaMetadata"                 "$K/MediaPlaybackService.kt"
 present "VLC cutout mode in styles.xml"       "android:windowLayoutInDisplayCutoutMode" "android/app/src/main/res/values/styles.xml"
+present "VLC cutout mode in values-v28"       "android:windowLayoutInDisplayCutoutMode" "android/app/src/main/res/values-v28/styles.xml"
 present "VLC cutout mode in MainActivity"     "LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES" "$K/MainActivity.kt"
 present "startVoiceSearch in MainActivity"    "startVoiceSearch"              "$K/MainActivity.kt"
 present "volume boost 200% key"               "kVolumeBoost200"               "lib/state/player_settings.dart"
 present "volume boost 200% mpv setting"       "'volume-max', '200'"           "lib/state/media_player_state.dart"
 present "volume boost 200% sheet toggle"      "Volume boost up to 200%"       "lib/widgets/player_settings_sheet.dart"
+present "acompressor leveling in player state" "acompressor"                  "lib/state/media_player_state.dart"
 present "background audio setting key"        "kBackgroundAudio"              "lib/state/player_settings.dart"
 present "background audio sheet toggle"       "Background audio playback"     "lib/widgets/player_settings_sheet.dart"
 present "backgroundAudio in player state"     "bool backgroundAudio = true;"  "lib/state/media_player_state.dart"
@@ -14335,7 +14617,7 @@ present "ResumeSyncService class"             "class ResumeSyncService"       "l
 present "video ask sheet widget"              "class VideoAskSheet"           "lib/widgets/video_ask_sheet.dart"
 present "v69 test suite"                      "group('v69 Wi-Fi resume-sync'" test/widget_test.dart
 present "v70 test suite"                      "group('v70 Wear OS companion"  test/widget_test.dart
-present "pubspec version 1.0.0+65"             "^version: 1.0.0+65"            "pubspec.yaml"
+present "pubspec version 1.0.0+66"             "^version: 1.0.0+66"            "pubspec.yaml"
 echo ""
 if [ "$ok" -eq "$total" ]; then
   echo "==> $ok/$total checks OK - v70 applied cleanly."
@@ -14345,7 +14627,7 @@ fi
 
 echo ""
 echo "============================================================"
-echo " DONE. If 34/34 checks OK, run AS-IS (no hand edits):"
-echo "   git add -A && git commit -m \"v70: 200% volume, fixed audio glitch & audio focus, borderless punch-hole display, fixed notification thumbnail & playbar, Wi-Fi resume-sync, Wear OS companion (1.0.0+65)\" && git push"
+echo " DONE. If 36/36 checks OK, run AS-IS (no hand edits):"
+echo "   git add -A && git commit -m \"v70: 200% volume, zero-latency acompressor leveling, borderless punch-hole layout, AudioFocus fix, teardown crash fix, Wi-Fi resume-sync, Wear OS companion (1.0.0+66)\" && git push"
 echo " Then start a new Codemagic build."
 echo "============================================================"

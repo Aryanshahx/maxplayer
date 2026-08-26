@@ -282,12 +282,16 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         CrashCrumbs.mark(this, "activity_create_begin")
         super.onCreate(savedInstanceState)
-        // v68: Cutout / notch handling - allow drawing under the notch
+        // v68/v70: Cutout / punch hole handling - draw under camera cutouts
         // on short edges for true edge-to-edge borderless display (VLC style).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        )
         // v62 Phase 1: create all notification channels once, before any
         // feature (AI-subs-ready, continue watching, ...) posts one.
         Notifications.ensureChannels(applicationContext)
