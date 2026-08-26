@@ -160,3 +160,40 @@ Duration? computeSkipIntro(List<SrtCue> cues) {
   }
   return null;
 }
+
+/// v65 Smart skip: where the END CREDITS begin. Looks for a trailing run of
+/// short, roll-style cues (credits are many short lines clustered at the
+/// end) that start well after most of the film.
+///
+/// Heuristic, deliberately conservative so it never fires on normal
+/// dialogue: the final [_creditsMinCues] cues must (a) all lie in the last
+/// 30% of the cue timeline, (b) be short (<= [_creditsLineMs] each, like a
+/// single name/role), and (c) be dense (the run spans <= [_creditsRunMs]).
+/// Returns the start time of that run (minus a 1.5 s margin), or null.
+Duration? computeSkipCredits(List<SrtCue> cues, {int? durationMs}) {
+  if (cues.length < _creditsMinCues) return null;
+  final spoken = cues.where((c) => !isMusicOnlyText(c.text)).toList();
+  if (spoken.length < _creditsMinCues) return null;
+  // Total reference length: the passed duration, else the last cue end.
+  final total = durationMs ?? spoken.last.endMs;
+  if (total <= 0) return null;
+  final tail = spoken.sublist(spoken.length - _creditsMinCues);
+  // Credits only make sense in the final stretch of the video.
+  if (tail.first.startMs < total * 0.7) return null;
+  // Every tail cue is a single short credit line...
+  for (final c in tail) {
+    if ((c.endMs - c.startMs) > _creditsLineMs) return null;
+    if (c.text.trim().length > 40) return null; // a full sentence, not a name
+  }
+  // ...and they roll densely together.
+  final span = tail.last.startMs - tail.first.startMs;
+  if (span > _creditsRunMs) return null;
+  // Don't offer to skip if the credits are essentially already over.
+  if (total - tail.first.startMs < 15000) return null;
+  final target = (tail.first.startMs - 1500).clamp(0, total);
+  return Duration(milliseconds: target);
+}
+
+const int _creditsMinCues = 8;
+const int _creditsLineMs = 3500;
+const int _creditsRunMs = 90000; // the run rolls within 1.5 min

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../utils/srt.dart';
 import 'tmdb_client.dart';
 
 /// OpenRouter API key, injected at build time:
@@ -52,6 +53,7 @@ Map<String, Object> openRouterChatBody({
   required String model,
   required String system,
   required String question,
+  int maxTokens = 260,
 }) =>
     {
       'model': model,
@@ -59,7 +61,7 @@ Map<String, Object> openRouterChatBody({
         {'role': 'system', 'content': system},
         {'role': 'user', 'content': question},
       ],
-      'max_tokens': 260,
+      'max_tokens': maxTokens,
     };
 
 /// Extracts the assistant's text from a chat-completion response.
@@ -100,10 +102,14 @@ String movieAiCacheName(int movieId, String question) {
   return 'ai_answer_${movieId}_${h.toRadixString(16)}.txt';
 }
 
+/// OpenRouter chat-completions endpoint (shared by the movie + video clients).
+const String _kOpenRouterUrl =
+    'https://openrouter.ai/api/v1/chat/completions';
+
 /// v45: tiny OpenRouter client for the "Ask with AI" sheet. Plain dart:io,
 /// zero new dependencies. One shared keep-alive connection.
 class MovieAiClient {
-  static const String _url = 'https://openrouter.ai/api/v1/chat/completions';
+  static String get _url => _kOpenRouterUrl;
 
   static final HttpClient _http = HttpClient()
     ..connectionTimeout = const Duration(seconds: 12)
@@ -171,6 +177,107 @@ class MovieAiClient {
       } catch (_) {
         // network blip for this model -> try the next one
       }
+    }
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// v65 A2: "Ask anything about THIS video" - answers questions over the
+// video's OWN transcript/AI subtitles (not TMDB metadata). Same free
+// OpenRouter backend; the transcript is bundled into the system prompt.
+// ---------------------------------------------------------------------------
+
+/// Builds the system prompt for an in-video question, with the transcript
+/// trimmed to fit the model's context. Pure for tests.
+String videoTranscriptSystemPrompt(String title, List<SrtCue> cues) {
+  final lines = <String>[];
+  var budget = _transcriptCharBudget;
+  for (final c in cues) {
+    final t = c.text.trim();
+    if (t.isEmpty) continue;
+    final stamp = _stamp(c.startMs);
+    final line = '[$stamp] $t';
+    if (line.length > budget) break;
+    lines.add(line);
+    budget -= line.length;
+  }
+  final transcript = lines.join('\n');
+  return 'You are Max Player\'s assistant answering questions about the '
+      'video "$title". Use ONLY the transcript below. If the answer is '
+      'not in the transcript, say so briefly. When useful, cite the '
+      'timestamp like (12:34). Keep answers under 120 words.\n\n'
+      'TRANSCRIPT:\n$transcript';
+}
+
+String _stamp(int ms) {
+  final s = ms ~/ 1000;
+  final h = s ~/ 3600;
+  final m = (s % 3600) ~/ 60;
+  final sec = s % 60;
+  String two(int v) => v.toString().padLeft(2, '0');
+  return h > 0 ? '${two(h)}:${two(m)}:${two(sec)}' : '${two(m)}:${two(sec)}';
+}
+
+/// Rough character budget for the transcript sent to the model. Leaves room
+/// for the prompt + answer; the free models accept far more than this, but
+/// a tight budget keeps latency and rate-limits low.
+const int _transcriptCharBudget = 12000;
+
+/// v65: client for transcript-scoped questions (the player's "Ask AI"
+/// button). Shares the keep-alive HTTP client and model fallback chain.
+class VideoAiClient {
+  static final HttpClient _http = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 12)
+    ..idleTimeout = const Duration(seconds: 10);
+
+  /// Returns whether [cues] contain enough speech to answer questions
+  /// (fewer than ~8 spoken lines is too little to be useful).
+  static bool hasUsableTranscript(List<SrtCue> cues) {
+    var spoken = 0;
+    for (final c in cues) {
+      final t = c.text.trim();
+      if (t.isEmpty) continue;
+      if (isMusicOnlyText(t)) continue;
+      spoken++;
+      if (spoken >= 8) return true;
+    }
+    return false;
+  }
+
+  /// Asks a question about the video whose [cues] are passed. Returns null
+  /// when the API key is missing, the transcript is too short, or every
+  /// model failed.
+  Future<String?> ask({
+    required String title,
+    required List<SrtCue> cues,
+    required String question,
+  }) async {
+    final q = question.trim();
+    if (kOpenRouterApiKey.isEmpty || q.isEmpty) return null;
+    if (!hasUsableTranscript(cues)) return null;
+    final system = videoTranscriptSystemPrompt(title, cues);
+    for (final model in kOpenRouterModels) {
+      try {
+        final req = await _http.postUrl(Uri.parse(_kOpenRouterUrl));
+        req.headers.set('content-type', 'application/json');
+        req.headers.set('authorization', 'Bearer $kOpenRouterApiKey');
+        req.headers.set('x-title', 'Max Player');
+        req.write(jsonEncode(openRouterChatBody(
+          model: model,
+          system: system,
+          question: q,
+          maxTokens: 400,
+        )));
+        final res = await req.close().timeout(const Duration(seconds: 25));
+        if (res.statusCode != 200) {
+          await res.drain<void>();
+          continue;
+        }
+        final text =
+            parseOpenRouterAnswer(await res.transform(utf8.decoder).join());
+        if (text != null) return text;
+      } catch (_) {}
     }
     return null;
   }

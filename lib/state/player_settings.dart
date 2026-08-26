@@ -48,19 +48,15 @@ class PlayerSettings {
   /// Show the screen-lock (kids mode) button on the video.
   final bool lockButton;
 
-  /// v21: playback extras.
-  /// Volume slider/drag may go past 100% up to 200% (mpv decoder gain).
-  final bool volumeBoost200;
+  /// v65: playback extras.
+  /// Volume slider/drag may go past 100% up to 300% (mpv decoder gain).
+  final bool volumeBoost300;
 
   /// mpv dynaudnorm: loud explosions and quiet dialogue evened out.
   final bool volumeLeveling;
 
   /// Karaoke-style word highlight for AI subtitles.
   final bool karaokeSubs;
-
-  /// Offer a "Skip intro" chip when AI subtitles show the dialogue starts
-  /// noticeably after the video start.
-  final bool skipIntroChip;
 
   /// v32: real-time picture enhancement (GPU sharpen + contrast + vibrance
   /// shader, assets/shaders/mx_enhance.glsl).
@@ -87,12 +83,11 @@ class PlayerSettings {
     this.castButton = true,
     this.screenshotButton = true,
     this.lockButton = true,
-    // v22: ON by default ("volume up to 200% out of the box"); only people
+    // v65: ON by default ("volume up to 300% out of the box"); only people
     // who explicitly turned it off keep it off (saved 'false' below).
-    this.volumeBoost200 = true,
+    this.volumeBoost300 = true,
     this.volumeLeveling = false,
     this.karaokeSubs = false,
-    this.skipIntroChip = true,
     this.enhanceVideo = false,
     this.toneMapping = 'auto',
   });
@@ -139,10 +134,13 @@ class PlayerSettings {
   static const String kCastButton = 'player.castButton';
   static const String kScreenshotButton = 'player.screenshotButton';
   static const String kLockButton = 'player.lockButton';
-  static const String kVolumeBoost200 = 'player.volumeBoost200';
+  static const String kVolumeBoost300 = 'player.volumeBoost300';
+
+  /// v65 migration: the old 200%-boost preference. Read once so users who
+  /// turned boost OFF keep it off; the new 300% key is then authoritative.
+  static const String kVolumeBoost200Legacy = 'player.volumeBoost200';
   static const String kVolumeLeveling = 'player.volumeLeveling';
   static const String kKaraokeSubs = 'player.karaokeSubs';
-  static const String kSkipIntroChip = 'player.skipIntroChip';
   static const String kEnhanceVideo = 'player.enhanceVideo';
   static const String kToneMapping = 'player.toneMapping';
 
@@ -171,10 +169,13 @@ class PlayerSettings {
       castButton: s[kCastButton] != 'false',
       screenshotButton: s[kScreenshotButton] != 'false',
       lockButton: s[kLockButton] != 'false',
-      volumeBoost200: s[kVolumeBoost200] != 'false', // v22: default on
+      // v65: 300% boost. Honor the new key; if it was never set, migrate
+      // from the old 200% key so users who turned boost OFF stay off.
+      volumeBoost300: s.containsKey(kVolumeBoost300)
+          ? s[kVolumeBoost300] != 'false'
+          : s[kVolumeBoost200Legacy] != 'false',
       volumeLeveling: s[kVolumeLeveling] == 'true',
       karaokeSubs: s[kKaraokeSubs] == 'true',
-      skipIntroChip: s[kSkipIntroChip] != 'false',
       enhanceVideo: s[kEnhanceVideo] == 'true',
       toneMapping: kToneMappingModes.contains(s[kToneMapping])
           ? s[kToneMapping]!
@@ -212,10 +213,9 @@ class PlayerSettings {
     NativeBridge.saveSetting(kCastButton, '$castButton');
     NativeBridge.saveSetting(kScreenshotButton, '$screenshotButton');
     NativeBridge.saveSetting(kLockButton, '$lockButton');
-    NativeBridge.saveSetting(kVolumeBoost200, '$volumeBoost200');
+    NativeBridge.saveSetting(kVolumeBoost300, '$volumeBoost300');
     NativeBridge.saveSetting(kVolumeLeveling, '$volumeLeveling');
     NativeBridge.saveSetting(kKaraokeSubs, '$karaokeSubs');
-    NativeBridge.saveSetting(kSkipIntroChip, '$skipIntroChip');
     NativeBridge.saveSetting(kEnhanceVideo, '$enhanceVideo');
     return NativeBridge.saveSetting(kToneMapping, toneMapping);
   }
@@ -237,10 +237,9 @@ class PlayerSettings {
     bool? castButton,
     bool? screenshotButton,
     bool? lockButton,
-    bool? volumeBoost200,
+    bool? volumeBoost300,
     bool? volumeLeveling,
     bool? karaokeSubs,
-    bool? skipIntroChip,
     bool? enhanceVideo,
     String? toneMapping,
   }) {
@@ -261,10 +260,9 @@ class PlayerSettings {
       castButton: castButton ?? this.castButton,
       screenshotButton: screenshotButton ?? this.screenshotButton,
       lockButton: lockButton ?? this.lockButton,
-      volumeBoost200: volumeBoost200 ?? this.volumeBoost200,
+      volumeBoost300: volumeBoost300 ?? this.volumeBoost300,
       volumeLeveling: volumeLeveling ?? this.volumeLeveling,
       karaokeSubs: karaokeSubs ?? this.karaokeSubs,
-      skipIntroChip: skipIntroChip ?? this.skipIntroChip,
       enhanceVideo: enhanceVideo ?? this.enhanceVideo,
       toneMapping: toneMapping ?? this.toneMapping,
     );

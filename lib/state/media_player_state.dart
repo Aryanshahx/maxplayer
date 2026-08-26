@@ -144,12 +144,16 @@ class MediaPlayerState extends ChangeNotifier {
           player.seek(a);
         }
         _checkSleepAtEnd(v); // "sleep at end of video" timer
+        _maybeAutoSkipCredits(v); // v65 smart skip
         _maybeCaptureThumb(v); // 4K/HDR thumbnail fallback (v22)
         notifyListeners();
       }),
       player.stream.duration.listen((v) {
         duration = v;
         notifyListeners();
+        // v65: credits detection needs the real duration; subtitles may
+        // have attached before the demuxer reported it, so recompute now.
+        _recomputeSkipIntro();
         // Kick off scrub-preview thumbnail generation (idempotent - runs
         // once per file, cached on disk afterwards).
         _ensureThumbStrip();
@@ -427,9 +431,9 @@ class MediaPlayerState extends ChangeNotifier {
       if (_hwFallbackForPath == track.path) {
         unawaited(plat.setProperty('hwdec', 'no'));
       }
-      // Head-room for the 200% volume boost + re-apply the current gain /
+      // Head-room for the 300% volume boost + re-apply the current gain /
       // leveling filter for the new file.
-      unawaited(plat.setProperty('volume-max', '200'));
+      unawaited(plat.setProperty('volume-max', '300'));
       // v38: keep the Enhance pipeline asserted for every new file.
       if (_enhanceApplied && _enhanceShaderPath != null) {
         unawaited(plat.setProperty('glsl-shaders', _enhanceShaderPath!));
@@ -476,15 +480,23 @@ class MediaPlayerState extends ChangeNotifier {
   /// subtitled videos too.
   List<SrtCue>? sidecarCues;
 
-  /// v21 skip-intro chip: where the dialogue actually starts, when
-  /// subtitles (AI sidecar or same-name .srt) show speech begins
-  /// noticeably late (see computeSkipIntro).
+  /// v21/v65 smart skip: where the dialogue actually starts (intro) and
+  /// where the end-credits roll begins, when subtitles (AI sidecar or
+  /// same-name .srt) let us detect them. Both are auto-skippable with an
+  /// on-screen "Undo" chip; there is no longer a settings toggle for this.
   Duration? skipIntroAt;
+  Duration? skipCreditsAt;
+
+  /// True once the current video's credits have already been auto-skipped,
+  /// so the position stream doesn't fire the skip repeatedly.
+  bool _didSkipCredits = false;
 
   Future<void> _attachSidecarSubtitles(String videoPath) async {
     aiCues = null;
     sidecarCues = null;
     skipIntroAt = null;
+    skipCreditsAt = null;
+    _didSkipCredits = false;
     liveSubCue = null;
     if (videoPath.contains('://')) return; // no sidecars for streams
     final platform = player.platform;
@@ -534,6 +546,9 @@ class MediaPlayerState extends ChangeNotifier {
     // AI captions win (word-accurate); same-name .srt is the fallback.
     final cues = aiCues ?? sidecarCues;
     skipIntroAt = cues == null ? null : computeSkipIntro(cues);
+    skipCreditsAt = cues == null
+        ? null
+        : computeSkipCredits(cues, durationMs: duration.inMilliseconds);
   }
 
   /// (Re)parses the AI sidecar for karaoke + skip-intro. Called when a track
@@ -802,6 +817,40 @@ class MediaPlayerState extends ChangeNotifier {
     }
   }
 
+  /// v65 Smart skip: when playback reaches the detected end-credits point,
+  /// jump to just before the end (so the player naturally finishes). Fires
+  /// once per video; the PlayerScreen shows an "Undo" chip via [notice].
+  void _maybeAutoSkipCredits(Duration pos) {
+    final at = skipCreditsAt;
+    if (at == null || _didSkipCredits) return;
+    if (pos < at) return;
+    _didSkipCredits = true;
+    // If there is a next video (series episode), going to the end triggers
+    // nextTrack via _handleEnded; for a single video this just fast-forwards
+    // the credits. Remember where we jumped from so the Undo chip can revert.
+    final from = pos;
+    if (duration > Duration.zero) {
+      final target = duration - const Duration(seconds: 2);
+      if (target > from) {
+        player.seek(target);
+        _notices.add('Skipped credits');
+      }
+    }
+  }
+
+  /// PlayerScreen calls this when the user taps "Undo" on a credits skip.
+  Future<void> undoSkipCredits() async {
+    final at = skipCreditsAt;
+    if (at == null) return;
+    _didSkipCredits = false;
+    await player.seek(at - const Duration(milliseconds: 500));
+  }
+
+  /// v65 A2: the full transcript cues available for the current video
+  /// (AI sidecar preferred, then the same-name .srt), or null. Feeds the
+  /// "Ask anything about this video" chat.
+  List<SrtCue>? get transcriptCues => aiCues ?? sidecarCues;
+
   void _saveBookmark() {
     final track = currentTrack;
     if (track == null || !isPlaying) return;
@@ -934,13 +983,13 @@ class MediaPlayerState extends ChangeNotifier {
     return volume;
   }
 
-  /// v21: when the setting is on, the volume range becomes 0..200%.
-  /// The device volume covers 0..100%; mpv's decoder gain (volume-max=200
-  /// is set when a track opens) covers the 100..200% boost region.
-  bool volumeBoost200 = false;
+  /// v65: when the setting is on, the volume range becomes 0..300%.
+  /// The device volume covers 0..100%; mpv's decoder gain (volume-max=300
+  /// is set when a track opens) covers the 100..300% boost region.
+  bool volumeBoost300 = false;
 
   /// Current volume upper limit for the swipe gesture / slider math.
-  double get volumeCap => volumeBoost200 ? 2.0 : 1.0;
+  double get volumeCap => volumeBoost300 ? 3.0 : 1.0;
 
   Future<void> setVolume(double v) async {
     volume = v.clamp(0.0, volumeCap);
@@ -962,10 +1011,10 @@ class MediaPlayerState extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Settings toggle: enable/disable the 200% boost region. Turning it off
+  /// Settings toggle: enable/disable the 300% boost region. Turning it off
   /// while boosted pulls the volume back to 100%.
-  Future<void> setVolumeBoost200(bool on) async {
-    volumeBoost200 = on;
+  Future<void> setVolumeBoost300(bool on) async {
+    volumeBoost300 = on;
     if (!on && volume > 1.0) await setVolume(1.0);
     if (!on) await _applyMpvVolume();
     notifyListeners();

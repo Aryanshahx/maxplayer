@@ -13,6 +13,7 @@ import 'package:maxplayer/models/saved_server.dart';
 import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/services/native_bridge.dart';
 import 'package:maxplayer/services/notification_service.dart';
+import 'package:maxplayer/services/recommendations.dart';
 import 'package:maxplayer/services/tmdb_client.dart';
 import 'package:maxplayer/widgets/tmdb_image.dart';
 import 'package:maxplayer/services/movie_ai.dart';
@@ -2089,6 +2090,196 @@ void main() {
       expect(src, contains('notifyAiSubsFailed'));
       expect(src, contains('notifyCasting'));
       expect(src, contains('cancelCasting'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v64 hotfix: the v62/v63 build failed on Codemagic with
+  // "Unresolved reference 'registerForActivityResult'" because FlutterActivity
+  // does not expose that AndroidX launcher on the build classpath. Guard that
+  // we use the classic requestPermissions API instead.
+  // -------------------------------------------------------------------------
+  group('v64 build hotfix (notification permission API)', () {
+    final mainActivity = File(
+      'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/'
+      'MainActivity.kt',
+    ).readAsStringSync();
+
+    test('uses the classic requestPermissions API', () {
+      expect(mainActivity, contains('requestPermissions('));
+      expect(mainActivity, contains('onRequestPermissionsResult'));
+      expect(mainActivity, contains('REQ_NOTIF_PERMISSION'));
+    });
+
+    test('no longer references the AndroidX activity-result launcher', () {
+      expect(mainActivity.contains('registerForActivityResult'), isFalse,
+          reason: 'this unresolved reference broke the Codemagic release build');
+      expect(mainActivity.contains('ActivityResultLauncher'), isFalse);
+      expect(mainActivity.contains('ActivityResultContracts'), isFalse);
+    });
+
+    test('POST_NOTIFICATIONS permission still declared', () {
+      final manifest =
+          File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      expect(manifest, contains('POST_NOTIFICATIONS'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v65 features: audio boost 300%, A1 smart skip (intro + credits),
+  // A2 ask AI about this video, A6 because-you-watched recommendations.
+  // -------------------------------------------------------------------------
+  group('v65 features', () {
+    test('audio boost 300% setting default and copyWith', () {
+      const s = PlayerSettings();
+      expect(s.volumeBoost300, isTrue);
+      expect(PlayerSettings.kVolumeBoost300, 'player.volumeBoost300');
+      expect(PlayerSettings.kVolumeBoost200Legacy, 'player.volumeBoost200');
+      final s2 = s.copyWith(volumeBoost300: false);
+      expect(s2.volumeBoost300, isFalse);
+
+      final stateFile =
+          File('lib/state/media_player_state.dart').readAsStringSync();
+      expect(stateFile, contains("'volume-max', '300'"));
+      expect(stateFile, contains('volumeBoost300'));
+      expect(stateFile,
+          contains('double get volumeCap => volumeBoost300 ? 3.0 : 1.0;'));
+    });
+
+    test('smart skip credits heuristic detects trailing credit roll', () {
+      // 100 minute video (6,000,000 ms)
+      final cues = <SrtCue>[
+        const SrtCue(30000, 35000, 'Hello world'),
+        const SrtCue(60000, 65000, 'Second line'),
+      ];
+      // 9 short credit cues starting at 95 minutes (5,700,000 ms)
+      for (var i = 0; i < 9; i++) {
+        cues.add(SrtCue(
+          5700000 + (i * 3000),
+          5700000 + (i * 3000) + 2000,
+          'Actor Name $i',
+        ));
+      }
+      final skip = computeSkipCredits(cues, durationMs: 6000000);
+      expect(skip, isNotNull);
+      // Start is first cue in 8-cue tail (which is cue index 4: 5703000) minus 1500 ms = 5701500 ms
+      expect(skip!.inMilliseconds, 5701500);
+    });
+
+    test(
+        'smart skip credits returns null on normal dialogue or short cues count',
+        () {
+      // Less than 8 cues
+      final few = [
+        const SrtCue(5800000, 5802000, 'Name 1'),
+        const SrtCue(5803000, 5805000, 'Name 2'),
+      ];
+      expect(computeSkipCredits(few, durationMs: 6000000), isNull);
+
+      // Long sentences (dialogue, not roll credits)
+      final dialogue = <SrtCue>[];
+      for (var i = 0; i < 10; i++) {
+        dialogue.add(SrtCue(
+          5700000 + (i * 4000),
+          5700000 + (i * 4000) + 3800,
+          'This is a very long dialogue line spoken by someone at the end of the movie.',
+        ));
+      }
+      expect(computeSkipCredits(dialogue, durationMs: 6000000), isNull);
+
+      // Cues before 70% of movie
+      final early = <SrtCue>[];
+      for (var i = 0; i < 10; i++) {
+        early.add(SrtCue(
+          1000000 + (i * 2000),
+          1000000 + (i * 2000) + 1500,
+          'Actor $i',
+        ));
+      }
+      expect(computeSkipCredits(early, durationMs: 6000000), isNull);
+    });
+
+    test('skip intro chip setting removed from settings sheet and model', () {
+      final settingsCode =
+          File('lib/state/player_settings.dart').readAsStringSync();
+      expect(settingsCode.contains('skipIntroChip'), isFalse);
+      expect(settingsCode.contains('kSkipIntroChip'), isFalse);
+
+      final sheetCode =
+          File('lib/widgets/player_settings_sheet.dart').readAsStringSync();
+      expect(sheetCode.contains("label: 'Skip intro chip'"), isFalse);
+      expect(sheetCode.contains('skipIntroChip'), isFalse);
+    });
+
+    test('VideoAiClient transcript check & system prompt formatting', () {
+      // Under 8 cues -> false
+      final shortCues = [
+        const SrtCue(1000, 2000, 'Hi'),
+      ];
+      expect(VideoAiClient.hasUsableTranscript(shortCues), isFalse);
+
+      // 8 cues with speech -> true
+      final goodCues = <SrtCue>[];
+      for (var i = 1; i <= 8; i++) {
+        goodCues.add(SrtCue(
+          i * 15000,
+          i * 15000 + 4000,
+          'Spoken line number $i in the film',
+        ));
+      }
+      expect(VideoAiClient.hasUsableTranscript(goodCues), isTrue);
+
+      final prompt = videoTranscriptSystemPrompt('Interstellar', goodCues);
+      expect(prompt, contains('video "Interstellar"'));
+      expect(prompt, contains('Use ONLY the transcript'));
+      expect(prompt, contains('[00:15] Spoken line number 1 in the film'));
+      expect(prompt, contains('cite the timestamp like (12:34)'));
+    });
+
+    test('Recommendations title normalizer strips noise and stop words', () {
+      expect(
+        Recommendations.normalizeTitle('Interstellar.2014.1080p.BluRay.x264-YIFY'),
+        'interstellar',
+      );
+      expect(
+        Recommendations.normalizeTitle(
+            'The Dark Knight [2160p UHD HDR] (2008)'),
+        'dark knight',
+      );
+      expect(
+        Recommendations.normalizeTitle(
+            'Inception_Dual_Audio_Hindi_English_720p'),
+        'inception',
+      );
+    });
+
+    test('Recommendations pickAnchor prefers in-progress video', () {
+      expect(Recommendations.pickAnchor([]), isNull);
+
+      final h1 = HistoryEntry(
+        path: '/v/movie1.mp4',
+        title: 'Completed Movie 1',
+        lastPositionSecs: 7100,
+        durationSecs: 7200, // 98.6% - completed
+        playedAtMs: 1000,
+      );
+      final h2 = HistoryEntry(
+        path: '/v/movie2.mp4',
+        title: 'Watching Movie 2',
+        lastPositionSecs: 2000,
+        durationSecs: 6000, // 33.3% - in progress
+        playedAtMs: 2000,
+      );
+      final h3 = HistoryEntry(
+        path: '/v/movie3.mp4',
+        title: 'Unstarted Movie 3',
+        lastPositionSecs: 10,
+        durationSecs: 5000, // 0.2%
+        playedAtMs: 3000,
+      );
+
+      final anchor = Recommendations.pickAnchor([h1, h2, h3]);
+      expect(anchor?.title, 'Watching Movie 2');
     });
   });
 }

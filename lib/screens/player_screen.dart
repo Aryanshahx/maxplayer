@@ -20,6 +20,7 @@ import '../widgets/karaoke_subtitle.dart';
 import '../widgets/player_controls_overlay.dart';
 import '../widgets/player_settings_sheet.dart';
 import '../widgets/playlist_panel.dart';
+import '../widgets/video_ask_sheet.dart';
 import '../widgets/video_info_sheet.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -191,9 +192,18 @@ class _PlayerScreenState extends State<PlayerScreen>
     // (MX Player / VLC style). The lock chip pins the current orientation;
     // dispose() hands control back to the system.
     unawaited(NativeBridge.enableSensorRotate());
-    _noticeSub = widget.player.notices.listen(
-      (m) => _showIndicator(m, Icons.history),
-    );
+    _noticeSub = widget.player.notices.listen((m) {
+      // v65: the player state posts "Skipped credits" after the auto-skip;
+      // surface the Undo chip instead of the generic indicator.
+      if (m == 'Skipped credits') {
+        setState(() {
+          _showCreditsUndo = true;
+          _creditsUndoShownAt = DateTime.now();
+        });
+        return;
+      }
+      _showIndicator(m, Icons.history);
+    });
     NativeBridge.configureCallbacks(
       onPipChanged: (isPip) {
         if (!mounted) return;
@@ -298,7 +308,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       });
     }
     // v21: push the playback-extras settings into the player state.
-    unawaited(widget.player.setVolumeBoost200(s.volumeBoost200));
+    unawaited(widget.player.setVolumeBoost300(s.volumeBoost300));
     unawaited(widget.player.setVolumeLeveling(s.volumeLeveling));
     // v32: picture settings - HDR tone-mapping curve + Enhance shader.
     unawaited(widget.player.setToneMapping(s.toneMapping));
@@ -523,6 +533,117 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// Which intro chip the user dismissed (per dialogue-start time; a new
   /// track recomputes it, so the chip auto-reappears for the next video).
   Duration? _skipChipDismissedFor;
+
+  /// v65: briefly true after we auto-skipped the credits so the "Undo" chip
+  /// can be shown. Reset by track changes / time.
+  bool _showCreditsUndo = false;
+  static const Duration _creditsUndoWindow = Duration(seconds: 8);
+  DateTime? _creditsUndoShownAt;
+
+  /// Builds either the "Skip intro" chip or the "Skipped credits · Undo"
+  /// chip (whichever applies right now). v65 made intro-skipping automatic
+  /// and added credits detection; there is no settings toggle anymore.
+  Widget _buildSmartSkipChip() {
+    // 1) Undo a recent credits auto-skip.
+    if (_showCreditsUndo) {
+      final shownAt = _creditsUndoShownAt;
+      if (shownAt != null &&
+          DateTime.now().difference(shownAt) <= _creditsUndoWindow) {
+        return _chip(
+          icon: Icons.undo,
+          label: 'Skipped credits',
+          action: 'Undo',
+          onTap: () {
+            widget.player.undoSkipCredits();
+            setState(() => _showCreditsUndo = false);
+          },
+          onClose: () => setState(() => _showCreditsUndo = false),
+        );
+      }
+      _showCreditsUndo = false;
+    }
+
+    // 2) Skip intro (while before the dialogue starts).
+    final at = widget.player.skipIntroAt;
+    if (at != null) {
+      final pos = widget.player.position;
+      final untimely = pos >= at - const Duration(seconds: 1) ||
+          pos > const Duration(minutes: 10);
+      if (_skipChipDismissedFor != at && !untimely) {
+        // Listen for the player's "Skipped credits" notice so we can flip
+        // into the Undo chip once credits auto-skip (done once, cheap).
+        return _chip(
+          icon: Icons.fast_forward,
+          label: 'Skip intro',
+          action: formatDuration(at),
+          onTap: () {
+            widget.player.seek(at);
+            setState(() => _skipChipDismissedFor = at);
+            _onUserInteraction();
+          },
+          onClose: () => setState(() => _skipChipDismissedFor = at),
+        );
+      }
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _chip({
+    required IconData icon,
+    required String label,
+    required String action,
+    required VoidCallback onTap,
+    required VoidCallback onClose,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          decoration: BoxDecoration(
+            color: const Color(0xF2152026),
+            borderRadius: BorderRadius.circular(20),
+            border:
+                Border.all(color: themeState.accent.withValues(alpha: 0.65)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: themeState.accent),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                action,
+                style: TextStyle(
+                  color: themeState.accent,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: onClose,
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.close, size: 14, color: Colors.white54),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Sleep timer (v21)
@@ -933,6 +1054,20 @@ class _PlayerScreenState extends State<PlayerScreen>
   // ---------------------------------------------------------------------------
   // Screenshot + cast
   // ---------------------------------------------------------------------------
+
+  /// v65 A2: opens the "Ask about this video" sheet, scoped to the
+  /// current video's own transcript/subtitles (not TMDB metadata).
+  Future<void> _openVideoAsk() async {
+    final track = widget.player.currentTrack;
+    if (track == null) return;
+    final cues = widget.player.transcriptCues;
+    await VideoAskSheet.show(
+      context,
+      title: track.title,
+      cues: cues ?? const [],
+      onSeek: (at) => widget.player.seek(at),
+    );
+  }
 
   Future<void> _takeScreenshot() async {
     final path = await widget.player.captureScreenshot();
@@ -1444,97 +1579,18 @@ class _PlayerScreenState extends State<PlayerScreen>
                               ),
                             ),
                           ),
-                          // v21-v39 the karaoke overlay lived here, pinned
-                          // 120px above the screen bottom. v40 moved it
-                          // INTO the video's own box at the exact subtitle
-                          // spot (see the Stack around the Video widget).
-                          // v21: "Skip intro" - offered while the AI captions
-                          // say the dialogue hasn't started yet.
-                          if (_settings.skipIntroChip && !_isPip)
+                          // v21/v65 Smart skip: a "Skip intro" chip while
+                          // the AI/sidecar captions say the dialogue hasn't
+                          // started yet (now automatic - no settings toggle),
+                          // plus an "Undo" chip right after auto-skipping
+                          // the end credits.
+                          if (!_isPip)
                             Positioned(
                               right: 14,
                               bottom: 132,
                               child: AnimatedBuilder(
                                 animation: widget.player,
-                                builder: (context, _) {
-                                  final at = widget.player.skipIntroAt;
-                                  if (at == null) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  final pos = widget.player.position;
-                                  final untimely =
-                                      pos >= at - const Duration(seconds: 1) ||
-                                      pos > const Duration(minutes: 10);
-                                  if (_skipChipDismissedFor == at || untimely) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  return Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(20),
-                                      onTap: () {
-                                        widget.player.seek(at);
-                                        setState(
-                                          () => _skipChipDismissedFor = at,
-                                        );
-                                        _onUserInteraction();
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.fromLTRB(
-                                          12,
-                                          8,
-                                          8,
-                                          8,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xF2152026),
-                                          borderRadius: BorderRadius.circular(
-                                            20,
-                                          ),
-                                          border: Border.all(
-                                            color: themeState.accent.withValues(
-                                              alpha: 0.65,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              Icons.fast_forward,
-                                              size: 16,
-                                              color: themeState.accent,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              'Skip to ${formatDuration(at)}',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 12.5,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            GestureDetector(
-                                              onTap: () => setState(
-                                                () =>
-                                                    _skipChipDismissedFor = at,
-                                              ),
-                                              child: const Padding(
-                                                padding: EdgeInsets.all(4),
-                                                child: Icon(
-                                                  Icons.close,
-                                                  size: 14,
-                                                  color: Colors.white54,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
+                                builder: (context, _) => _buildSmartSkipChip(),
                               ),
                             ),
                           // Controls slide up + fade in instead of snapping.
@@ -1616,6 +1672,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         switch (v) {
           case 'info':
             VideoInfoSheet.show(context, widget.player);
+          case 'ask':
+            _openVideoAsk();
           case 'eq':
             EqualizerSheet.show(context, widget.player);
           case 'shot':
@@ -1632,6 +1690,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       },
       itemBuilder: (context) => [
         _topMenuItem('info', Icons.info_outline, 'Video info'),
+        _topMenuItem('ask', Icons.auto_awesome, 'Ask AI about this video'),
         _topMenuItem('eq', Icons.graphic_eq, 'Equalizer'),
         if (_settings.screenshotButton)
           _topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot'),

@@ -284,13 +284,13 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               const _SectionHeader('Sound & subtitles'),
               _SwitchTile(
                 icon: Icons.volume_up,
-                label: 'Volume boost up to 200%',
+                label: 'Volume boost up to 300%',
                 subtitle:
-                    'ON by default - the swipe just continues past '
-                    '100% for quiet videos',
-                value: _settings.volumeBoost200,
+                    'ON by default - the swipe continues past 100% '
+                    'for quiet videos',
+                value: _settings.volumeBoost300,
                 onChanged: (v) =>
-                    _update(_settings.copyWith(volumeBoost200: v)),
+                    _update(_settings.copyWith(volumeBoost300: v)),
               ),
               _SwitchTile(
                 icon: Icons.graphic_eq,
@@ -302,18 +302,10 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 onChanged: (v) =>
                     _update(_settings.copyWith(volumeLeveling: v)),
               ),
-              // v26: the karaoke switch no longer lives in settings - it
-              // exists ONLY in the player's tracks sheet (the "tune"
-              // button beside play), per user request.
-              _SwitchTile(
-                icon: Icons.fast_forward,
-                label: 'Skip intro chip',
-                subtitle:
-                    'Offer to jump when subtitles (AI or the video\'s '
-                    'own .srt file) show the dialogue starts later',
-                value: _settings.skipIntroChip,
-                onChanged: (v) => _update(_settings.copyWith(skipIntroChip: v)),
-              ),
+              // v65: the old "Skip intro chip" setting is gone - smart
+              // skip (intro AND credits) is now automatic whenever usable
+              // subtitles exist. The player shows a brief chip the user can
+              // tap to undo; no toggle needed.
             ],
             const SizedBox(height: 8),
           ],

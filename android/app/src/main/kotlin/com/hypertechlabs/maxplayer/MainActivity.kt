@@ -37,8 +37,6 @@ import android.os.StatFs
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.WindowManager
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContracts
 import dev.ffmpegkit.whisper.Whisper
 import dev.ffmpegkit.whisper.WhisperConfig
 import dev.ffmpegkit.whisper.WhisperModel
@@ -107,14 +105,12 @@ class MainActivity : FlutterActivity() {
     // --- DLNA casting: multicast lock held during SSDP discovery ---
     private var multicastLock: WifiManager.MulticastLock? = null
 
-    // v62 Phase 1: notification permission (Android 13+) request in flight.
+    // v64 hotfix: notification permission (Android 13+) request in flight.
+    // Uses the classic requestPermissions / onRequestPermissionsResult
+    // Activity API instead of an AndroidX activity-result launcher - the
+    // latter was not resolvable on the FlutterActivity base class under
+    // Codemagic's AGP/Kotlin classpath (it broke the v62/v63 release build).
     private var pendingNotificationResult: MethodChannel.Result? = null
-    private val notificationPermissionLauncher: ActivityResultLauncher<String> =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            val r = pendingNotificationResult
-            pendingNotificationResult = null
-            r?.success(granted)
-        }
 
     // v62 Phase 1: a notification tap that arrived before Dart attached to
     // the channel; getInitialNotificationPayload picks it up after attach.
@@ -128,6 +124,7 @@ class MainActivity : FlutterActivity() {
         private const val REQ_PIP_TOGGLE = 42
         private const val REQ_PIP_OPEN = 43
         private const val REQ_CONFIRM_CREDENTIAL = 44
+        private const val REQ_NOTIF_PERMISSION = 45
         private val STREAM_SCHEMES = setOf("http", "https", "rtsp", "rtmp", "mms")
     }
 
@@ -603,8 +600,13 @@ class MainActivity : FlutterActivity() {
                     } else {
                         pendingNotificationResult = result
                         try {
-                            notificationPermissionLauncher.launch(
-                                android.Manifest.permission.POST_NOTIFICATIONS
+                            // Classic runtime permission request (works on
+                            // every API level from 23 up; no AndroidX
+                            // activity-ktx required). onRequestPermissionsResult
+                            // delivers the answer below.
+                            requestPermissions(
+                                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                                REQ_NOTIF_PERMISSION
                             )
                         } catch (e: Exception) {
                             pendingNotificationResult = null
@@ -2176,6 +2178,24 @@ class MainActivity : FlutterActivity() {
         if (requestCode == REQ_CONFIRM_CREDENTIAL) {
             finishCredentialPrompt(resultCode == RESULT_OK)
         }
+    }
+
+    // v64 hotfix: answers the POST_NOTIFICATIONS runtime request started by
+    // the "requestNotifications" channel call (classic API, no AndroidX
+    // activity-ktx). A null pending result means the app was recreated mid-
+    // prompt - the next Dart-side check reads the actual state anyway.
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_NOTIF_PERMISSION) return
+        val r = pendingNotificationResult
+        pendingNotificationResult = null
+        val granted = grantResults.isNotEmpty() &&
+            grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+        r?.success(granted)
     }
 
     override fun onDestroy() {

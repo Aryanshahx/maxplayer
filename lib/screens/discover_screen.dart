@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../models/history_entry.dart';
 import '../services/native_bridge.dart';
+import '../services/recommendations.dart';
 import '../services/tmdb_client.dart';
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
@@ -82,6 +84,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   /// top search hit, shown under the results in search mode.
   List<TmdbMovie> _related = const [];
 
+  /// v65 A6: "Because you watched <title>" - on-device recommendations
+  /// derived from the user's local watch history (TMDB similar of the best
+  /// history match). Loaded once when Discover opens; hidden in search.
+  List<TmdbMovie> _recommendations = const [];
+  HistoryEntry? _recommendAnchor;
+
   /// Bumped every time the MODE (filter/search) changes; stale in-flight
   /// page loads check it and drop their results (no mixed-up grids).
   int _loadToken = 0;
@@ -116,6 +124,24 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       return;
     }
     await _loadPage(1, force: true);
+    // v65 A6: load on-device "because you watched" recommendations from
+    // the local watch history (off the main grid's critical path).
+    unawaited(_loadRecommendations());
+  }
+
+  Future<void> _loadRecommendations() async {
+    try {
+      final history = widget.player.history;
+      final anchor = Recommendations.pickAnchor(history);
+      if (anchor == null) return;
+      final recs =
+          await Recommendations.forAnchor(_client, anchor);
+      if (!mounted) return;
+      setState(() {
+        _recommendAnchor = anchor;
+        _recommendations = recs;
+      });
+    } catch (_) {}
   }
 
   /// Loads ONE page of the current mode and appends it (deduped by id).
@@ -443,6 +469,56 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           controller: _scroll,
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
+            // v65 A6: "Because you watched" - on-device recs from local
+            // history (only when not searching and we found matches).
+            if (!_searching && _recommendations.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.auto_awesome,
+                          size: 16, color: Colors.white70),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Because you watched '
+                          '"${_recommendAnchor?.title ?? ''}"',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 224,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    itemCount: _recommendations.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    itemBuilder: (context, i) => SizedBox(
+                      width: 128,
+                      child: _PosterCard(
+                        key: ValueKey('rec_${_recommendations[i].id}'),
+                        movie: _recommendations[i],
+                        onTap: () => _openMovie(_recommendations[i]),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 4)),
+            ],
             SliverPadding(
               padding: const EdgeInsets.all(10),
               sliver: SliverGrid.builder(
