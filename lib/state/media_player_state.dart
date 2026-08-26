@@ -158,6 +158,7 @@ class MediaPlayerState extends ChangeNotifier {
         // Kick off scrub-preview thumbnail generation (idempotent - runs
         // once per file, cached on disk afterwards).
         _ensureThumbStrip();
+        _syncNowPlaying();
       }),
       player.stream.buffering.listen((v) {
         isLoading = v;
@@ -1021,7 +1022,7 @@ class MediaPlayerState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// v67 B1/B2: syncs Now Playing notification and wake lock with playback state.
+  /// v67 B1/B2/v70: syncs Now Playing notification, media session, thumbnail & duration.
   void _syncNowPlaying() {
     final track = currentTrack;
     if (track == null) {
@@ -1035,6 +1036,9 @@ class MediaPlayerState extends ChangeNotifier {
         subtitle: isPlaying ? 'Playing' : 'Paused',
         isPlaying: isPlaying,
         path: track.path,
+        thumbnailPath: track.thumbnailPath,
+        positionMs: position.inMilliseconds,
+        durationMs: duration.inMilliseconds,
       ));
       unawaited(NativeBridge.setWakeLock(isPlaying));
     } else {
@@ -1064,7 +1068,6 @@ class MediaPlayerState extends ChangeNotifier {
 
   static const String kLevelingFilter = 'dynaudnorm=f=150:g=15:m=5:p=0.95';
   bool _levelingOn = false;
-  bool _levelingWarned = false;
   bool get volumeLeveling => _levelingOn;
 
   Future<void> setVolumeLeveling(bool on) async {
@@ -1151,25 +1154,17 @@ class MediaPlayerState extends ChangeNotifier {
   }
 
   /// The single writer of mpv's `af` property: equalizer bands + leveling
-  /// combined. Replaces the old pair of writers that clobbered each other.
+  /// combined inside a single unified lavfi filter chain.
   Future<void> _applyAudioFilters() async {
     final platform = player.platform;
     if (platform is! NativePlayer) return;
-    final chain = <String>[
-      if (eqEnabled) buildEqualizerFilter(eqGains),
+    final lavfiParts = <String>[
+      if (eqEnabled) ...equalizerFilterParts(eqGains),
       if (_levelingOn) kLevelingFilter,
-    ].join(',');
+    ];
+    final af = lavfiParts.isEmpty ? '' : 'lavfi=[${lavfiParts.join(',')}]';
     try {
-      await platform.setProperty('af', chain);
-      if (_levelingOn && !_levelingWarned) {
-        final applied = await platform.getProperty('af');
-        if (!applied.contains('dynaudnorm')) {
-          _levelingWarned = true;
-          _notices.add(
-            'Volume leveling is not supported by this video engine build',
-          );
-        }
-      }
+      await platform.setProperty('af', af);
     } catch (_) {}
   }
 
@@ -1262,9 +1257,8 @@ class MediaPlayerState extends ChangeNotifier {
   static const String _kEqEnabledKey = 'eq.enabled';
   static const String _kEqGainsKey = 'eq.gains';
 
-  /// Builds the lavfi audio-filter chain, skipping bands at 0 dB.
-  /// Pure + testable.
-  static String buildEqualizerFilter(List<double> gains) {
+  /// Generates the individual lavfi equalizer filter parts.
+  static List<String> equalizerFilterParts(List<double> gains) {
     final parts = <String>[];
     for (var i = 0; i < eqFrequencies.length && i < gains.length; i++) {
       if (gains[i] == 0) continue;
@@ -1272,6 +1266,13 @@ class MediaPlayerState extends ChangeNotifier {
         'equalizer=f=${eqFrequencies[i]}:t=q:w=1.0:g=${gains[i].toStringAsFixed(1)}',
       );
     }
+    return parts;
+  }
+
+  /// Builds the lavfi audio-filter chain, skipping bands at 0 dB.
+  /// Pure + testable.
+  static String buildEqualizerFilter(List<double> gains) {
+    final parts = equalizerFilterParts(gains);
     return parts.isEmpty ? '' : 'lavfi=[${parts.join(',')}]';
   }
 

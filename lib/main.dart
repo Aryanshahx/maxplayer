@@ -117,6 +117,8 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
               break;
           }
         },
+        // v70 C4: media notification playbar seek action.
+        onMediaSeek: (pos) => _player?.seek(pos),
       );
       // ... and the cold-start cases (app launched BY a VIEW intent or a
       // notification tap).

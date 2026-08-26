@@ -223,6 +223,9 @@ class MainActivity : FlutterActivity() {
         MediaPlaybackService.onMediaAction = { action ->
             mainHandler.post { channel?.invokeMethod("onMediaAction", action) }
         }
+        MediaPlaybackService.onMediaSeek = { posMs ->
+            mainHandler.post { channel?.invokeMethod("onMediaSeek", posMs) }
+        }
         CrashCrumbs.mark(this, "activity_create_ok")
         handleIncomingIntent(intent)
     }
@@ -731,12 +734,18 @@ class MainActivity : FlutterActivity() {
                     val subtitle = call.argument<String>("subtitle") ?: ""
                     val isPlaying = call.argument<Boolean>("isPlaying") ?: true
                     val path = call.argument<String>("path") ?: ""
+                    val thumbPath = call.argument<String>("thumbnailPath")
+                    val posMs = call.argument<Number>("positionMs")?.toLong() ?: 0L
+                    val durMs = call.argument<Number>("durationMs")?.toLong() ?: 0L
                     MediaPlaybackService.startOrUpdate(
                         applicationContext,
                         title,
                         subtitle,
                         isPlaying,
-                        path
+                        path,
+                        thumbPath,
+                        posMs,
+                        durMs
                     )
                     result.success(MediaPlaybackService.NOTIF_ID)
                 }

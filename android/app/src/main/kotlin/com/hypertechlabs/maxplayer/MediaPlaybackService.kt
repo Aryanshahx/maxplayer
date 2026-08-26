@@ -5,16 +5,20 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import java.io.File
 
 /**
- * v68: Native Foreground Service & MediaSession for reliable background /
+ * v68/v70: Native Foreground Service & MediaSession for reliable background /
  * screen-off audio playback (B2) and system-wide Now Playing media controls (B1).
  *
  * Runs as a foreground service with type "mediaPlayback" so the Android OS
@@ -39,15 +43,22 @@ class MediaPlaybackService : Service() {
         const val EXTRA_SUBTITLE = "extra_subtitle"
         const val EXTRA_IS_PLAYING = "extra_is_playing"
         const val EXTRA_PATH = "extra_path"
+        const val EXTRA_THUMB_PATH = "extra_thumb_path"
+        const val EXTRA_POS_MS = "extra_pos_ms"
+        const val EXTRA_DUR_MS = "extra_dur_ms"
 
         var onMediaAction: ((String) -> Unit)? = null
+        var onMediaSeek: ((Long) -> Unit)? = null
 
         fun startOrUpdate(
             context: Context,
             title: String,
             subtitle: String,
             isPlaying: Boolean,
-            path: String
+            path: String,
+            thumbnailPath: String? = null,
+            positionMs: Long = 0L,
+            durationMs: Long = 0L
         ) {
             val intent = Intent(context, MediaPlaybackService::class.java).apply {
                 action = ACTION_UPDATE
@@ -55,6 +66,9 @@ class MediaPlaybackService : Service() {
                 putExtra(EXTRA_SUBTITLE, subtitle)
                 putExtra(EXTRA_IS_PLAYING, isPlaying)
                 putExtra(EXTRA_PATH, path)
+                if (!thumbnailPath.isNullOrEmpty()) putExtra(EXTRA_THUMB_PATH, thumbnailPath)
+                putExtra(EXTRA_POS_MS, positionMs)
+                putExtra(EXTRA_DUR_MS, durationMs)
             }
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -125,6 +139,10 @@ class MediaPlaybackService : Service() {
                     override fun onStop() {
                         onMediaAction?.invoke("stop")
                     }
+
+                    override fun onSeekTo(pos: Long) {
+                        onMediaSeek?.invoke(pos)
+                    }
                 })
                 isActive = true
             }
@@ -153,10 +171,21 @@ class MediaPlaybackService : Service() {
         val subtitle = intent?.getStringExtra(EXTRA_SUBTITLE) ?: ""
         val isPlaying = intent?.getBooleanExtra(EXTRA_IS_PLAYING, true) ?: true
         val path = intent?.getStringExtra(EXTRA_PATH) ?: ""
+        val thumbPath = intent?.getStringExtra(EXTRA_THUMB_PATH)
+        val posMs = intent?.getLongExtra(EXTRA_POS_MS, 0L) ?: 0L
+        val durMs = intent?.getLongExtra(EXTRA_DUR_MS, 0L) ?: 0L
 
-        updateSessionPlaybackState(isPlaying)
-        updateSessionMetadata(title, subtitle)
-        val notif = buildNotification(title, subtitle, isPlaying, path)
+        val thumbBmp: Bitmap? = if (!thumbPath.isNullOrEmpty() && File(thumbPath).exists()) {
+            try {
+                BitmapFactory.decodeFile(thumbPath)
+            } catch (_: Throwable) {
+                null
+            }
+        } else null
+
+        updateSessionPlaybackState(isPlaying, posMs)
+        updateSessionMetadata(title, subtitle, durMs, thumbBmp)
+        val notif = buildNotification(title, subtitle, isPlaying, path, thumbBmp, posMs, durMs)
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -169,30 +198,41 @@ class MediaPlaybackService : Service() {
         return START_STICKY
     }
 
-    private fun updateSessionPlaybackState(isPlaying: Boolean) {
+    private fun updateSessionPlaybackState(isPlaying: Boolean, positionMs: Long) {
         val state = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
         val actions = PlaybackState.ACTION_PLAY or
             PlaybackState.ACTION_PAUSE or
             PlaybackState.ACTION_PLAY_PAUSE or
             PlaybackState.ACTION_SKIP_TO_NEXT or
             PlaybackState.ACTION_SKIP_TO_PREVIOUS or
-            PlaybackState.ACTION_STOP
+            PlaybackState.ACTION_STOP or
+            PlaybackState.ACTION_SEEK_TO
         mediaSession?.setPlaybackState(
             PlaybackState.Builder()
                 .setActions(actions)
-                .setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+                .setState(state, positionMs, if (isPlaying) 1.0f else 0.0f, SystemClock.elapsedRealtime())
                 .build()
         )
     }
 
-    private fun updateSessionMetadata(title: String, subtitle: String) {
+    private fun updateSessionMetadata(
+        title: String,
+        subtitle: String,
+        durationMs: Long,
+        thumbnailBitmap: Bitmap?
+    ) {
         try {
-            val metadata = MediaMetadata.Builder()
+            val metaBuilder = MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, title)
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, if (subtitle.isNotEmpty()) subtitle else "Max Player")
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, "Max Player")
-                .build()
-            mediaSession?.setMetadata(metadata)
+                .putLong(MediaMetadata.METADATA_KEY_DURATION, durationMs)
+
+            if (thumbnailBitmap != null) {
+                metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, thumbnailBitmap)
+                metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ART, thumbnailBitmap)
+            }
+            mediaSession?.setMetadata(metaBuilder.build())
         } catch (_: Exception) {}
     }
 
@@ -200,7 +240,10 @@ class MediaPlaybackService : Service() {
         title: String,
         subtitle: String,
         isPlaying: Boolean,
-        path: String
+        path: String,
+        thumbnailBitmap: Bitmap?,
+        positionMs: Long,
+        durationMs: Long
     ): android.app.Notification {
         val tapIntent = Notifications.createLaunchIntent(
             applicationContext,
@@ -236,10 +279,19 @@ class MediaPlaybackService : Service() {
             .setAutoCancel(!isPlaying)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .addAction(android.R.drawable.ic_media_previous, "Previous", prevPending)
-            .addAction(playPauseIcon, playPauseLabel, playPausePending)
-            .addAction(android.R.drawable.ic_media_next, "Next", nextPending)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPending)
+
+        if (thumbnailBitmap != null) {
+            builder.setLargeIcon(thumbnailBitmap)
+        }
+
+        if (durationMs > 0) {
+            builder.setProgress(durationMs.toInt(), positionMs.toInt(), false)
+        }
+
+        builder.addAction(android.R.drawable.ic_media_previous, "Previous", prevPending)
+        builder.addAction(playPauseIcon, playPauseLabel, playPausePending)
+        builder.addAction(android.R.drawable.ic_media_next, "Next", nextPending)
+        builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPending)
 
         return builder.build()
     }

@@ -1,34 +1,35 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  Max Player  -  v70  (1.0.0+64)  - Combined Complete Master Release
+#  Max Player  -  v70  (1.0.0+64)  - Master Release
 #
-#  Features included:
+#  Fixes & features included:
 #  ---------------------------------------------------------------------------
 #  1. Kotlin Compiler Fix:
-#     - Renamed private helper to applyImmersiveMode to eliminate the Activity
-#       supertype method collision ('setImmersive' hides member of supertype).
+#     - Renamed private helper to applyImmersiveMode to eliminate Activity
+#       supertype method collision.
 #
-#  2. VLC-Style Edge-to-Edge & Cutout Layout:
-#     - WindowInsetsController + LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES.
-#     - Draws underneath the camera notch with zero black borders.
-#     - Immersive mode with transient swipe-to-reveal system bars.
+#  2. VLC Borderless Edge-to-Edge & Cutout Layout:
+#     - shortEdges window layout in styles.xml and WindowManager layoutParams.
+#     - Removed body SafeArea constraints so video texture bleeds 100% under notch.
+#     - WindowInsetsController immersive mode with swipe-to-reveal bars.
 #
-#  3. Rock-Solid B1 (Now-Playing Controls) + B2 (Background Audio):
-#     - Native Android Foreground Service (MediaPlaybackService).
-#     - MediaSession integration for system lockscreen, Bluetooth headsets,
-#       and notification media player controls.
-#     - Partial WakeLock guarantees uninterrupted screen-off audio playback.
+#  3. Fixed Now-Playing Notification & Media Controls (B1):
+#     - Displays video thumbnail (largeIcon and MediaMetadata album art).
+#     - Displays exact video duration / length.
+#     - Interactive playbar / seekbar in notification and lockscreen via MediaSession.
+#     - Wear OS / Smartwatch media tile integration.
 #
-#  4. C3: Wi-Fi Resume-Sync across devices (v69):
-#     - Zero-cloud UDP discovery on local Wi-Fi.
-#     - One-tap banner on Library screen to resume video playing on another device.
+#  4. Fixed Volume Leveling:
+#     - Correctly wrapped ffmpeg dynaudnorm filter inside lavfi=[...] container.
 #
-#  5. C4: Wear OS / Smartwatch Companion & Remote Control (v70):
-#     - MediaMetadata updates for Wear OS media tiles & smartwatches.
-#     - Local HTTP REST remote control API on port 52326 (/status, /play, /pause, /seek, /volume).
+#  5. Fixed Background Audio Playback (B2):
+#     - Android Foreground Service (MediaPlaybackService) with WakeLock.
 #
-#  6. A5 Voice Search in Discover (v66).
-#  7. 200% Clean Audio Boost + A1 Smart Skip + A2 Ask AI Video Chat + A6 Recs.
+#  6. C3: Wi-Fi Resume-Sync across local devices:
+#     - Zero-cloud UDP beacon discovery with one-tap Library banner.
+#
+#  7. C4: Wear OS / Smartwatch Companion REST API on port 52326.
+#  8. A5 Voice Search in Discover + 200% Clean Audio Boost + Smart Skip.
 #
 #  Run AS-IS from repo root:  bash update_maxplayer_v70.sh
 #  Idempotent - run twice; both must end "N/N checks OK".
@@ -532,6 +533,9 @@ class MainActivity : FlutterActivity() {
         // v68 B1/B2: wire foreground media service actions to Flutter channel.
         MediaPlaybackService.onMediaAction = { action ->
             mainHandler.post { channel?.invokeMethod("onMediaAction", action) }
+        }
+        MediaPlaybackService.onMediaSeek = { posMs ->
+            mainHandler.post { channel?.invokeMethod("onMediaSeek", posMs) }
         }
         CrashCrumbs.mark(this, "activity_create_ok")
         handleIncomingIntent(intent)
@@ -1041,12 +1045,18 @@ class MainActivity : FlutterActivity() {
                     val subtitle = call.argument<String>("subtitle") ?: ""
                     val isPlaying = call.argument<Boolean>("isPlaying") ?: true
                     val path = call.argument<String>("path") ?: ""
+                    val thumbPath = call.argument<String>("thumbnailPath")
+                    val posMs = call.argument<Number>("positionMs")?.toLong() ?: 0L
+                    val durMs = call.argument<Number>("durationMs")?.toLong() ?: 0L
                     MediaPlaybackService.startOrUpdate(
                         applicationContext,
                         title,
                         subtitle,
                         isPlaying,
-                        path
+                        path,
+                        thumbPath,
+                        posMs,
+                        durMs
                     )
                     result.success(MediaPlaybackService.NOTIF_ID)
                 }
@@ -2690,16 +2700,20 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import java.io.File
 
 /**
- * v68: Native Foreground Service & MediaSession for reliable background /
+ * v68/v70: Native Foreground Service & MediaSession for reliable background /
  * screen-off audio playback (B2) and system-wide Now Playing media controls (B1).
  *
  * Runs as a foreground service with type "mediaPlayback" so the Android OS
@@ -2724,15 +2738,22 @@ class MediaPlaybackService : Service() {
         const val EXTRA_SUBTITLE = "extra_subtitle"
         const val EXTRA_IS_PLAYING = "extra_is_playing"
         const val EXTRA_PATH = "extra_path"
+        const val EXTRA_THUMB_PATH = "extra_thumb_path"
+        const val EXTRA_POS_MS = "extra_pos_ms"
+        const val EXTRA_DUR_MS = "extra_dur_ms"
 
         var onMediaAction: ((String) -> Unit)? = null
+        var onMediaSeek: ((Long) -> Unit)? = null
 
         fun startOrUpdate(
             context: Context,
             title: String,
             subtitle: String,
             isPlaying: Boolean,
-            path: String
+            path: String,
+            thumbnailPath: String? = null,
+            positionMs: Long = 0L,
+            durationMs: Long = 0L
         ) {
             val intent = Intent(context, MediaPlaybackService::class.java).apply {
                 action = ACTION_UPDATE
@@ -2740,6 +2761,9 @@ class MediaPlaybackService : Service() {
                 putExtra(EXTRA_SUBTITLE, subtitle)
                 putExtra(EXTRA_IS_PLAYING, isPlaying)
                 putExtra(EXTRA_PATH, path)
+                if (!thumbnailPath.isNullOrEmpty()) putExtra(EXTRA_THUMB_PATH, thumbnailPath)
+                putExtra(EXTRA_POS_MS, positionMs)
+                putExtra(EXTRA_DUR_MS, durationMs)
             }
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -2810,6 +2834,10 @@ class MediaPlaybackService : Service() {
                     override fun onStop() {
                         onMediaAction?.invoke("stop")
                     }
+
+                    override fun onSeekTo(pos: Long) {
+                        onMediaSeek?.invoke(pos)
+                    }
                 })
                 isActive = true
             }
@@ -2838,10 +2866,21 @@ class MediaPlaybackService : Service() {
         val subtitle = intent?.getStringExtra(EXTRA_SUBTITLE) ?: ""
         val isPlaying = intent?.getBooleanExtra(EXTRA_IS_PLAYING, true) ?: true
         val path = intent?.getStringExtra(EXTRA_PATH) ?: ""
+        val thumbPath = intent?.getStringExtra(EXTRA_THUMB_PATH)
+        val posMs = intent?.getLongExtra(EXTRA_POS_MS, 0L) ?: 0L
+        val durMs = intent?.getLongExtra(EXTRA_DUR_MS, 0L) ?: 0L
 
-        updateSessionPlaybackState(isPlaying)
-        updateSessionMetadata(title, subtitle)
-        val notif = buildNotification(title, subtitle, isPlaying, path)
+        val thumbBmp: Bitmap? = if (!thumbPath.isNullOrEmpty() && File(thumbPath).exists()) {
+            try {
+                BitmapFactory.decodeFile(thumbPath)
+            } catch (_: Throwable) {
+                null
+            }
+        } else null
+
+        updateSessionPlaybackState(isPlaying, posMs)
+        updateSessionMetadata(title, subtitle, durMs, thumbBmp)
+        val notif = buildNotification(title, subtitle, isPlaying, path, thumbBmp, posMs, durMs)
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -2854,30 +2893,41 @@ class MediaPlaybackService : Service() {
         return START_STICKY
     }
 
-    private fun updateSessionPlaybackState(isPlaying: Boolean) {
+    private fun updateSessionPlaybackState(isPlaying: Boolean, positionMs: Long) {
         val state = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
         val actions = PlaybackState.ACTION_PLAY or
             PlaybackState.ACTION_PAUSE or
             PlaybackState.ACTION_PLAY_PAUSE or
             PlaybackState.ACTION_SKIP_TO_NEXT or
             PlaybackState.ACTION_SKIP_TO_PREVIOUS or
-            PlaybackState.ACTION_STOP
+            PlaybackState.ACTION_STOP or
+            PlaybackState.ACTION_SEEK_TO
         mediaSession?.setPlaybackState(
             PlaybackState.Builder()
                 .setActions(actions)
-                .setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+                .setState(state, positionMs, if (isPlaying) 1.0f else 0.0f, SystemClock.elapsedRealtime())
                 .build()
         )
     }
 
-    private fun updateSessionMetadata(title: String, subtitle: String) {
+    private fun updateSessionMetadata(
+        title: String,
+        subtitle: String,
+        durationMs: Long,
+        thumbnailBitmap: Bitmap?
+    ) {
         try {
-            val metadata = MediaMetadata.Builder()
+            val metaBuilder = MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, title)
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, if (subtitle.isNotEmpty()) subtitle else "Max Player")
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, "Max Player")
-                .build()
-            mediaSession?.setMetadata(metadata)
+                .putLong(MediaMetadata.METADATA_KEY_DURATION, durationMs)
+
+            if (thumbnailBitmap != null) {
+                metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, thumbnailBitmap)
+                metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ART, thumbnailBitmap)
+            }
+            mediaSession?.setMetadata(metaBuilder.build())
         } catch (_: Exception) {}
     }
 
@@ -2885,7 +2935,10 @@ class MediaPlaybackService : Service() {
         title: String,
         subtitle: String,
         isPlaying: Boolean,
-        path: String
+        path: String,
+        thumbnailBitmap: Bitmap?,
+        positionMs: Long,
+        durationMs: Long
     ): android.app.Notification {
         val tapIntent = Notifications.createLaunchIntent(
             applicationContext,
@@ -2921,10 +2974,19 @@ class MediaPlaybackService : Service() {
             .setAutoCancel(!isPlaying)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .addAction(android.R.drawable.ic_media_previous, "Previous", prevPending)
-            .addAction(playPauseIcon, playPauseLabel, playPausePending)
-            .addAction(android.R.drawable.ic_media_next, "Next", nextPending)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPending)
+
+        if (thumbnailBitmap != null) {
+            builder.setLargeIcon(thumbnailBitmap)
+        }
+
+        if (durationMs > 0) {
+            builder.setProgress(durationMs.toInt(), positionMs.toInt(), false)
+        }
+
+        builder.addAction(android.R.drawable.ic_media_previous, "Previous", prevPending)
+        builder.addAction(playPauseIcon, playPauseLabel, playPausePending)
+        builder.addAction(android.R.drawable.ic_media_next, "Next", nextPending)
+        builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPending)
 
         return builder.build()
     }
@@ -3151,6 +3213,54 @@ object Notifications {
 MAXV70_EOF_NOTIFICATIONS_KT
 echo "  wrote android/app/src/main/kotlin/com/hypertechlabs/maxplayer/Notifications.kt"
 
+mkdir -p "$(dirname "android/app/src/main/res/values/styles.xml")"
+cat > "android/app/src/main/res/values/styles.xml" <<'MAXV70_EOF_STYLES_XML'
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <!-- Show a splash screen on the activity. Automatically removed when
+             the Flutter engine draws its first frame -->
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+    <!-- Theme applied to the Android Window as soon as the process has started.
+         This theme determines the color of the Android Window while your
+         Flutter UI initializes, as well as behind your Flutter UI while its
+         running.
+
+         This Theme is only used starting with V2 of Flutter's Android embedding. -->
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>
+MAXV70_EOF_STYLES_XML
+echo "  wrote android/app/src/main/res/values/styles.xml"
+
+mkdir -p "$(dirname "android/app/src/main/res/values-night/styles.xml")"
+cat > "android/app/src/main/res/values-night/styles.xml" <<'MAXV70_EOF_STYLES_NIGHT_XML'
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is on -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <!-- Show a splash screen on the activity. Automatically removed when
+             the Flutter engine draws its first frame -->
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+    <!-- Theme applied to the Android Window as soon as the process has started.
+         This theme determines the color of the Android Window while your
+         Flutter UI initializes, as well as behind your Flutter UI while its
+         running.
+
+         This Theme is only used starting with V2 of Flutter's Android embedding. -->
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>
+MAXV70_EOF_STYLES_NIGHT_XML
+echo "  wrote android/app/src/main/res/values-night/styles.xml"
+
 mkdir -p "$(dirname "lib/main.dart")"
 cat > "lib/main.dart" <<'MAXV70_EOF_MAIN_DART'
 import 'dart:async';
@@ -3272,6 +3382,8 @@ class _MaxPlayerAppState extends State<MaxPlayerApp> {
               break;
           }
         },
+        // v70 C4: media notification playbar seek action.
+        onMediaSeek: (pos) => _player?.seek(pos),
       );
       // ... and the cold-start cases (app launched BY a VIEW intent or a
       // notification tap).
@@ -4128,6 +4240,7 @@ class MediaPlayerState extends ChangeNotifier {
         // Kick off scrub-preview thumbnail generation (idempotent - runs
         // once per file, cached on disk afterwards).
         _ensureThumbStrip();
+        _syncNowPlaying();
       }),
       player.stream.buffering.listen((v) {
         isLoading = v;
@@ -4991,7 +5104,7 @@ class MediaPlayerState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// v67 B1/B2: syncs Now Playing notification and wake lock with playback state.
+  /// v67 B1/B2/v70: syncs Now Playing notification, media session, thumbnail & duration.
   void _syncNowPlaying() {
     final track = currentTrack;
     if (track == null) {
@@ -5005,6 +5118,9 @@ class MediaPlayerState extends ChangeNotifier {
         subtitle: isPlaying ? 'Playing' : 'Paused',
         isPlaying: isPlaying,
         path: track.path,
+        thumbnailPath: track.thumbnailPath,
+        positionMs: position.inMilliseconds,
+        durationMs: duration.inMilliseconds,
       ));
       unawaited(NativeBridge.setWakeLock(isPlaying));
     } else {
@@ -5034,7 +5150,6 @@ class MediaPlayerState extends ChangeNotifier {
 
   static const String kLevelingFilter = 'dynaudnorm=f=150:g=15:m=5:p=0.95';
   bool _levelingOn = false;
-  bool _levelingWarned = false;
   bool get volumeLeveling => _levelingOn;
 
   Future<void> setVolumeLeveling(bool on) async {
@@ -5121,25 +5236,17 @@ class MediaPlayerState extends ChangeNotifier {
   }
 
   /// The single writer of mpv's `af` property: equalizer bands + leveling
-  /// combined. Replaces the old pair of writers that clobbered each other.
+  /// combined inside a single unified lavfi filter chain.
   Future<void> _applyAudioFilters() async {
     final platform = player.platform;
     if (platform is! NativePlayer) return;
-    final chain = <String>[
-      if (eqEnabled) buildEqualizerFilter(eqGains),
+    final lavfiParts = <String>[
+      if (eqEnabled) ...equalizerFilterParts(eqGains),
       if (_levelingOn) kLevelingFilter,
-    ].join(',');
+    ];
+    final af = lavfiParts.isEmpty ? '' : 'lavfi=[${lavfiParts.join(',')}]';
     try {
-      await platform.setProperty('af', chain);
-      if (_levelingOn && !_levelingWarned) {
-        final applied = await platform.getProperty('af');
-        if (!applied.contains('dynaudnorm')) {
-          _levelingWarned = true;
-          _notices.add(
-            'Volume leveling is not supported by this video engine build',
-          );
-        }
-      }
+      await platform.setProperty('af', af);
     } catch (_) {}
   }
 
@@ -5232,9 +5339,8 @@ class MediaPlayerState extends ChangeNotifier {
   static const String _kEqEnabledKey = 'eq.enabled';
   static const String _kEqGainsKey = 'eq.gains';
 
-  /// Builds the lavfi audio-filter chain, skipping bands at 0 dB.
-  /// Pure + testable.
-  static String buildEqualizerFilter(List<double> gains) {
+  /// Generates the individual lavfi equalizer filter parts.
+  static List<String> equalizerFilterParts(List<double> gains) {
     final parts = <String>[];
     for (var i = 0; i < eqFrequencies.length && i < gains.length; i++) {
       if (gains[i] == 0) continue;
@@ -5242,6 +5348,13 @@ class MediaPlayerState extends ChangeNotifier {
         'equalizer=f=${eqFrequencies[i]}:t=q:w=1.0:g=${gains[i].toStringAsFixed(1)}',
       );
     }
+    return parts;
+  }
+
+  /// Builds the lavfi audio-filter chain, skipping bands at 0 dB.
+  /// Pure + testable.
+  static String buildEqualizerFilter(List<double> gains) {
+    final parts = equalizerFilterParts(gains);
     return parts.isEmpty ? '' : 'lavfi=[${parts.join(',')}]';
   }
 
@@ -6670,6 +6783,9 @@ class NativeBridge {
   /// v67 B1: media notification action tapped ('play_pause', 'next', 'prev', 'stop').
   static void Function(String action)? _onMediaAction;
 
+  /// v70 C4: media notification seekbar / smartwatch scrub tapped.
+  static void Function(Duration position)? _onMediaSeek;
+
   /// v48: one finished cloud slice - raw .srt text at an absolute offset.
   static bool _handlerRegistered = false;
 
@@ -6692,6 +6808,9 @@ class NativeBridge {
 
     /// v67 B1: media notification action tapped.
     void Function(String action)? onMediaAction,
+
+    /// v70 C4: media notification seek action.
+    void Function(Duration position)? onMediaSeek,
   }) {
     if (onOpenVideo != null) _onOpenVideo = onOpenVideo;
     if (onOpenVideoFailed != null) _onOpenVideoFailed = onOpenVideoFailed;
@@ -6702,6 +6821,7 @@ class NativeBridge {
     if (onAiFailed != null) _onAiFailed = onAiFailed;
     if (onNotificationTap != null) _onNotificationTap = onNotificationTap;
     if (onMediaAction != null) _onMediaAction = onMediaAction;
+    if (onMediaSeek != null) _onMediaSeek = onMediaSeek;
     if (_handlerRegistered) return;
     _handlerRegistered = true;
     _channel.setMethodCallHandler(_dispatch);
@@ -6759,6 +6879,10 @@ class NativeBridge {
       case 'onMediaAction':
         final a = call.arguments as String?;
         if (a != null && a.isNotEmpty) _onMediaAction?.call(a);
+        break;
+      case 'onMediaSeek':
+        final ms = call.arguments as num?;
+        if (ms != null) _onMediaSeek?.call(Duration(milliseconds: ms.toInt()));
         break;
     }
     return null;
@@ -7297,12 +7421,15 @@ class NativeBridge {
   // ---------------------------------------------------------------------------
 
   /// Shows or updates the ongoing Now-Playing notification with Play/Pause,
-  /// Next, Previous and Stop actions.
+  /// Next, Previous and Stop actions, plus thumbnail and scrub playbar.
   static Future<int> showNowPlaying({
     required String title,
     String subtitle = 'Max Player',
     required bool isPlaying,
     required String path,
+    String? thumbnailPath,
+    int positionMs = 0,
+    int durationMs = 0,
   }) async {
     try {
       final res = await _channel.invokeMethod<int>('nowPlayingShow', {
@@ -7310,6 +7437,9 @@ class NativeBridge {
         'subtitle': subtitle,
         'isPlaying': isPlaying,
         'path': path,
+        if (thumbnailPath != null) 'thumbnailPath': thumbnailPath,
+        'positionMs': positionMs,
+        'durationMs': durationMs,
       });
       return res ?? 1001;
     } catch (_) {
@@ -14090,6 +14220,7 @@ present "MediaPlaybackService in manifest"    "MediaPlaybackService"          "a
 present "MediaPlaybackService class"          "class MediaPlaybackService"    "$K/MediaPlaybackService.kt"
 present "MediaSession in playback service"    "MediaSession"                  "$K/MediaPlaybackService.kt"
 present "MediaMetadata in playback service"   "MediaMetadata"                 "$K/MediaPlaybackService.kt"
+present "VLC cutout mode in styles.xml"       "android:windowLayoutInDisplayCutoutMode" "android/app/src/main/res/values/styles.xml"
 present "VLC cutout mode in MainActivity"     "LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES" "$K/MainActivity.kt"
 present "startVoiceSearch in MainActivity"    "startVoiceSearch"              "$K/MainActivity.kt"
 present "volume boost 200% key"               "kVolumeBoost200"               "lib/state/player_settings.dart"
@@ -14116,6 +14247,6 @@ fi
 echo ""
 echo "============================================================"
 echo " DONE. If 33/33 checks OK, run AS-IS (no hand edits):"
-echo "   git add -A && git commit -m \"v70: 200% volume, VLC edge-to-edge layout, native MediaPlaybackService background audio, Wi-Fi resume-sync, Wear OS companion, voice search (1.0.0+64)\" && git push"
+echo "   git add -A && git commit -m \"v70: 200% volume, VLC edge-to-edge layout, fixed notification thumbnail & playbar, fixed volume leveling, Wi-Fi resume-sync, Wear OS companion (1.0.0+64)\" && git push"
 echo " Then start a new Codemagic build."
 echo "============================================================"

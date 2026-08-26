@@ -87,6 +87,9 @@ class NativeBridge {
   /// v67 B1: media notification action tapped ('play_pause', 'next', 'prev', 'stop').
   static void Function(String action)? _onMediaAction;
 
+  /// v70 C4: media notification seekbar / smartwatch scrub tapped.
+  static void Function(Duration position)? _onMediaSeek;
+
   /// v48: one finished cloud slice - raw .srt text at an absolute offset.
   static bool _handlerRegistered = false;
 
@@ -109,6 +112,9 @@ class NativeBridge {
 
     /// v67 B1: media notification action tapped.
     void Function(String action)? onMediaAction,
+
+    /// v70 C4: media notification seek action.
+    void Function(Duration position)? onMediaSeek,
   }) {
     if (onOpenVideo != null) _onOpenVideo = onOpenVideo;
     if (onOpenVideoFailed != null) _onOpenVideoFailed = onOpenVideoFailed;
@@ -119,6 +125,7 @@ class NativeBridge {
     if (onAiFailed != null) _onAiFailed = onAiFailed;
     if (onNotificationTap != null) _onNotificationTap = onNotificationTap;
     if (onMediaAction != null) _onMediaAction = onMediaAction;
+    if (onMediaSeek != null) _onMediaSeek = onMediaSeek;
     if (_handlerRegistered) return;
     _handlerRegistered = true;
     _channel.setMethodCallHandler(_dispatch);
@@ -176,6 +183,10 @@ class NativeBridge {
       case 'onMediaAction':
         final a = call.arguments as String?;
         if (a != null && a.isNotEmpty) _onMediaAction?.call(a);
+        break;
+      case 'onMediaSeek':
+        final ms = call.arguments as num?;
+        if (ms != null) _onMediaSeek?.call(Duration(milliseconds: ms.toInt()));
         break;
     }
     return null;
@@ -714,12 +725,15 @@ class NativeBridge {
   // ---------------------------------------------------------------------------
 
   /// Shows or updates the ongoing Now-Playing notification with Play/Pause,
-  /// Next, Previous and Stop actions.
+  /// Next, Previous and Stop actions, plus thumbnail and scrub playbar.
   static Future<int> showNowPlaying({
     required String title,
     String subtitle = 'Max Player',
     required bool isPlaying,
     required String path,
+    String? thumbnailPath,
+    int positionMs = 0,
+    int durationMs = 0,
   }) async {
     try {
       final res = await _channel.invokeMethod<int>('nowPlayingShow', {
@@ -727,6 +741,9 @@ class NativeBridge {
         'subtitle': subtitle,
         'isPlaying': isPlaying,
         'path': path,
+        if (thumbnailPath != null) 'thumbnailPath': thumbnailPath,
+        'positionMs': positionMs,
+        'durationMs': durationMs,
       });
       return res ?? 1001;
     } catch (_) {
