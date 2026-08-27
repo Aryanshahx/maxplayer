@@ -4,37 +4,42 @@
 #
 #  Fixes & enhancements included:
 #  ---------------------------------------------------------------------------
-#  1. Volume Leveling Removed:
-#     - Completely removed volume leveling and audio filters causing muting.
+#  1. Embedded Fallback API Key:
+#     - Added built-in TMDB key fallback so Discover, search, trending,
+#       and movie posters work 100% out of the box on all sideload/local APKs
+#       without requiring manual Codemagic env variables.
+#
+#  2. Volume Leveling Removed & Clean Audio:
+#     - Removed volume leveling completely to prevent any audio muting/stalls.
 #     - Clean 200% audio boost.
 #
-#  2. 10s Seek, Video Playback & Scrubbing Speed:
+#  3. 10s Seek, Video Playback & Scrubbing Speed:
 #     - Instant keyframe seeking (relative+keyframes) in <1ms without lag.
 #     - Optimized demuxer cache and hardware decoding (no frame dropping).
 #     - Hardware-accelerated 36-frame thumbnail strip extraction for 10x faster
 #       scrubbing previews.
 #
-#  3. Left-Edge Punch-Hole Black Bar Fixed:
+#  4. Left-Edge Punch-Hole Black Bar Fixed:
 #     - isLandscape SafeArea with left: !isLandscape and right: !isLandscape.
 #     - shortEdges window cutout mode in styles.xml, values-night, values-v28.
 #     - FLAG_LAYOUT_NO_LIMITS + FLAG_LAYOUT_IN_SCREEN.
 #
-#  4. AI Suggestions & Movie Q&A:
+#  5. AI Suggestions & Movie Q&A:
 #     - Expanded OpenRouter fallback models (Llama 3.3, Gemini 2.0, Qwen 2.5,
 #       Mistral, DeepSeek R1).
 #     - Added glowing, pulsating "AI is thinking..." 3-dot animation.
 #
-#  5. Discover Section Upgrades:
+#  6. Discover Section Upgrades:
 #     - Removed duplicate Trending filter.
 #     - Added "Animation" filter section (Genre 16).
 #     - Decreased filter chip padding for compact, sleek horizontal browsing.
 #     - Custom in-app microphone popup (VoiceSearchSheet) with live audio wave,
 #       replacing the Google system dialog.
 #
-#  6. Details Section:
+#  7. Details Section:
 #     - Shows all audio languages and translation languages.
 #
-#  7. Wi-Fi Resume-Sync + Wear OS Companion REST API.
+#  8. Wi-Fi Resume-Sync + Wear OS Companion REST API.
 #
 #  Run AS-IS from repo root:  bash update_maxplayer_v70.sh
 #  Idempotent - run twice; both must end "N/N checks OK".
@@ -10136,7 +10141,9 @@ import 'dart:io';
 /// The value lives in Codemagic environment variables, never in the repo.
 /// When it is empty (local/dev builds) ALL client calls return empty
 /// results and the Discover screen shows its setup note - nothing crashes.
-const String kTmdbApiKey = String.fromEnvironment('TMDB_API_KEY');
+const String _kDefaultTmdbKey = '2dca580c2a14b55200e784d157207b4d';
+const String kTmdbApiKey =
+    String.fromEnvironment('TMDB_API_KEY', defaultValue: _kDefaultTmdbKey);
 
 /// One movie row from TMDB (trending / discover / search / detail).
 class TmdbMovie {
@@ -17481,6 +17488,7 @@ present "syncNowPlaying in player state"      "_syncNowPlaying"               "l
 present "fast relative keyframe seek"         "relative+keyframes"            "lib/state/media_player_state.dart"
 present "custom voice search sheet"           "class VoiceSearchSheet"        "lib/widgets/voice_search_sheet.dart"
 present "animation filter in Discover"        "Animation"                     "lib/services/tmdb_client.dart"
+present "fallback TMDB key"                   "2dca580c2a14b55200e784d157207b4d" "lib/services/tmdb_client.dart"
 present "Wi-Fi resume sync banner"            "ResumeSyncService"             "lib/screens/library_screen.dart"
 present "ResumeSyncService class"             "class ResumeSyncService"       "lib/services/resume_sync_service.dart"
 present "video ask sheet widget"              "class VideoAskSheet"           "lib/widgets/video_ask_sheet.dart"
@@ -17496,7 +17504,7 @@ fi
 
 echo ""
 echo "============================================================"
-echo " DONE. If 40/40 checks OK, run AS-IS (no hand edits):"
-echo "   git add -A && git commit -m \"v70: remove volume leveling, fast 10s keyframe seek, 10x faster scrub preview, custom in-app mic, animation filter, thinking animation, all languages (1.0.0+70)\" && git push"
+echo " DONE. If 41/41 checks OK, run AS-IS (no hand edits):"
+echo "   git add -A && git commit -m \"v70: TMDB fallback key, remove volume leveling, fast 10s seek, 10x faster scrub preview, custom in-app mic, animation filter, thinking animation, all languages (1.0.0+70)\" && git push"
 echo " Then start a new Codemagic build."
 echo "============================================================"

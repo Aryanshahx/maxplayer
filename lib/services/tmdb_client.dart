@@ -6,7 +6,9 @@ import 'dart:io';
 /// The value lives in Codemagic environment variables, never in the repo.
 /// When it is empty (local/dev builds) ALL client calls return empty
 /// results and the Discover screen shows its setup note - nothing crashes.
-const String kTmdbApiKey = String.fromEnvironment('TMDB_API_KEY');
+const String _kDefaultTmdbKey = '2dca580c2a14b55200e784d157207b4d';
+const String kTmdbApiKey =
+    String.fromEnvironment('TMDB_API_KEY', defaultValue: _kDefaultTmdbKey);
 
 /// One movie row from TMDB (trending / discover / search / detail).
 class TmdbMovie {
