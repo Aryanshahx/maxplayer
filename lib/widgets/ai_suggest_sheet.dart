@@ -185,10 +185,7 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
           ),
           const SizedBox(height: 14),
           if (_busy)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 30),
-              child: Center(child: CircularProgressIndicator()),
-            )
+            const _ThinkingAnimation()
           else if (_error != null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
@@ -270,6 +267,89 @@ class _PickCard extends StatelessWidget {
                 '${movie.year}',
                 style: const TextStyle(color: Colors.white38, fontSize: 11),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThinkingAnimation extends StatefulWidget {
+  const _ThinkingAnimation();
+
+  @override
+  State<_ThinkingAnimation> createState() => _ThinkingAnimationState();
+}
+
+class _ThinkingAnimationState extends State<_ThinkingAnimation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = themeState.accent;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.auto_awesome, color: accent, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'AI is thinking…',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            AnimatedBuilder(
+              animation: _ctrl,
+              builder: (context, _) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(3, (i) {
+                    final delay = i * 0.25;
+                    final val = (_ctrl.value - delay) % 1.0;
+                    final scale =
+                        0.5 + 0.5 * (val < 0.5 ? val * 2 : (1 - val) * 2);
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      width: 9,
+                      height: 9,
+                      transform: Matrix4.diagonal3Values(scale, scale, 1.0),
+                      transformAlignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.3 + 0.7 * scale),
+                        shape: BoxShape.circle,
+                      ),
+                    );
+                  }),
+                );
+              },
+            ),
           ],
         ),
       ),

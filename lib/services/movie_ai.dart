@@ -17,9 +17,14 @@ const String kOpenRouterApiKey =
 /// once would be slow; the fallback CHAIN is how 4 models combine into
 /// one answer that actually arrives. All must stay ':free'.
 const List<String> kOpenRouterModels = [
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'google/gemini-2.0-flash-exp:free',
+  'qwen/qwen-2.5-72b-instruct:free',
+  'mistralai/mistral-7b-instruct:free',
+  'deepseek/deepseek-r1:free',
+  'deepseek/deepseek-chat:free',
   'nvidia/nemotron-3-ultra-550b-a55b:free',
   'openai/gpt-oss-20b:free',
-  'z-ai/glm-5.2:free',
   'google/gemma-4-26b-a4b-it:free',
 ];
 

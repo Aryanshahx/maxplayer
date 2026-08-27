@@ -86,6 +86,7 @@ class DiscoverFilter {
 const List<DiscoverFilter> kDiscoverFilters = [
   DiscoverFilter(key: 'trending', label: 'Trending', trending: true),
   DiscoverFilter(key: 'upcoming', label: 'Upcoming', upcoming: true),
+  DiscoverFilter(key: 'animation', label: 'Animation', genreId: 16),
   DiscoverFilter(key: 'hollywood', label: 'Hollywood', language: 'en'),
   DiscoverFilter(key: 'bollywood', label: 'Bollywood', language: 'hi'),
   DiscoverFilter(key: 'tamil', label: 'Tamil', language: 'ta'),
@@ -102,8 +103,6 @@ const List<DiscoverFilter> kDiscoverFilters = [
 /// v58: WEB SERIES shelves (TMDB /tv endpoints). TV genre ids differ from
 /// movie ids, so series chips stick to trending + language only.
 const List<DiscoverFilter> kSeriesFilters = [
-  DiscoverFilter(
-      key: 'tv_trending', label: 'Trending', trending: true, tv: true),
   DiscoverFilter(key: 'tv_hindi', label: 'Hindi', language: 'hi', tv: true),
   DiscoverFilter(
       key: 'tv_english', label: 'English', language: 'en', tv: true),

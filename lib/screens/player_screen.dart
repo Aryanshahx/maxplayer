@@ -315,7 +315,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     // v21: push the playback-extras settings into the player state.
     unawaited(widget.player.setVolumeBoost200(s.volumeBoost200));
     widget.player.setBackgroundAudio(s.backgroundAudio);
-    unawaited(widget.player.setVolumeLeveling(s.volumeLeveling));
     // v32: picture settings - HDR tone-mapping curve + Enhance shader.
     unawaited(widget.player.setToneMapping(s.toneMapping));
     unawaited(widget.player.setEnhanceVideo(s.enhanceVideo));

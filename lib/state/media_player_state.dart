@@ -957,9 +957,16 @@ class MediaPlayerState extends ChangeNotifier {
 
   Future<void> seek(Duration to) => player.seek(to);
 
-  /// Relative seek (e.g. ±10s), clamped to the media bounds.
+  /// Relative seek (e.g. ±10s), using instant keyframe seeking.
   Future<void> seekBy(int seconds) async {
     if (currentTrack == null) return;
+    final plat = player.platform;
+    if (plat is NativePlayer) {
+      try {
+        await plat.command(['seek', '$seconds', 'relative+keyframes']);
+        return;
+      } catch (_) {}
+    }
     var target = position + Duration(seconds: seconds);
     if (target < Duration.zero) target = Duration.zero;
     if (duration > Duration.zero && target > duration) target = duration;
@@ -1056,28 +1063,6 @@ class MediaPlayerState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------------------------------------------------------------------------
-  // Volume leveling (v21) - mpv dynaudnorm: quiet dialogue and loud
-  // explosions come out at a steady level.
-  // v22: merged with the equalizer into ONE mpv `af` chain (both used to
-  // overwrite the whole property, silently cancelling each other), the
-  // window was widened so the effect is actually audible, and the applied
-  // chain is read back once - if this engine build lacks dynaudnorm the
-  // user is told instead of the toggle doing nothing.
-  // ---------------------------------------------------------------------------
-
-  /// v70: real-time audio dynamic compressor + hard limiter (prevents Android HAL peak muting).
-  static const String kLevelingFilter =
-      'acompressor=threshold=0.125:ratio=4:attack=5:release=50:makeup=1.5,alimiter=limit=0.97';
-  bool _levelingOn = false;
-  bool get volumeLeveling => _levelingOn;
-
-  Future<void> setVolumeLeveling(bool on) async {
-    _levelingOn = on;
-    notifyListeners();
-    await _applyAudioFilters();
-  }
-
   /// v32: mpv tone-mapping curve for HDR sources ("How does an HDR10 or
   /// Dolby Vision file render on this screen"). Values validated in
   /// PlayerSettings - anything unknown becomes 'auto' upstream.
@@ -1115,10 +1100,15 @@ class MediaPlayerState extends ChangeNotifier {
     'demuxer-max-bytes': '32MiB',
     'demuxer-max-back-bytes': '8MiB',
     'cache-secs': '10',
+    'hr-seek': 'default',
+    'hr-seek-framedrop': 'yes',
+    'vd-lavc-fast': 'yes',
+    'vd-lavc-skiploopfilter': 'nonref',
   };
 
   bool _enhanceApplied = false;
   String? _enhanceShaderPath;
+  String? _lastAppliedAf;
 
   Future<void> setEnhanceVideo(bool on) async {
     final plat = player.platform;
@@ -1155,28 +1145,30 @@ class MediaPlayerState extends ChangeNotifier {
     }
   }
 
-  /// The single writer of mpv's `af` property: equalizer bands + leveling
-  /// combined inside a single unified lavfi filter chain.
+  /// The single writer of mpv's `af` property: equalizer bands filter chain.
   Future<void> _applyAudioFilters() async {
     final platform = player.platform;
     if (platform is! NativePlayer) return;
-    if (!_levelingOn && !eqEnabled) {
-      try {
-        await platform.setProperty('af', '');
-      } catch (_) {}
+    if (!eqEnabled) {
+      if (_lastAppliedAf != '') {
+        try {
+          await platform.setProperty('af', '');
+          _lastAppliedAf = '';
+        } catch (_) {}
+      }
       return;
     }
-    final lavfiParts = <String>[
-      if (eqEnabled) ...equalizerFilterParts(eqGains),
-      if (_levelingOn) kLevelingFilter,
-    ];
+    final lavfiParts = equalizerFilterParts(eqGains);
     final af = lavfiParts.isEmpty ? '' : 'lavfi=[${lavfiParts.join(',')}]';
+    if (_lastAppliedAf == af) return;
     try {
       await platform.setProperty('af', af);
+      _lastAppliedAf = af;
     } catch (e, st) {
       debugPrint('AUDIO FILTER FAILED: $e\n$st');
       try {
         await platform.setProperty('af', '');
+        _lastAppliedAf = '';
       } catch (_) {}
     }
   }
@@ -1418,7 +1410,7 @@ class MediaPlayerState extends ChangeNotifier {
 
   /// Frames generated per video - must match the native generator
   /// (MainActivity.thumbStripEnsureSync).
-  static const int thumbStripCount = 72;
+  static const int thumbStripCount = 36;
 
   String? _thumbStripFor;
   String? _thumbStripDir;

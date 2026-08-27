@@ -90,6 +90,13 @@ class NativeBridge {
   /// v70 C4: media notification seekbar / smartwatch scrub tapped.
   static void Function(Duration position)? _onMediaSeek;
 
+  /// v70: custom in-app microphone speech recognition callbacks.
+  static void Function(String state)? _onVoiceState;
+  static void Function(double rms)? _onVoiceRms;
+  static void Function(String text)? _onVoicePartial;
+  static void Function(String text)? _onVoiceResult;
+  static void Function(int error)? _onVoiceError;
+
   /// v48: one finished cloud slice - raw .srt text at an absolute offset.
   static bool _handlerRegistered = false;
 
@@ -115,6 +122,13 @@ class NativeBridge {
 
     /// v70 C4: media notification seek action.
     void Function(Duration position)? onMediaSeek,
+
+    /// v70: custom voice search callbacks.
+    void Function(String state)? onVoiceState,
+    void Function(double rms)? onVoiceRms,
+    void Function(String text)? onVoicePartial,
+    void Function(String text)? onVoiceResult,
+    void Function(int error)? onVoiceError,
   }) {
     if (onOpenVideo != null) _onOpenVideo = onOpenVideo;
     if (onOpenVideoFailed != null) _onOpenVideoFailed = onOpenVideoFailed;
@@ -126,6 +140,11 @@ class NativeBridge {
     if (onNotificationTap != null) _onNotificationTap = onNotificationTap;
     if (onMediaAction != null) _onMediaAction = onMediaAction;
     if (onMediaSeek != null) _onMediaSeek = onMediaSeek;
+    if (onVoiceState != null) _onVoiceState = onVoiceState;
+    if (onVoiceRms != null) _onVoiceRms = onVoiceRms;
+    if (onVoicePartial != null) _onVoicePartial = onVoicePartial;
+    if (onVoiceResult != null) _onVoiceResult = onVoiceResult;
+    if (onVoiceError != null) _onVoiceError = onVoiceError;
     if (_handlerRegistered) return;
     _handlerRegistered = true;
     _channel.setMethodCallHandler(_dispatch);
@@ -187,6 +206,26 @@ class NativeBridge {
       case 'onMediaSeek':
         final ms = call.arguments as num?;
         if (ms != null) _onMediaSeek?.call(Duration(milliseconds: ms.toInt()));
+        break;
+      case 'onVoiceState':
+        final s = call.arguments as String?;
+        if (s != null) _onVoiceState?.call(s);
+        break;
+      case 'onVoiceRms':
+        final r = call.arguments as num?;
+        if (r != null) _onVoiceRms?.call(r.toDouble());
+        break;
+      case 'onVoicePartial':
+        final p = call.arguments as String?;
+        if (p != null) _onVoicePartial?.call(p);
+        break;
+      case 'onVoiceResult':
+        final res = call.arguments as String?;
+        if (res != null) _onVoiceResult?.call(res);
+        break;
+      case 'onVoiceError':
+        final err = call.arguments as num?;
+        if (err != null) _onVoiceError?.call(err.toInt());
         break;
     }
     return null;
@@ -718,6 +757,13 @@ class NativeBridge {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Stops in-app speech recognition.
+  static Future<void> stopVoiceSearch() async {
+    try {
+      await _channel.invokeMethod('stopVoiceSearch');
+    } catch (_) {}
   }
 
   // ---------------------------------------------------------------------------

@@ -670,12 +670,7 @@ class _AllDataBlock extends StatelessWidget {
         if (extras.revenueUsd > 0) row('Revenue', '\$${formatVoteCount(extras.revenueUsd)}'),
         if (extras.companies.isNotEmpty) row('Studio', extras.companies.join('  ')),
         if (extras.countries.isNotEmpty) row('Country', extras.countries.join('  ')),
-        // v61 (user: "why you showing two languages section in details"):
-        // the spoken-audio "Languages: ..." line already lives in
-        // _ExtrasBlock above. The old chip-wrap that listed every TMDB
-        // *translation* language (often 30+ chips) read as a duplicate,
-        // so it is removed - there is now exactly ONE language line.
-        // Cast / watch / reviews / seasons all stay untouched.
+        if (extras.allLanguages.isNotEmpty) row('Languages', extras.allLanguages.join(', ')),
         _RealSubtitlesBlock(movieId: movieId),
       ]),
     );

@@ -1905,7 +1905,7 @@ void main() {
       final t = kSeriesFilters.firstWhere((f) => f.key == 'tv_hindi');
       expect(kSeriesFilters.every((f) => f.tv), isTrue);
       expect(kDiscoverFilters.every((f) => !f.tv), isTrue);
-      expect(tmdbEndpointPath(kSeriesFilters.first), '/3/trending/tv/week');
+      expect(tmdbEndpointPath(kSeriesFilters.first), '/3/discover/tv');
       expect(tmdbEndpointPath(t), '/3/discover/tv');
       expect(tmdbDiscoverQuery(t, 2)['with_original_language'], 'hi');
       // series get their own cache files, movie cache names unchanged

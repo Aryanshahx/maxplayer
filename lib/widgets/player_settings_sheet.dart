@@ -302,16 +302,6 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 onChanged: (v) =>
                     _update(_settings.copyWith(backgroundAudio: v)),
               ),
-              _SwitchTile(
-                icon: Icons.graphic_eq,
-                label: 'Volume leveling',
-                subtitle:
-                    'Steady loudness: soft dialogue and loud '
-                    'explosions evened out',
-                value: _settings.volumeLeveling,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(volumeLeveling: v)),
-              ),
               // v65: the old "Skip intro chip" setting is gone - smart
               // skip (intro AND credits) is now automatic whenever usable
               // subtitles exist. The player shows a brief chip the user can

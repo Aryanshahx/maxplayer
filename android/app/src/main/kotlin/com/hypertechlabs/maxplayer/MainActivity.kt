@@ -39,7 +39,9 @@ import android.os.PowerManager
 import android.os.StatFs
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.view.WindowManager
 import dev.ffmpegkit.whisper.Whisper
 import dev.ffmpegkit.whisper.WhisperConfig
@@ -133,6 +135,76 @@ class MainActivity : FlutterActivity() {
         private const val REQ_NOTIF_PERMISSION = 45
         private const val REQ_VOICE_SEARCH = 46
         private val STREAM_SCHEMES = setOf("http", "https", "rtsp", "rtmp", "mms")
+    }
+
+    private var inAppSpeechRecognizer: SpeechRecognizer? = null
+
+    private fun startInAppSpeech(result: MethodChannel.Result) {
+        if (!SpeechRecognizer.isRecognitionAvailable(applicationContext)) {
+            result.error("unavailable", "Speech recognition unavailable", null)
+            return
+        }
+        mainHandler.post {
+            try {
+                inAppSpeechRecognizer?.destroy()
+                inAppSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(applicationContext).apply {
+                    setRecognitionListener(object : RecognitionListener {
+                        override fun onReadyForSpeech(params: Bundle?) {
+                            channel?.invokeMethod("onVoiceState", "listening")
+                        }
+                        override fun onBeginningOfSpeech() {
+                            channel?.invokeMethod("onVoiceState", "speaking")
+                        }
+                        override fun onRmsChanged(rmsdB: Float) {
+                            channel?.invokeMethod("onVoiceRms", rmsdB)
+                        }
+                        override fun onBufferReceived(buffer: ByteArray?) {}
+                        override fun onEndOfSpeech() {
+                            channel?.invokeMethod("onVoiceState", "processing")
+                        }
+                        override fun onError(error: Int) {
+                            channel?.invokeMethod("onVoiceError", error)
+                            pendingVoiceSearchResult?.success(null)
+                            pendingVoiceSearchResult = null
+                        }
+                        override fun onResults(results: Bundle?) {
+                            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            val text = matches?.firstOrNull()?.trim()
+                            channel?.invokeMethod("onVoiceResult", text)
+                            pendingVoiceSearchResult?.success(text)
+                            pendingVoiceSearchResult = null
+                        }
+                        override fun onPartialResults(partialResults: Bundle?) {
+                            val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            val text = matches?.firstOrNull()?.trim()
+                            if (!text.isNullOrEmpty()) {
+                                channel?.invokeMethod("onVoicePartial", text)
+                            }
+                        }
+                        override fun onEvent(eventType: Int, params: Bundle?) {}
+                    })
+                }
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                }
+                pendingVoiceSearchResult = result
+                inAppSpeechRecognizer?.startListening(intent)
+            } catch (e: Exception) {
+                result.error("speech_error", e.message, null)
+            }
+        }
+    }
+
+    private fun stopInAppSpeech() {
+        mainHandler.post {
+            try {
+                inAppSpeechRecognizer?.stopListening()
+                inAppSpeechRecognizer?.destroy()
+                inAppSpeechRecognizer = null
+            } catch (_: Exception) {}
+        }
     }
 
     private var pendingVoiceSearchResult: MethodChannel.Result? = null
@@ -737,22 +809,11 @@ class MainActivity : FlutterActivity() {
                     result.success(p)
                 }
                 "startVoiceSearch" -> {
-                    if (pendingVoiceSearchResult != null) {
-                        result.error("in_progress", "Voice search already running", null)
-                    } else {
-                        pendingVoiceSearchResult = result
-                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Search movies & series...")
-                            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-                        }
-                        try {
-                            startActivityForResult(intent, REQ_VOICE_SEARCH)
-                        } catch (e: Exception) {
-                            pendingVoiceSearchResult = null
-                            result.error("unavailable", "Speech recognition not available on this device", null)
-                        }
-                    }
+                    startInAppSpeech(result)
+                }
+                "stopVoiceSearch" -> {
+                    stopInAppSpeech()
+                    result.success(true)
                 }
                 "nowPlayingShow" -> {
                     val title = call.argument<String>("title") ?: "Max Player"
@@ -2172,7 +2233,7 @@ class MainActivity : FlutterActivity() {
         if (path.isNullOrEmpty() || path.startsWith("http")) return null
         val src = File(path)
         if (!src.exists()) return null
-        val count = 72
+        val count = 36
         val dir = File(cacheDir, "thumbstrip_" + md5(path))
         try {
             if (dir.isDirectory) {
@@ -2194,24 +2255,34 @@ class MainActivity : FlutterActivity() {
                 dir.mkdirs()
                 for (i in 0 until count) {
                     val us = durMs * 1000L * i / (count - 1)
-                    val frame = try {
+                    val thumb = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                        try {
+                            retriever.getScaledFrameAtTime(
+                                us,
+                                android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                                160,
+                                90
+                            )
+                        } catch (_: Throwable) {
+                            retriever.getFrameAtTime(
+                                us,
+                                android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                            )?.let { scaleToWidth(it, 160) }
+                        }
+                    } else {
                         retriever.getFrameAtTime(
                             us,
                             android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                        )
-                    } catch (e: Exception) {
-                        null
+                        )?.let { scaleToWidth(it, 160) }
                     }
-                    if (frame != null) {
-                        val thumb = scaleToWidth(frame, 192)
+                    if (thumb != null) {
                         FileOutputStream(File(dir, "f_%03d.jpg".format(i)))
                             .use { out ->
                                 thumb.compress(
-                                    Bitmap.CompressFormat.JPEG, 72, out
+                                    Bitmap.CompressFormat.JPEG, 65, out
                                 )
                             }
-                        if (thumb !== frame) thumb.recycle()
-                        frame.recycle()
+                        thumb.recycle()
                     }
                 }
             } finally {
@@ -2378,6 +2449,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        stopInAppSpeech()
         if (pipReceiverRegistered) {
             try {
                 unregisterReceiver(pipReceiver)

@@ -54,9 +54,6 @@ class PlayerSettings {
   /// v67 B2: keep playing audio when the screen is turned off or app minimised.
   final bool backgroundAudio;
 
-  /// mpv dynaudnorm: loud explosions and quiet dialogue evened out.
-  final bool volumeLeveling;
-
   /// Karaoke-style word highlight for AI subtitles.
   final bool karaokeSubs;
 
@@ -88,7 +85,6 @@ class PlayerSettings {
     this.volumeBoost200 = true,
     // v67 B2: ON by default (background audio playback).
     this.backgroundAudio = true,
-    this.volumeLeveling = false,
     this.karaokeSubs = false,
     this.enhanceVideo = false,
     this.toneMapping = 'auto',
@@ -138,7 +134,6 @@ class PlayerSettings {
   static const String kLockButton = 'player.lockButton';
   static const String kVolumeBoost200 = 'player.volumeBoost200';
   static const String kBackgroundAudio = 'player.backgroundAudio';
-  static const String kVolumeLeveling = 'player.volumeLeveling';
   static const String kKaraokeSubs = 'player.karaokeSubs';
   static const String kEnhanceVideo = 'player.enhanceVideo';
   static const String kToneMapping = 'player.toneMapping';
@@ -170,7 +165,6 @@ class PlayerSettings {
       lockButton: s[kLockButton] != 'false',
       volumeBoost200: s[kVolumeBoost200] != 'false',
       backgroundAudio: s[kBackgroundAudio] != 'false',
-      volumeLeveling: s[kVolumeLeveling] == 'true',
       karaokeSubs: s[kKaraokeSubs] == 'true',
       enhanceVideo: s[kEnhanceVideo] == 'true',
       toneMapping: kToneMappingModes.contains(s[kToneMapping])
@@ -211,7 +205,6 @@ class PlayerSettings {
     NativeBridge.saveSetting(kLockButton, '$lockButton');
     NativeBridge.saveSetting(kVolumeBoost200, '$volumeBoost200');
     NativeBridge.saveSetting(kBackgroundAudio, '$backgroundAudio');
-    NativeBridge.saveSetting(kVolumeLeveling, '$volumeLeveling');
     NativeBridge.saveSetting(kKaraokeSubs, '$karaokeSubs');
     NativeBridge.saveSetting(kEnhanceVideo, '$enhanceVideo');
     return NativeBridge.saveSetting(kToneMapping, toneMapping);
@@ -236,7 +229,6 @@ class PlayerSettings {
     bool? lockButton,
     bool? volumeBoost200,
     bool? backgroundAudio,
-    bool? volumeLeveling,
     bool? karaokeSubs,
     bool? enhanceVideo,
     String? toneMapping,
@@ -260,7 +252,6 @@ class PlayerSettings {
       lockButton: lockButton ?? this.lockButton,
       volumeBoost200: volumeBoost200 ?? this.volumeBoost200,
       backgroundAudio: backgroundAudio ?? this.backgroundAudio,
-      volumeLeveling: volumeLeveling ?? this.volumeLeveling,
       karaokeSubs: karaokeSubs ?? this.karaokeSubs,
       enhanceVideo: enhanceVideo ?? this.enhanceVideo,
       toneMapping: toneMapping ?? this.toneMapping,

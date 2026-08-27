@@ -191,21 +191,7 @@ class _VideoAskSheetState extends State<VideoAskSheet> {
               children: [
                 for (final m in _messages) _bubble(m, accent),
                 if (_asking)
-                  const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        SizedBox(width: 10),
-                        Text('Thinking…',
-                            style: TextStyle(color: Colors.white54)),
-                      ],
-                    ),
-                  ),
+                  const _ThinkingDots(),
               ],
             ),
           ),
@@ -341,4 +327,78 @@ class _Msg {
   _Msg._(this.who, this.text);
   factory _Msg.user(String t) => _Msg._(_Who.user, t);
   factory _Msg.ai(String t) => _Msg._(_Who.ai, t);
+}
+
+class _ThinkingDots extends StatefulWidget {
+  const _ThinkingDots();
+
+  @override
+  State<_ThinkingDots> createState() => _ThinkingDotsState();
+}
+
+class _ThinkingDotsState extends State<_ThinkingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = themeState.accent;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: Row(
+        children: [
+          Icon(Icons.auto_awesome, color: accent, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            'Thinking…',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.7),
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(width: 10),
+          AnimatedBuilder(
+            animation: _ctrl,
+            builder: (context, _) {
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(3, (i) {
+                  final delay = i * 0.25;
+                  final val = (_ctrl.value - delay) % 1.0;
+                  final scale =
+                      0.5 + 0.5 * (val < 0.5 ? val * 2 : (1 - val) * 2);
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: 7,
+                    height: 7,
+                    transform: Matrix4.diagonal3Values(scale, scale, 1.0),
+                    transformAlignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.3 + 0.7 * scale),
+                      shape: BoxShape.circle,
+                    ),
+                  );
+                }),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
 }
