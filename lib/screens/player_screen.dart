@@ -1132,6 +1132,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   Widget build(BuildContext context) {
     final player = widget.player;
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
 
     return PopScope(
       canPop: !_isFullscreen && !_locked,
@@ -1145,14 +1147,13 @@ class _PlayerScreenState extends State<PlayerScreen>
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        // v19: no Scaffold AppBar anymore - the title + actions live in an
-        // auto-hiding top overlay INSIDE the video stack, so portrait video
-        // gets the full height and a tap reveals title and controls
-        // together (previously a tap surfaced only the bottom bar).
+        // v19/v70: no Scaffold AppBar anymore - the title + actions live in an
+        // auto-hiding top overlay INSIDE the video stack. In landscape/fullscreen,
+        // left and right insets are released so video bleeds 100% under punch hole.
         body: SafeArea(
           top: !_isFullscreen,
-          left: !_isFullscreen,
-          right: !_isFullscreen,
+          left: !isLandscape,
+          right: !isLandscape,
           // v20: in LANDSCAPE the controls sit flush with the bottom edge
           // (requested - "one step down"); portrait keeps the gesture-bar
           // clearance so the seek bar is not touched by the system bar.

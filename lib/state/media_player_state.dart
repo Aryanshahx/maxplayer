@@ -1173,7 +1173,8 @@ class MediaPlayerState extends ChangeNotifier {
     final af = lavfiParts.isEmpty ? '' : 'lavfi=[${lavfiParts.join(',')}]';
     try {
       await platform.setProperty('af', af);
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('AUDIO FILTER FAILED: $e\n$st');
       try {
         await platform.setProperty('af', '');
       } catch (_) {}

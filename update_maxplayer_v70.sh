@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  Max Player  -  v70  (1.0.0+67)  - Master Release
+#  Max Player  -  v70  (1.0.0+68)  - Master Release
 #
 #  Fixes & optimizations:
 #  ---------------------------------------------------------------------------
@@ -8,12 +8,13 @@
 #     - Added alimiter (limit=0.97) ceiling and tuned makeup gain to 1.5
 #       (acompressor=threshold=0.125:ratio=4:attack=5:release=50:makeup=1.5,alimiter=limit=0.97)
 #       to prevent Android HAL peak protection from hard-muting over-driven signals.
-#     - Single AudioFocus manager in MediaPlaybackService (eliminates listener fighting).
+#     - Single AudioFocus manager in MediaPlaybackService.
+#     - Added debugPrint logging on filter failures.
 #     - Clean 200% audio boost.
 #
 #  2. Left-edge Punch-Hole Black Bar Fixed:
-#     - Configured SafeArea with left: !_isFullscreen and right: !_isFullscreen.
-#       In landscape/fullscreen, left/right cutout insets are released so the
+#     - Configured SafeArea with left: !isLandscape and right: !isLandscape.
+#       In landscape, left/right cutout insets are released so the
 #       video expands 100% edge-to-edge behind the punch hole.
 #     - shortEdges window cutout mode in styles.xml, values-night, values-v28.
 #     - WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS + FLAG_LAYOUT_IN_SCREEN.
@@ -35,7 +36,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 echo "============================================================"
-echo " Max Player v70 (1.0.0+67)"
+echo " Max Player v70 (1.0.0+68)"
 echo " Running from: $(pwd)"
 echo "============================================================"
 mkdir -p "$(dirname "android/app/src/main/AndroidManifest.xml")"
@@ -5547,7 +5548,8 @@ class MediaPlayerState extends ChangeNotifier {
     final af = lavfiParts.isEmpty ? '' : 'lavfi=[${lavfiParts.join(',')}]';
     try {
       await platform.setProperty('af', af);
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('AUDIO FILTER FAILED: $e\n$st');
       try {
         await platform.setProperty('af', '');
       } catch (_) {}
@@ -11276,6 +11278,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   Widget build(BuildContext context) {
     final player = widget.player;
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
 
     return PopScope(
       canPop: !_isFullscreen && !_locked,
@@ -11289,14 +11293,13 @@ class _PlayerScreenState extends State<PlayerScreen>
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        // v19: no Scaffold AppBar anymore - the title + actions live in an
-        // auto-hiding top overlay INSIDE the video stack, so portrait video
-        // gets the full height and a tap reveals title and controls
-        // together (previously a tap surfaced only the bottom bar).
+        // v19/v70: no Scaffold AppBar anymore - the title + actions live in an
+        // auto-hiding top overlay INSIDE the video stack. In landscape/fullscreen,
+        // left and right insets are released so video bleeds 100% under punch hole.
         body: SafeArea(
           top: !_isFullscreen,
-          left: !_isFullscreen,
-          right: !_isFullscreen,
+          left: !isLandscape,
+          right: !isLandscape,
           // v20: in LANDSCAPE the controls sit flush with the bottom edge
           // (requested - "one step down"); portrait keeps the gesture-bar
           // clearance so the seek bar is not touched by the system bar.
@@ -11989,7 +11992,7 @@ cat > "pubspec.yaml" <<'MAXV70_EOF_PUBSPEC_YAML'
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+67
+version: 1.0.0+68
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -14550,6 +14553,7 @@ present "volume boost 200% key"               "kVolumeBoost200"               "l
 present "volume boost 200% mpv setting"       "'volume-max', '200'"           "lib/state/media_player_state.dart"
 present "volume boost 200% sheet toggle"      "Volume boost up to 200%"       "lib/widgets/player_settings_sheet.dart"
 present "alimiter in leveling filter"         "alimiter=limit=0.97"           "lib/state/media_player_state.dart"
+present "audio filter debug logging"          "AUDIO FILTER FAILED"           "lib/state/media_player_state.dart"
 present "background audio setting key"        "kBackgroundAudio"              "lib/state/player_settings.dart"
 present "background audio sheet toggle"       "Background audio playback"     "lib/widgets/player_settings_sheet.dart"
 present "backgroundAudio in player state"     "bool backgroundAudio = true;"  "lib/state/media_player_state.dart"
@@ -14560,7 +14564,7 @@ present "ResumeSyncService class"             "class ResumeSyncService"       "l
 present "video ask sheet widget"              "class VideoAskSheet"           "lib/widgets/video_ask_sheet.dart"
 present "v69 test suite"                      "group('v69 Wi-Fi resume-sync'" test/widget_test.dart
 present "v70 test suite"                      "group('v70 Wear OS companion"  test/widget_test.dart
-present "pubspec version 1.0.0+67"             "^version: 1.0.0+67"            "pubspec.yaml"
+present "pubspec version 1.0.0+68"             "^version: 1.0.0+68"            "pubspec.yaml"
 echo ""
 if [ "$ok" -eq "$total" ]; then
   echo "==> $ok/$total checks OK - v70 applied cleanly."
@@ -14570,7 +14574,7 @@ fi
 
 echo ""
 echo "============================================================"
-echo " DONE. If 37/37 checks OK, run AS-IS (no hand edits):"
-echo "   git add -A && git commit -m \"v70: 200% volume, alimiter leveling ceiling, SafeArea left/right punch-hole fix, single AudioFocus in MediaPlaybackService, Wi-Fi resume-sync, Wear OS companion (1.0.0+67)\" && git push"
+echo " DONE. If 38/38 checks OK, run AS-IS (no hand edits):"
+echo "   git add -A && git commit -m \"v70: 200% volume, alimiter leveling ceiling, isLandscape SafeArea punch-hole fix, single AudioFocus in MediaPlaybackService, Wi-Fi resume-sync, Wear OS companion (1.0.0+68)\" && git push"
 echo " Then start a new Codemagic build."
 echo "============================================================"
