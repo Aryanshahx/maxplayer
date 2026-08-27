@@ -1151,6 +1151,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         // together (previously a tap surfaced only the bottom bar).
         body: SafeArea(
           top: !_isFullscreen,
+          left: !_isFullscreen,
+          right: !_isFullscreen,
           // v20: in LANDSCAPE the controls sit flush with the bottom edge
           // (requested - "one step down"); portrait keeps the gesture-bar
           // clearance so the seek bar is not touched by the system bar.

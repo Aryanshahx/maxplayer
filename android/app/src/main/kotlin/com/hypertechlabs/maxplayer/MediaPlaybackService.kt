@@ -111,8 +111,7 @@ class MediaPlaybackService : Service() {
                 .setAudioAttributes(playbackAttributes)
                 .setAcceptsDelayedFocusGain(true)
                 .setOnAudioFocusChangeListener { focusChange ->
-                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
-                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
                         onMediaAction?.invoke("pause")
                     } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
                         onMediaAction?.invoke("play")
@@ -125,8 +124,7 @@ class MediaPlaybackService : Service() {
             @Suppress("DEPRECATION")
             am.requestAudioFocus(
                 { focusChange ->
-                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
-                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
                         onMediaAction?.invoke("pause")
                     } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
                         onMediaAction?.invoke("play")

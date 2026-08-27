@@ -1,38 +1,33 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  Max Player  -  v70  (1.0.0+66)  - Master Release
+#  Max Player  -  v70  (1.0.0+67)  - Master Release
 #
 #  Fixes & optimizations:
 #  ---------------------------------------------------------------------------
-#  1. Audio Block & Glitch Fixed:
-#     - Replaced stalling 150-frame dynaudnorm filter with zero-latency
-#       acompressor (threshold=0.125, ratio=4, attack=5ms, release=50ms, makeup=2)
-#       so turning on volume leveling NEVER blocks or mutes audio output.
-#     - Managed Android AudioFocus (AudioManager.AUDIOFOCUS_GAIN with USAGE_MEDIA /
-#       CONTENT_TYPE_MOVIE) in MainActivity & MediaPlaybackService.
+#  1. Audio Signal Clipping & Audio Block Fixed:
+#     - Added alimiter (limit=0.97) ceiling and tuned makeup gain to 1.5
+#       (acompressor=threshold=0.125:ratio=4:attack=5:release=50:makeup=1.5,alimiter=limit=0.97)
+#       to prevent Android HAL peak protection from hard-muting over-driven signals.
+#     - Single AudioFocus manager in MediaPlaybackService (eliminates listener fighting).
 #     - Clean 200% audio boost.
 #
-#  2. True Borderless Edge-to-Edge Punch-Hole & Notch Display (VLC Style):
-#     - shortEdges window cutout mode in styles.xml, values-night, and values-v28.
+#  2. Left-edge Punch-Hole Black Bar Fixed:
+#     - Configured SafeArea with left: !_isFullscreen and right: !_isFullscreen.
+#       In landscape/fullscreen, left/right cutout insets are released so the
+#       video expands 100% edge-to-edge behind the punch hole.
+#     - shortEdges window cutout mode in styles.xml, values-night, values-v28.
 #     - WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS + FLAG_LAYOUT_IN_SCREEN.
-#     - Video layer uses MediaQuery.removePadding and SizedBox.expand so the
-#       video texture expands 100% edge-to-edge behind the punch hole without
-#       forced black letterbox bars.
 #
 #  3. Fixed Android 15/16 Teardown Crash:
-#     - Protected MaxPlayerApp against late ImageReaderSurfaceProducer frames
-#       during engine detach ("FlutterJNI is not attached to native").
+#     - Protected MaxPlayerApp against late ImageReaderSurfaceProducer frames.
 #
 #  4. Fixed Now-Playing Notification & Media Controls:
 #     - Video thumbnail as largeIcon and MediaMetadata album art.
-#     - Video duration & position displayed in notification.
-#     - Interactive playbar / seekbar in notification, lockscreen, and smartwatches.
-#
-#  5. Fixed Background & Screen-off Playback:
+#     - Video duration & position displayed in notification with seekbar.
 #     - Native Android Foreground Service (MediaPlaybackService) with WakeLock.
 #
-#  6. C3: Wi-Fi Resume-Sync across devices + C4: Wear OS Companion REST API.
-#  7. A5 Voice Search in Discover + A1 Smart Skip + A2 Ask AI Video Chat.
+#  5. C3: Wi-Fi Resume-Sync across devices + C4: Wear OS Companion REST API.
+#  6. A5 Voice Search in Discover + A1 Smart Skip + A2 Ask AI Video Chat.
 #
 #  Run AS-IS from repo root:  bash update_maxplayer_v70.sh
 #  Idempotent - run twice; both must end "N/N checks OK".
@@ -40,7 +35,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 echo "============================================================"
-echo " Max Player v70 (1.0.0+66)"
+echo " Max Player v70 (1.0.0+67)"
 echo " Running from: $(pwd)"
 echo "============================================================"
 mkdir -p "$(dirname "android/app/src/main/AndroidManifest.xml")"
@@ -490,57 +485,6 @@ class MainActivity : FlutterActivity() {
                 }
             }
         } catch (_: Exception) {}
-    }
-
-    private var audioFocusRequest: Any? = null
-
-    private fun requestAudioFocus() {
-        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val playbackAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
-                .build()
-            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(playbackAttributes)
-                .setAcceptsDelayedFocusGain(true)
-                .setOnAudioFocusChangeListener { focusChange ->
-                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
-                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-                        mainHandler.post { channel?.invokeMethod("onMediaAction", "pause") }
-                    } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-                        mainHandler.post { channel?.invokeMethod("onMediaAction", "play") }
-                    }
-                }
-                .build()
-            audioFocusRequest = request
-            am.requestAudioFocus(request)
-        } else {
-            @Suppress("DEPRECATION")
-            am.requestAudioFocus(
-                { focusChange ->
-                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
-                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-                        mainHandler.post { channel?.invokeMethod("onMediaAction", "pause") }
-                    } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-                        mainHandler.post { channel?.invokeMethod("onMediaAction", "play") }
-                    }
-                },
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN
-            )
-        }
-    }
-
-    private fun abandonAudioFocus() {
-        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val req = audioFocusRequest as? AudioFocusRequest
-            if (req != null) am.abandonAudioFocusRequest(req)
-        } else {
-            @Suppress("DEPRECATION")
-            am.abandonAudioFocus(null)
-        }
     }
 
     override fun onAttachedToWindow() {
@@ -1127,7 +1071,6 @@ class MainActivity : FlutterActivity() {
                     val thumbPath = call.argument<String>("thumbnailPath")
                     val posMs = call.argument<Number>("positionMs")?.toLong() ?: 0L
                     val durMs = call.argument<Number>("durationMs")?.toLong() ?: 0L
-                    if (isPlaying) requestAudioFocus()
                     MediaPlaybackService.startOrUpdate(
                         applicationContext,
                         title,
@@ -1141,7 +1084,6 @@ class MainActivity : FlutterActivity() {
                     result.success(MediaPlaybackService.NOTIF_ID)
                 }
                 "nowPlayingCancel" -> {
-                    abandonAudioFocus()
                     MediaPlaybackService.stop(applicationContext)
                     result.success(true)
                 }
@@ -2887,8 +2829,7 @@ class MediaPlaybackService : Service() {
                 .setAudioAttributes(playbackAttributes)
                 .setAcceptsDelayedFocusGain(true)
                 .setOnAudioFocusChangeListener { focusChange ->
-                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
-                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
                         onMediaAction?.invoke("pause")
                     } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
                         onMediaAction?.invoke("play")
@@ -2901,8 +2842,7 @@ class MediaPlaybackService : Service() {
             @Suppress("DEPRECATION")
             am.requestAudioFocus(
                 { focusChange ->
-                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS ||
-                        focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
                         onMediaAction?.invoke("pause")
                     } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
                         onMediaAction?.invoke("play")
@@ -5500,9 +5440,9 @@ class MediaPlayerState extends ChangeNotifier {
   // user is told instead of the toggle doing nothing.
   // ---------------------------------------------------------------------------
 
-  /// v70: real-time audio dynamic compressor (instant leveling without buffer stalls).
+  /// v70: real-time audio dynamic compressor + hard limiter (prevents Android HAL peak muting).
   static const String kLevelingFilter =
-      'acompressor=threshold=0.125:ratio=4:attack=5:release=50:makeup=2';
+      'acompressor=threshold=0.125:ratio=4:attack=5:release=50:makeup=1.5,alimiter=limit=0.97';
   bool _levelingOn = false;
   bool get volumeLeveling => _levelingOn;
 
@@ -11355,6 +11295,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         // together (previously a tap surfaced only the bottom bar).
         body: SafeArea(
           top: !_isFullscreen,
+          left: !_isFullscreen,
+          right: !_isFullscreen,
           // v20: in LANDSCAPE the controls sit flush with the bottom edge
           // (requested - "one step down"); portrait keeps the gesture-bar
           // clearance so the seek bar is not touched by the system bar.
@@ -12047,7 +11989,7 @@ cat > "pubspec.yaml" <<'MAXV70_EOF_PUBSPEC_YAML'
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+66
+version: 1.0.0+67
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -14537,7 +14479,7 @@ void main() {
     final syncService =
         File('lib/services/resume_sync_service.dart').readAsStringSync();
 
-    test('MediaPlaybackService updates MediaMetadata for smartwatch media tile', () {
+    test('MediaPlaybackService updates MediaMetadata and handles audio focus', () {
       expect(serviceFile, contains('MediaMetadata'));
       expect(serviceFile, contains('METADATA_KEY_TITLE'));
       expect(serviceFile, contains('METADATA_KEY_ARTIST'));
@@ -14546,13 +14488,14 @@ void main() {
       expect(serviceFile, contains('setLargeIcon'));
       expect(serviceFile, contains('ACTION_SEEK_TO'));
       expect(serviceFile, contains('onSeekTo'));
+      expect(serviceFile, contains('requestAudioFocus'));
+      expect(serviceFile, contains('abandonAudioFocus'));
     });
 
-    test('MainActivity avoids Activity.setImmersive method collision and handles audio focus', () {
+    test('MainActivity avoids Activity.setImmersive method collision and enables full screen flags', () {
       expect(mainActivity, contains('applyImmersiveMode'));
       expect(mainActivity.contains('private fun setImmersive'), isFalse);
-      expect(mainActivity, contains('requestAudioFocus'));
-      expect(mainActivity, contains('abandonAudioFocus'));
+      expect(mainActivity, contains('FLAG_LAYOUT_NO_LIMITS'));
       expect(mainActivity, contains('onAttachedToWindow'));
     });
 
@@ -14589,7 +14532,6 @@ absent  "no ActivityResultLauncher field"      "ActivityResultLauncher"        "
 absent  "no ActivityResultContracts import"    "ActivityResultContracts"       "$K/MainActivity.kt"
 present "applyImmersiveMode in MainActivity"  "applyImmersiveMode"            "$K/MainActivity.kt"
 absent  "no Activity.setImmersive collision"  "private fun setImmersive"      "$K/MainActivity.kt"
-present "requestAudioFocus in MainActivity"   "requestAudioFocus"             "$K/MainActivity.kt"
 present "FLAG_LAYOUT_NO_LIMITS in MainActivity" "FLAG_LAYOUT_NO_LIMITS"        "$K/MainActivity.kt"
 present "POST_NOTIFICATIONS declared"         "POST_NOTIFICATIONS"            "android/app/src/main/AndroidManifest.xml"
 present "RECORD_AUDIO declared"               "RECORD_AUDIO"                  "android/app/src/main/AndroidManifest.xml"
@@ -14599,6 +14541,7 @@ present "MediaPlaybackService in manifest"    "MediaPlaybackService"          "a
 present "MediaPlaybackService class"          "class MediaPlaybackService"    "$K/MediaPlaybackService.kt"
 present "MediaSession in playback service"    "MediaSession"                  "$K/MediaPlaybackService.kt"
 present "MediaMetadata in playback service"   "MediaMetadata"                 "$K/MediaPlaybackService.kt"
+present "audioFocus in playback service"      "requestAudioFocus"             "$K/MediaPlaybackService.kt"
 present "VLC cutout mode in styles.xml"       "android:windowLayoutInDisplayCutoutMode" "android/app/src/main/res/values/styles.xml"
 present "VLC cutout mode in values-v28"       "android:windowLayoutInDisplayCutoutMode" "android/app/src/main/res/values-v28/styles.xml"
 present "VLC cutout mode in MainActivity"     "LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES" "$K/MainActivity.kt"
@@ -14606,7 +14549,7 @@ present "startVoiceSearch in MainActivity"    "startVoiceSearch"              "$
 present "volume boost 200% key"               "kVolumeBoost200"               "lib/state/player_settings.dart"
 present "volume boost 200% mpv setting"       "'volume-max', '200'"           "lib/state/media_player_state.dart"
 present "volume boost 200% sheet toggle"      "Volume boost up to 200%"       "lib/widgets/player_settings_sheet.dart"
-present "acompressor leveling in player state" "acompressor"                  "lib/state/media_player_state.dart"
+present "alimiter in leveling filter"         "alimiter=limit=0.97"           "lib/state/media_player_state.dart"
 present "background audio setting key"        "kBackgroundAudio"              "lib/state/player_settings.dart"
 present "background audio sheet toggle"       "Background audio playback"     "lib/widgets/player_settings_sheet.dart"
 present "backgroundAudio in player state"     "bool backgroundAudio = true;"  "lib/state/media_player_state.dart"
@@ -14617,7 +14560,7 @@ present "ResumeSyncService class"             "class ResumeSyncService"       "l
 present "video ask sheet widget"              "class VideoAskSheet"           "lib/widgets/video_ask_sheet.dart"
 present "v69 test suite"                      "group('v69 Wi-Fi resume-sync'" test/widget_test.dart
 present "v70 test suite"                      "group('v70 Wear OS companion"  test/widget_test.dart
-present "pubspec version 1.0.0+66"             "^version: 1.0.0+66"            "pubspec.yaml"
+present "pubspec version 1.0.0+67"             "^version: 1.0.0+67"            "pubspec.yaml"
 echo ""
 if [ "$ok" -eq "$total" ]; then
   echo "==> $ok/$total checks OK - v70 applied cleanly."
@@ -14627,7 +14570,7 @@ fi
 
 echo ""
 echo "============================================================"
-echo " DONE. If 36/36 checks OK, run AS-IS (no hand edits):"
-echo "   git add -A && git commit -m \"v70: 200% volume, zero-latency acompressor leveling, borderless punch-hole layout, AudioFocus fix, teardown crash fix, Wi-Fi resume-sync, Wear OS companion (1.0.0+66)\" && git push"
+echo " DONE. If 37/37 checks OK, run AS-IS (no hand edits):"
+echo "   git add -A && git commit -m \"v70: 200% volume, alimiter leveling ceiling, SafeArea left/right punch-hole fix, single AudioFocus in MediaPlaybackService, Wi-Fi resume-sync, Wear OS companion (1.0.0+67)\" && git push"
 echo " Then start a new Codemagic build."
 echo "============================================================"

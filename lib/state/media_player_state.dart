@@ -1066,9 +1066,9 @@ class MediaPlayerState extends ChangeNotifier {
   // user is told instead of the toggle doing nothing.
   // ---------------------------------------------------------------------------
 
-  /// v70: real-time audio dynamic compressor (instant leveling without buffer stalls).
+  /// v70: real-time audio dynamic compressor + hard limiter (prevents Android HAL peak muting).
   static const String kLevelingFilter =
-      'acompressor=threshold=0.125:ratio=4:attack=5:release=50:makeup=2';
+      'acompressor=threshold=0.125:ratio=4:attack=5:release=50:makeup=1.5,alimiter=limit=0.97';
   bool _levelingOn = false;
   bool get volumeLeveling => _levelingOn;
 

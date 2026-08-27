@@ -2448,7 +2448,7 @@ void main() {
     final syncService =
         File('lib/services/resume_sync_service.dart').readAsStringSync();
 
-    test('MediaPlaybackService updates MediaMetadata for smartwatch media tile', () {
+    test('MediaPlaybackService updates MediaMetadata and handles audio focus', () {
       expect(serviceFile, contains('MediaMetadata'));
       expect(serviceFile, contains('METADATA_KEY_TITLE'));
       expect(serviceFile, contains('METADATA_KEY_ARTIST'));
@@ -2457,13 +2457,14 @@ void main() {
       expect(serviceFile, contains('setLargeIcon'));
       expect(serviceFile, contains('ACTION_SEEK_TO'));
       expect(serviceFile, contains('onSeekTo'));
+      expect(serviceFile, contains('requestAudioFocus'));
+      expect(serviceFile, contains('abandonAudioFocus'));
     });
 
-    test('MainActivity avoids Activity.setImmersive method collision and handles audio focus', () {
+    test('MainActivity avoids Activity.setImmersive method collision and enables full screen flags', () {
       expect(mainActivity, contains('applyImmersiveMode'));
       expect(mainActivity.contains('private fun setImmersive'), isFalse);
-      expect(mainActivity, contains('requestAudioFocus'));
-      expect(mainActivity, contains('abandonAudioFocus'));
+      expect(mainActivity, contains('FLAG_LAYOUT_NO_LIMITS'));
       expect(mainActivity, contains('onAttachedToWindow'));
     });
 
