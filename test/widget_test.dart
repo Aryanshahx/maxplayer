@@ -42,6 +42,7 @@ import 'package:maxplayer/widgets/about_sheet.dart';
 import 'package:maxplayer/widgets/track_selection_sheet.dart';
 import 'package:maxplayer/widgets/gesture_illustrations.dart';
 import 'package:maxplayer/widgets/user_manual_sheet.dart';
+import 'package:maxplayer/widgets/voice_search_sheet.dart';
 
 // Pure unit tests - no platform channels involved. (NativeBridge calls in
 // VideoLibraryState are guarded and return defaults when no channel exists,
@@ -2480,6 +2481,130 @@ void main() {
       expect(syncService, contains('/pause'));
       expect(syncService, contains('/seek'));
       expect(syncService, contains('/volume'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v71: Android/media WhatsApp scanning, folder grouping & powerful voice search
+  // -------------------------------------------------------------------------
+  group('v71 WhatsApp & Android scanning + voice search', () {
+    test('VideoLibraryState.shouldSkipDir allows Android/media and WhatsApp', () {
+      expect(
+        VideoLibraryState.shouldSkipDir('/storage/emulated/0/Android'),
+        isFalse,
+      );
+      expect(
+        VideoLibraryState.shouldSkipDir('/storage/emulated/0/Android/media'),
+        isFalse,
+      );
+      expect(
+        VideoLibraryState.shouldSkipDir(
+          '/storage/emulated/0/Android/media/com.whatsapp',
+        ),
+        isFalse,
+      );
+      expect(
+        VideoLibraryState.shouldSkipDir(
+          '/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video',
+        ),
+        isFalse,
+      );
+      expect(
+        VideoLibraryState.shouldSkipDir('/storage/emulated/0/WhatsApp/Media/WhatsApp Video'),
+        isFalse,
+      );
+      expect(
+        VideoLibraryState.shouldSkipDir('/storage/emulated/0/DCIM/Camera'),
+        isFalse,
+      );
+      expect(
+        VideoLibraryState.shouldSkipDir('/storage/emulated/0/Movies'),
+        isFalse,
+      );
+    });
+
+    test('VideoLibraryState.shouldSkipDir skips Android/data, Android/obb, and junk caches', () {
+      expect(
+        VideoLibraryState.shouldSkipDir('/storage/emulated/0/Android/data'),
+        isTrue,
+      );
+      expect(
+        VideoLibraryState.shouldSkipDir('/storage/emulated/0/Android/data/com.example.app'),
+        isTrue,
+      );
+      expect(
+        VideoLibraryState.shouldSkipDir('/storage/emulated/0/Android/obb'),
+        isTrue,
+      );
+      expect(
+        VideoLibraryState.shouldSkipDir('/storage/emulated/0/.thumbnails'),
+        isTrue,
+      );
+      expect(
+        VideoLibraryState.shouldSkipDir('/storage/emulated/0/.trashed'),
+        isTrue,
+      );
+      expect(
+        VideoLibraryState.shouldSkipDir('/storage/emulated/0/cache'),
+        isTrue,
+      );
+      expect(
+        VideoLibraryState.shouldSkipDir('/storage/emulated/0/LOST.DIR'),
+        isTrue,
+      );
+    });
+
+    test('VideoTrack.folderName groups WhatsApp videos and subfolders cleanly', () {
+      const v1 = VideoTrack(
+        id: '1',
+        title: 'VID_20260827_WA0001',
+        path: '/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video/VID_20260827_WA0001.mp4',
+      );
+      expect(v1.folderName, 'WhatsApp Video');
+
+      const v2 = VideoTrack(
+        id: '2',
+        title: 'VID_20260827_WA0002',
+        path: '/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video/Sent/VID_20260827_WA0002.mp4',
+      );
+      expect(v2.folderName, 'WhatsApp Video (Sent)');
+
+      const v3 = VideoTrack(
+        id: '3',
+        title: 'VID_20260827_WA0003',
+        path: '/storage/emulated/0/WhatsApp/Media/WhatsApp Video/VID_20260827_WA0003.mp4',
+      );
+      expect(v3.folderName, 'WhatsApp Video');
+    });
+
+    test('MainActivity declares on-device speech recognizer and system fallback', () {
+      final mainActivity = File(
+        'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt',
+      ).readAsStringSync();
+      expect(mainActivity, contains('startInAppSpeech'));
+      expect(mainActivity, contains('launchSystemSpeechIntent'));
+      expect(mainActivity, contains('EXTRA_CALLING_PACKAGE'));
+      expect(mainActivity, contains('createOnDeviceSpeechRecognizer'));
+    });
+
+    test('AndroidManifest declares speech recognition queries', () {
+      final manifest =
+          File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      expect(manifest, contains('android.permission.RECORD_AUDIO'));
+      expect(manifest, contains('android.speech.RecognitionService'));
+      expect(manifest, contains('android.speech.action.RECOGNIZE_SPEECH'));
+    });
+
+    testWidgets('VoiceSearchSheet renders mic and status', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: VoiceSearchSheet()),
+        ),
+      );
+      expect(find.byIcon(Icons.mic), findsOneWidget);
+      expect(find.textContaining('Listening'), findsOneWidget);
+      expect(find.text('Keyboard'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
     });
   });
 }

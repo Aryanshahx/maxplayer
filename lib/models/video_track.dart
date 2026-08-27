@@ -24,10 +24,17 @@ class VideoTrack {
     this.height,
   });
 
-  /// Name of the folder containing this video (used by "Group by folder").
+  /// Name of the folder containing this video (used by "Group by folder" and "Folders" quick-tile).
   String get folderName {
     final dir = p.dirname(path);
     final base = p.basename(dir);
+    final lower = base.toLowerCase();
+    if (lower == 'sent' || lower == 'private') {
+      final parent = p.basename(p.dirname(dir));
+      if (parent.isNotEmpty && parent != '/' && parent != '.') {
+        return '$parent ($base)';
+      }
+    }
     return base.isEmpty ? dir : base;
   }
 

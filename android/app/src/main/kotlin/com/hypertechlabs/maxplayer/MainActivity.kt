@@ -138,62 +138,97 @@ class MainActivity : FlutterActivity() {
     }
 
     private var inAppSpeechRecognizer: SpeechRecognizer? = null
+    private var pendingVoiceSearchResult: MethodChannel.Result? = null
 
     private fun startInAppSpeech(result: MethodChannel.Result) {
-        if (!SpeechRecognizer.isRecognitionAvailable(applicationContext)) {
-            result.error("unavailable", "Speech recognition unavailable", null)
-            return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                pendingVoiceSearchResult = result
+                requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQ_VOICE_SEARCH)
+                return
+            }
         }
         mainHandler.post {
             try {
                 inAppSpeechRecognizer?.destroy()
-                inAppSpeechRecognizer = SpeechRecognizer.createSpeechRecognizer(applicationContext).apply {
-                    setRecognitionListener(object : RecognitionListener {
-                        override fun onReadyForSpeech(params: Bundle?) {
-                            channel?.invokeMethod("onVoiceState", "listening")
-                        }
-                        override fun onBeginningOfSpeech() {
-                            channel?.invokeMethod("onVoiceState", "speaking")
-                        }
-                        override fun onRmsChanged(rmsdB: Float) {
-                            channel?.invokeMethod("onVoiceRms", rmsdB)
-                        }
-                        override fun onBufferReceived(buffer: ByteArray?) {}
-                        override fun onEndOfSpeech() {
-                            channel?.invokeMethod("onVoiceState", "processing")
-                        }
-                        override fun onError(error: Int) {
-                            channel?.invokeMethod("onVoiceError", error)
-                            pendingVoiceSearchResult?.success(null)
-                            pendingVoiceSearchResult = null
-                        }
-                        override fun onResults(results: Bundle?) {
-                            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                            val text = matches?.firstOrNull()?.trim()
+                inAppSpeechRecognizer = null
+
+                if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+                    launchSystemSpeechIntent(result)
+                    return@post
+                }
+
+                val recognizer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+                    SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
+                } else {
+                    SpeechRecognizer.createSpeechRecognizer(this)
+                }
+                inAppSpeechRecognizer = recognizer
+
+                recognizer.setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        mainHandler.post { channel?.invokeMethod("onVoiceState", "listening") }
+                    }
+                    override fun onBeginningOfSpeech() {
+                        mainHandler.post { channel?.invokeMethod("onVoiceState", "speaking") }
+                    }
+                    override fun onRmsChanged(rmsdB: Float) {
+                        mainHandler.post { channel?.invokeMethod("onVoiceRms", rmsdB) }
+                    }
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() {
+                        mainHandler.post { channel?.invokeMethod("onVoiceState", "processing") }
+                    }
+                    override fun onError(error: Int) {
+                        mainHandler.post { channel?.invokeMethod("onVoiceError", error) }
+                    }
+                    override fun onResults(results: Bundle?) {
+                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        val text = matches?.firstOrNull()?.trim() ?: ""
+                        mainHandler.post {
                             channel?.invokeMethod("onVoiceResult", text)
-                            pendingVoiceSearchResult?.success(text)
-                            pendingVoiceSearchResult = null
                         }
-                        override fun onPartialResults(partialResults: Bundle?) {
-                            val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                            val text = matches?.firstOrNull()?.trim()
-                            if (!text.isNullOrEmpty()) {
+                    }
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        val text = matches?.firstOrNull()?.trim()
+                        if (!text.isNullOrEmpty()) {
+                            mainHandler.post {
                                 channel?.invokeMethod("onVoicePartial", text)
                             }
                         }
-                        override fun onEvent(eventType: Int, params: Bundle?) {}
-                    })
-                }
+                    }
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                })
                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                    putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
                 }
-                pendingVoiceSearchResult = result
-                inAppSpeechRecognizer?.startListening(intent)
+                recognizer.startListening(intent)
+                result.success(true)
             } catch (e: Exception) {
-                result.error("speech_error", e.message, null)
+                launchSystemSpeechIntent(result)
             }
+        }
+    }
+
+    private fun launchSystemSpeechIntent(result: MethodChannel.Result) {
+        try {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to search…")
+                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+            }
+            pendingVoiceSearchResult = result
+            startActivityForResult(intent, REQ_VOICE_SEARCH)
+        } catch (e: Exception) {
+            result.error("speech_error", "Speech recognition unavailable: ${e.message}", null)
         }
     }
 
@@ -206,8 +241,6 @@ class MainActivity : FlutterActivity() {
             } catch (_: Exception) {}
         }
     }
-
-    private var pendingVoiceSearchResult: MethodChannel.Result? = null
     private var mediaReceiverRegistered = false
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -2422,30 +2455,41 @@ class MainActivity : FlutterActivity() {
             pendingVoiceSearchResult = null
             if (resultCode == RESULT_OK && data != null) {
                 val matches = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                val query = matches?.firstOrNull()?.trim()
+                val query = matches?.firstOrNull()?.trim() ?: ""
+                channel?.invokeMethod("onVoiceResult", query)
                 pending?.success(query)
             } else {
+                channel?.invokeMethod("onVoiceError", 7)
                 pending?.success(null)
             }
         }
     }
 
-    // v64 hotfix: answers the POST_NOTIFICATIONS runtime request started by
-    // the "requestNotifications" channel call (classic API, no AndroidX
-    // activity-ktx). A null pending result means the app was recreated mid-
-    // prompt - the next Dart-side check reads the actual state anyway.
+    // v64 hotfix: answers runtime permission requests (POST_NOTIFICATIONS, RECORD_AUDIO)
+    // using classic requestPermissions API (no AndroidX activity-ktx).
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != REQ_NOTIF_PERMISSION) return
-        val r = pendingNotificationResult
-        pendingNotificationResult = null
-        val granted = grantResults.isNotEmpty() &&
-            grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
-        r?.success(granted)
+        if (requestCode == REQ_NOTIF_PERMISSION) {
+            val r = pendingNotificationResult
+            pendingNotificationResult = null
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+            r?.success(granted)
+        } else if (requestCode == REQ_VOICE_SEARCH) {
+            val r = pendingVoiceSearchResult
+            pendingVoiceSearchResult = null
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (granted && r != null) {
+                startInAppSpeech(r)
+            } else {
+                r?.error("permission_denied", "Microphone permission required", null)
+            }
+        }
     }
 
     override fun onDestroy() {

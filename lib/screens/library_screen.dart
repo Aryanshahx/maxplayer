@@ -274,85 +274,124 @@ class _LibraryScreenState extends State<LibraryScreen> {
     PlaylistsSheet.show(context, library: lib, player: widget.player);
   }
 
-  /// v28 "Folders" tile: show only one folder's videos (or everything).
+  /// v28/v71 "Folders" tile: show only one folder's videos (or everything).
   void _showFoldersSheet(VideoLibraryState lib) {
     final counts = lib.folderCounts;
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: const Color(0xFF1a1a24),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            ListTile(
-              leading: Icon(
-                Icons.video_library_outlined,
-                color: themeState.accent,
-              ),
-              title: const Text(
-                'All videos',
-                style: TextStyle(color: Colors.white),
-              ),
-              trailing: lib.folderFilter == null
-                  ? Icon(Icons.check, color: themeState.accent)
-                  : Text(
-                      '${lib.allVideosCount}',
-                      style: const TextStyle(color: Colors.white38),
-                    ),
-              onTap: () {
-                lib.setFolderFilter(null);
-                Navigator.of(sheetContext).pop();
-              },
-            ),
-            const Divider(height: 1, color: Colors.white12),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 340),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final e in counts.entries)
-                    ListTile(
-                      leading: Icon(
-                        Icons.folder_outlined,
-                        color: themeState.accent,
+              const SizedBox(height: 6),
+              ListTile(
+                leading: Icon(
+                  Icons.video_library_outlined,
+                  color: themeState.accent,
+                ),
+                title: const Text(
+                  'All videos',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                trailing: lib.folderFilter == null
+                    ? Icon(Icons.check, color: themeState.accent)
+                    : Text(
+                        '${lib.allVideosCount}',
+                        style: const TextStyle(color: Colors.white38),
                       ),
-                      title: Text(
-                        e.key,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      subtitle: Text(
-                        '${e.value} ${e.value == 1 ? 'video' : 'videos'}',
-                        style: const TextStyle(
-                          color: Colors.white38,
-                          fontSize: 12,
+                onTap: () {
+                  lib.setFolderFilter(null);
+                  Navigator.of(sheetContext).pop();
+                },
+              ),
+              const Divider(height: 1, color: Colors.white12),
+              if (counts.isEmpty)
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.folder_open,
+                            size: 36, color: Colors.white24),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'No video folders found',
+                          style: TextStyle(color: Colors.white54, fontSize: 13),
                         ),
-                      ),
-                      trailing: lib.folderFilter == e.key
-                          ? Icon(Icons.check, color: themeState.accent)
-                          : null,
-                      onTap: () {
-                        lib.setFolderFilter(e.key);
-                        Navigator.of(sheetContext).pop();
-                      },
+                        const SizedBox(height: 12),
+                        FilledButton.tonalIcon(
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop();
+                            lib.rescan();
+                          },
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: const Text('Rescan storage'),
+                        ),
+                      ],
                     ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
+                  ),
+                )
+              else
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.55,
+                  ),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final e in counts.entries)
+                        ListTile(
+                          leading: Icon(
+                            e.key.toLowerCase().contains('whatsapp')
+                                ? Icons.chat_bubble_outline
+                                : Icons.folder_outlined,
+                            color: themeState.accent,
+                          ),
+                          title: Text(
+                            e.key,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            '${e.value} ${e.value == 1 ? 'video' : 'videos'}',
+                            style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 12,
+                            ),
+                          ),
+                          trailing: lib.folderFilter == e.key
+                              ? Icon(Icons.check, color: themeState.accent)
+                              : null,
+                          onTap: () {
+                            lib.setFolderFilter(e.key);
+                            Navigator.of(sheetContext).pop();
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

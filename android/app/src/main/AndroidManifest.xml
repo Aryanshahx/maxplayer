@@ -254,9 +254,12 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- v66 A5: speech recognizer query for voice search -->
+        <!-- v66 A5 / v71: speech recognizer queries for voice search -->
         <intent>
             <action android:name="android.speech.RecognitionService"/>
+        </intent>
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH"/>
         </intent>
     </queries>
 </manifest>

@@ -86,12 +86,31 @@ class VideoLibraryState extends ChangeNotifier {
   /// Folders under a storage volume that are never worth scanning for videos
   /// (app-private caches, thumbnails, etc) - skipping these keeps the
   /// whole-device scan fast and avoids permission-denied noise.
-  static const List<String> _skipDirNames = [
-    'Android', // app-private data/obb, largely inaccessible + irrelevant anyway
-    '.thumbnails',
-    '.trashed',
-    'cache',
-  ];
+  ///
+  /// v71: Android/media MUST NOT be skipped (where WhatsApp, Telegram, etc store videos).
+  /// Only Android/data and Android/obb are skipped.
+  static bool shouldSkipDir(String dirPath) {
+    final name = p.basename(dirPath);
+    if (name.isEmpty) return false;
+    if (name.startsWith('.') && name.length > 1) return true;
+    final lower = name.toLowerCase();
+    if (lower == 'cache' ||
+        lower == 'lost.dir' ||
+        lower == 'node_modules' ||
+        lower == '__pycache__' ||
+        lower == '.trashed' ||
+        lower == '.thumbnails') {
+      return true;
+    }
+    final normalized = dirPath.replaceAll('\\', '/');
+    if (normalized.endsWith('/Android/data') ||
+        normalized.contains('/Android/data/') ||
+        normalized.endsWith('/Android/obb') ||
+        normalized.contains('/Android/obb/')) {
+      return true;
+    }
+    return false;
+  }
 
   VideoLibraryState() {
     _loadSettings();
@@ -439,9 +458,8 @@ class VideoLibraryState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Recursively lists video files under [dir], skipping subfolders named in
-  /// [_skipDirNames] and silently ignoring individual permission-denied
-  /// entries (common under /storage/emulated/0/Android on newer Android).
+  /// Recursively lists video files under [dir], skipping subfolders per [shouldSkipDir]
+  /// and silently ignoring individual permission-denied entries.
   Stream<File> _listVideosSkippingJunk(Directory dir) async* {
     List<FileSystemEntity> entries;
     try {
@@ -451,9 +469,8 @@ class VideoLibraryState extends ChangeNotifier {
     }
 
     for (final entity in entries) {
-      final name = p.basename(entity.path);
       if (entity is Directory) {
-        if (_skipDirNames.contains(name)) continue;
+        if (shouldSkipDir(entity.path)) continue;
         yield* _listVideosSkippingJunk(entity);
       } else if (entity is File && isVideoFile(entity.path)) {
         yield entity;

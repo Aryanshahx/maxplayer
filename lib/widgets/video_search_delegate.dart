@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/video_track.dart';
 import 'video_thumb.dart';
+import 'voice_search_sheet.dart';
 
 /// Pure, testable: case-insensitive contains on the trimmed query; an
 /// empty query returns everything. Used by the v44 full-screen search
@@ -55,6 +56,19 @@ class VideoSearchDelegate extends SearchDelegate<void> {
           IconButton(
             icon: const Icon(Icons.close),
             onPressed: () => query = '',
+          )
+        else
+          IconButton(
+            icon: const Icon(Icons.mic_none_outlined, color: Colors.white70),
+            tooltip: 'Voice search',
+            onPressed: () async {
+              final res = await VoiceSearchSheet.show(context);
+              if (res != null && res.trim().isNotEmpty) {
+                query = res.trim();
+                // ignore: use_build_context_synchronously
+                showResults(context);
+              }
+            },
           ),
       ];
 
