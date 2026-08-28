@@ -235,13 +235,12 @@ class MediaPlayerState extends ChangeNotifier {
     }
     // Restore equalizer & audio optimization settings.
     dialogueBoost = s[PlayerSettings.kDialogueBoost] == 'true';
-    nightModeDrc = s[PlayerSettings.kNightModeDrc] == 'true';
     eqEnabled = s[_kEqEnabledKey] == 'true';
     final gainsRaw = (s[_kEqGainsKey] ?? '').split(',');
     for (var i = 0; i < eqFrequencies.length && i < gainsRaw.length; i++) {
       eqGains[i] = double.tryParse(gainsRaw[i]) ?? 0;
     }
-    if (eqEnabled || dialogueBoost || nightModeDrc) _applyAudioFilters();
+    if (eqEnabled || dialogueBoost) _applyAudioFilters();
   }
 
   // ---------------------------------------------------------------------------
@@ -958,25 +957,55 @@ class MediaPlayerState extends ChangeNotifier {
   }
 
   Future<void> seek(Duration to) async {
-    await player.seek(to);
+    // v74: fast keyframe seek instead of mpv's default precise seek. The
+    // scrub bar can fire this rapidly while dragging, and precise seeking
+    // makes mpv decode every frame from the last keyframe up to the
+    // target - on long-GOP/4K files that's real CPU work per seek and was
+    // the main cause of "lagging when seek". Trading frame-exact landing
+    // for an instant jump to the nearest keyframe matches how VLC's own
+    // scrub bar behaves.
+    final plat = player.platform;
+    if (plat is NativePlayer) {
+      try {
+        final seconds = to.inMilliseconds / 1000.0;
+        await plat.command(['seek', '$seconds', 'absolute+keyframes']);
+      } catch (_) {
+        await player.seek(to);
+      }
+    } else {
+      await player.seek(to);
+    }
+    // The real player.stream.position event can arrive a beat late (it's
+    // an async stream). If _syncNowPlaying() runs before it fires, it
+    // pushes the STALE position back to the notification / lock-screen
+    // MediaSession, snapping its seekbar back even though playback really
+    // did jump — "video shifts but the notification playbar doesn't".
+    // Set the field immediately so every listener (in-app playbar + the
+    // notification sync below) sees the true target position right away.
+    position = to;
+    notifyListeners();
     _syncNowPlaying();
   }
 
   /// Relative seek (e.g. ±10s), using instant keyframe seeking.
   Future<void> seekBy(int seconds) async {
     if (currentTrack == null) return;
+    var target = position + Duration(seconds: seconds);
+    if (target < Duration.zero) target = Duration.zero;
+    if (duration > Duration.zero && target > duration) target = duration;
     final plat = player.platform;
     if (plat is NativePlayer) {
       try {
         await plat.command(['seek', '$seconds', 'relative+keyframes']);
+        position = target; // v74: same fix as seek() above.
+        notifyListeners();
         _syncNowPlaying();
         return;
       } catch (_) {}
     }
-    var target = position + Duration(seconds: seconds);
-    if (target < Duration.zero) target = Duration.zero;
-    if (duration > Duration.zero && target > duration) target = duration;
     await player.seek(target);
+    position = target;
+    notifyListeners();
     _syncNowPlaying();
   }
 
@@ -1155,9 +1184,6 @@ class MediaPlayerState extends ChangeNotifier {
   /// v72: Smart dialogue booster state (1 kHz - 4 kHz vocal clarity band).
   bool dialogueBoost = false;
 
-  /// v72: Night Mode Dynamic Range Compression state.
-  bool nightModeDrc = false;
-
   Future<void> setDialogueBoost(bool on) async {
     dialogueBoost = on;
     NativeBridge.saveSetting(PlayerSettings.kDialogueBoost, '$on');
@@ -1165,25 +1191,14 @@ class MediaPlayerState extends ChangeNotifier {
     await _applyAudioFilters();
   }
 
-  Future<void> setNightModeDrc(bool on) async {
-    nightModeDrc = on;
-    NativeBridge.saveSetting(PlayerSettings.kNightModeDrc, '$on');
-    notifyListeners();
-    await _applyAudioFilters();
-  }
-
-  /// v72: Builds the combined audio filter chain (Dialogue booster + Night mode DRC + Equalizer).
+  /// v74: Builds the combined audio filter chain (Dialogue booster + Equalizer).
+  /// Night Mode DRC was removed in v74 (setting dropped from Settings).
   static String buildCombinedAudioFilter({
     bool dialogueBoost = false,
-    bool nightModeDrc = false,
     bool eqEnabled = false,
     List<double> eqGains = const [],
   }) {
     final parts = <String>[];
-    if (nightModeDrc) {
-      // Dynamic Range Compression: boosts quiet dialogue, tames loud action explosions
-      parts.add('acompressor=threshold=-21dB:ratio=4:attack=20:release=250:makeup=5dB');
-    }
     if (dialogueBoost) {
       // Vocal Formant Clarity: isolates and boosts 1 kHz - 4 kHz speech band
       parts.add('equalizer=f=1500:t=q:w=1.0:g=4.5');
@@ -1201,7 +1216,6 @@ class MediaPlayerState extends ChangeNotifier {
     if (platform is! NativePlayer) return;
     final af = buildCombinedAudioFilter(
       dialogueBoost: dialogueBoost,
-      nightModeDrc: nightModeDrc,
       eqEnabled: eqEnabled,
       eqGains: eqGains,
     );
@@ -1477,14 +1491,24 @@ class MediaPlayerState extends ChangeNotifier {
   }
 
   /// Thumbnail file for the preview bubble at [fraction] (0..1 of the
-  /// video), or null while that frame hasn't been generated yet (the
+  /// video), or null while the strip hasn't been generated yet (the
   /// bubble then shows the timestamp only).
+  ///
+  /// v74: dropped the per-call File.existsSync() disk stat that used to
+  /// run here. This was called from the Slider's build() on every drag
+  /// update (can fire dozens of times/second while scrubbing fast), and
+  /// existsSync() blocks the UI thread on a disk syscall each time - that
+  /// was the real cause of the laggy scrub-preview bubble. The native
+  /// generator (thumbStripEnsureSync) always writes every frame in the
+  /// strip BEFORE handing back the directory, so by the time
+  /// _thumbStripDir is non-null every path is already guaranteed to
+  /// exist; Image.file's existing errorBuilder still covers the rare
+  /// frame that failed to encode natively.
   String? scrubThumbPath(double fraction) {
     final dir = _thumbStripDir;
     if (dir == null) return null;
     final i = (fraction.clamp(0.0, 1.0) * (thumbStripCount - 1)).round();
-    final f = File('$dir/f_${i.toString().padLeft(3, '0')}.jpg');
-    return f.existsSync() ? f.path : null;
+    return '$dir/f_${i.toString().padLeft(3, '0')}.jpg';
   }
 
   // ---------------------------------------------------------------------------

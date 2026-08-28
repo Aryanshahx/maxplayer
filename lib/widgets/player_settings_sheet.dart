@@ -311,15 +311,6 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 onChanged: (v) =>
                     _update(_settings.copyWith(dialogueBoost: v)),
               ),
-              _SwitchTile(
-                icon: Icons.nightlight_round_outlined,
-                label: 'Night Mode (Dynamic Range Compression)',
-                subtitle:
-                    'Lifts quiet whispers and tames loud action explosions for balanced nighttime listening',
-                value: _settings.nightModeDrc,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(nightModeDrc: v)),
-              ),
               // v65: the old "Skip intro chip" setting is gone - smart
               // skip (intro AND credits) is now automatic whenever usable
               // subtitles exist. The player shows a brief chip the user can

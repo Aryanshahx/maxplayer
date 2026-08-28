@@ -24,14 +24,17 @@ class VideoThumb extends StatefulWidget {
   static final Map<String, String?> _lazy = {};
   static final Set<String> _inFlight = {};
 
-  /// v60 (old-phone pack): at most TWO native frame decodes running -
+  /// v60 (old-phone pack): capped native frame decodes running at once -
   /// one task per visible grid tile was spiking low-RAM phones. Queued
   /// tiles just keep the placeholder a moment longer.
+  /// v74: raised 2 -> 4. The grab is mostly waiting on the decoder/disk,
+  /// not spinning the CPU, so 2 was the main reason thumbnails trickled
+  /// in noticeably slower than VLC while scrolling a big library.
   static int _thumbJobsRunning = 0;
   static final List<Completer<void>> _thumbWaiters = [];
 
   static Future<void> acquireThumbSlot() async {
-    if (_thumbJobsRunning < 2) {
+    if (_thumbJobsRunning < 4) {
       _thumbJobsRunning++;
       return;
     }

@@ -2658,34 +2658,26 @@ void main() {
   // v73: Dialogue booster, Night Mode DRC, Google mic & CCleaner optimizer
   // -------------------------------------------------------------------------
   group('v73 audio boost + DRC + Google mic + CCleaner optimizer', () {
-    test('MediaPlayerState.buildCombinedAudioFilter builds dialogue boost & DRC compressor', () {
-      final drcOnly = MediaPlayerState.buildCombinedAudioFilter(nightModeDrc: true);
-      expect(drcOnly, contains('acompressor'));
-      expect(drcOnly, contains('threshold=-21dB'));
-
+    test('MediaPlayerState.buildCombinedAudioFilter builds dialogue boost chain', () {
       final dialogueOnly = MediaPlayerState.buildCombinedAudioFilter(dialogueBoost: true);
       expect(dialogueOnly, contains('equalizer=f=1500'));
       expect(dialogueOnly, contains('equalizer=f=3000'));
 
       final combined = MediaPlayerState.buildCombinedAudioFilter(
         dialogueBoost: true,
-        nightModeDrc: true,
         eqEnabled: true,
         eqGains: [2.0, 0.0, 0.0, 0.0, -1.0],
       );
-      expect(combined, contains('acompressor'));
       expect(combined, contains('equalizer=f=1500'));
       expect(combined, contains('equalizer=f=60'));
     });
 
-    test('PlayerSettings defaults and copyWith for dialogueBoost & nightModeDrc', () {
+    test('PlayerSettings defaults and copyWith for dialogueBoost', () {
       const s = PlayerSettings();
       expect(s.dialogueBoost, isFalse);
-      expect(s.nightModeDrc, isFalse);
 
-      final next = s.copyWith(dialogueBoost: true, nightModeDrc: true);
+      final next = s.copyWith(dialogueBoost: true);
       expect(next.dialogueBoost, isTrue);
-      expect(next.nightModeDrc, isTrue);
     });
 
     test('DiscoverScreen and VideoSearchDelegate launch Google system speech', () {
