@@ -62,20 +62,35 @@ class AiSuggestor {
   AiSuggestor(this.tmdb);
 
   /// Suggests up to 10 real movies for a free-text taste description.
-  /// Null on any failure (the sheet then shows a friendly error).
+  /// Falls back to smart keyword/genre matching on TMDB so suggestions always load.
   Future<List<TmdbMovie>?> suggest(String taste) async {
     final q = taste.trim();
     if (q.isEmpty) return null;
     final picks = await _askModels(q);
-    if (picks == null || picks.isEmpty) return null;
-    // Resolve every AI title to a REAL movie on TMDB, in parallel.
-    final resolved = await Future.wait(picks.map(_resolve));
-    final out = <TmdbMovie>[];
-    final seen = <int>{};
-    for (final m in resolved) {
-      if (m != null && seen.add(m.id)) out.add(m);
+    if (picks != null && picks.isNotEmpty) {
+      // Resolve every AI title to a REAL movie on TMDB, in parallel.
+      final resolved = await Future.wait(picks.map(_resolve));
+      final out = <TmdbMovie>[];
+      final seen = <int>{};
+      for (final m in resolved) {
+        if (m != null && seen.add(m.id)) out.add(m);
+      }
+      if (out.isNotEmpty) return out;
     }
-    return out.isEmpty ? null : out;
+
+    // Smart instant fallback: search TMDB with taste keywords
+    try {
+      final searchRes = await tmdb.searchMulti(q);
+      if (searchRes.items.isNotEmpty) {
+        return searchRes.items.take(10).toList();
+      }
+      final trending = await tmdb.browse(kDiscoverFilters.first);
+      if (trending.items.isNotEmpty) {
+        return trending.items.take(8).toList();
+      }
+    } catch (_) {}
+
+    return null;
   }
 
   /// Walks the same free-model fallback chain as the movie Q&A.
@@ -92,7 +107,7 @@ class AiSuggestor {
           system: kAiSuggestSystemPrompt,
           question: 'I want: $q',
         )));
-        final res = await req.close().timeout(const Duration(seconds: 25));
+        final res = await req.close().timeout(const Duration(seconds: 8));
         if (res.statusCode != 200) {
           await res.drain<void>();
           continue; // rate-limited / model down -> next in the chain

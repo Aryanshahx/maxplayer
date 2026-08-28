@@ -2607,4 +2607,42 @@ void main() {
       expect(find.text('Cancel'), findsOneWidget);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // v72: Instant AI responses, dubbed languages & privacy / manual updates
+  // -------------------------------------------------------------------------
+  group('v72 instant AI + dubbed languages + manual updates', () {
+    test('MovieAiClient smart local fallback produces rich answer without key', () async {
+      final client = MovieAiClient();
+      const movie = TmdbMovie(
+        id: 9999,
+        title: 'Interstellar',
+        year: 2014,
+        rating: 8.4,
+        overview: 'A team of explorers travel through a wormhole in space in an attempt to ensure humanity\'s survival.',
+      );
+      final ans = await client.ask(movie: movie, question: 'Is this movie worth watching?');
+      expect(ans, isNotNull);
+      expect(ans!.text, contains('Interstellar'));
+      expect(ans.text, contains('worth watching'));
+    });
+
+    test('NativeBridge declares launchSystemVoiceSearch', () {
+      final nb = File('lib/services/native_bridge.dart').readAsStringSync();
+      expect(nb, contains('launchSystemVoiceSearch'));
+    });
+
+    test('User manual includes WhatsApp scanning, voice search, dubbed languages', () {
+      final manual = File('lib/widgets/user_manual_sheet.dart').readAsStringSync();
+      expect(manual, contains('WhatsApp & Android folder scanning'));
+      expect(manual, contains('In-app Voice Search'));
+      expect(manual, contains('Audio & Dubbed Languages in Movie Details'));
+    });
+
+    test('Privacy policy mentions microphone voice search', () {
+      final pp = File('PRIVACY_POLICY.md').readAsStringSync();
+      expect(pp, contains('Microphone (audio)'));
+      expect(pp, contains('voice search'));
+    });
+  });
 }

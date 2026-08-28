@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import '../services/native_bridge.dart';
 import '../state/theme_state.dart';
 
-/// v71: High-performance, resilient in-app voice search sheet.
-/// Features real-time voice volume ripples, live partial transcription,
-/// interactive retry on silence/no-match, direct search submission, and keyboard fallback.
+/// v72: High-performance in-app voice search with direct system dialog fallback.
+/// Features real-time voice volume ripples, live transcription, interactive mic toggle,
+/// one-tap Google system voice trigger, and keyboard edit fallback.
 class VoiceSearchSheet extends StatefulWidget {
   const VoiceSearchSheet({super.key});
 
@@ -106,7 +106,7 @@ class _VoiceSearchSheetState extends State<VoiceSearchSheet>
           if (_textCtrl.text.trim().isNotEmpty) {
             _status = 'Tap "Search" or tap mic to speak again';
           } else {
-            _status = "Didn't catch that. Tap microphone to try again.";
+            _status = "Didn't catch that. Tap microphone to speak again.";
           }
         });
       },
@@ -135,6 +135,15 @@ class _VoiceSearchSheetState extends State<VoiceSearchSheet>
     } else {
       _startListening();
     }
+  }
+
+  Future<void> _launchSystemVoice() async {
+    _stopListening();
+    final res = await NativeBridge.launchSystemVoiceSearch();
+    if (!mounted || res == null || res.trim().isEmpty) return;
+    _finished = true;
+    _textCtrl.text = res.trim();
+    Navigator.of(context).pop(res.trim());
   }
 
   void _submit() {
@@ -181,7 +190,7 @@ class _VoiceSearchSheetState extends State<VoiceSearchSheet>
               _status,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8),
+                color: Colors.white.withValues(alpha: 0.85),
                 fontSize: 14.5,
                 fontWeight: FontWeight.w500,
               ),
@@ -254,7 +263,7 @@ class _VoiceSearchSheetState extends State<VoiceSearchSheet>
                   ],
                 ),
               ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             GestureDetector(
               onTap: _toggleMic,
               child: AnimatedBuilder(
@@ -296,46 +305,58 @@ class _VoiceSearchSheetState extends State<VoiceSearchSheet>
                 },
               ),
             ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            const SizedBox(height: 20),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 12,
+              runSpacing: 8,
               children: [
-                TextButton.icon(
-                  icon: const Icon(Icons.keyboard_outlined, size: 18),
-                  label: const Text('Keyboard'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.white60,
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Colors.white24),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
+                  icon: const Icon(Icons.mic_external_on, size: 16),
+                  label: const Text('Google Voice', style: TextStyle(fontSize: 12.5)),
+                  onPressed: _launchSystemVoice,
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Colors.white24),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.keyboard_outlined, size: 16),
+                  label: const Text('Keyboard', style: TextStyle(fontSize: 12.5)),
                   onPressed: () => setState(() => _isEditing = true),
                 ),
-                if (hasText) ...[
-                  const SizedBox(width: 16),
+                if (hasText)
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
                       backgroundColor: accent,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 10,
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     onPressed: _submit,
-                    icon: const Icon(Icons.search, size: 18),
+                    icon: const Icon(Icons.search, size: 16),
                     label: const Text(
                       'Search',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
                     ),
                   ),
-                ],
-                const SizedBox(width: 16),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(color: Colors.white54, fontSize: 13),
-                  ),
-                ),
               ],
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.white54, fontSize: 13),
+              ),
             ),
           ],
         ),

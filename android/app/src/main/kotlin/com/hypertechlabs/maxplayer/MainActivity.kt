@@ -844,6 +844,9 @@ class MainActivity : FlutterActivity() {
                 "startVoiceSearch" -> {
                     startInAppSpeech(result)
                 }
+                "launchSystemVoiceSearch" -> {
+                    launchSystemSpeechIntent(result)
+                }
                 "stopVoiceSearch" -> {
                     stopInAppSpeech()
                     result.success(true)

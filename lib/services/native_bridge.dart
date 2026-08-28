@@ -748,11 +748,21 @@ class NativeBridge {
   // v66 A5: voice search in Discover
   // ---------------------------------------------------------------------------
 
-  /// Launches the system speech recognition dialogue and returns the
-  /// recognized text query, or null if cancelled / unsupported.
-  static Future<String?> startVoiceSearch() async {
+  /// Launches the in-app speech recognition or fallback dialog.
+  static Future<bool> startVoiceSearch() async {
     try {
-      final res = await _channel.invokeMethod<String>('startVoiceSearch');
+      final res = await _channel.invokeMethod('startVoiceSearch');
+      return res == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// v72: Directly launches system Google speech recognition modal dialogue.
+  static Future<String?> launchSystemVoiceSearch() async {
+    try {
+      final res =
+          await _channel.invokeMethod<String>('launchSystemVoiceSearch');
       return (res != null && res.trim().isNotEmpty) ? res.trim() : null;
     } catch (_) {
       return null;

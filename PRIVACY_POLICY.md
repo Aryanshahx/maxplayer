@@ -12,8 +12,9 @@ Max Player is a local video player. **It does not collect, store, transmit, or s
 | Permission / access | Why | Where the data goes |
 |---|---|---|
 | **Storage (videos / all files)** | To find and play the videos stored on your device, save screenshots to *Pictures/Max Player*, and write AI subtitle files next to your videos | Never leaves your device |
-| **Internet** | Only for two things you trigger yourself: (1) the one-time download of the AI subtitle model (a ~142 MB file from huggingface.co), (2) playing stream URLs you paste/open | The model file comes in; nothing about you goes out |
-| **Local network (multicast/Wi-Fi)** | Only when you tap "Cast to TV": discovering DLNA TVs on your own Wi-Fi and serving the video file from your phone to your TV | Your Wi-Fi only; no external server is involved |
+| **Microphone (audio)** | Only for voice search when you tap the mic icon in Discover or Library | Audio is transcribed in real time and is never recorded, stored, or sent to external servers |
+| **Internet** | Only for things you trigger yourself: legal TMDB movie discovery, stream URLs you open, and optional one-time AI subtitle model download | Nothing personal about you goes out |
+| **Local network (multicast/Wi-Fi)** | Only when you tap "Cast to TV" or use Wi-Fi Resume-Sync between your devices | Your local Wi-Fi only; no external server is involved |
 
 ## What the app does NOT do
 - No analytics, no tracking, no advertising, no third-party SDKs that collect data

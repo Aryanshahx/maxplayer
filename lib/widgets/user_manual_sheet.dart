@@ -489,8 +489,37 @@ const List<_Item> _playerItems = [
   ),
 ];
 
-/// v21: the feature list Max Player has that other players do not.
+/// v21/v72: the feature list Max Player has that other players do not.
 const List<_Item> _smartItems = [
+  _Item(
+    Icons.folder_special_outlined,
+    'WhatsApp & Android folder scanning',
+    'Full automatic scanning of WhatsApp Video, WhatsApp Animated Gifs, '
+        'Telegram, and all media folders inside Android/media as well as '
+        'internal storage and external SD cards. Access your folders cleanly '
+        'from the "Folders" quick tile.',
+  ),
+  _Item(
+    Icons.mic_none_outlined,
+    'In-app Voice Search',
+    'Tap the microphone icon in Discover or Library search to speak and search '
+        'movies, web series, and local videos instantly with real-time waveform '
+        'and transcription, plus one-tap Google voice fallback.',
+  ),
+  _Item(
+    Icons.headset_outlined,
+    'Background & Screen-off audio playback',
+    'Keep listening to music, podcasts, or video audio with your phone locked '
+        'or while using other apps. Full media control notification lets you '
+        'play/pause, seek, and skip tracks.',
+  ),
+  _Item(
+    Icons.wifi_tethering,
+    'Wi-Fi Resume-Sync & Wear OS control',
+    'Seamlessly sync playback positions between your phone, tablet, and smart '
+        'watches on the same Wi-Fi network. Control playback remotely with '
+        'zero setup.',
+  ),
   _Item(
     Icons.translate,
     'AI subtitles in English (translate)',
@@ -505,30 +534,19 @@ const List<_Item> _smartItems = [
         'track / A-B loop) → Karaoke subtitles: words '
         'light up one by one as they '
         'are spoken. Works with ANY subtitle - AI captions, the video\'s own '
-        '.srt file, or subtitles embedded in the video. While karaoke is '
-        'on, the normal subtitle display turns OFF so only the karaoke '
-        'line shows; turning karaoke OFF brings the normal subtitles '
-        'straight back.',
-  ),
-  _Item(
-    Icons.fast_forward,
-    'Skip intro chip',
-    'When subtitles (AI captions or the video\'s own .srt file) show the '
-        'dialogue starts late, a "Skip to …" chip appears near the start '
-        'of the video. Turn it off in Player settings → Skip intro chip.',
+        '.srt file, or subtitles embedded in the video.',
   ),
   _Item(
     Icons.volume_up,
     'Volume boost up to 200%',
-    'ON by default: the volume swipe simply continues past 100% for quiet '
-        'videos. Player settings → Sound & subtitles switches it off.',
+    'ON by default: the volume swipe simply continues past 100% up to 200% for '
+        'quiet audio files. Player settings → Sound & subtitles switches it off.',
   ),
   _Item(
-    Icons.graphic_eq,
-    'Volume leveling',
-    'Player settings → Sound & subtitles → Volume leveling: soft dialogue '
-        'and loud explosions play at a steady loudness. Combines with the '
-        'equalizer instead of replacing it.',
+    Icons.translate_outlined,
+    'Audio & Dubbed Languages in Movie Details',
+    'Discover movie details sheet displays all original spoken audio tracks, '
+        'plus a complete breakdown of all available dubbed and translated languages.',
   ),
   _Item(
     Icons.bedtime_outlined,
@@ -549,13 +567,9 @@ const List<_Item> _smartItems = [
     'Long-press any video → "Move to Private folder". Hidden videos '
         'disappear from Gallery and file managers. Open them from the '
         '"Private folder" tile under the library search bar after your '
-        'PIN; simply opening and '
-        'closing the folder no longer reloads the library. '
-        'Forgot the PIN? Tap "Forgot PIN?" on the lock screen → unlock '
+        'PIN. Forgot the PIN? Tap "Forgot PIN?" on the lock screen → unlock '
         'your PHONE once (device password, pattern or fingerprint) → '
-        'set a new PIN - hidden videos are never wiped. '
-        'Note: uninstalling the app deletes hidden videos - move them '
-        'out first.',
+        'set a new PIN - hidden videos are never wiped.',
   ),
 ];
 
