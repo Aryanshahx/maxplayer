@@ -14,7 +14,6 @@ import '../utils/movie_match.dart';
 import '../widgets/ai_suggest_sheet.dart';
 import '../widgets/movie_detail_sheet.dart';
 import '../widgets/tmdb_image.dart';
-import '../widgets/voice_search_sheet.dart';
 
 /// v44 "Discover": a legal movie-discovery section, now MUCH bigger.
 ///
@@ -346,10 +345,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     _openMovie(pick);
   }
 
-  /// v66 A5: voice search - launches custom in-app speech recognition and
+  /// Voice search - launches native Google speech recognition dialogue and
   /// populates the search bar.
   Future<void> _startVoiceSearch() async {
-    final query = await VoiceSearchSheet.show(context);
+    final query = await NativeBridge.launchSystemVoiceSearch();
     if (!mounted || query == null || query.isEmpty) return;
     _searchCtrl.text = query;
     _onSearchChanged(query);

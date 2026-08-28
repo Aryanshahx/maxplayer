@@ -233,13 +233,15 @@ class MediaPlayerState extends ChangeNotifier {
     } catch (_) {
       _watchByVideo = const {}; // corrupt payload -> start fresh
     }
-    // Restore equalizer.
+    // Restore equalizer & audio optimization settings.
+    dialogueBoost = s[PlayerSettings.kDialogueBoost] == 'true';
+    nightModeDrc = s[PlayerSettings.kNightModeDrc] == 'true';
     eqEnabled = s[_kEqEnabledKey] == 'true';
     final gainsRaw = (s[_kEqGainsKey] ?? '').split(',');
     for (var i = 0; i < eqFrequencies.length && i < gainsRaw.length; i++) {
       eqGains[i] = double.tryParse(gainsRaw[i]) ?? 0;
     }
-    if (eqEnabled) _applyEqFilter();
+    if (eqEnabled || dialogueBoost || nightModeDrc) _applyAudioFilters();
   }
 
   // ---------------------------------------------------------------------------
@@ -955,7 +957,10 @@ class MediaPlayerState extends ChangeNotifier {
     _saveBookmark();
   }
 
-  Future<void> seek(Duration to) => player.seek(to);
+  Future<void> seek(Duration to) async {
+    await player.seek(to);
+    _syncNowPlaying();
+  }
 
   /// Relative seek (e.g. ±10s), using instant keyframe seeking.
   Future<void> seekBy(int seconds) async {
@@ -964,6 +969,7 @@ class MediaPlayerState extends ChangeNotifier {
     if (plat is NativePlayer) {
       try {
         await plat.command(['seek', '$seconds', 'relative+keyframes']);
+        _syncNowPlaying();
         return;
       } catch (_) {}
     }
@@ -971,6 +977,7 @@ class MediaPlayerState extends ChangeNotifier {
     if (target < Duration.zero) target = Duration.zero;
     if (duration > Duration.zero && target > duration) target = duration;
     await player.seek(target);
+    _syncNowPlaying();
   }
 
   // ---------------------------------------------------------------------------
@@ -1145,21 +1152,59 @@ class MediaPlayerState extends ChangeNotifier {
     }
   }
 
-  /// The single writer of mpv's `af` property: equalizer bands filter chain.
+  /// v72: Smart dialogue booster state (1 kHz - 4 kHz vocal clarity band).
+  bool dialogueBoost = false;
+
+  /// v72: Night Mode Dynamic Range Compression state.
+  bool nightModeDrc = false;
+
+  Future<void> setDialogueBoost(bool on) async {
+    dialogueBoost = on;
+    NativeBridge.saveSetting(PlayerSettings.kDialogueBoost, '$on');
+    notifyListeners();
+    await _applyAudioFilters();
+  }
+
+  Future<void> setNightModeDrc(bool on) async {
+    nightModeDrc = on;
+    NativeBridge.saveSetting(PlayerSettings.kNightModeDrc, '$on');
+    notifyListeners();
+    await _applyAudioFilters();
+  }
+
+  /// v72: Builds the combined audio filter chain (Dialogue booster + Night mode DRC + Equalizer).
+  static String buildCombinedAudioFilter({
+    bool dialogueBoost = false,
+    bool nightModeDrc = false,
+    bool eqEnabled = false,
+    List<double> eqGains = const [],
+  }) {
+    final parts = <String>[];
+    if (nightModeDrc) {
+      // Dynamic Range Compression: boosts quiet dialogue, tames loud action explosions
+      parts.add('acompressor=threshold=-21dB:ratio=4:attack=20:release=250:makeup=5dB');
+    }
+    if (dialogueBoost) {
+      // Vocal Formant Clarity: isolates and boosts 1 kHz - 4 kHz speech band
+      parts.add('equalizer=f=1500:t=q:w=1.0:g=4.5');
+      parts.add('equalizer=f=3000:t=q:w=1.2:g=5.5');
+    }
+    if (eqEnabled && eqGains.isNotEmpty) {
+      parts.addAll(equalizerFilterParts(eqGains));
+    }
+    return parts.isEmpty ? '' : 'lavfi=[${parts.join(',')}]';
+  }
+
+  /// The single writer of mpv's `af` property: combined audio filters chain.
   Future<void> _applyAudioFilters() async {
     final platform = player.platform;
     if (platform is! NativePlayer) return;
-    if (!eqEnabled) {
-      if (_lastAppliedAf != '') {
-        try {
-          await platform.setProperty('af', '');
-          _lastAppliedAf = '';
-        } catch (_) {}
-      }
-      return;
-    }
-    final lavfiParts = equalizerFilterParts(eqGains);
-    final af = lavfiParts.isEmpty ? '' : 'lavfi=[${lavfiParts.join(',')}]';
+    final af = buildCombinedAudioFilter(
+      dialogueBoost: dialogueBoost,
+      nightModeDrc: nightModeDrc,
+      eqEnabled: eqEnabled,
+      eqGains: eqGains,
+    );
     if (_lastAppliedAf == af) return;
     try {
       await platform.setProperty('af', af);

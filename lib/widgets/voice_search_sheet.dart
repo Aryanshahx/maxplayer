@@ -4,16 +4,14 @@ import 'package:flutter/material.dart';
 import '../services/native_bridge.dart';
 import '../state/theme_state.dart';
 
-/// v72: High-performance in-app voice search with direct system dialog fallback.
-/// Features real-time voice volume ripples, live transcription, interactive mic toggle,
-/// one-tap Google system voice trigger, and keyboard edit fallback.
+/// v70: Custom in-app microphone speech recognition popup (no Google dialog).
+/// Displays real-time voice volume ripples, live transcription, and one-tap submit.
 class VoiceSearchSheet extends StatefulWidget {
   const VoiceSearchSheet({super.key});
 
   static Future<String?> show(BuildContext context) {
     return showModalBottomSheet<String>(
       context: context,
-      isScrollControlled: true,
       backgroundColor: const Color(0xFF14141c),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -29,35 +27,18 @@ class VoiceSearchSheet extends StatefulWidget {
 class _VoiceSearchSheetState extends State<VoiceSearchSheet>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulseCtrl;
-  late final TextEditingController _textCtrl;
   String _status = 'Listening… speak now';
+  String _partialText = '';
   double _rms = 0.0;
-  bool _isListening = false;
-  bool _isEditing = false;
   bool _finished = false;
 
   @override
   void initState() {
     super.initState();
-    _textCtrl = TextEditingController();
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
-
-    _startListening();
-  }
-
-  void _startListening() {
-    if (_finished) return;
-    setState(() {
-      _isListening = true;
-      _status = 'Listening… speak now';
-      _rms = 0.0;
-    });
-    if (!_pulseCtrl.isAnimating) {
-      _pulseCtrl.repeat(reverse: true);
-    }
 
     NativeBridge.configureCallbacks(
       onVoiceState: (state) {
@@ -66,98 +47,36 @@ class _VoiceSearchSheetState extends State<VoiceSearchSheet>
           if (state == 'speaking') {
             _status = 'Listening…';
           } else if (state == 'processing') {
-            _status = 'Processing…';
+            _status = 'Searching…';
           }
         });
       },
       onVoiceRms: (rms) {
-        if (!mounted || _finished || !_isListening) return;
+        if (!mounted || _finished) return;
         setState(() => _rms = rms.clamp(0.0, 10.0));
       },
       onVoicePartial: (text) {
         if (!mounted || _finished) return;
-        setState(() {
-          _textCtrl.text = text;
-        });
+        setState(() => _partialText = text);
       },
       onVoiceResult: (result) {
         if (!mounted || _finished) return;
-        final clean = result.trim();
-        if (clean.isNotEmpty) {
-          _finished = true;
-          _textCtrl.text = clean;
-          Navigator.of(context).pop(clean);
-        } else if (_textCtrl.text.trim().isNotEmpty) {
-          _finished = true;
-          Navigator.of(context).pop(_textCtrl.text.trim());
-        } else {
-          setState(() {
-            _isListening = false;
-            _status = "Didn't catch that. Tap microphone to try again.";
-            _rms = 0.0;
-          });
-        }
+        _finished = true;
+        Navigator.of(context).pop(result);
       },
       onVoiceError: (err) {
         if (!mounted || _finished) return;
-        setState(() {
-          _isListening = false;
-          _rms = 0.0;
-          if (_textCtrl.text.trim().isNotEmpty) {
-            _status = 'Tap "Search" or tap mic to speak again';
-          } else {
-            _status = "Didn't catch that. Tap microphone to speak again.";
-          }
-        });
+        _finished = true;
+        Navigator.of(context).pop(_partialText.isNotEmpty ? _partialText : null);
       },
     );
 
     unawaited(NativeBridge.startVoiceSearch());
   }
 
-  void _stopListening() {
-    setState(() {
-      _isListening = false;
-      _rms = 0.0;
-      _status = 'Tap microphone to speak';
-    });
-    unawaited(NativeBridge.stopVoiceSearch());
-  }
-
-  void _toggleMic() {
-    if (_isListening) {
-      if (_textCtrl.text.trim().isNotEmpty) {
-        _finished = true;
-        Navigator.of(context).pop(_textCtrl.text.trim());
-      } else {
-        _stopListening();
-      }
-    } else {
-      _startListening();
-    }
-  }
-
-  Future<void> _launchSystemVoice() async {
-    _stopListening();
-    final res = await NativeBridge.launchSystemVoiceSearch();
-    if (!mounted || res == null || res.trim().isEmpty) return;
-    _finished = true;
-    _textCtrl.text = res.trim();
-    Navigator.of(context).pop(res.trim());
-  }
-
-  void _submit() {
-    final query = _textCtrl.text.trim();
-    if (query.isNotEmpty) {
-      _finished = true;
-      Navigator.of(context).pop(query);
-    }
-  }
-
   @override
   void dispose() {
     _pulseCtrl.dispose();
-    _textCtrl.dispose();
     unawaited(NativeBridge.stopVoiceSearch());
     super.dispose();
   }
@@ -165,15 +84,11 @@ class _VoiceSearchSheetState extends State<VoiceSearchSheet>
   @override
   Widget build(BuildContext context) {
     final accent = themeState.accent;
-    final scale = _isListening
-        ? 1.0 + (_rms / 10.0) * 0.35 + (_pulseCtrl.value * 0.08)
-        : 1.0;
-    final hasText = _textCtrl.text.trim().isNotEmpty;
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final scale = 1.0 + (_rms / 10.0) * 0.4 + (_pulseCtrl.value * 0.1);
 
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(20, 16, 20, 24 + bottomInset),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -185,174 +100,78 @@ class _VoiceSearchSheetState extends State<VoiceSearchSheet>
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             Text(
               _status,
-              textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.85),
-                fontSize: 14.5,
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(height: 20),
-            if (_isEditing)
+            if (_partialText.isNotEmpty)
               Container(
                 margin: const EdgeInsets.only(bottom: 20),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: accent.withValues(alpha: 0.5)),
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _textCtrl,
-                        autofocus: true,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        decoration: const InputDecoration(
-                          hintText: 'Type or edit search query…',
-                          hintStyle: TextStyle(color: Colors.white38),
-                          border: InputBorder.none,
-                        ),
-                        onSubmitted: (_) => _submit(),
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.check_circle, color: accent),
-                      onPressed: _submit,
-                    ),
-                  ],
-                ),
-              )
-            else if (hasText)
-              Container(
-                margin: const EdgeInsets.only(bottom: 20),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: accent.withValues(alpha: 0.35),
+                child: Text(
+                  '"$_partialText"',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '"${_textCtrl.text}"',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16.5,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.edit, color: Colors.white54, size: 18),
-                      tooltip: 'Edit text',
-                      onPressed: () => setState(() => _isEditing = true),
-                    ),
-                  ],
-                ),
               ),
-            const SizedBox(height: 8),
             GestureDetector(
-              onTap: _toggleMic,
+              onTap: () {
+                if (_partialText.isNotEmpty) {
+                  Navigator.of(context).pop(_partialText);
+                }
+              },
               child: AnimatedBuilder(
                 animation: _pulseCtrl,
                 builder: (context, _) {
                   return Transform.scale(
                     scale: scale,
                     child: Container(
-                      width: 84,
-                      height: 84,
+                      width: 76,
+                      height: 76,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: _isListening
-                            ? accent.withValues(alpha: 0.22)
-                            : Colors.white.withValues(alpha: 0.08),
+                        color: accent.withValues(alpha: 0.2),
                         border: Border.all(
-                          color: _isListening
-                              ? accent.withValues(alpha: 0.8)
-                              : Colors.white24,
-                          width: 2.8,
+                          color: accent.withValues(alpha: 0.6),
+                          width: 2.5,
                         ),
-                        boxShadow: _isListening
-                            ? [
-                                BoxShadow(
-                                  color: accent.withValues(alpha: 0.4),
-                                  blurRadius: 22 * scale,
-                                  spreadRadius: 6 * scale,
-                                ),
-                              ]
-                            : null,
+                        boxShadow: [
+                          BoxShadow(
+                            color: accent.withValues(alpha: 0.35),
+                            blurRadius: 18 * scale,
+                            spreadRadius: 4 * scale,
+                          ),
+                        ],
                       ),
                       child: Icon(
-                        _isListening ? Icons.mic : Icons.mic_none,
-                        color: _isListening ? accent : Colors.white70,
-                        size: 38,
+                        Icons.mic,
+                        color: accent,
+                        size: 34,
                       ),
                     ),
                   );
                 },
               ),
             ),
-            const SizedBox(height: 20),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white70,
-                    side: const BorderSide(color: Colors.white24),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  icon: const Icon(Icons.mic_external_on, size: 16),
-                  label: const Text('Google Voice', style: TextStyle(fontSize: 12.5)),
-                  onPressed: _launchSystemVoice,
-                ),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white70,
-                    side: const BorderSide(color: Colors.white24),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  icon: const Icon(Icons.keyboard_outlined, size: 16),
-                  label: const Text('Keyboard', style: TextStyle(fontSize: 12.5)),
-                  onPressed: () => setState(() => _isEditing = true),
-                ),
-                if (hasText)
-                  FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: accent,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onPressed: _submit,
-                    icon: const Icon(Icons.search, size: 16),
-                    label: const Text(
-                      'Search',
-                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 24),
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(context).pop(
+                _partialText.isNotEmpty ? _partialText : null,
+              ),
               child: const Text(
                 'Cancel',
                 style: TextStyle(color: Colors.white54, fontSize: 13),

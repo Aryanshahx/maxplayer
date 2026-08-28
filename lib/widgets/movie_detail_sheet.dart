@@ -219,7 +219,6 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                   if (full.screenshots.isNotEmpty)
                     _ScreenshotsRow(paths: full.screenshots),
                   _ExtrasBlock(extras: full.extras),
-                  _LanguagesBlock(extras: full.extras, movieId: movie.id),
                   // v59 (user): web series must mention ALL their parts.
                   if (full.seasons.isNotEmpty)
                     _SeasonsBlock(seasons: full.seasons),
@@ -639,131 +638,6 @@ class _ReviewsBlock extends StatelessWidget {
                 ],
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-/// v72: Comprehensive languages block showing Spoken Audio Tracks and All Dubbed / Translations.
-class _LanguagesBlock extends StatelessWidget {
-  final TmdbDetailExtras extras;
-  final int movieId;
-
-  const _LanguagesBlock({required this.extras, required this.movieId});
-
-  @override
-  Widget build(BuildContext context) {
-    final spoken = extras.spokenLanguages;
-    final all = extras.allLanguages;
-
-    if (spoken.isEmpty && all.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final accent = themeState.accent;
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(top: 4, bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.translate, size: 16, color: accent),
-              const SizedBox(width: 8),
-              const Text(
-                'Audio & Dubbed Languages',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (spoken.isNotEmpty) ...[
-            Text(
-              'Spoken / Audio Tracks (${spoken.length})',
-              style: TextStyle(
-                color: accent,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final l in spoken)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: accent.withValues(alpha: 0.5)),
-                    ),
-                    child: Text(
-                      l,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 10),
-          ],
-          if (all.isNotEmpty) ...[
-            Text(
-              'Available Dubbed & Translations (${all.length})',
-              style: const TextStyle(
-                color: Colors.white60,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final l in all)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3.5),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white12),
-                    ),
-                    child: Text(
-                      spoken.contains(l) ? '$l (Audio)' : '$l (Dubbed)',
-                      style: TextStyle(
-                        color:
-                            spoken.contains(l) ? Colors.white : Colors.white70,
-                        fontSize: 11,
-                        fontWeight: spoken.contains(l)
-                            ? FontWeight.w600
-                            : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ],
         ],
       ),
     );

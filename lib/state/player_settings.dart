@@ -51,6 +51,12 @@ class PlayerSettings {
   /// Volume slider/drag may go past 100% up to 200% (mpv decoder gain).
   final bool volumeBoost200;
 
+  /// v72: Smart dialogue booster (boosts 1 kHz - 4 kHz vocal clarity band).
+  final bool dialogueBoost;
+
+  /// v72: Night Mode Dynamic Range Compression (evens out quiet speech & loud explosions).
+  final bool nightModeDrc;
+
   /// v67 B2: keep playing audio when the screen is turned off or app minimised.
   final bool backgroundAudio;
 
@@ -83,6 +89,8 @@ class PlayerSettings {
     this.screenshotButton = true,
     this.lockButton = true,
     this.volumeBoost200 = true,
+    this.dialogueBoost = false,
+    this.nightModeDrc = false,
     // v67 B2: ON by default (background audio playback).
     this.backgroundAudio = true,
     this.karaokeSubs = false,
@@ -133,6 +141,8 @@ class PlayerSettings {
   static const String kScreenshotButton = 'player.screenshotButton';
   static const String kLockButton = 'player.lockButton';
   static const String kVolumeBoost200 = 'player.volumeBoost200';
+  static const String kDialogueBoost = 'player.dialogueBoost';
+  static const String kNightModeDrc = 'player.nightModeDrc';
   static const String kBackgroundAudio = 'player.backgroundAudio';
   static const String kKaraokeSubs = 'player.karaokeSubs';
   static const String kEnhanceVideo = 'player.enhanceVideo';
@@ -164,6 +174,8 @@ class PlayerSettings {
       screenshotButton: s[kScreenshotButton] != 'false',
       lockButton: s[kLockButton] != 'false',
       volumeBoost200: s[kVolumeBoost200] != 'false',
+      dialogueBoost: s[kDialogueBoost] == 'true',
+      nightModeDrc: s[kNightModeDrc] == 'true',
       backgroundAudio: s[kBackgroundAudio] != 'false',
       karaokeSubs: s[kKaraokeSubs] == 'true',
       enhanceVideo: s[kEnhanceVideo] == 'true',
@@ -204,6 +216,8 @@ class PlayerSettings {
     NativeBridge.saveSetting(kScreenshotButton, '$screenshotButton');
     NativeBridge.saveSetting(kLockButton, '$lockButton');
     NativeBridge.saveSetting(kVolumeBoost200, '$volumeBoost200');
+    NativeBridge.saveSetting(kDialogueBoost, '$dialogueBoost');
+    NativeBridge.saveSetting(kNightModeDrc, '$nightModeDrc');
     NativeBridge.saveSetting(kBackgroundAudio, '$backgroundAudio');
     NativeBridge.saveSetting(kKaraokeSubs, '$karaokeSubs');
     NativeBridge.saveSetting(kEnhanceVideo, '$enhanceVideo');
@@ -228,6 +242,8 @@ class PlayerSettings {
     bool? screenshotButton,
     bool? lockButton,
     bool? volumeBoost200,
+    bool? dialogueBoost,
+    bool? nightModeDrc,
     bool? backgroundAudio,
     bool? karaokeSubs,
     bool? enhanceVideo,
@@ -251,6 +267,8 @@ class PlayerSettings {
       screenshotButton: screenshotButton ?? this.screenshotButton,
       lockButton: lockButton ?? this.lockButton,
       volumeBoost200: volumeBoost200 ?? this.volumeBoost200,
+      dialogueBoost: dialogueBoost ?? this.dialogueBoost,
+      nightModeDrc: nightModeDrc ?? this.nightModeDrc,
       backgroundAudio: backgroundAudio ?? this.backgroundAudio,
       karaokeSubs: karaokeSubs ?? this.karaokeSubs,
       enhanceVideo: enhanceVideo ?? this.enhanceVideo,

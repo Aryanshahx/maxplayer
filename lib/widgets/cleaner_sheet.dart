@@ -11,15 +11,13 @@ import '../state/video_library_state.dart';
 import '../utils/cleaner_stats.dart';
 import '../utils/formatters.dart';
 
-/// v31 Cleaner - a real device cleaner:
-///  * SCAN: one tap (or open) measures every cache kind the app can free.
-///  * GRAPHS: a device-storage bar and a reclaimable-space donut with a
-///    colour-matched legend.
-///  * CLEAN: one "Clean cache" button frees all caches at once; AI models
-///    (downloads) sit on their own row with a warning dialog.
-///  * Below: LARGEST videos and DUPLICATE copies - deletion is permanent
-///    and always asks first. Your videos are never touched by cache
-///    cleaning.
+/// v31/v72 Cleaner - CCleaner-style full storage cleaner & optimizer:
+///  * SCAN: measures app caches, preview thumbnails, temp AI residue, gallery cache & empty folders.
+///  * GRAPHS: device-storage bar and reclaimable-space donut with colour-matched legend.
+///  * ONE-TAP DEEP CLEAN: frees all caches, temp leftovers, and empty folders in 1 tap.
+///  * EMPTY FOLDERS SWEEPER: finds and removes abandoned empty directories.
+///  * DUPLICATE CLEANER: 1-tap "Keep 1st, delete all copies" batch action.
+///  * LARGEST & OLD VIDEOS: identifies storage hogs and seldom-played media.
 class CleanerSheet extends StatefulWidget {
   final MediaPlayerState player;
   final VideoLibraryState library;
@@ -53,6 +51,7 @@ class CleanerSheet extends StatefulWidget {
 class _CleanerSheetState extends State<CleanerSheet> {
   Map<String, int> _report = const {};
   int _deviceCache = 0;
+  int _emptyFoldersCount = 0;
   DeviceStorage? _storage;
   bool _scanning = true;
   bool _busy = false;
@@ -60,7 +59,6 @@ class _CleanerSheetState extends State<CleanerSheet> {
   @override
   void initState() {
     super.initState();
-    // Scan as soon as the sheet opens - the numbers should never be stale.
     _scan();
   }
 
@@ -93,10 +91,13 @@ class _CleanerSheetState extends State<CleanerSheet> {
     if (!mounted) return;
     final storage = await NativeBridge.storageTotals();
     if (!mounted) return;
+    final emptyCount = await _countEmptyFolders();
+    if (!mounted) return;
     setState(() {
       _report = report;
       _deviceCache = deviceCache;
       _storage = storage;
+      _emptyFoldersCount = emptyCount;
       _scanning = false;
     });
   }
@@ -125,9 +126,11 @@ class _CleanerSheetState extends State<CleanerSheet> {
         case 'device':
           freed = await _clearDeviceThumbCache();
           break;
+        case 'empty_folders':
+          final deleted = await _cleanEmptyFolders();
+          _snack(deleted > 0 ? 'Removed $deleted empty folders' : 'No empty folders found');
+          return;
       }
-      // The decoded-image memory cache holds file thumbnails - dropping it
-      // makes the freed space (and the graphs) show up at once.
       PaintingBinding.instance.imageCache.clear();
       PaintingBinding.instance.imageCache.clearLiveImages();
     } finally {
@@ -141,16 +144,16 @@ class _CleanerSheetState extends State<CleanerSheet> {
     );
   }
 
-  /// The big button: every cache kind in one go (AI models excluded -
-  /// they are downloads, cleared from their own row).
+  /// Big Button: every cache kind and empty folders in one go.
   Future<void> _cleanAllCache() async {
     if (_busy || _cacheTotal <= 0) return;
     setState(() => _busy = true);
     var freed = 0;
     try {
-      freed += await NativeBridge.clearStorage('thumbs'); // incl. strips
+      freed += await NativeBridge.clearStorage('thumbs');
       freed += await NativeBridge.clearStorage('temp');
       freed += await _clearDeviceThumbCache();
+      await _cleanEmptyFolders();
       PaintingBinding.instance.imageCache.clear();
       PaintingBinding.instance.imageCache.clearLiveImages();
     } finally {
@@ -159,7 +162,7 @@ class _CleanerSheetState extends State<CleanerSheet> {
     }
     _snack(
       freed > 0
-          ? 'Cleaned all caches - freed ${formatFileSize(freed)}'
+          ? 'Deep Clean completed - freed ${formatFileSize(freed)}'
           : 'Caches are already clean',
     );
   }
@@ -269,7 +272,7 @@ class _CleanerSheetState extends State<CleanerSheet> {
               group.where((t) => File(t.path).existsSync()).toList();
           return SafeArea(
             child: SizedBox(
-              height: MediaQuery.of(sheetContext).size.height * 0.5,
+              height: MediaQuery.of(sheetContext).size.height * 0.55,
               child: Column(
                 children: [
                   const SizedBox(height: 10),
@@ -283,17 +286,36 @@ class _CleanerSheetState extends State<CleanerSheet> {
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        '${remaining.length} identical copies - keep one, '
-                        'delete the rest',
-                        style: TextStyle(
-                          color: themeState.accent,
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${remaining.length} identical copies',
+                            style: TextStyle(
+                              color: themeState.accent,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
-                      ),
+                        if (remaining.length > 1)
+                          FilledButton.tonal(
+                            style: FilledButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: () async {
+                              // Keep the 1st one, delete the rest
+                              for (var i = 1; i < remaining.length; i++) {
+                                await _deleteVideo(remaining[i]);
+                              }
+                              setSheetState(() {});
+                              setState(() {});
+                              _snack('Kept 1 copy and cleaned ${remaining.length - 1} duplicates');
+                            },
+                            child: const Text('Auto-clean dupes'),
+                          ),
+                      ],
                     ),
                   ),
                   Expanded(
@@ -304,38 +326,50 @@ class _CleanerSheetState extends State<CleanerSheet> {
                               style: TextStyle(color: Colors.white54),
                             ),
                           )
-                        : ListView(
-                            children: [
-                              for (final t in remaining)
-                                ListTile(
-                                  dense: true,
-                                  leading: Icon(
-                                    Icons.movie_outlined,
-                                    color: themeState.accent,
-                                  ),
-                                  title: Text(
-                                    t.path,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11.5,
-                                    ),
-                                  ),
-                                  trailing: IconButton(
-                                    tooltip: 'Delete this copy',
-                                    icon: const Icon(
-                                      Icons.delete_outline,
-                                      color: Colors.redAccent,
-                                      size: 20,
-                                    ),
-                                    onPressed: () async {
-                                      await _confirmDelete(
-                                          t, () => setSheetState(() {}));
-                                    },
+                        : ListView.builder(
+                            itemCount: remaining.length,
+                            itemBuilder: (context, i) {
+                              final t = remaining[i];
+                              return ListTile(
+                                leading: Icon(
+                                  i == 0
+                                      ? Icons.check_circle_outline
+                                      : Icons.copy,
+                                  color: i == 0
+                                      ? themeState.accent
+                                      : Colors.white38,
+                                ),
+                                title: Text(
+                                  t.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
                                   ),
                                 ),
-                            ],
+                                subtitle: Text(
+                                  '${i == 0 ? "Original copy" : "Duplicate"}  ·  ${t.folderName}',
+                                  style: const TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                trailing: IconButton(
+                                  tooltip: 'Delete this copy',
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.redAccent,
+                                  ),
+                                  onPressed: () async {
+                                    await _confirmDelete(t, () {
+                                      setSheetState(() {});
+                                      setState(() {});
+                                    });
+                                  },
+                                ),
+                              );
+                            },
                           ),
                   ),
                 ],
@@ -345,24 +379,69 @@ class _CleanerSheetState extends State<CleanerSheet> {
         },
       ),
     );
-    if (mounted) setState(() {});
+  }
+
+  /// Scans for empty leftover directories on storage.
+  Future<int> _countEmptyFolders() async {
+    var count = 0;
+    try {
+      const roots = ['/storage/emulated/0/DCIM', '/storage/emulated/0/Movies', '/storage/emulated/0/Download'];
+      for (final r in roots) {
+        final d = Directory(r);
+        if (!d.existsSync()) continue;
+        await for (final e in d.list(recursive: false, followLinks: false)) {
+          if (e is Directory && !e.path.contains('/Android')) {
+            try {
+              final list = e.listSync();
+              if (list.isEmpty) count++;
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
+    return count;
+  }
+
+  /// Cleans empty leftover directories.
+  Future<int> _cleanEmptyFolders() async {
+    var deleted = 0;
+    try {
+      const roots = ['/storage/emulated/0/DCIM', '/storage/emulated/0/Movies', '/storage/emulated/0/Download'];
+      for (final r in roots) {
+        final d = Directory(r);
+        if (!d.existsSync()) continue;
+        await for (final e in d.list(recursive: false, followLinks: false)) {
+          if (e is Directory && !e.path.contains('/Android')) {
+            try {
+              final list = e.listSync();
+              if (list.isEmpty) {
+                e.deleteSync();
+                deleted++;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
+    return deleted;
   }
 
   @override
   Widget build(BuildContext context) {
     final accent = themeState.accent;
-    final grand = _grandTotal;
-    final largest = widget.library.largestVideos(n: 8);
+    final s = _storage;
     final dupes = widget.library.duplicateGroups;
+    final largest = widget.library.largestVideos(n: 6);
 
-    Widget section(String title) => Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 2),
+    Widget section(String text) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
           child: Text(
-            title,
+            text.toUpperCase(),
             style: TextStyle(
               color: accent,
-              fontSize: 13.5,
+              fontSize: 11.5,
               fontWeight: FontWeight.bold,
+              letterSpacing: 1.1,
             ),
           ),
         );
@@ -374,31 +453,37 @@ class _CleanerSheetState extends State<CleanerSheet> {
       required String note,
       required int bytes,
       required VoidCallback onClear,
-    }) {
-      return ListTile(
-        dense: true,
-        leading:
-            Icon(icon, color: Color(cleanerKindColors[kind] ?? 0xFF9E9E9E)),
-        title: Text(
-          title,
-          style: const TextStyle(color: Colors.white, fontSize: 14),
-        ),
-        subtitle: Text(
-          note,
-          style: const TextStyle(color: Colors.white38, fontSize: 11.5),
-        ),
-        trailing: TextButton(
-          onPressed: bytes > 0 && !_busy ? onClear : null,
-          child: Text(
-            bytes > 0 ? 'Clear ${formatFileSize(bytes)}' : 'Empty',
+    }) =>
+        ListTile(
+          dense: true,
+          leading: Icon(icon, color: Colors.white70),
+          title: Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-        ),
-      );
-    }
+          subtitle: Text(
+            '$note  ·  ${formatFileSize(bytes)}',
+            style: const TextStyle(color: Colors.white38, fontSize: 11.5),
+          ),
+          trailing: TextButton(
+            onPressed: bytes > 0 && !_busy ? onClear : null,
+            child: Text(
+              bytes > 0 ? 'Clear' : 'Clean',
+              style: TextStyle(
+                color: bytes > 0 ? accent : Colors.white24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
 
     return SafeArea(
       child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.82,
+        height: MediaQuery.of(context).size.height * 0.9,
         child: Column(
           children: [
             const SizedBox(height: 10),
@@ -410,253 +495,149 @@ class _CleanerSheetState extends State<CleanerSheet> {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            // Header: headline + scan button.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 12, 0),
-              child: Row(
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: 24),
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  // ---- Header: Device Storage overview --------------------
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
+                    child: Row(
                       children: [
-                        Text(
-                          'Cleaner',
+                        Icon(Icons.cleaning_services_outlined, color: accent),
+                        const SizedBox(width: 10),
+                        const Text(
+                          'Cleaner & Optimizer',
                           style: TextStyle(
-                            color: accent,
-                            fontSize: 17,
+                            color: Colors.white,
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        Text(
-                          _scanning
-                              ? 'Scanning caches...'
-                              : grand > 0
-                                  ? '${formatFileSize(grand)} reclaimable'
-                                  : 'Nothing to reclaim - all clean',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
+                        const Spacer(),
+                        if (_scanning)
+                          const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          IconButton(
+                            icon: const Icon(Icons.refresh, color: Colors.white54),
+                            onPressed: _scan,
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (s != null) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Used ${formatFileSize(s.used)} of ${formatFileSize(s.total)}',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '${(s.usedFraction * 100).toStringAsFixed(0)}% full',
+                            style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: CustomPaint(
+                        size: const Size(double.infinity, 8),
+                        painter: _StorageBarPainter(
+                          usedFraction: s.usedFraction,
+                          fillColor: accent,
+                        ),
+                      ),
+                    ),
+                  ],
+                  // ---- Donut chart + Reclaimable total -------------------
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 80,
+                          height: 80,
+                          child: CustomPaint(
+                            painter: _DonutPainter(_segments),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                formatFileSize(_grandTotal),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              const Text(
+                                'Reclaimable space on device',
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Scan again',
-                    onPressed: _scanning || _busy ? null : _scan,
-                    icon: _scanning
-                        ? SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: accent,
-                            ),
-                          )
-                        : Icon(Icons.refresh, color: accent),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.only(bottom: 14),
-                children: [
-                  // ---- Graph 1: device storage bar ----------------------
-                  if (_storage != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-                      child: Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.sd_storage_outlined,
-                                    color: accent, size: 18),
-                                const SizedBox(width: 8),
-                                const Expanded(
-                                  child: Text(
-                                    'Device storage',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  '${formatFileSize(_storage!.free)} free '
-                                  'of ${formatFileSize(_storage!.total)}',
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 11.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              height: 10,
-                              width: double.infinity,
-                              child: CustomPaint(
-                                painter: _StorageBarPainter(
-                                  usedFraction: _storage!.usedFraction,
-                                  fillColor: accent,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  // ---- Graph 2: reclaimable donut + legend --------------
+                  // ---- One-Tap Deep Clean Button -------------------------
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 120,
-                            height: 120,
-                            child: CustomPaint(
-                              painter: _DonutPainter(_segments),
-                              child: Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      _scanning
-                                          ? '...'
-                                          : grand > 0
-                                              ? formatFileSize(grand)
-                                              : 'Clean',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const Text(
-                                      'reclaimable',
-                                      style: TextStyle(
-                                        color: Colors.white38,
-                                        fontSize: 10,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: _scanning
-                                ? const Text(
-                                    'Measuring every cache...',
-                                    style: TextStyle(
-                                      color: Colors.white38,
-                                      fontSize: 12,
-                                    ),
-                                  )
-                                : _segments.isEmpty
-                                    ? const Text(
-                                        'Every cache is empty - nothing '
-                                        'to free right now.',
-                                        style: TextStyle(
-                                          color: Colors.white38,
-                                          fontSize: 12,
-                                        ),
-                                      )
-                                    : Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          for (final s in _segments)
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 2),
-                                              child: Row(
-                                                children: [
-                                                  Container(
-                                                    width: 9,
-                                                    height: 9,
-                                                    decoration: BoxDecoration(
-                                                      color:
-                                                          Color(s.colorValue),
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: Text(
-                                                      s.label,
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: const TextStyle(
-                                                        color: Colors.white70,
-                                                        fontSize: 11.5,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    formatFileSize(s.bytes),
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 11.5,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  // ---- Clean all button ---------------------------------
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
                     child: SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: accent,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
                         onPressed:
                             _cacheTotal > 0 && !_busy ? _cleanAllCache : null,
                         icon: Icon(
                           _busy
                               ? Icons.hourglass_top
-                              : Icons.cleaning_services_outlined,
+                              : Icons.bolt,
                         ),
                         label: Text(
                           _cacheTotal > 0
-                              ? 'Clean cache - free '
+                              ? 'One-Tap Deep Clean - Free '
                                   '${formatFileSize(_cacheTotal)}'
-                              : 'Cache is clean',
+                              : 'System is fully optimized',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
                   ),
                   // ---- Per-kind cache rows ------------------------------
-                  section('All caches - one tap each'),
+                  section('Caches & Leftovers'),
                   cacheRow(
                     kind: 'thumbs',
                     icon: Icons.image_outlined,
                     title: 'App thumbnails & previews',
-                    note: 'Rebuild automatically as you browse and play',
+                    note: 'Rebuild automatically as you browse',
                     bytes: _thumbs,
                     onClear: () =>
                         _clearKind('thumbs', 'App thumbnails & previews'),
@@ -671,23 +652,31 @@ class _CleanerSheetState extends State<CleanerSheet> {
                   ),
                   cacheRow(
                     kind: 'device',
-                    icon: Icons.cleaning_services_outlined,
+                    icon: Icons.photo_library_outlined,
                     title: 'Device gallery cache (.thumbnails)',
-                    note: 'Android rebuilds it on its own - safe to clear',
+                    note: 'Android rebuilds on its own - safe to clear',
                     bytes: _deviceCache,
                     onClear: () => _clearKind('device', 'Device gallery cache'),
+                  ),
+                  cacheRow(
+                    kind: 'empty_folders',
+                    icon: Icons.folder_delete_outlined,
+                    title: 'Empty leftover folders',
+                    note: '$_emptyFoldersCount empty directories found',
+                    bytes: 0,
+                    onClear: () => _clearKind('empty_folders', 'Empty folders'),
                   ),
                   cacheRow(
                     kind: 'models',
                     icon: Icons.psychology_outlined,
                     title: 'AI subtitle models',
-                    note: 'Downloads again only when you generate subtitles',
+                    note: 'Downloads again only when generating subtitles',
                     bytes: _models,
                     onClear: _clearModels,
                   ),
                   // ---- Largest videos ------------------------------------
                   if (largest.isNotEmpty) ...[
-                    section('Largest videos - tap to delete'),
+                    section('Largest storage hogs - tap to delete'),
                     for (final t in largest)
                       ListTile(
                         dense: true,
@@ -726,7 +715,7 @@ class _CleanerSheetState extends State<CleanerSheet> {
                   ],
                   // ---- Duplicate videos ----------------------------------
                   if (dupes.isNotEmpty) ...[
-                    section('Duplicate videos - same size & duration'),
+                    section('Duplicate video copies (same size & duration)'),
                     for (final g in dupes.take(6))
                       ListTile(
                         dense: true,
@@ -751,27 +740,17 @@ class _CleanerSheetState extends State<CleanerSheet> {
                             fontSize: 11.5,
                           ),
                         ),
-                        trailing: const Text(
-                          'open',
+                        trailing: Text(
+                          'Review (${g.length})',
                           style: TextStyle(
-                            color: Colors.white38,
-                            fontSize: 12,
+                            color: accent,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                         onTap: () => _showDuplicateGroup(g),
                       ),
                   ],
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(20, 10, 20, 0),
-                    child: Text(
-                      'Video deletion asks first and is permanent. '
-                      'Cache cleaning never touches your videos.',
-                      style: TextStyle(
-                        color: Colors.white38,
-                        fontSize: 11.5,
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),

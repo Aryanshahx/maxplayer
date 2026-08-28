@@ -193,6 +193,7 @@ class MediaPlaybackService : Service() {
                     }
 
                     override fun onSeekTo(pos: Long) {
+                        updateSessionPlaybackState(lastIsPlaying, pos)
                         onMediaSeek?.invoke(pos)
                     }
                 })
@@ -251,7 +252,10 @@ class MediaPlaybackService : Service() {
         return START_STICKY
     }
 
+    private var lastIsPlaying = false
+
     private fun updateSessionPlaybackState(isPlaying: Boolean, positionMs: Long) {
+        lastIsPlaying = isPlaying
         val state = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
         val actions = PlaybackState.ACTION_PLAY or
             PlaybackState.ACTION_PAUSE or

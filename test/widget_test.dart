@@ -77,6 +77,14 @@ VideoLibraryState _libraryWith(List<VideoTrack> videos) {
   return lib;
 }
 
+/// The sheets are lazy ListViews - give the test a huge viewport so
+/// every section builds, not just the first screenful.
+void useTallViewport(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1200, 6000);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+}
+
 void main() {
   group('formatters', () {
     test('formats file sizes', () {
@@ -2596,6 +2604,7 @@ void main() {
     });
 
     testWidgets('VoiceSearchSheet renders mic and status', (tester) async {
+      useTallViewport(tester);
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(body: VoiceSearchSheet()),
@@ -2603,7 +2612,6 @@ void main() {
       );
       expect(find.byIcon(Icons.mic), findsOneWidget);
       expect(find.textContaining('Listening'), findsOneWidget);
-      expect(find.text('Keyboard'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
     });
   });
@@ -2643,6 +2651,55 @@ void main() {
       final pp = File('PRIVACY_POLICY.md').readAsStringSync();
       expect(pp, contains('Microphone (audio)'));
       expect(pp, contains('voice search'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v73: Dialogue booster, Night Mode DRC, Google mic & CCleaner optimizer
+  // -------------------------------------------------------------------------
+  group('v73 audio boost + DRC + Google mic + CCleaner optimizer', () {
+    test('MediaPlayerState.buildCombinedAudioFilter builds dialogue boost & DRC compressor', () {
+      final drcOnly = MediaPlayerState.buildCombinedAudioFilter(nightModeDrc: true);
+      expect(drcOnly, contains('acompressor'));
+      expect(drcOnly, contains('threshold=-21dB'));
+
+      final dialogueOnly = MediaPlayerState.buildCombinedAudioFilter(dialogueBoost: true);
+      expect(dialogueOnly, contains('equalizer=f=1500'));
+      expect(dialogueOnly, contains('equalizer=f=3000'));
+
+      final combined = MediaPlayerState.buildCombinedAudioFilter(
+        dialogueBoost: true,
+        nightModeDrc: true,
+        eqEnabled: true,
+        eqGains: [2.0, 0.0, 0.0, 0.0, -1.0],
+      );
+      expect(combined, contains('acompressor'));
+      expect(combined, contains('equalizer=f=1500'));
+      expect(combined, contains('equalizer=f=60'));
+    });
+
+    test('PlayerSettings defaults and copyWith for dialogueBoost & nightModeDrc', () {
+      const s = PlayerSettings();
+      expect(s.dialogueBoost, isFalse);
+      expect(s.nightModeDrc, isFalse);
+
+      final next = s.copyWith(dialogueBoost: true, nightModeDrc: true);
+      expect(next.dialogueBoost, isTrue);
+      expect(next.nightModeDrc, isTrue);
+    });
+
+    test('DiscoverScreen and VideoSearchDelegate launch Google system speech', () {
+      final discover = File('lib/screens/discover_screen.dart').readAsStringSync();
+      expect(discover, contains('launchSystemVoiceSearch'));
+
+      final delegate = File('lib/widgets/video_search_delegate.dart').readAsStringSync();
+      expect(delegate, contains('launchSystemVoiceSearch'));
+    });
+
+    test('MediaPlaybackService updates state on seek', () {
+      final service = File('android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MediaPlaybackService.kt').readAsStringSync();
+      expect(service, contains('onSeekTo'));
+      expect(service, contains('updateSessionPlaybackState'));
     });
   });
 }

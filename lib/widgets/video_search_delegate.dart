@@ -2,8 +2,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/video_track.dart';
+import '../services/native_bridge.dart';
 import 'video_thumb.dart';
-import 'voice_search_sheet.dart';
 
 /// Pure, testable: case-insensitive contains on the trimmed query; an
 /// empty query returns everything. Used by the v44 full-screen search
@@ -62,7 +62,7 @@ class VideoSearchDelegate extends SearchDelegate<void> {
             icon: const Icon(Icons.mic_none_outlined, color: Colors.white70),
             tooltip: 'Voice search',
             onPressed: () async {
-              final res = await VoiceSearchSheet.show(context);
+              final res = await NativeBridge.launchSystemVoiceSearch();
               if (res != null && res.trim().isNotEmpty) {
                 query = res.trim();
                 // ignore: use_build_context_synchronously
