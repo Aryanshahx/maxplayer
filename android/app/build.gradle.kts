@@ -48,7 +48,7 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = 36
-        versionCode = flutter.versionCode
+        versionCode = 75
         versionName = flutter.versionName
 
         // CPU architectures: arm64 (modern) + armeabi-v7a + x86_64.
