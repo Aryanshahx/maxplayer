@@ -294,6 +294,14 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun applyImmersiveMode(enabled: Boolean) {
+        // v76: these window flags used to be set unconditionally in
+        // onCreate() for the whole app, before Dart ever called this
+        // function - so every non-player screen (home, library, settings)
+        // was drawing edge-to-edge with nothing reserving space for the
+        // system navigation bar, which is exactly what showed up as "nav
+        // bar overflow over app". They now live here, scoped to the same
+        // enabled/disabled toggle as the status/nav bar visibility, so the
+        // whole edge-to-edge behavior only ever applies to the player.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val lp = window.attributes
             lp.layoutInDisplayCutoutMode = if (enabled) {
@@ -302,6 +310,17 @@ class MainActivity : FlutterActivity() {
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
             }
             window.attributes = lp
+        }
+        if (enabled) {
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            )
+        } else {
+            window.clearFlags(
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            )
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(!enabled)
@@ -326,8 +345,7 @@ class MainActivity : FlutterActivity() {
                 )
             } else {
                 window.decorView.systemUiVisibility = (
-                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 )
             }
         }
@@ -338,14 +356,13 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         // v68/v70: Cutout / punch hole handling - draw under camera cutouts
         // on short edges for true edge-to-edge borderless display (VLC style).
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            window.attributes.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-        )
+        // v76: this used to run unconditionally for every screen, which is
+        // what caused the system navigation bar to overlap app content
+        // outside the player. applyImmersiveMode(false) now sets the
+        // correct "bars visible, content NOT edge-to-edge" default at
+        // cold start; the player screen flips it on/off itself via the
+        // native bridge as before.
+        applyImmersiveMode(false)
         // v62 Phase 1: create all notification channels once, before any
         // feature (AI-subs-ready, continue watching, ...) posts one.
         Notifications.ensureChannels(applicationContext)
@@ -1242,8 +1259,19 @@ class MainActivity : FlutterActivity() {
      * player's mpv-screenshot fallback (v22), which writes to this exact
      * location when Android's MediaMetadataRetriever can't decode a file.
      */
+    /**
+     * v76: moved from cacheDir to filesDir. cacheDir is fair game for the
+     * OS to wipe at any time under memory/storage pressure - several OEM
+     * skins (Xiaomi/Realme/ColorOS "RAM booster" style optimizers, named
+     * explicitly in this app's compatibility target list) do exactly that
+     * the moment the app is backgrounded, which is why every grid
+     * thumbnail was disappearing after switching to another app and back.
+     * filesDir is private, persistent app storage the OS never auto-clears
+     * (only "Clear storage" in system settings touches it) - this is the
+     * same place VLC-style players keep their generated thumbnails.
+     */
     private fun thumbFileFor(path: String): File {
-        val thumbsDir = File(cacheDir, "thumbs").apply { mkdirs() }
+        val thumbsDir = File(filesDir, "thumbs").apply { mkdirs() }
         return File(thumbsDir, md5(path) + ".jpg")
     }
 
@@ -1304,7 +1332,7 @@ class MainActivity : FlutterActivity() {
         for (d in thumbStripDirs()) strips += dirSizeBytes(d)
         var temp = 0L
         for (f in tempAiFiles()) temp += f.length()
-        out["thumbs"] = dirSizeBytes(File(cacheDir, "thumbs"))
+        out["thumbs"] = dirSizeBytes(File(filesDir, "thumbs"))
         out["strips"] = strips
         out["temp"] = temp
         out["models"] = dirSizeBytes(File(filesDir, "models"))
@@ -1315,7 +1343,7 @@ class MainActivity : FlutterActivity() {
         var freed = 0L
         when (kind) {
             "thumbs" -> {
-                val d = File(cacheDir, "thumbs")
+                val d = File(filesDir, "thumbs")
                 freed += dirSizeBytes(d)
                 d.deleteRecursively()
                 d.mkdirs()

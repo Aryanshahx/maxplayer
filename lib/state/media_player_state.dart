@@ -1501,7 +1501,7 @@ class MediaPlayerState extends ChangeNotifier {
   /// was the real cause of the laggy scrub-preview bubble. The native
   /// generator (thumbStripEnsureSync) always writes every frame in the
   /// strip BEFORE handing back the directory, so by the time
-  /// _thumbStripDir is non-null every path is already guaranteed to
+  /// [_thumbStripDir] is non-null every path is already guaranteed to
   /// exist; Image.file's existing errorBuilder still covers the rare
   /// frame that failed to encode natively.
   String? scrubThumbPath(double fraction) {

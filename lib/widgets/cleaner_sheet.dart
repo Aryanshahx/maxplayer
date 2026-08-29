@@ -62,13 +62,15 @@ class _CleanerSheetState extends State<CleanerSheet> {
     _scan();
   }
 
-  int get _thumbs => (_report['thumbs'] ?? 0) + (_report['strips'] ?? 0);
   int get _temp => _report['temp'] ?? 0;
   int get _models => _report['models'] ?? 0;
 
   int get _cacheTotal => cleanerCacheTotal(
-        thumbs: _report['thumbs'] ?? 0,
-        strips: _report['strips'] ?? 0,
+        // v76: thumbs/strips excluded - no longer a "clean me" cache kind
+        // (see the removed thumbnail row below), so they shouldn't count
+        // toward "reclaimable" space the Deep Clean button promises to free.
+        thumbs: 0,
+        strips: 0,
         temp: _temp,
         deviceCache: _deviceCache,
       );
@@ -76,8 +78,8 @@ class _CleanerSheetState extends State<CleanerSheet> {
   int get _grandTotal => _cacheTotal + _models;
 
   List<CleanerSegment> get _segments => cleanerSegments(
-        thumbs: _report['thumbs'] ?? 0,
-        strips: _report['strips'] ?? 0,
+        thumbs: 0,
+        strips: 0,
         temp: _temp,
         models: _models,
         deviceCache: _deviceCache,
@@ -150,7 +152,6 @@ class _CleanerSheetState extends State<CleanerSheet> {
     setState(() => _busy = true);
     var freed = 0;
     try {
-      freed += await NativeBridge.clearStorage('thumbs');
       freed += await NativeBridge.clearStorage('temp');
       freed += await _clearDeviceThumbCache();
       await _cleanEmptyFolders();
@@ -633,15 +634,11 @@ class _CleanerSheetState extends State<CleanerSheet> {
                   ),
                   // ---- Per-kind cache rows ------------------------------
                   section('Caches & Leftovers'),
-                  cacheRow(
-                    kind: 'thumbs',
-                    icon: Icons.image_outlined,
-                    title: 'App thumbnails & previews',
-                    note: 'Rebuild automatically as you browse',
-                    bytes: _thumbs,
-                    onClear: () =>
-                        _clearKind('thumbs', 'App thumbnails & previews'),
-                  ),
+                  // v76: removed the "App thumbnails & previews" delete
+                  // row. Thumbnails now live in persistent storage (not
+                  // cache) precisely so they DON'T get wiped - offering a
+                  // one-tap delete for them here just undid that and made
+                  // thumbnails vanish from the library after every clean.
                   cacheRow(
                     kind: 'temp',
                     icon: Icons.mic_none_outlined,

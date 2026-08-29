@@ -67,9 +67,22 @@ class _VideoAskSheetState extends State<VideoAskSheet> {
   final _client = VideoAiClient();
   final _questionCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
-  final List<_Msg> _messages = [];
+  late final List<_Msg> _messages;
   bool _asking = false;
   int _askToken = 0;
+
+  /// v76: in-memory cache of every video's Q&A, so closing this sheet
+  /// (a dismissible bottom sheet - Flutter tears its whole State down on
+  /// close) doesn't throw away what the AI already generated. Cleared
+  /// when the app process dies, same lifetime as the rest of the app's
+  /// in-memory state.
+  static final Map<String, List<_Msg>> _sessionCache = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _messages = _sessionCache.putIfAbsent(widget.title, () => []);
+  }
 
   bool get _hasTranscript => VideoAiClient.hasUsableTranscript(widget.cues);
 
