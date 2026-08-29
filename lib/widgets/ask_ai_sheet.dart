@@ -58,10 +58,26 @@ class _AskAiSheetState extends State<AskAiSheet> {
   String? _error;
   int _askToken = 0;
 
+  /// v77: in-memory cache of the last question/answer per movie, so
+  /// closing this sheet (a dismissible bottom sheet - Flutter tears its
+  /// whole State down on close) and reopening it for the same movie
+  /// shows what the AI already generated instead of a blank sheet.
+  /// Separate from MovieAiClient's 7-day on-disk cache, which only
+  /// speeds up re-asking the identical question - this restores what
+  /// was actually on screen.
+  static final Map<int, ({String question, String answer, String? model})>
+      _sessionCache = {};
+
   @override
   void initState() {
     super.initState();
     _bootCache();
+    final cached = _sessionCache[widget.movie.id];
+    if (cached != null) {
+      _questionCtrl.text = cached.question;
+      _answer = cached.answer;
+      _answerModel = cached.model;
+    }
   }
 
   /// v46: the 7-day answer cache lives next to the TMDB caches.
@@ -98,6 +114,11 @@ class _AskAiSheetState extends State<AskAiSheet> {
       } else {
         _answer = result.text;
         _answerModel = result.model;
+        _sessionCache[widget.movie.id] = (
+          question: q,
+          answer: result.text,
+          model: result.model,
+        );
       }
     });
   }

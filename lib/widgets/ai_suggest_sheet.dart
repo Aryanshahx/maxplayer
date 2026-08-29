@@ -53,6 +53,23 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
   List<TmdbMovie> _picks = const [];
   int _token = 0;
 
+  /// v77: in-memory cache of the last taste query + picks, so closing
+  /// this sheet (a dismissible bottom sheet - Flutter tears its whole
+  /// State down on close) and reopening it shows what the AI already
+  /// generated instead of a blank sheet. Overwritten the moment a new
+  /// query is submitted.
+  static String? _lastQuery;
+  static List<TmdbMovie> _lastPicks = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    if (_lastQuery != null) {
+      _tasteCtrl.text = _lastQuery!;
+      _picks = _lastPicks;
+    }
+  }
+
   /// One-tap moods - nobody likes typing on a TV remote-style keyboard.
   static const List<String> _moods = [
     'Funny action like Dhoom',
@@ -90,6 +107,8 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
             'AI is not reachable right now - check the internet and try again.';
       } else {
         _picks = picks;
+        _lastQuery = q;
+        _lastPicks = picks;
       }
     });
   }

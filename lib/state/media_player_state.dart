@@ -449,9 +449,17 @@ class MediaPlayerState extends ChangeNotifier {
     await player.open(Media(track.path), play: autoplay);
     await player.setRate(playbackRate);
     await _applyMpvVolume();
-    await _applyAudioFilters(); // equalizer + leveling survive file changes
-    await _attachSidecarSubtitles(track.path);
-    await _recordOpen(track);
+    // v77: these three used to be awaited here too, serially, before this
+    // function returned - stacking a disk scan (subtitle attach) and an
+    // mpv audio filter-graph rebuild right on top of the file just
+    // opening was the real cause of "new video lags for a second". None
+    // of them need to finish before the user can start watching, so they
+    // now run in the background instead of blocking playback start.
+    unawaited(() async {
+      await _applyAudioFilters(); // equalizer + leveling survive file changes
+      await _attachSidecarSubtitles(track.path);
+      await _recordOpen(track);
+    }());
     await _restoreBookmark(track);
     // v25: re-verify karaoke's subtitle hiding after the demuxer settles -
     // the track listener can fire before the subtitle selection is known.
@@ -1018,10 +1026,26 @@ class MediaPlayerState extends ChangeNotifier {
 
   /// Reads the real device media volume once so the player swipe starts
   /// from the true level (mirrors [currentBrightness]).
+  ///
+  /// v78: this used to be gated by [_volumeSynced] forever - a single
+  /// bad/low reading (very common: plenty of phones just sit at a low or
+  /// zero STREAM_MUSIC level until something nudges it) permanently
+  /// muted every video for the rest of the app session, since it was
+  /// never re-checked. Re-synced now, and a low system level no longer
+  /// flips [isMuted] on its own - that flag means "the user muted it",
+  /// not "the system happened to be quiet"; if it's genuinely near zero
+  /// we nudge it up to an audible floor instead of starting silent.
+  static const double _kAudibleFloor = 0.3;
+
   Future<double> currentVolume() async {
     if (!_volumeSynced) {
-      volume = await NativeBridge.getMediaVolume();
-      isMuted = volume <= 0;
+      final real = await NativeBridge.getMediaVolume();
+      if (real <= 0.02) {
+        volume = _kAudibleFloor;
+        await NativeBridge.setMediaVolume(_kAudibleFloor);
+      } else {
+        volume = real;
+      }
       _volumeSynced = true;
       notifyListeners();
     }
