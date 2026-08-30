@@ -1081,7 +1081,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _openVideoAsk() async {
     final track = widget.player.currentTrack;
     if (track == null) return;
-    final cues = widget.player.transcriptCues;
+    final cues = await widget.player.awaitTranscriptCues();
+    if (!mounted) return;
     await VideoAskSheet.show(
       context,
       title: track.title,

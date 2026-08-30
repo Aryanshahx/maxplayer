@@ -455,11 +455,18 @@ class MediaPlayerState extends ChangeNotifier {
     // opening was the real cause of "new video lags for a second". None
     // of them need to finish before the user can start watching, so they
     // now run in the background instead of blocking playback start.
-    unawaited(() async {
+    // v81: kept as an awaitable future (not just fire-and-forget) so code
+    // that genuinely needs this finished - like Ask-AI checking whether a
+    // sidecar subtitle transcript exists - can await it instead of racing
+    // it. Racing it was why "Ask AI about this video" could wrongly say
+    // there's no transcript for a video that has a sidecar .srt, if asked
+    // quickly after opening the video.
+    _postOpenWork = () async {
       await _applyAudioFilters(); // equalizer + leveling survive file changes
       await _attachSidecarSubtitles(track.path);
       await _recordOpen(track);
-    }());
+    }();
+    unawaited(_postOpenWork);
     await _restoreBookmark(track);
     // v25: re-verify karaoke's subtitle hiding after the demuxer settles -
     // the track listener can fire before the subtitle selection is known.
@@ -484,6 +491,12 @@ class MediaPlayerState extends ChangeNotifier {
   /// v21: cues of the AI sidecar currently attached (null when none or the
   /// file is a stream). Feeds the karaoke word-highlight overlay.
   List<SrtCue>? aiCues;
+
+  /// v81: the deferred post-open background work started in [_loadCurrent]
+  /// (audio filters, sidecar subtitle attach, history write). Await this
+  /// when you need one of those to have definitely finished - e.g. before
+  /// checking [transcriptCues] for a just-opened video.
+  Future<void>? _postOpenWork;
 
   /// v22: cues parsed from the video's OWN same-name subtitle file
   /// ("movie.srt", "movie.en.srt" - the files mpv auto-loads). Used when
@@ -861,6 +874,16 @@ class MediaPlayerState extends ChangeNotifier {
   /// (AI sidecar preferred, then the same-name .srt), or null. Feeds the
   /// "Ask anything about this video" chat.
   List<SrtCue>? get transcriptCues => aiCues ?? sidecarCues;
+
+  /// v81: same as [transcriptCues], but waits for the just-opened video's
+  /// deferred sidecar-subtitle attach to finish first (see [_postOpenWork]
+  /// in [_loadCurrent]). Use this instead of the plain getter anywhere the
+  /// answer needs to be accurate right after opening a video - the plain
+  /// getter can read null too early and wrongly report "no transcript".
+  Future<List<SrtCue>?> awaitTranscriptCues() async {
+    await _postOpenWork;
+    return transcriptCues;
+  }
 
   void _saveBookmark() {
     final track = currentTrack;

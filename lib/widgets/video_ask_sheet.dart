@@ -130,9 +130,15 @@ class _VideoAskSheetState extends State<VideoAskSheet> {
       final cached = _sessionCache[widget.title];
       if (cached != null && cached.isNotEmpty && _messages.isEmpty) {
         setState(() {
-          _messages
-            ..clear()
-            ..addAll(cached);
+          _messages.addAll(cached);
+          // v81: keep _sessionCache pointing at the SAME list _messages
+          // uses from now on - otherwise every future _messages.add() in
+          // _ask() silently stops reaching _sessionCache (and therefore
+          // _persistToDisk()), because they'd be two different list
+          // objects holding the same values only at this one moment. This
+          // was why AI answers stopped saving after the very first
+          // reopen following a restart.
+          _sessionCache[widget.title] = _messages;
         });
         _scrollToBottom();
       }
