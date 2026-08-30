@@ -324,6 +324,12 @@ class _AiProgressDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      // v79: this dialog has real vertical content (2 dropdowns, mode
+      // chips, 3 paragraphs of helper text on the options dialog) and had
+      // no way to scroll - a short landscape phone screen genuinely
+      // couldn't fit it all, so text and the action buttons overlapped.
+      // scrollable: true makes AlertDialog wrap content in a scroll view.
+      scrollable: true,
       backgroundColor: const Color(0xFF1a1a24),
       title: Row(
         children: [
@@ -402,6 +408,12 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      // v79: this dialog has real vertical content (2 dropdowns, mode
+      // chips, 3 paragraphs of helper text on the options dialog) and had
+      // no way to scroll - a short landscape phone screen genuinely
+      // couldn't fit it all, so text and the action buttons overlapped.
+      // scrollable: true makes AlertDialog wrap content in a scroll view.
+      scrollable: true,
       backgroundColor: const Color(0xFF1a1a24),
       title: Row(
         children: [

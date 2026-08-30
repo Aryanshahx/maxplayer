@@ -3,16 +3,10 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@android:color/white" />
 
-    <!-- v77: app logo shown while the app is cold-starting, inside a
-         rounded white card so it reads as a rounded icon (was blank
-         white before this). -->
-    <item android:width="220dp" android:height="220dp" android:gravity="center">
-        <shape android:shape="rectangle">
-            <corners android:radius="48dp" />
-            <solid android:color="#FFFFFF" />
-        </shape>
-    </item>
-    <item android:width="176dp" android:height="176dp" android:gravity="center">
+    <!-- v79: logo shown while the app is cold-starting. Kept its own
+         background intact (matches the launcher icon) instead of being
+         cut out onto a separate card. -->
+    <item android:width="200dp" android:height="200dp" android:gravity="center">
         <bitmap android:gravity="center" android:src="@drawable/splash_logo" />
     </item>
 </layer-list>
