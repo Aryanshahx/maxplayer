@@ -31,40 +31,6 @@ class AboutSheet extends StatelessWidget {
     );
   }
 
-  /// v62 Phase 1: asks for the notification permission once (Android 13+)
-  /// and posts a simple test notification. Tapping it should bring the app
-  /// back and show a "Notification: test:hello" snackbar - proving the whole
-  /// permission -> channel -> tap pipeline works for later phases.
-  Future<void> _sendTestNotification(BuildContext context) async {
-    final granted = await NativeBridge.requestNotifications();
-    if (!context.mounted) return;
-    if (!granted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Notifications are blocked - enable them in '
-              'Android settings > App notifications'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-    await NativeBridge.showNotification(
-      channel: NotificationChannels.general,
-      title: 'Max Player notifications are on',
-      body: 'Tap this to return to the app. AI subtitle alerts and new-'
-          'episode updates will appear here soon.',
-      payload: 'test:hello',
-    );
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Test notification sent - check your status bar'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final accent = themeState.accent;
@@ -203,25 +169,6 @@ class AboutSheet extends StatelessWidget {
           'users. This is just the beginning, and we\'re excited to keep '
           'building a player that truly puts you first.',
           style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
-        ),
-
-        const SizedBox(height: 22),
-        const Divider(color: Colors.white12),
-        const SizedBox(height: 6),
-        // v62 Phase 1: lets the user verify the notification foundation
-        // (permission prompt + channel + tap delivery) on their phone. Later
-        // phases replace this with the real AI-subs / continue-watching
-        // notifications.
-        Center(
-          child: TextButton.icon(
-            onPressed: () => _sendTestNotification(context),
-            icon: const Icon(Icons.notifications_active_outlined, size: 16),
-            label: const Text('Send a test notification'),
-            style: TextButton.styleFrom(
-              foregroundColor: accent,
-              textStyle: const TextStyle(fontSize: 12.5),
-            ),
-          ),
         ),
         Center(
           child: TextButton.icon(

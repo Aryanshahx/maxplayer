@@ -1089,6 +1089,27 @@ class MediaPlayerState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// v80: replaces the old About-screen "test notification" button as the
+  /// trigger for the notification permission prompt. Requesting it at
+  /// cold app start (before the user has done anything) is bad UX and
+  /// easy to reflexively deny; asking the first time it's actually
+  /// needed - the first video plays with background audio on, which is
+  /// what drives the lock-screen/notification media controls - gives the
+  /// user context for why the app wants it. Only ever asked once per
+  /// install (Android itself also won't re-show the OS dialog after a
+  /// user denial, but this avoids even the repeat method-channel call).
+  static const String _kNotifPermAskedKey = 'app.notificationPermAsked';
+  static bool _notifPermCheckDone = false;
+
+  Future<void> _maybeRequestNotificationPermission() async {
+    if (_notifPermCheckDone) return;
+    _notifPermCheckDone = true;
+    final settings = await NativeBridge.loadSettings();
+    if (settings[_kNotifPermAskedKey] == 'true') return;
+    await NativeBridge.saveSetting(_kNotifPermAskedKey, 'true');
+    await NativeBridge.requestNotifications();
+  }
+
   /// v67 B1/B2/v70: syncs Now Playing notification, media session, thumbnail & duration.
   void _syncNowPlaying() {
     final track = currentTrack;
@@ -1098,6 +1119,7 @@ class MediaPlayerState extends ChangeNotifier {
       return;
     }
     if (backgroundAudio) {
+      unawaited(_maybeRequestNotificationPermission());
       unawaited(NativeBridge.showNowPlaying(
         title: track.title,
         subtitle: isPlaying ? 'Playing' : 'Paused',
