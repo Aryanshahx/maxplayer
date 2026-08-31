@@ -358,11 +358,188 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
+  /// v83 Phase 1: "Network Storage" - a friendlier form for SMB/FTP/WebDAV
+  /// than typing a raw URL. Builds the URL and reuses the exact same
+  /// open/save-server plumbing as [_openStreamDialog] - no separate
+  /// connection code path to maintain.
+  ///
+  /// Honesty note for whoever reads this next: whether a built URL
+  /// actually connects depends on what protocols the bundled
+  /// libmpv/ffmpeg were compiled with. ftp is supported almost
+  /// everywhere; smb needs libsmbclient specifically and may not be in
+  /// this build - if smb:// fails to connect, that's what's missing, not
+  /// a bug in this dialog.
+  Future<void> _openNetworkStorageDialog() async {
+    final hostCtrl = TextEditingController();
+    final portCtrl = TextEditingController();
+    final shareCtrl = TextEditingController();
+    final userCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    var protocol = 'smb';
+
+    void snack(String message) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+      );
+    }
+
+    String? buildUrl() {
+      final host = hostCtrl.text.trim();
+      if (host.isEmpty) return null;
+      var share = shareCtrl.text.trim();
+      if (share.isNotEmpty && !share.startsWith('/')) share = '/$share';
+      final user = userCtrl.text.trim();
+      final pass = passCtrl.text;
+      final auth = user.isEmpty
+          ? ''
+          : '$user${pass.isEmpty ? '' : ':${Uri.encodeComponent(pass)}'}@';
+      final port = portCtrl.text.trim();
+      final portPart = port.isEmpty ? '' : ':$port';
+      return '$protocol://$auth$host$portPart$share';
+    }
+
+    final url = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          scrollable: true,
+          backgroundColor: const Color(0xFF1a1a24),
+          title: const Text(
+            'Network storage',
+            style: TextStyle(color: Colors.white, fontSize: 17),
+          ),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Connect to a home PC or NAS drive',
+                  style: TextStyle(color: Colors.white54, fontSize: 12.5),
+                ),
+                const SizedBox(height: 12),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'smb', label: Text('SMB')),
+                    ButtonSegment(value: 'ftp', label: Text('FTP')),
+                    ButtonSegment(value: 'https', label: Text('WebDAV')),
+                  ],
+                  selected: {protocol},
+                  onSelectionChanged: (s) =>
+                      setDialogState(() => protocol = s.first),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: hostCtrl,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Host or IP address',
+                    labelStyle: TextStyle(color: Colors.white54),
+                    hintText: '192.168.1.10',
+                    hintStyle: TextStyle(color: Colors.white38),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: portCtrl,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Port (optional)',
+                    labelStyle: TextStyle(color: Colors.white54),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: shareCtrl,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Share / folder path',
+                    labelStyle: TextStyle(color: Colors.white54),
+                    hintText: 'Movies',
+                    hintStyle: TextStyle(color: Colors.white38),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: userCtrl,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Username (optional)',
+                    labelStyle: TextStyle(color: Colors.white54),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: passCtrl,
+                  obscureText: true,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Password (optional)',
+                    labelStyle: TextStyle(color: Colors.white54),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton.icon(
+              icon: Icon(
+                Icons.bookmark_add_outlined,
+                size: 18,
+                color: themeState.accent,
+              ),
+              label: const Text('Save'),
+              onPressed: () async {
+                final u = buildUrl();
+                if (u == null) {
+                  snack('Enter a host first');
+                  return;
+                }
+                final all = await NativeBridge.loadSettings();
+                var servers = parseServersJson(all[kServersSettingKey]);
+                final before = servers.length;
+                servers = addSavedServer(
+                  servers,
+                  SavedServer(name: hostCtrl.text.trim(), url: u),
+                );
+                await NativeBridge.saveSetting(
+                  kServersSettingKey,
+                  serversToJson(servers),
+                );
+                snack(
+                  servers.length > before
+                      ? 'Saved - find it under Open stream any time'
+                      : 'That connection is already saved',
+                );
+              },
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: themeState.accent),
+              onPressed: () => Navigator.of(dialogContext).pop(buildUrl()),
+              child: const Text('Connect'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (url == null || url.isEmpty) return;
+    if (!_isStreamUrl(url)) {
+      snack('Enter a host first');
+      return;
+    }
+    await widget.player.playStream(url, hostCtrl.text.trim());
+  }
+
   void _onMenuChoice(String choice, VideoLibraryState lib) {
     switch (choice) {
-      case 'stream':
-        _openStreamDialog();
-        break;
       case 'stats':
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => StatsScreen(player: widget.player)),
@@ -639,15 +816,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
             // v26: menu icons follow the picked theme colour.
             itemBuilder: (context) => [
               PopupMenuItem(
-                value: 'stream',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.link, color: themeState.accent),
-                  title: const Text('Open stream URL'),
-                ),
-              ),
-              PopupMenuItem(
                 value: 'stats',
                 child: ListTile(
                   dense: true,
@@ -852,8 +1020,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   player: widget.player,
                   library: lib,
                 ),
+                onNetworkStorage: _openNetworkStorageDialog,
                 onPlaylist: () => _showPlaylists(lib),
                 onFolders: () => _showFoldersSheet(lib),
+                onOpenStream: _openStreamDialog,
               ),
             ),
           ),
@@ -980,67 +1150,45 @@ class _QuickTiles extends StatelessWidget {
   final Color accent;
   final VoidCallback onPrivate;
   final VoidCallback onCleaner;
+  final VoidCallback onNetworkStorage;
   final VoidCallback onPlaylist;
   final VoidCallback onFolders;
+  final VoidCallback onOpenStream;
 
   const _QuickTiles({
     required this.accent,
     required this.onPrivate,
     required this.onCleaner,
+    required this.onNetworkStorage,
     required this.onPlaylist,
     required this.onFolders,
+    required this.onOpenStream,
   });
 
   @override
   Widget build(BuildContext context) {
+    // v83: was a fixed 2x2 grid (2 rows of 2 Expanded tiles) - couldn't
+    // fit more tiles without breaking. Now a single horizontally
+    // scrollable strip so new tiles (Network Storage, Open stream) just
+    // slide in instead of needing another layout rework next time.
+    final tiles = [
+      _Tile(Icons.lock_outline, 'Private folder', accent, onPrivate),
+      _Tile(Icons.cleaning_services_outlined, 'Cleaner', accent, onCleaner),
+      _Tile(Icons.dns_outlined, 'Network storage', accent, onNetworkStorage),
+      _Tile(Icons.queue_music_outlined, 'Playlists', accent, onPlaylist),
+      _Tile(Icons.folder_outlined, 'Folders', accent, onFolders),
+      _Tile(Icons.link, 'Open stream', accent, onOpenStream),
+    ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _Tile(
-                  Icons.lock_outline,
-                  'Private folder',
-                  accent,
-                  onPrivate,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _Tile(
-                  Icons.cleaning_services_outlined,
-                  'Cleaner',
-                  accent,
-                  onCleaner,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _Tile(
-                  Icons.queue_music_outlined,
-                  'Playlists',
-                  accent,
-                  onPlaylist,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _Tile(
-                  Icons.folder_outlined,
-                  'Folders',
-                  accent,
-                  onFolders,
-                ),
-              ),
-            ],
-          ),
-        ],
+      child: SizedBox(
+        height: 48,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: tiles.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (context, i) => SizedBox(width: 168, child: tiles[i]),
+        ),
       ),
     );
   }
@@ -1186,11 +1334,19 @@ class _EmptyState extends StatelessWidget {
 
 bool _isStreamUrl(String url) {
   final uri = Uri.tryParse(url);
-  const schemes = {'http', 'https', 'rtsp', 'rtmp', 'mms'};
+  // v83: added ftp/ftps/smb for the new Network Storage tile. Whether a
+  // given protocol actually connects depends on what the bundled
+  // libmpv/ffmpeg was compiled with - ftp is supported by virtually all
+  // ffmpeg builds; smb needs libsmbclient specifically and may not be
+  // present. This only controls what the app is willing to try.
+  const schemes = {
+    'http', 'https', 'rtsp', 'rtmp', 'mms', 'ftp', 'ftps', 'smb',
+  };
   return uri != null &&
       schemes.contains(uri.scheme.toLowerCase()) &&
       uri.host.isNotEmpty;
 }
+
 
 String _serverNameFor(String url) {
   final uri = Uri.tryParse(url);
