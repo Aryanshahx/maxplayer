@@ -1,12 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../services/gdrive_service.dart';
 import '../services/native_bridge.dart';
 import '../state/theme_state.dart';
 import '../utils/formatters.dart';
 
-/// v84: Dedicated Cloud Storage (Google Drive) sheet for mobile phones.
+/// v86: Dedicated Cloud Storage (Google Drive) manager with automatic video fetching.
 class CloudStorageSheet extends StatefulWidget {
   final Future<void> Function(String url, String title) onPlay;
 
@@ -31,78 +31,106 @@ class CloudStorageSheet extends StatefulWidget {
   State<CloudStorageSheet> createState() => _CloudStorageSheetState();
 }
 
-class _CloudStorageSheetState extends State<CloudStorageSheet>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabCtrl;
-  final TextEditingController _linkCtrl = TextEditingController();
-  final TextEditingController _apiKeyCtrl = TextEditingController();
+class _CloudStorageSheetState extends State<CloudStorageSheet> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  final TextEditingController _tokenCtrl = TextEditingController();
 
+  bool _isConnected = false;
   bool _loading = false;
-  List<GDriveItem> _driveItems = [];
-  String? _detectedId;
+  List<GDriveItem> _driveVideos = [];
+  String _searchFilter = '';
 
-  static const String _kSavedDriveKey = 'gdrive.api_key';
+  static const String _kDriveTokenKey = 'gdrive.access_token';
+  static const String _kDriveUserKey = 'gdrive.user_email';
+  static const String _kDriveVideosCacheKey = 'gdrive.videos_cache';
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
-    _linkCtrl.addListener(_onLinkChanged);
-    _loadSavedKey();
+    _loadStoredSession();
   }
 
-  Future<void> _loadSavedKey() async {
+  Future<void> _loadStoredSession() async {
     final s = await NativeBridge.loadSettings();
-    final savedKey = s[_kSavedDriveKey];
-    if (savedKey != null && savedKey.isNotEmpty && mounted) {
-      _apiKeyCtrl.text = savedKey;
-      _loadDriveFiles(savedKey);
-    }
-  }
+    final token = s[_kDriveTokenKey];
+    final cachedJson = s[_kDriveVideosCacheKey];
 
-  void _onLinkChanged() {
-    final id = GDriveService.parseDriveFileId(_linkCtrl.text);
-    setState(() => _detectedId = id);
-  }
-
-  Future<void> _pasteFromClipboard() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data != null && data.text != null && data.text!.isNotEmpty) {
-      _linkCtrl.text = data.text!.trim();
-    }
-  }
-
-  Future<void> _loadDriveFiles(String key) async {
-    if (key.trim().isEmpty) return;
-    setState(() => _loading = true);
-    final items = await GDriveService.listDriveFiles(apiKey: key.trim());
-    if (mounted) {
+    if (token != null && token.isNotEmpty) {
       setState(() {
-        _driveItems = items;
-        _loading = false;
+        _isConnected = true;
       });
-      NativeBridge.saveSetting(_kSavedDriveKey, key.trim());
+      if (cachedJson != null && cachedJson.isNotEmpty) {
+        try {
+          final list = jsonDecode(cachedJson) as List;
+          setState(() {
+            _driveVideos = list
+                .map((e) => GDriveItem(
+                      id: '${e['id']}',
+                      name: '${e['name']}',
+                      mimeType: '${e['mimeType']}',
+                      sizeBytes: int.tryParse('${e['sizeBytes']}') ?? 0,
+                      thumbnailLink: e['thumbnailLink']?.toString(),
+                    ))
+                .toList();
+          });
+        } catch (_) {}
+      }
+      _fetchAllVideos(token);
     }
   }
 
-  void _playLink() {
-    final id = _detectedId;
-    if (id == null || id.isEmpty) return;
-    final streamUrl = GDriveService.getDirectStreamUrl(id);
-    Navigator.of(context).pop();
-    widget.onPlay(streamUrl, 'Google Drive Video');
+  Future<void> _fetchAllVideos(String token) async {
+    setState(() => _loading = true);
+    final items = await GDriveService.listDriveFiles(apiKey: token);
+    if (!mounted) return;
+    setState(() {
+      _driveVideos = items;
+      _loading = false;
+      _isConnected = true;
+    });
+
+    final cacheData = jsonEncode(items
+        .map((i) => {
+              'id': i.id,
+              'name': i.name,
+              'mimeType': i.mimeType,
+              'sizeBytes': i.sizeBytes,
+              'thumbnailLink': i.thumbnailLink,
+            })
+        .toList());
+    NativeBridge.saveSetting(_kDriveVideosCacheKey, cacheData);
   }
 
-  void _playItem(GDriveItem item) {
+  void _connectWithToken(String token) {
+    final clean = token.trim();
+    if (clean.isEmpty) return;
+    NativeBridge.saveSetting(_kDriveTokenKey, clean);
+    NativeBridge.saveSetting(_kDriveUserKey, 'Connected Account');
+    setState(() {
+      _isConnected = true;
+    });
+    _fetchAllVideos(clean);
+  }
+
+  void _disconnect() {
+    NativeBridge.saveSetting(_kDriveTokenKey, '');
+    NativeBridge.saveSetting(_kDriveUserKey, '');
+    NativeBridge.saveSetting(_kDriveVideosCacheKey, '');
+    setState(() {
+      _isConnected = false;
+      _driveVideos = [];
+    });
+  }
+
+  void _playVideo(GDriveItem item) {
     Navigator.of(context).pop();
     widget.onPlay(item.streamUrl, item.name);
   }
 
   @override
   void dispose() {
-    _tabCtrl.dispose();
-    _linkCtrl.dispose();
-    _apiKeyCtrl.dispose();
+    _searchCtrl.dispose();
+    _tokenCtrl.dispose();
     super.dispose();
   }
 
@@ -110,12 +138,16 @@ class _CloudStorageSheetState extends State<CloudStorageSheet>
   Widget build(BuildContext context) {
     final accent = themeState.accent;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final visibleVideos = _driveVideos.where((v) {
+      if (_searchFilter.isEmpty) return true;
+      return v.name.toLowerCase().contains(_searchFilter.toLowerCase());
+    }).toList();
 
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.only(bottom: bottomInset),
         child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.75,
+          height: MediaQuery.of(context).size.height * 0.8,
           child: Column(
             children: [
               const SizedBox(height: 10),
@@ -128,202 +160,198 @@ class _CloudStorageSheetState extends State<CloudStorageSheet>
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
                 child: Row(
                   children: [
-                    Icon(Icons.cloud_queue, color: accent, size: 22),
+                    Icon(Icons.cloud_queue, color: accent, size: 24),
                     const SizedBox(width: 10),
-                    const Text(
-                      'Cloud Storage (Google Drive)',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
+                    const Expanded(
+                      child: Text(
+                        'Google Drive Cloud Storage',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
+                    if (_isConnected)
+                      IconButton(
+                        icon: const Icon(Icons.logout, color: Colors.white54, size: 20),
+                        tooltip: 'Disconnect Account',
+                        onPressed: _disconnect,
+                      ),
                   ],
                 ),
               ),
-              TabBar(
-                controller: _tabCtrl,
-                indicatorColor: accent,
-                labelColor: accent,
-                unselectedLabelColor: Colors.white54,
-                tabs: const [
-                  Tab(text: 'Paste Drive Link'),
-                  Tab(text: 'Drive API Browser'),
-                ],
-              ),
+              const Divider(height: 1, color: Colors.white12),
               Expanded(
-                child: TabBarView(
-                  controller: _tabCtrl,
-                  children: [
-                    // Tab 1: Paste Drive Link
-                    ListView(
-                      padding: const EdgeInsets.all(20),
-                      children: [
-                        const Text(
-                          'Paste any Google Drive shared video link to stream instantly without downloading:',
-                          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-                        ),
-                        const SizedBox(height: 14),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: _detectedId != null
-                                  ? accent
-                                  : Colors.white12,
-                            ),
-                          ),
-                          child: Row(
+                child: !_isConnected
+                    ? Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Expanded(
+                              Container(
+                                width: 72,
+                                height: 72,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white.withValues(alpha: 0.05),
+                                ),
+                                child: Icon(Icons.cloud_sync, size: 38, color: accent),
+                              ),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Fetch & Stream Drive Videos',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Sign in to automatically fetch all video files from your Google Drive and stream them directly in Max Player.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.4),
+                              ),
+                              const SizedBox(height: 24),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.06),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.white12),
+                                ),
                                 child: TextField(
-                                  controller: _linkCtrl,
-                                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                                  controller: _tokenCtrl,
+                                  style: const TextStyle(color: Colors.white, fontSize: 13.5),
                                   decoration: const InputDecoration(
-                                    hintText: 'https://drive.google.com/file/d/...',
-                                    hintStyle: TextStyle(color: Colors.white38),
+                                    hintText: 'Enter Google Drive Access Key / Token…',
+                                    hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
                                     border: InputBorder.none,
                                   ),
                                 ),
                               ),
-                              IconButton(
-                                icon: const Icon(Icons.paste, color: Colors.white70, size: 20),
-                                tooltip: 'Paste from clipboard',
-                                onPressed: _pasteFromClipboard,
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: accent,
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  icon: const Icon(Icons.login),
+                                  label: const Text(
+                                    'Connect & Fetch Videos',
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+                                  ),
+                                  onPressed: () => _connectWithToken(_tokenCtrl.text),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Client ID: ${GDriveService.clientId}',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.white24, fontSize: 10.5),
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        if (_detectedId != null)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                      )
+                    : Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
                             child: Row(
                               children: [
-                                Icon(Icons.check_circle_outline, color: accent, size: 16),
-                                const SizedBox(width: 8),
                                 Expanded(
-                                  child: Text(
-                                    'Valid File ID: $_detectedId',
-                                    style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.06),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: TextField(
+                                      controller: _searchCtrl,
+                                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                                      onChanged: (v) => setState(() => _searchFilter = v),
+                                      decoration: const InputDecoration(
+                                        hintText: 'Search Drive videos…',
+                                        hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
+                                        icon: Icon(Icons.search, size: 18, color: Colors.white38),
+                                        border: InputBorder.none,
+                                      ),
+                                    ),
                                   ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.refresh, color: Colors.white70),
+                                  onPressed: () {
+                                    final s = NativeBridge.loadSettings();
+                                    s.then((map) {
+                                      final t = map[_kDriveTokenKey];
+                                      if (t != null) _fetchAllVideos(t);
+                                    });
+                                  },
                                 ),
                               ],
                             ),
                           ),
-                        const SizedBox(height: 20),
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: accent,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: _detectedId != null ? _playLink : null,
-                          icon: const Icon(Icons.play_arrow),
-                          label: const Text('Stream Video Now', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                        const SizedBox(height: 20),
-                        const Text(
-                          'Client ID: ${GDriveService.clientId}',
-                          style: TextStyle(color: Colors.white24, fontSize: 11),
-                        ),
-                      ],
-                    ),
-
-                    // Tab 2: Drive API Browser
-                    Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.06),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: TextField(
-                                    controller: _apiKeyCtrl,
-                                    style: const TextStyle(color: Colors.white, fontSize: 13),
-                                    decoration: const InputDecoration(
-                                      hintText: 'Enter Google Drive API Key…',
-                                      hintStyle: TextStyle(color: Colors.white38),
-                                      border: InputBorder.none,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              FilledButton(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: accent,
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                                onPressed: () => _loadDriveFiles(_apiKeyCtrl.text),
-                                child: const Text('Connect'),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: _loading
-                              ? const Center(child: CircularProgressIndicator())
-                              : _driveItems.isEmpty
-                                  ? const Center(
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.video_library_outlined, size: 40, color: Colors.white24),
-                                          SizedBox(height: 8),
-                                          Text(
-                                            'Connect with API key to list cloud videos',
-                                            style: TextStyle(color: Colors.white54, fontSize: 13),
-                                          ),
-                                        ],
+                          Expanded(
+                            child: _loading
+                                ? const Center(child: CircularProgressIndicator())
+                                : visibleVideos.isEmpty
+                                    ? const Center(
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.video_library_outlined, size: 48, color: Colors.white24),
+                                            SizedBox(height: 10),
+                                            Text(
+                                              'No videos found on your Google Drive',
+                                              style: TextStyle(color: Colors.white54, fontSize: 14),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : ListView.separated(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                        itemCount: visibleVideos.length,
+                                        separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
+                                        itemBuilder: (context, i) {
+                                          final vid = visibleVideos[i];
+                                          return ListTile(
+                                            contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                                            leading: CircleAvatar(
+                                              backgroundColor: accent.withValues(alpha: 0.18),
+                                              child: Icon(Icons.movie, color: accent, size: 20),
+                                            ),
+                                            title: Text(
+                                              vid.name,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w500),
+                                            ),
+                                            subtitle: Text(
+                                              formatFileSize(vid.sizeBytes),
+                                              style: const TextStyle(color: Colors.white38, fontSize: 11.5),
+                                            ),
+                                            trailing: IconButton(
+                                              icon: Icon(Icons.play_circle_fill, color: accent, size: 28),
+                                              onPressed: () => _playVideo(vid),
+                                            ),
+                                            onTap: () => _playVideo(vid),
+                                          );
+                                        },
                                       ),
-                                    )
-                                  : ListView.separated(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                      itemCount: _driveItems.length,
-                                      separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
-                                      itemBuilder: (context, i) {
-                                        final item = _driveItems[i];
-                                        return ListTile(
-                                          leading: Icon(
-                                            item.isFolder ? Icons.folder : Icons.video_file,
-                                            color: accent,
-                                          ),
-                                          title: Text(
-                                            item.name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                                          ),
-                                          subtitle: Text(
-                                            formatFileSize(item.sizeBytes),
-                                            style: const TextStyle(color: Colors.white38, fontSize: 11),
-                                          ),
-                                          trailing: const Icon(Icons.play_circle_outline, color: Colors.white70),
-                                          onTap: () => _playItem(item),
-                                        );
-                                      },
-                                    ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                          ),
+                        ],
+                      ),
               ),
             ],
           ),

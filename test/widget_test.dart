@@ -2772,10 +2772,10 @@ void main() {
   // v85: Watch Anime, 2x2 slideable grids with dots, Ask-AI tune button
   // -------------------------------------------------------------------------
   group('v85 watch anime + slideable 2x2 grids + default subs ask-ai', () {
-    test('LibraryScreen has 2 slideable 2x2 grids with dots indicator and Anime tile', () {
+    test('LibraryScreen has 2 slideable 2x2 grids with dots indicator and File Manager tile', () {
       final lib = File('lib/screens/library_screen.dart').readAsStringSync();
       expect(lib, contains('Private Space'));
-      expect(lib, contains('Watch Anime'));
+      expect(lib, contains('File Manager'));
       expect(lib, contains('Network Storage'));
       expect(lib, contains('Cloud Storage'));
       expect(lib, contains('Open Stream'));
@@ -2812,6 +2812,43 @@ void main() {
       expect(ans, isNotNull);
       expect(ans, contains('Mission Clip'));
       expect(ans, contains('coordinates'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v86: Advance File Manager, Cloud Storage Auto-Fetch, AI Persistence, Menu Redesign
+  // -------------------------------------------------------------------------
+  group('v86 file manager + cloud storage fetch + AI persistence', () {
+    test('FileManagerScreen exists and supports directory navigation', () {
+      final fileMgr = File('lib/screens/file_manager_screen.dart').readAsStringSync();
+      expect(fileMgr, contains('FileManagerScreen'));
+      expect(fileMgr, contains('Move to Private Space'));
+      expect(fileMgr, contains('_loadDirectory'));
+    });
+
+    test('LibraryScreen renders File Manager tile on page 1 of quick tiles', () {
+      final lib = File('lib/screens/library_screen.dart').readAsStringSync();
+      expect(lib, contains('File Manager'));
+      expect(lib, contains('Private Space'));
+      expect(lib, contains('Cloud Storage'));
+    });
+
+    test('CloudStorageSheet supports Google Drive connect and auto-fetching', () {
+      final cloud = File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
+      expect(cloud, contains('CloudStorageSheet'));
+      expect(cloud, contains('Google Drive Cloud Storage'));
+      expect(cloud, contains('_fetchAllVideos'));
+    });
+
+    test('AI sheets persist queries across sessions', () {
+      final suggest = File('lib/widgets/ai_suggest_sheet.dart').readAsStringSync();
+      expect(suggest, contains('_kSavedPicksKey'));
+
+      final askMovie = File('lib/widgets/ask_ai_sheet.dart').readAsStringSync();
+      expect(askMovie, contains('movie_ai_'));
+
+      final askVideo = File('lib/widgets/video_ask_sheet.dart').readAsStringSync();
+      expect(askVideo, contains('video_ai_history_'));
     });
   });
 }

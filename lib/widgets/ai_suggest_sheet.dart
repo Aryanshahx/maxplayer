@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../services/ai_suggest.dart';
+import '../services/native_bridge.dart';
 import '../services/tmdb_client.dart';
 import '../state/theme_state.dart';
 import 'tmdb_image.dart';
@@ -53,6 +55,41 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
   List<TmdbMovie> _picks = const [];
   int _token = 0;
 
+  static const String _kSavedPromptKey = 'ai_suggest.saved_prompt';
+  static const String _kSavedPicksKey = 'ai_suggest.saved_picks_json';
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreSaved();
+  }
+
+  Future<void> _restoreSaved() async {
+    final s = await NativeBridge.loadSettings();
+    final p = s[_kSavedPromptKey];
+    final jsonStr = s[_kSavedPicksKey];
+    if (p != null && p.isNotEmpty && mounted) {
+      _tasteCtrl.text = p;
+    }
+    if (jsonStr != null && jsonStr.isNotEmpty && mounted) {
+      try {
+        final list = jsonDecode(jsonStr) as List;
+        setState(() {
+          _picks = list
+              .map((e) => TmdbMovie(
+                    id: e['id'] as int,
+                    title: '${e['title']}',
+                    rating: (e['rating'] as num).toDouble(),
+                    year: e['year'] as int?,
+                    posterPath: e['posterPath']?.toString(),
+                    kind: '${e['kind'] ?? 'movie'}',
+                  ))
+              .toList();
+        });
+      } catch (_) {}
+    }
+  }
+
   /// One-tap moods - nobody likes typing on a TV remote-style keyboard.
   static const List<String> _moods = [
     'Funny action like Dhoom',
@@ -90,6 +127,18 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
             'AI is not reachable right now - check the internet and try again.';
       } else {
         _picks = picks;
+        NativeBridge.saveSetting(_kSavedPromptKey, q);
+        final picksJson = jsonEncode(_picks
+            .map((m) => {
+                  'id': m.id,
+                  'title': m.title,
+                  'rating': m.rating,
+                  'year': m.year,
+                  'posterPath': m.posterPath,
+                  'kind': m.kind,
+                })
+            .toList());
+        NativeBridge.saveSetting(_kSavedPicksKey, picksJson);
       }
     });
   }

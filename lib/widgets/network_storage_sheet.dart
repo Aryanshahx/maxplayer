@@ -53,7 +53,7 @@ class NetworkLocation {
       );
 }
 
-/// v84: Dedicated, phone-optimized Network Storage sheet (SMB, FTP, WebDAV).
+/// v86: Phone & Tablet responsive Network Storage sheet (SMB, FTP, WebDAV).
 class NetworkStorageSheet extends StatefulWidget {
   final Future<void> Function(String url, String title) onPlay;
 
@@ -163,12 +163,13 @@ class _NetworkStorageSheetState extends State<NetworkStorageSheet> {
   Widget build(BuildContext context) {
     final accent = themeState.accent;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final screenH = MediaQuery.of(context).size.height;
 
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.only(bottom: bottomInset),
         child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.75,
+          height: screenH * 0.8,
           child: Column(
             children: [
               const SizedBox(height: 10),
@@ -186,15 +187,18 @@ class _NetworkStorageSheetState extends State<NetworkStorageSheet> {
                   children: [
                     Icon(Icons.dns, color: accent, size: 22),
                     const SizedBox(width: 10),
-                    const Text(
-                      'Network Storage (NAS / PC Share)',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
+                    const Expanded(
+                      child: Text(
+                        'Network Storage (NAS / Share)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                    const Spacer(),
                     if (!_showAddForm)
                       IconButton(
                         icon: Icon(Icons.add_circle_outline, color: accent),
@@ -207,94 +211,112 @@ class _NetworkStorageSheetState extends State<NetworkStorageSheet> {
               const Divider(height: 1, color: Colors.white12),
               Expanded(
                 child: _showAddForm
-                    ? ListView(
-                        padding: const EdgeInsets.all(20),
-                        children: [
-                          Row(
-                            children: [
-                              _protoChip('smb', 'SMB (Windows/Samba)', accent),
-                              const SizedBox(width: 8),
-                              _protoChip('ftp', 'FTP / FTPS', accent),
-                              const SizedBox(width: 8),
-                              _protoChip('http', 'WebDAV', accent),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          _inputField(_nameCtrl, 'Friendly Name (e.g. Living Room NAS)'),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                flex: 3,
-                                child: _inputField(_hostCtrl, 'Host / IP (e.g. 192.168.1.100)'),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                flex: 1,
-                                child: _inputField(
-                                  _portCtrl,
-                                  _protocol == 'smb' ? '445' : (_protocol == 'ftp' ? '21' : '80'),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          _inputField(_pathCtrl, 'Share / Folder path (e.g. /Movies/movie.mp4)'),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(child: _inputField(_userCtrl, 'Username (optional)')),
-                              const SizedBox(width: 10),
-                              Expanded(child: _inputField(_passCtrl, 'Password', obscure: true)),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.white70,
-                                    side: const BorderSide(color: Colors.white24),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
-                                  onPressed: () => setState(() => _showAddForm = false),
-                                  child: const Text('Cancel'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: FilledButton(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: accent,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
-                                  onPressed: _saveLocation,
-                                  child: const Text('Save & Connect', style: TextStyle(fontWeight: FontWeight.bold)),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      )
-                    : _savedLocations.isEmpty
-                        ? const Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
+                    ? SingleChildScrollView(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
                               children: [
-                                Icon(Icons.dns_outlined, size: 48, color: Colors.white24),
-                                SizedBox(height: 12),
-                                Text(
-                                  'No saved network locations yet',
-                                  style: TextStyle(color: Colors.white54, fontSize: 14),
+                                _protoChip('smb', 'SMB (Windows/Samba)', accent),
+                                _protoChip('ftp', 'FTP / FTPS', accent),
+                                _protoChip('http', 'WebDAV', accent),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            _inputField(_nameCtrl, 'Connection Name (e.g. Living Room NAS)'),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: _inputField(_hostCtrl, 'Host / IP (e.g. 192.168.1.100)'),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  flex: 1,
+                                  child: _inputField(
+                                    _portCtrl,
+                                    _protocol == 'smb' ? '445' : (_protocol == 'ftp' ? '21' : '80'),
+                                  ),
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 10),
+                            _inputField(_pathCtrl, 'Share / Folder path (e.g. /Movies/video.mp4)'),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(child: _inputField(_userCtrl, 'Username (optional)')),
+                                const SizedBox(width: 8),
+                                Expanded(child: _inputField(_passCtrl, 'Password', obscure: true)),
+                              ],
+                            ),
+                            const SizedBox(height: 18),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.white70,
+                                      side: const BorderSide(color: Colors.white24),
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    onPressed: () => setState(() => _showAddForm = false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: FilledButton(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: accent,
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    onPressed: _saveLocation,
+                                    child: const Text('Save & Connect', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      )
+                    : _savedLocations.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.dns_outlined, size: 48, color: Colors.white24),
+                                  const SizedBox(height: 12),
+                                  const Text(
+                                    'No saved network storage connections',
+                                    style: TextStyle(color: Colors.white54, fontSize: 14),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: accent,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    onPressed: () => setState(() => _showAddForm = true),
+                                    icon: const Icon(Icons.add),
+                                    label: const Text('Add Network Storage'),
+                                  ),
+                                ],
+                              ),
+                            ),
                           )
                         : ListView.separated(
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(14),
                             itemCount: _savedLocations.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
                             itemBuilder: (context, i) {
                               final loc = _savedLocations[i];
                               return Container(
@@ -304,6 +326,7 @@ class _NetworkStorageSheetState extends State<NetworkStorageSheet> {
                                   border: Border.all(color: Colors.white12),
                                 ),
                                 child: ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
                                   leading: CircleAvatar(
                                     backgroundColor: accent.withValues(alpha: 0.2),
                                     child: Icon(
@@ -311,18 +334,20 @@ class _NetworkStorageSheetState extends State<NetworkStorageSheet> {
                                           ? Icons.folder_shared
                                           : (loc.protocol == 'ftp' ? Icons.cloud_download : Icons.storage),
                                       color: accent,
-                                      size: 20,
+                                      size: 18,
                                     ),
                                   ),
                                   title: Text(
                                     loc.name,
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
                                   ),
                                   subtitle: Text(
                                     '${loc.protocol.toUpperCase()}  ·  ${loc.host}${loc.path}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                                    style: const TextStyle(color: Colors.white38, fontSize: 11.5),
                                   ),
                                   trailing: IconButton(
                                     icon: const Icon(Icons.delete_outline, color: Colors.white38, size: 20),
@@ -347,14 +372,18 @@ class _NetworkStorageSheetState extends State<NetworkStorageSheet> {
       label: Text(label),
       selected: selected,
       selectedColor: accent,
-      labelStyle: TextStyle(color: selected ? Colors.white : Colors.white70, fontSize: 12),
+      labelStyle: TextStyle(
+        color: selected ? Colors.white : Colors.white70,
+        fontSize: 12,
+        fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+      ),
       onSelected: (_) => setState(() => _protocol = proto),
     );
   }
 
   Widget _inputField(TextEditingController ctrl, String hint, {bool obscure = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(10),
@@ -365,8 +394,9 @@ class _NetworkStorageSheetState extends State<NetworkStorageSheet> {
         style: const TextStyle(color: Colors.white, fontSize: 13.5),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+          hintStyle: const TextStyle(color: Colors.white38, fontSize: 12.5),
           border: InputBorder.none,
+          isDense: true,
         ),
       ),
     );

@@ -78,8 +78,22 @@ class AiSuggestor {
       if (out.isNotEmpty) return out;
     }
 
-    // Smart instant fallback: search TMDB with taste keywords
+    // Smart instant fallback: search TMDB with taste keywords & genre intent
     try {
+      final qLower = q.toLowerCase();
+      DiscoverFilter? matchFilter;
+      for (final f in kDiscoverFilters) {
+        if (f.key != 'trending' &&
+            f.key != 'upcoming' &&
+            qLower.contains(f.label.toLowerCase())) {
+          matchFilter = f;
+          break;
+        }
+      }
+      if (matchFilter != null) {
+        final res = await tmdb.browse(matchFilter);
+        if (res.items.isNotEmpty) return res.items.take(10).toList();
+      }
       final searchRes = await tmdb.searchMulti(q);
       if (searchRes.items.isNotEmpty) {
         return searchRes.items.take(10).toList();

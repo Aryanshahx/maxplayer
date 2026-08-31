@@ -68,6 +68,18 @@ class _AskAiSheetState extends State<AskAiSheet> {
   Future<void> _bootCache() async {
     final path = await NativeBridge.cacheDirPath();
     if (path != null) _client.cacheDir = Directory(path);
+
+    final s = await NativeBridge.loadSettings();
+    final lastQ = s['movie_ai_${widget.movie.id}_last_q'];
+    final lastA = s['movie_ai_${widget.movie.id}_last_a'];
+    final lastM = s['movie_ai_${widget.movie.id}_last_m'];
+    if (lastA != null && lastA.isNotEmpty && mounted) {
+      setState(() {
+        if (lastQ != null) _questionCtrl.text = lastQ;
+        _answer = lastA;
+        _answerModel = lastM ?? 'saved';
+      });
+    }
   }
 
   @override
@@ -98,6 +110,9 @@ class _AskAiSheetState extends State<AskAiSheet> {
       } else {
         _answer = result.text;
         _answerModel = result.model;
+        NativeBridge.saveSetting('movie_ai_${widget.movie.id}_last_q', q);
+        NativeBridge.saveSetting('movie_ai_${widget.movie.id}_last_a', result.text);
+        NativeBridge.saveSetting('movie_ai_${widget.movie.id}_last_m', result.model);
       }
     });
   }

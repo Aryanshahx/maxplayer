@@ -8,6 +8,7 @@ import '../state/theme_state.dart';
 import '../state/video_library_state.dart';
 import '../utils/crash_log.dart';
 import '../utils/formatters.dart';
+import '../utils/privacy_policy.dart';
 import '../utils/storage_permission.dart';
 import '../widgets/about_sheet.dart';
 import '../widgets/display_settings_sheet.dart';
@@ -22,7 +23,7 @@ import '../widgets/user_manual_sheet.dart';
 import '../widgets/cloud_storage_sheet.dart';
 import '../widgets/network_storage_sheet.dart';
 import '../widgets/open_stream_sheet.dart';
-import 'anime_screen.dart';
+import 'file_manager_screen.dart';
 import 'private_screen.dart';
 import '../widgets/video_list_item.dart';
 import '../widgets/video_tile.dart';
@@ -362,16 +363,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   void _onMenuChoice(String choice, VideoLibraryState lib) {
     switch (choice) {
-      case 'stream':
-        _openStreamDialog();
+      case 'display':
+        DisplaySettingsSheet.show(context, lib);
+        break;
+      case 'rescan':
+        _rescan(lib);
         break;
       case 'stats':
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => StatsScreen(player: widget.player)),
         );
-        break;
-      case 'rescan':
-        _rescan(lib);
         break;
       case 'manual':
         UserManualSheet.show(context);
@@ -379,8 +380,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
       case 'about':
         AboutSheet.show(context);
         break;
-      case 'display':
-        DisplaySettingsSheet.show(context, lib);
+      case 'privacy':
+        showPrivacyPolicyDialog(context);
         break;
     }
   }
@@ -417,10 +418,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   void _openCloudStorage() {
     CloudStorageSheet.show(context, onPlay: _playNetworkOrStream);
-  }
-
-  Future<void> _openStreamDialog() async {
-    _openStreamSheet();
   }
 
   @override
@@ -483,26 +480,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
           PopupMenuButton<String>(
             tooltip: 'More',
             icon: Icon(Icons.more_vert, color: themeState.accent),
-            color: const Color(0xFF26262f),
+            color: const Color(0xFF1a1a24),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             onSelected: (choice) => _onMenuChoice(choice, lib),
-            // v26: menu icons follow the picked theme colour.
             itemBuilder: (context) => [
               PopupMenuItem(
-                value: 'stream',
+                value: 'display',
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.link, color: themeState.accent),
-                  title: const Text('Open stream URL'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'stats',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.bar_chart, color: themeState.accent),
-                  title: const Text('Statistics'),
+                  leading: Icon(Icons.tune, color: themeState.accent),
+                  title: const Text('Display settings', style: TextStyle(color: Colors.white)),
                 ),
               ),
               PopupMenuItem(
@@ -510,29 +498,27 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.refresh, color: themeState.accent),
-                  title: const Text('Rescan library'),
+                  leading: Icon(Icons.sync, color: themeState.accent),
+                  title: const Text('Rescan library', style: TextStyle(color: Colors.white)),
                 ),
               ),
               PopupMenuItem(
-                value: 'display',
+                value: 'stats',
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.tune, color: themeState.accent),
-                  title: const Text('Display settings'),
+                  leading: Icon(Icons.bar_chart_rounded, color: themeState.accent),
+                  title: const Text('Watch statistics', style: TextStyle(color: Colors.white)),
                 ),
               ),
+              const PopupMenuDivider(height: 1),
               PopupMenuItem(
                 value: 'manual',
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    Icons.menu_book_outlined,
-                    color: themeState.accent,
-                  ),
-                  title: const Text('User manual'),
+                  leading: Icon(Icons.menu_book_outlined, color: themeState.accent),
+                  title: const Text('User manual', style: TextStyle(color: Colors.white)),
                 ),
               ),
               PopupMenuItem(
@@ -541,9 +527,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.info_outline, color: themeState.accent),
-                  title: const Text('About'),
+                  title: const Text('About Max Player', style: TextStyle(color: Colors.white)),
                 ),
               ),
+              PopupMenuItem(
+                value: 'privacy',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.privacy_tip_outlined, color: themeState.accent),
+                  title: const Text('Privacy policy', style: TextStyle(color: Colors.white)),
+                ),
+              ),
+              const PopupMenuDivider(height: 1),
               // Footer: app version (not selectable).
               const PopupMenuItem(
                 value: 'version',
@@ -552,7 +548,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 padding: EdgeInsets.zero,
                 child: Center(
                   child: Text(
-                    'Version $kAppVersion',
+                    'Max Player v$kAppVersion',
                     style: TextStyle(color: Colors.white38, fontSize: 11),
                   ),
                 ),
@@ -686,7 +682,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
             ),
-          // v28/v85: Two slideable 2x2 grids with 2 dots indicator.
+          // v28/v86: Two slideable 2x2 grids with 2 dots indicator.
           ClipRect(
             child: AnimatedAlign(
               duration: const Duration(milliseconds: 220),
@@ -698,10 +694,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 onPrivate: () => _openPrivate(lib),
                 onPlaylist: () => _showPlaylists(lib),
                 onFolders: () => _showFoldersSheet(lib),
-                onAnime: () => Navigator.of(context).push(
+                onFileManager: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) =>
-                        AnimeScreen(library: lib, player: widget.player),
+                        FileManagerScreen(library: lib, player: widget.player),
                   ),
                 ),
                 onNetworkStorage: _openNetworkStorage,
@@ -782,13 +778,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
           if (lib.viewMode == ViewMode.grid)
             SliverPadding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 12),
               sliver: SliverGrid(
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 220,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.82,
+                  maxCrossAxisExtent: 200,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 0.85,
                 ),
                 delegate: SliverChildBuilderDelegate((context, i) {
                   final track = group.videos[i];
@@ -830,15 +826,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 }
 
-/// v28/v85: Two slideable 2x2 grids with 2 dots page indicator.
-/// Page 1: Private Space, Playlists, Folders, Watch Anime
+/// v28/v86: Two slideable 2x2 grids with 2 dots page indicator.
+/// Page 1: Private Space, Playlists, Folders, File Manager
 /// Page 2: Network Storage, Cloud Storage, Open Stream, Cleaner
 class _QuickTiles extends StatefulWidget {
   final Color accent;
   final VoidCallback onPrivate;
   final VoidCallback onPlaylist;
   final VoidCallback onFolders;
-  final VoidCallback onAnime;
+  final VoidCallback onFileManager;
   final VoidCallback onNetworkStorage;
   final VoidCallback onCloudStorage;
   final VoidCallback onOpenStream;
@@ -849,7 +845,7 @@ class _QuickTiles extends StatefulWidget {
     required this.onPrivate,
     required this.onPlaylist,
     required this.onFolders,
-    required this.onAnime,
+    required this.onFileManager,
     required this.onNetworkStorage,
     required this.onCloudStorage,
     required this.onOpenStream,
@@ -885,7 +881,7 @@ class _QuickTilesState extends State<_QuickTiles> {
               controller: _pageCtrl,
               onPageChanged: (i) => setState(() => _currentPage = i),
               children: [
-                // Page 1 (2x2 Grid): Private Space, Playlists, Folders, Watch Anime
+                // Page 1 (2x2 Grid): Private Space, Playlists, Folders, File Manager
                 Column(
                   children: [
                     Row(
@@ -923,10 +919,10 @@ class _QuickTilesState extends State<_QuickTiles> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: _Tile(
-                            Icons.smart_display_outlined,
-                            'Watch Anime',
+                            Icons.folder_shared_outlined,
+                            'File Manager',
                             accent,
-                            widget.onAnime,
+                            widget.onFileManager,
                           ),
                         ),
                       ],

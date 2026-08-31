@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../services/movie_ai.dart';
+import '../services/native_bridge.dart';
 import '../state/theme_state.dart';
 import '../utils/srt.dart';
 
@@ -74,6 +76,39 @@ class _VideoAskSheetState extends State<VideoAskSheet> {
   bool get _hasTranscript => VideoAiClient.hasUsableTranscript(widget.cues);
 
   @override
+  void initState() {
+    super.initState();
+    _restoreHistory();
+  }
+
+  Future<void> _restoreHistory() async {
+    final s = await NativeBridge.loadSettings();
+    final jsonStr = s['video_ai_history_${widget.title.hashCode}'];
+    if (jsonStr != null && jsonStr.isNotEmpty && mounted) {
+      try {
+        final list = jsonDecode(jsonStr) as List;
+        setState(() {
+          _messages.addAll(list.map((e) => _Msg._(
+                e['who'] == 'user' ? _Who.user : _Who.ai,
+                '${e['text']}',
+              )));
+        });
+      } catch (_) {}
+    }
+  }
+
+  void _persistHistory() {
+    final jsonStr = jsonEncode(_messages
+        .map((m) => {
+              'who': m.who == _Who.user ? 'user' : 'ai',
+              'text': m.text,
+            })
+        .toList());
+    NativeBridge.saveSetting(
+        'video_ai_history_${widget.title.hashCode}', jsonStr);
+  }
+
+  @override
   void dispose() {
     _questionCtrl.dispose();
     _scrollCtrl.dispose();
@@ -100,6 +135,7 @@ class _VideoAskSheetState extends State<VideoAskSheet> {
       _asking = false;
       _messages.add(_Msg.ai(answer ?? _failedMessage()));
     });
+    _persistHistory();
     _scrollToBottom();
   }
 
