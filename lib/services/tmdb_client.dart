@@ -872,6 +872,26 @@ class TmdbClient {
         : parseTmdbPage(body, kind: f.tv ? 'tv' : 'movie');
   }
 
+  /// v85: Fetches Anime series and movies (Japanese Animation & popular anime).
+  Future<TmdbPage> browseAnime({int page = 1, String category = 'all', bool force = false}) async {
+    if (kTmdbApiKey.isEmpty) return const TmdbPage();
+    final cacheName = 'tmdb_anime_${category}_p$page.json';
+    final isMovie = category == 'movies';
+    final uri = Uri.https(_host, isMovie ? '/3/discover/movie' : '/3/discover/tv', {
+      'api_key': kTmdbApiKey,
+      'language': 'en-US',
+      'page': '$page',
+      'sort_by': 'popularity.desc',
+      'with_genres': '16',
+      'with_original_language': 'ja',
+      'vote_count.gte': '5',
+      'include_adult': 'false',
+    });
+    final body = await _fetch(cacheName, uri,
+        ttl: force ? Duration.zero : const Duration(hours: 24));
+    return body == null ? const TmdbPage() : parseTmdbPage(body, kind: isMovie ? 'movie' : 'tv');
+  }
+
   /// v58: instant first paint on slow networks - whatever the disk cache
   /// already holds for page 1 (stale is fine); the live load then
   /// replaces it. Null = nothing cached yet.

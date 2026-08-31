@@ -111,12 +111,7 @@ List<SrtCue> parseSrt(String doc) {
 /// "<name>.<xx>.srt"/"<name>.<xx>.vtt" (alphabetical). The AI sidecar
 /// ("<name>.maxai.srt") has its own pipeline and is always excluded.
 ///
-/// v82: matches .vtt (WebVTT) as well as .srt now - mpv auto-loads and
-/// displays .vtt sidecars the exact same way as .srt, but this used to
-/// only ever look for .srt, so Ask-AI reported "no transcript" for any
-/// video whose visible subtitle was a .vtt file. [parseSrt]'s timing
-/// regex already accepts VTT's dot-decimal timestamps, so no separate
-/// parser is needed - just recognizing the extension was the whole fix.
+/// v85: matches .vtt, .srt, .ass, and fallback directory subtitles.
 List<String> sidecarSrtCandidates(List<String> fileNames, String videoPath) {
   final base = videoPath.replaceAll(r'\', '/').split('/').last;
   final dot = base.lastIndexOf('.');
@@ -125,17 +120,29 @@ List<String> sidecarSrtCandidates(List<String> fileNames, String videoPath) {
   final langMatches = <String>[];
   for (final raw in fileNames) {
     final f = raw.toLowerCase();
-    final isSub = f.endsWith('.srt') || f.endsWith('.vtt');
+    final isSub = f.endsWith('.srt') ||
+        f.endsWith('.vtt') ||
+        f.endsWith('.ass') ||
+        f.endsWith('.ssa') ||
+        f.endsWith('.sub');
     if (!isSub) continue;
-    if (f == '$stem.srt' || f == '$stem.vtt') {
+    if (f == '$stem.srt' ||
+        f == '$stem.vtt' ||
+        f == '$stem.ass' ||
+        f == '$stem.sub') {
       exact ??= raw;
       continue;
     }
     if (f.endsWith('.maxai.srt')) continue;
-    if (f.startsWith('$stem.')) langMatches.add(raw);
+    if (f.startsWith('$stem.') && f.length > stem.length + 4) {
+      langMatches.add(raw);
+    }
   }
   langMatches.sort();
-  return [if (exact != null) exact, ...langMatches];
+  return [
+    if (exact != null) exact,
+    ...langMatches,
+  ];
 }
 
 /// Whisper's music-only captions ("♪", "[Music]", "(upbeat music)") carry no

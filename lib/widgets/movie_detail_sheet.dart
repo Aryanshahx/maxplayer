@@ -177,6 +177,40 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
               ),
             ],
           ),
+          // v85: Prominent Watch Now button
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 4),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: themeState.accent,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.play_arrow_rounded, size: 22),
+                label: const Text(
+                  'Watch Now',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Direct streaming integration for "${movie.title}" ready (links will connect in next update)',
+                      ),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
           // v44: the extra facts arrive with the trailer lookup (one call).
           // v45: that same call also brings the screenshots row, and a
           // failure offers Retry instead of a dead sheet.

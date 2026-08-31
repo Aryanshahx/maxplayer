@@ -2767,4 +2767,51 @@ void main() {
       expect(lib, contains('Open Stream'));
     });
   });
+
+  // -------------------------------------------------------------------------
+  // v85: Watch Anime, 2x2 slideable grids with dots, Ask-AI tune button
+  // -------------------------------------------------------------------------
+  group('v85 watch anime + slideable 2x2 grids + default subs ask-ai', () {
+    test('LibraryScreen has 2 slideable 2x2 grids with dots indicator and Anime tile', () {
+      final lib = File('lib/screens/library_screen.dart').readAsStringSync();
+      expect(lib, contains('Private Space'));
+      expect(lib, contains('Watch Anime'));
+      expect(lib, contains('Network Storage'));
+      expect(lib, contains('Cloud Storage'));
+      expect(lib, contains('Open Stream'));
+      expect(lib, contains('Cleaner'));
+      expect(lib, contains('PageView'));
+      expect(lib, contains('_currentPage'));
+    });
+
+    test('AnimeScreen exists and declares browseAnime and Watch Now button', () {
+      final anime = File('lib/screens/anime_screen.dart').readAsStringSync();
+      expect(anime, contains('AnimeScreen'));
+      expect(anime, contains('Watch Now'));
+      expect(anime, contains('browseAnime'));
+    });
+
+    test('PlayerScreen top three-dots menu does not have ask AI, but tune tracks sheet keeps it', () {
+      final playerScreen = File('lib/screens/player_screen.dart').readAsStringSync();
+      expect(playerScreen.contains("_topMenuItem('ask'"), isFalse);
+
+      final controls = File('lib/widgets/player_controls_overlay.dart').readAsStringSync();
+      expect(controls, contains('Ask AI about this video'));
+      expect(controls, contains('onAskAi'));
+    });
+
+    test('VideoAiClient accepts transcript with few spoken lines and answers', () async {
+      final cues = [
+        const SrtCue(1000, 4000, 'We have to escape right now!'),
+        const SrtCue(5000, 8000, 'Get to the coordinates at sector four.'),
+      ];
+      expect(VideoAiClient.hasUsableTranscript(cues), isTrue);
+
+      final client = VideoAiClient();
+      final ans = await client.ask(title: 'Mission Clip', cues: cues, question: 'Where should we go?');
+      expect(ans, isNotNull);
+      expect(ans, contains('Mission Clip'));
+      expect(ans, contains('coordinates'));
+    });
+  });
 }

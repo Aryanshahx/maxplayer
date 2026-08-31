@@ -22,6 +22,7 @@ import '../widgets/user_manual_sheet.dart';
 import '../widgets/cloud_storage_sheet.dart';
 import '../widgets/network_storage_sheet.dart';
 import '../widgets/open_stream_sheet.dart';
+import 'anime_screen.dart';
 import 'private_screen.dart';
 import '../widgets/video_list_item.dart';
 import '../widgets/video_tile.dart';
@@ -685,7 +686,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
             ),
-          // v28/v84: scrollable quick-tiles carousel - slides away on scroll-down.
+          // v28/v85: Two slideable 2x2 grids with 2 dots indicator.
           ClipRect(
             child: AnimatedAlign(
               duration: const Duration(milliseconds: 220),
@@ -695,16 +696,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
               child: _QuickTiles(
                 accent: themeState.accent,
                 onPrivate: () => _openPrivate(lib),
+                onPlaylist: () => _showPlaylists(lib),
+                onFolders: () => _showFoldersSheet(lib),
+                onAnime: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        AnimeScreen(library: lib, player: widget.player),
+                  ),
+                ),
+                onNetworkStorage: _openNetworkStorage,
+                onCloudStorage: _openCloudStorage,
+                onOpenStream: _openStreamSheet,
                 onCleaner: () => CleanerSheet.show(
                   context,
                   player: widget.player,
                   library: lib,
                 ),
-                onPlaylist: () => _showPlaylists(lib),
-                onFolders: () => _showFoldersSheet(lib),
-                onNetworkStorage: _openNetworkStorage,
-                onCloudStorage: _openCloudStorage,
-                onOpenStream: _openStreamSheet,
               ),
             ),
           ),
@@ -823,54 +830,187 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 }
 
-/// v28: the 2x2 quick-tiles grid under the search bar. Tucks away while
-/// scrolling down through the videos (see [_LibraryScreenState]) and
-/// returns on scroll-up. Private folder lives here now (was a top-bar
-/// icon).
-/// v28/v84: scrollable quick-tiles carousel under the search bar. Tucks away while
-/// scrolling down through the videos and returns on scroll-up.
-class _QuickTiles extends StatelessWidget {
+/// v28/v85: Two slideable 2x2 grids with 2 dots page indicator.
+/// Page 1: Private Space, Playlists, Folders, Watch Anime
+/// Page 2: Network Storage, Cloud Storage, Open Stream, Cleaner
+class _QuickTiles extends StatefulWidget {
   final Color accent;
   final VoidCallback onPrivate;
-  final VoidCallback onCleaner;
   final VoidCallback onPlaylist;
   final VoidCallback onFolders;
+  final VoidCallback onAnime;
   final VoidCallback onNetworkStorage;
   final VoidCallback onCloudStorage;
   final VoidCallback onOpenStream;
+  final VoidCallback onCleaner;
 
   const _QuickTiles({
     required this.accent,
     required this.onPrivate,
-    required this.onCleaner,
     required this.onPlaylist,
     required this.onFolders,
+    required this.onAnime,
     required this.onNetworkStorage,
     required this.onCloudStorage,
     required this.onOpenStream,
+    required this.onCleaner,
   });
 
   @override
+  State<_QuickTiles> createState() => _QuickTilesState();
+}
+
+class _QuickTilesState extends State<_QuickTiles> {
+  final PageController _pageCtrl = PageController();
+  int _currentPage = 0;
+
+  @override
+  void dispose() {
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 48,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+    final accent = widget.accent;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _Tile(Icons.lock_outline, 'Private', accent, onPrivate),
-          const SizedBox(width: 8),
-          _Tile(Icons.cleaning_services_outlined, 'Cleaner', accent, onCleaner),
-          const SizedBox(width: 8),
-          _Tile(Icons.queue_music_outlined, 'Playlists', accent, onPlaylist),
-          const SizedBox(width: 8),
-          _Tile(Icons.folder_outlined, 'Folders', accent, onFolders),
-          const SizedBox(width: 8),
-          _Tile(Icons.dns_outlined, 'Network Storage', accent, onNetworkStorage),
-          const SizedBox(width: 8),
-          _Tile(Icons.cloud_queue_outlined, 'Cloud Storage', accent, onCloudStorage),
-          const SizedBox(width: 8),
-          _Tile(Icons.link, 'Open Stream', accent, onOpenStream),
+          SizedBox(
+            height: 106,
+            child: PageView(
+              controller: _pageCtrl,
+              onPageChanged: (i) => setState(() => _currentPage = i),
+              children: [
+                // Page 1 (2x2 Grid): Private Space, Playlists, Folders, Watch Anime
+                Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _Tile(
+                            Icons.lock_outline,
+                            'Private Space',
+                            accent,
+                            widget.onPrivate,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _Tile(
+                            Icons.queue_music_outlined,
+                            'Playlists',
+                            accent,
+                            widget.onPlaylist,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _Tile(
+                            Icons.folder_outlined,
+                            'Folders',
+                            accent,
+                            widget.onFolders,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _Tile(
+                            Icons.smart_display_outlined,
+                            'Watch Anime',
+                            accent,
+                            widget.onAnime,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+
+                // Page 2 (2x2 Grid): Network Storage, Cloud Storage, Open Stream, Cleaner
+                Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _Tile(
+                            Icons.dns_outlined,
+                            'Network Storage',
+                            accent,
+                            widget.onNetworkStorage,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _Tile(
+                            Icons.cloud_queue_outlined,
+                            'Cloud Storage',
+                            accent,
+                            widget.onCloudStorage,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _Tile(
+                            Icons.link,
+                            'Open Stream',
+                            accent,
+                            widget.onOpenStream,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _Tile(
+                            Icons.cleaning_services_outlined,
+                            'Cleaner',
+                            accent,
+                            widget.onCleaner,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          // Two Dots Indicator
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: _currentPage == 0 ? 14 : 5,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: _currentPage == 0 ? accent : Colors.white24,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(width: 6),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: _currentPage == 1 ? 14 : 5,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: _currentPage == 1 ? accent : Colors.white24,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -888,26 +1028,28 @@ class _Tile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.06),
+      color: Colors.white.withValues(alpha: 0.05),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         splashColor: accent.withValues(alpha: 0.25),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, color: accent, size: 18),
               const SizedBox(width: 8),
-              Text(
-                label,
-                maxLines: 1,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ],

@@ -1681,8 +1681,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         switch (v) {
           case 'info':
             VideoInfoSheet.show(context, widget.player);
-          case 'ask':
-            _openVideoAsk();
           case 'eq':
             EqualizerSheet.show(context, widget.player);
           case 'shot':
@@ -1693,13 +1691,12 @@ class _PlayerScreenState extends State<PlayerScreen>
             NativeBridge.enterPip(playing: widget.player.isPlaying);
           case 'sleep':
             _showSleepSheet();
-          // v25: karaoke toggle moved into the tracks sheet (the "tune"
-          // button next to play) - see _toggleKaraoke.
+          // v25: karaoke and ask AI live in the tracks sheet (the "tune"
+          // button next to play) - see _showTracksSheet.
         }
       },
       itemBuilder: (context) => [
         _topMenuItem('info', Icons.info_outline, 'Video info'),
-        _topMenuItem('ask', Icons.auto_awesome, 'Ask AI about this video'),
         _topMenuItem('eq', Icons.graphic_eq, 'Equalizer'),
         if (_settings.screenshotButton)
           _topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot'),

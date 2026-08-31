@@ -313,7 +313,7 @@ class VideoAiClient {
     ..idleTimeout = const Duration(seconds: 10);
 
   /// Returns whether [cues] contain enough speech to answer questions
-  /// (fewer than ~8 spoken lines is too little to be useful).
+  /// (at least 2 spoken lines).
   static bool hasUsableTranscript(List<SrtCue> cues) {
     var spoken = 0;
     for (final c in cues) {
@@ -321,45 +321,85 @@ class VideoAiClient {
       if (t.isEmpty) continue;
       if (isMusicOnlyText(t)) continue;
       spoken++;
-      if (spoken >= 8) return true;
+      if (spoken >= 2) return true;
     }
     return false;
   }
 
   /// Asks a question about the video whose [cues] are passed. Returns null
-  /// when the API key is missing, the transcript is too short, or every
-  /// model failed.
+  /// when the transcript is too short or empty. Falls back to smart keyword search.
   Future<String?> ask({
     required String title,
     required List<SrtCue> cues,
     required String question,
   }) async {
     final q = question.trim();
-    if (kOpenRouterApiKey.isEmpty || q.isEmpty) return null;
+    if (q.isEmpty) return null;
     if (!hasUsableTranscript(cues)) return null;
-    final system = videoTranscriptSystemPrompt(title, cues);
-    for (final model in kOpenRouterModels) {
-      try {
-        final req = await _http.postUrl(Uri.parse(_kOpenRouterUrl));
-        req.headers.set('content-type', 'application/json');
-        req.headers.set('authorization', 'Bearer $kOpenRouterApiKey');
-        req.headers.set('x-title', 'Max Player');
-        req.write(jsonEncode(openRouterChatBody(
-          model: model,
-          system: system,
-          question: q,
-          maxTokens: 400,
-        )));
-        final res = await req.close().timeout(const Duration(seconds: 25));
-        if (res.statusCode != 200) {
-          await res.drain<void>();
-          continue;
-        }
-        final text =
-            parseOpenRouterAnswer(await res.transform(utf8.decoder).join());
-        if (text != null) return text;
-      } catch (_) {}
+
+    if (kOpenRouterApiKey.isNotEmpty) {
+      final system = videoTranscriptSystemPrompt(title, cues);
+      for (final model in kOpenRouterModels) {
+        try {
+          final req = await _http.postUrl(Uri.parse(_kOpenRouterUrl));
+          req.headers.set('content-type', 'application/json');
+          req.headers.set('authorization', 'Bearer $kOpenRouterApiKey');
+          req.headers.set('x-title', 'Max Player');
+          req.write(jsonEncode(openRouterChatBody(
+            model: model,
+            system: system,
+            question: q,
+            maxTokens: 400,
+          )));
+          final res = await req.close().timeout(const Duration(seconds: 8));
+          if (res.statusCode != 200) {
+            await res.drain<void>();
+            continue;
+          }
+          final text =
+              parseOpenRouterAnswer(await res.transform(utf8.decoder).join());
+          if (text != null && text.isNotEmpty) return text;
+        } catch (_) {}
+      }
     }
-    return null;
+
+    // Smart Local Transcript Search Fallback
+    final qWords = q
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\s]'), '')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length > 2)
+        .toList();
+
+    final matches = <SrtCue>[];
+    for (final c in cues) {
+      final low = c.text.toLowerCase();
+      if (qWords.any((w) => low.contains(w))) {
+        matches.add(c);
+      }
+    }
+
+    if (matches.isNotEmpty) {
+      final takeMatches = matches.take(3).toList();
+      final out = StringBuffer()
+        ..writeln('Here is the relevant dialogue found in "$title":\n');
+      for (final m in takeMatches) {
+        out.writeln('• (${_stamp(m.startMs)}): "${m.text.trim()}"');
+      }
+      return out.toString();
+    }
+
+    // Summary of first spoken lines if no direct keyword match
+    final firstSpoken = cues.where((c) => !isMusicOnlyText(c.text)).take(3).toList();
+    if (firstSpoken.isNotEmpty) {
+      final out = StringBuffer()
+        ..writeln('From the subtitles of "$title":\n');
+      for (final m in firstSpoken) {
+        out.writeln('• (${_stamp(m.startMs)}): "${m.text.trim()}"');
+      }
+      return out.toString();
+    }
+
+    return 'Based on the video transcript, no direct mention was found for "$q".';
   }
 }
