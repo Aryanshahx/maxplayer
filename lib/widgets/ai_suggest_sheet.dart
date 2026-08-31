@@ -1,10 +1,6 @@
-import 'dart:async';
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 
 import '../services/ai_suggest.dart';
-import '../services/native_bridge.dart';
 import '../services/tmdb_client.dart';
 import '../state/theme_state.dart';
 import 'tmdb_image.dart';
@@ -57,83 +53,6 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
   List<TmdbMovie> _picks = const [];
   int _token = 0;
 
-  /// v77: in-memory cache of the last taste query + picks, so closing
-  /// this sheet (a dismissible bottom sheet - Flutter tears its whole
-  /// State down on close) and reopening it shows what the AI already
-  /// generated instead of a blank sheet. Overwritten the moment a new
-  /// query is submitted.
-  /// v81: now also backed by disk (SharedPreferences via NativeBridge),
-  /// so it survives restarting the app too.
-  static String? _lastQuery;
-  static List<TmdbMovie> _lastPicks = const [];
-  static bool _diskLoaded = false;
-  static const String _kPrefKey = 'ai.suggestorCache';
-
-  static TmdbMovie _movieFromJson(Map<String, dynamic> m) => TmdbMovie(
-        id: m['id'] as int,
-        title: m['title'] as String,
-        rating: (m['rating'] as num).toDouble(),
-        year: m['year'] as int?,
-        posterPath: m['posterPath'] as String?,
-        backdropPath: m['backdropPath'] as String?,
-        overview: m['overview'] as String? ?? '',
-        kind: m['kind'] as String? ?? 'movie',
-      );
-
-  static Map<String, dynamic> _movieToJson(TmdbMovie m) => {
-        'id': m.id,
-        'title': m.title,
-        'rating': m.rating,
-        'year': m.year,
-        'posterPath': m.posterPath,
-        'backdropPath': m.backdropPath,
-        'overview': m.overview,
-        'kind': m.kind,
-      };
-
-  static Future<void> _loadFromDisk() async {
-    if (_diskLoaded) return;
-    _diskLoaded = true;
-    try {
-      final raw = (await NativeBridge.loadSettings())[_kPrefKey];
-      if (raw == null || raw.isEmpty) return;
-      final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      _lastQuery = decoded['query'] as String?;
-      _lastPicks = [
-        for (final m in (decoded['picks'] as List))
-          _movieFromJson(m as Map<String, dynamic>),
-      ];
-    } catch (_) {
-      // Corrupt/old cache - ignore, just start fresh.
-    }
-  }
-
-  static void _persistToDisk() {
-    final encoded = jsonEncode({
-      'query': _lastQuery,
-      'picks': [for (final m in _lastPicks) _movieToJson(m)],
-    });
-    unawaited(NativeBridge.saveSetting(_kPrefKey, encoded));
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    if (_lastQuery != null) {
-      _tasteCtrl.text = _lastQuery!;
-      _picks = _lastPicks;
-    }
-    _loadFromDisk().then((_) {
-      if (!mounted || _picks.isNotEmpty) return;
-      if (_lastQuery != null) {
-        setState(() {
-          _tasteCtrl.text = _lastQuery!;
-          _picks = _lastPicks;
-        });
-      }
-    });
-  }
-
   /// One-tap moods - nobody likes typing on a TV remote-style keyboard.
   static const List<String> _moods = [
     'Funny action like Dhoom',
@@ -171,9 +90,6 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
             'AI is not reachable right now - check the internet and try again.';
       } else {
         _picks = picks;
-        _lastQuery = q;
-        _lastPicks = picks;
-        _persistToDisk();
       }
     });
   }

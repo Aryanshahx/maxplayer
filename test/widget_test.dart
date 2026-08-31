@@ -43,6 +43,8 @@ import 'package:maxplayer/widgets/track_selection_sheet.dart';
 import 'package:maxplayer/widgets/gesture_illustrations.dart';
 import 'package:maxplayer/widgets/user_manual_sheet.dart';
 import 'package:maxplayer/widgets/voice_search_sheet.dart';
+import 'package:maxplayer/services/gdrive_service.dart';
+import 'package:maxplayer/widgets/network_storage_sheet.dart';
 
 // Pure unit tests - no platform channels involved. (NativeBridge calls in
 // VideoLibraryState are guarded and return defaults when no channel exists,
@@ -2699,6 +2701,70 @@ void main() {
       final service = File('android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MediaPlaybackService.kt').readAsStringSync();
       expect(service, contains('onSeekTo'));
       expect(service, contains('updateSessionPlaybackState'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // v84: Google Drive Cloud Storage, Network Storage & Open Stream phone sheets
+  // -------------------------------------------------------------------------
+  group('v84 cloud storage + network sheets + adaptive icon', () {
+    test('GDriveService parses all Google Drive sharing URLs', () {
+      expect(
+        GDriveService.parseDriveFileId(
+          'https://drive.google.com/file/d/1aB2c3D4e5F6g7H8i9J0kLmNoPqRsTuVw/view?usp=sharing',
+        ),
+        '1aB2c3D4e5F6g7H8i9J0kLmNoPqRsTuVw',
+      );
+      expect(
+        GDriveService.parseDriveFileId(
+          'https://drive.google.com/open?id=1aB2c3D4e5F6g7H8i9J0kLmNoPqRsTuVw',
+        ),
+        '1aB2c3D4e5F6g7H8i9J0kLmNoPqRsTuVw',
+      );
+      expect(
+        GDriveService.parseDriveFileId(
+          'https://drive.google.com/uc?id=1aB2c3D4e5F6g7H8i9J0kLmNoPqRsTuVw&export=download',
+        ),
+        '1aB2c3D4e5F6g7H8i9J0kLmNoPqRsTuVw',
+      );
+    });
+
+    test('GDriveService builds streaming URLs with and without API key', () {
+      final freeUrl = GDriveService.getDirectStreamUrl('testFileId123');
+      expect(freeUrl, contains('testFileId123'));
+      expect(freeUrl, contains('export=download'));
+
+      final apiKeyUrl = GDriveService.getDirectStreamUrl('testFileId123', apiKey: 'MY_KEY');
+      expect(apiKeyUrl, contains('alt=media'));
+      expect(apiKeyUrl, contains('key=MY_KEY'));
+    });
+
+    test('NetworkLocation builds well-formed stream URLs', () {
+      const smb = NetworkLocation(
+        name: 'NAS',
+        protocol: 'smb',
+        host: '192.168.1.50',
+        path: '/Videos/movie.mkv',
+        username: 'admin',
+        password: 'password123',
+      );
+      expect(smb.streamUrl, 'smb://admin:password123@192.168.1.50/Videos/movie.mkv');
+
+      const ftp = NetworkLocation(
+        name: 'FTP Server',
+        protocol: 'ftp',
+        host: '10.0.0.1',
+        port: 2121,
+        path: 'clips/clip.mp4',
+      );
+      expect(ftp.streamUrl, 'ftp://10.0.0.1:2121/clips/clip.mp4');
+    });
+
+    test('LibraryScreen includes Cloud Storage and Network Storage quick tiles', () {
+      final lib = File('lib/screens/library_screen.dart').readAsStringSync();
+      expect(lib, contains('Cloud Storage'));
+      expect(lib, contains('Network Storage'));
+      expect(lib, contains('Open Stream'));
     });
   });
 }

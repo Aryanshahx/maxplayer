@@ -1,10 +1,6 @@
-import 'dart:async';
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 
 import '../services/movie_ai.dart';
-import '../services/native_bridge.dart';
 import '../state/theme_state.dart';
 import '../utils/srt.dart';
 
@@ -71,79 +67,9 @@ class _VideoAskSheetState extends State<VideoAskSheet> {
   final _client = VideoAiClient();
   final _questionCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
-  late final List<_Msg> _messages;
+  final List<_Msg> _messages = [];
   bool _asking = false;
   int _askToken = 0;
-
-  /// v76: in-memory cache of every video's Q&A, so closing this sheet
-  /// (a dismissible bottom sheet - Flutter tears its whole State down on
-  /// close) doesn't throw away what the AI already generated.
-  /// v79: now backed by disk (SharedPreferences via NativeBridge), so it
-  /// also survives restarting the app, not just closing this sheet.
-  static final Map<String, List<_Msg>> _sessionCache = {};
-  static bool _diskLoaded = false;
-  static const String _kPrefKey = 'ai.videoAskCache';
-  static const int _kMaxVideosCached = 30; // keep the store small on disk
-
-  static Future<void> _loadFromDisk() async {
-    if (_diskLoaded) return;
-    _diskLoaded = true;
-    try {
-      final raw = (await NativeBridge.loadSettings())[_kPrefKey];
-      if (raw == null || raw.isEmpty) return;
-      final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      decoded.forEach((title, msgs) {
-        _sessionCache[title] = [
-          for (final m in (msgs as List))
-            _Msg._(
-              m['w'] == 'u' ? _Who.user : _Who.ai,
-              m['t'] as String,
-            ),
-        ];
-      });
-    } catch (_) {
-      // Corrupt/old cache - ignore, just start fresh.
-    }
-  }
-
-  static void _persistToDisk() {
-    // Cap how many videos we keep (oldest inserted first, since Dart Map
-    // preserves insertion order) so this doesn't grow forever.
-    while (_sessionCache.length > _kMaxVideosCached) {
-      _sessionCache.remove(_sessionCache.keys.first);
-    }
-    final encoded = jsonEncode({
-      for (final e in _sessionCache.entries)
-        e.key: [
-          for (final m in e.value) {'w': m.who == _Who.user ? 'u' : 'a', 't': m.text},
-        ],
-    });
-    unawaited(NativeBridge.saveSetting(_kPrefKey, encoded));
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _messages = _sessionCache.putIfAbsent(widget.title, () => []);
-    _loadFromDisk().then((_) {
-      if (!mounted) return;
-      final cached = _sessionCache[widget.title];
-      if (cached != null && cached.isNotEmpty && _messages.isEmpty) {
-        setState(() {
-          _messages.addAll(cached);
-          // v81: keep _sessionCache pointing at the SAME list _messages
-          // uses from now on - otherwise every future _messages.add() in
-          // _ask() silently stops reaching _sessionCache (and therefore
-          // _persistToDisk()), because they'd be two different list
-          // objects holding the same values only at this one moment. This
-          // was why AI answers stopped saving after the very first
-          // reopen following a restart.
-          _sessionCache[widget.title] = _messages;
-        });
-        _scrollToBottom();
-      }
-    });
-  }
 
   bool get _hasTranscript => VideoAiClient.hasUsableTranscript(widget.cues);
 
@@ -174,7 +100,6 @@ class _VideoAskSheetState extends State<VideoAskSheet> {
       _asking = false;
       _messages.add(_Msg.ai(answer ?? _failedMessage()));
     });
-    _persistToDisk();
     _scrollToBottom();
   }
 

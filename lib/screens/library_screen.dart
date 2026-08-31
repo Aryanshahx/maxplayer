@@ -13,14 +13,15 @@ import '../widgets/about_sheet.dart';
 import '../widgets/display_settings_sheet.dart';
 import '../state/private_vault.dart';
 import '../widgets/mini_player.dart';
-import '../models/saved_server.dart';
-import '../services/native_bridge.dart';
 import '../services/resume_sync_service.dart';
 import '../widgets/cleaner_sheet.dart';
 import '../widgets/discover_banner.dart';
 import '../widgets/video_search_delegate.dart';
 import '../widgets/playlists_sheet.dart';
 import '../widgets/user_manual_sheet.dart';
+import '../widgets/cloud_storage_sheet.dart';
+import '../widgets/network_storage_sheet.dart';
+import '../widgets/open_stream_sheet.dart';
 import 'private_screen.dart';
 import '../widgets/video_list_item.dart';
 import '../widgets/video_tile.dart';
@@ -358,188 +359,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  /// v83 Phase 1: "Network Storage" - a friendlier form for SMB/FTP/WebDAV
-  /// than typing a raw URL. Builds the URL and reuses the exact same
-  /// open/save-server plumbing as [_openStreamDialog] - no separate
-  /// connection code path to maintain.
-  ///
-  /// Honesty note for whoever reads this next: whether a built URL
-  /// actually connects depends on what protocols the bundled
-  /// libmpv/ffmpeg were compiled with. ftp is supported almost
-  /// everywhere; smb needs libsmbclient specifically and may not be in
-  /// this build - if smb:// fails to connect, that's what's missing, not
-  /// a bug in this dialog.
-  Future<void> _openNetworkStorageDialog() async {
-    final hostCtrl = TextEditingController();
-    final portCtrl = TextEditingController();
-    final shareCtrl = TextEditingController();
-    final userCtrl = TextEditingController();
-    final passCtrl = TextEditingController();
-    var protocol = 'smb';
-
-    void snack(String message) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-      );
-    }
-
-    String? buildUrl() {
-      final host = hostCtrl.text.trim();
-      if (host.isEmpty) return null;
-      var share = shareCtrl.text.trim();
-      if (share.isNotEmpty && !share.startsWith('/')) share = '/$share';
-      final user = userCtrl.text.trim();
-      final pass = passCtrl.text;
-      final auth = user.isEmpty
-          ? ''
-          : '$user${pass.isEmpty ? '' : ':${Uri.encodeComponent(pass)}'}@';
-      final port = portCtrl.text.trim();
-      final portPart = port.isEmpty ? '' : ':$port';
-      return '$protocol://$auth$host$portPart$share';
-    }
-
-    final url = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          scrollable: true,
-          backgroundColor: const Color(0xFF1a1a24),
-          title: const Text(
-            'Network storage',
-            style: TextStyle(color: Colors.white, fontSize: 17),
-          ),
-          content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Connect to a home PC or NAS drive',
-                  style: TextStyle(color: Colors.white54, fontSize: 12.5),
-                ),
-                const SizedBox(height: 12),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'smb', label: Text('SMB')),
-                    ButtonSegment(value: 'ftp', label: Text('FTP')),
-                    ButtonSegment(value: 'https', label: Text('WebDAV')),
-                  ],
-                  selected: {protocol},
-                  onSelectionChanged: (s) =>
-                      setDialogState(() => protocol = s.first),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: hostCtrl,
-                  autofocus: true,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Host or IP address',
-                    labelStyle: TextStyle(color: Colors.white54),
-                    hintText: '192.168.1.10',
-                    hintStyle: TextStyle(color: Colors.white38),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: portCtrl,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Port (optional)',
-                    labelStyle: TextStyle(color: Colors.white54),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: shareCtrl,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Share / folder path',
-                    labelStyle: TextStyle(color: Colors.white54),
-                    hintText: 'Movies',
-                    hintStyle: TextStyle(color: Colors.white38),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: userCtrl,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Username (optional)',
-                    labelStyle: TextStyle(color: Colors.white54),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: passCtrl,
-                  obscureText: true,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Password (optional)',
-                    labelStyle: TextStyle(color: Colors.white54),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton.icon(
-              icon: Icon(
-                Icons.bookmark_add_outlined,
-                size: 18,
-                color: themeState.accent,
-              ),
-              label: const Text('Save'),
-              onPressed: () async {
-                final u = buildUrl();
-                if (u == null) {
-                  snack('Enter a host first');
-                  return;
-                }
-                final all = await NativeBridge.loadSettings();
-                var servers = parseServersJson(all[kServersSettingKey]);
-                final before = servers.length;
-                servers = addSavedServer(
-                  servers,
-                  SavedServer(name: hostCtrl.text.trim(), url: u),
-                );
-                await NativeBridge.saveSetting(
-                  kServersSettingKey,
-                  serversToJson(servers),
-                );
-                snack(
-                  servers.length > before
-                      ? 'Saved - find it under Open stream any time'
-                      : 'That connection is already saved',
-                );
-              },
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: themeState.accent),
-              onPressed: () => Navigator.of(dialogContext).pop(buildUrl()),
-              child: const Text('Connect'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (url == null || url.isEmpty) return;
-    if (!_isStreamUrl(url)) {
-      snack('Enter a host first');
-      return;
-    }
-    await widget.player.playStream(url, hostCtrl.text.trim());
-  }
-
   void _onMenuChoice(String choice, VideoLibraryState lib) {
     switch (choice) {
+      case 'stream':
+        _openStreamDialog();
+        break;
       case 'stats':
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => StatsScreen(player: widget.player)),
@@ -574,181 +398,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  /// Lets the user paste an http(s)/rtsp/rtmp URL and play it directly.
-  /// v32 BYOS phase A: the stream dialog doubles as the "saved servers"
-  /// list - NAS boxes over WebDAV/HTTP, public share links, IP cameras...
-  /// stored as JSON in the native settings store (no account, no cloud
-  /// lock-in: the user brings the storage, we are the player).
-  Future<void> _openStreamDialog() async {
-    final controller = TextEditingController();
-    final all = await NativeBridge.loadSettings();
-    var servers = parseServersJson(all[kServersSettingKey]);
-    if (!mounted) return;
-
-    Future<void> persist() =>
-        NativeBridge.saveSetting(kServersSettingKey, serversToJson(servers));
-
-    void snack(String message) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-      );
-    }
-
-    final url = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF1a1a24),
-          title: const Text(
-            'Open stream / server',
-            style: TextStyle(color: Colors.white, fontSize: 17),
-          ),
-          content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    hintText: 'https:// or rtsp:// ... (WebDAV/NAS links work)',
-                    hintStyle: TextStyle(color: Colors.white38),
-                  ),
-                ),
-                if (servers.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  Text(
-                    'Saved servers',
-                    style: TextStyle(
-                      color: themeState.accent,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 150),
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        for (var i = 0; i < servers.length; i++)
-                          ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(
-                              Icons.dns_outlined,
-                              color: themeState.accent,
-                              size: 20,
-                            ),
-                            title: Text(
-                              servers[i].name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13.5,
-                              ),
-                            ),
-                            subtitle: Text(
-                              servers[i].url,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white38,
-                                fontSize: 11,
-                              ),
-                            ),
-                            trailing: IconButton(
-                              tooltip: 'Remove server',
-                              icon: const Icon(
-                                Icons.close,
-                                color: Colors.white38,
-                                size: 18,
-                              ),
-                              onPressed: () async {
-                                servers = [...servers]..removeAt(i);
-                                await persist();
-                                setDialogState(() {});
-                              },
-                            ),
-                            onTap: () =>
-                                Navigator.of(dialogContext).pop(servers[i].url),
-                          ),
-                      ],
-                    ),
-                  ),
-                ] else
-                  const Padding(
-                    padding: EdgeInsets.only(top: 12),
-                    child: Text(
-                      'Tip: press Save to keep a link (NAS, camera, share '
-                      'URL) in this list.',
-                      style: TextStyle(color: Colors.white38, fontSize: 11.5),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton.icon(
-              icon: Icon(
-                Icons.bookmark_add_outlined,
-                size: 18,
-                color: themeState.accent,
-              ),
-              label: const Text('Save'),
-              onPressed: () async {
-                final u = controller.text.trim();
-                if (!_isStreamUrl(u)) {
-                  snack('Enter a valid URL first');
-                  return;
-                }
-                final before = servers.length;
-                servers = addSavedServer(
-                  servers,
-                  SavedServer(name: _serverNameFor(u), url: u),
-                );
-                await persist();
-                setDialogState(() {});
-                snack(
-                  servers.length > before
-                      ? 'Server saved - tap it here any time'
-                      : 'That link is already saved',
-                );
-              },
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: themeState.accent),
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(controller.text.trim()),
-              child: const Text('Play'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (url == null || url.isEmpty) return;
-    if (!_isStreamUrl(url)) {
-      snack('That does not look like a stream URL');
-      return;
-    }
-    final uri = Uri.parse(url);
-    final title =
-        uri.pathSegments.isNotEmpty && uri.pathSegments.last.isNotEmpty
-        ? Uri.decodeComponent(uri.pathSegments.last)
-        : uri.host;
+  Future<void> _playNetworkOrStream(String url, String title) async {
     await widget.player.playStream(url, title);
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => PlayerScreen(player: widget.player)),
     );
+  }
+
+  void _openStreamSheet() {
+    OpenStreamSheet.show(context, onPlay: _playNetworkOrStream);
+  }
+
+  void _openNetworkStorage() {
+    NetworkStorageSheet.show(context, onPlay: _playNetworkOrStream);
+  }
+
+  void _openCloudStorage() {
+    CloudStorageSheet.show(context, onPlay: _playNetworkOrStream);
+  }
+
+  Future<void> _openStreamDialog() async {
+    _openStreamSheet();
   }
 
   @override
@@ -815,6 +486,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
             onSelected: (choice) => _onMenuChoice(choice, lib),
             // v26: menu icons follow the picked theme colour.
             itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'stream',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.link, color: themeState.accent),
+                  title: const Text('Open stream URL'),
+                ),
+              ),
               PopupMenuItem(
                 value: 'stats',
                 child: ListTile(
@@ -1005,7 +685,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
             ),
-          // v28: the 2x2 quick-tiles grid - slides away on scroll-down.
+          // v28/v84: scrollable quick-tiles carousel - slides away on scroll-down.
           ClipRect(
             child: AnimatedAlign(
               duration: const Duration(milliseconds: 220),
@@ -1020,10 +700,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   player: widget.player,
                   library: lib,
                 ),
-                onNetworkStorage: _openNetworkStorageDialog,
                 onPlaylist: () => _showPlaylists(lib),
                 onFolders: () => _showFoldersSheet(lib),
-                onOpenStream: _openStreamDialog,
+                onNetworkStorage: _openNetworkStorage,
+                onCloudStorage: _openCloudStorage,
+                onOpenStream: _openStreamSheet,
               ),
             ),
           ),
@@ -1146,49 +827,51 @@ class _LibraryScreenState extends State<LibraryScreen> {
 /// scrolling down through the videos (see [_LibraryScreenState]) and
 /// returns on scroll-up. Private folder lives here now (was a top-bar
 /// icon).
+/// v28/v84: scrollable quick-tiles carousel under the search bar. Tucks away while
+/// scrolling down through the videos and returns on scroll-up.
 class _QuickTiles extends StatelessWidget {
   final Color accent;
   final VoidCallback onPrivate;
   final VoidCallback onCleaner;
-  final VoidCallback onNetworkStorage;
   final VoidCallback onPlaylist;
   final VoidCallback onFolders;
+  final VoidCallback onNetworkStorage;
+  final VoidCallback onCloudStorage;
   final VoidCallback onOpenStream;
 
   const _QuickTiles({
     required this.accent,
     required this.onPrivate,
     required this.onCleaner,
-    required this.onNetworkStorage,
     required this.onPlaylist,
     required this.onFolders,
+    required this.onNetworkStorage,
+    required this.onCloudStorage,
     required this.onOpenStream,
   });
 
   @override
   Widget build(BuildContext context) {
-    // v83: was a fixed 2x2 grid (2 rows of 2 Expanded tiles) - couldn't
-    // fit more tiles without breaking. Now a single horizontally
-    // scrollable strip so new tiles (Network Storage, Open stream) just
-    // slide in instead of needing another layout rework next time.
-    final tiles = [
-      _Tile(Icons.lock_outline, 'Private folder', accent, onPrivate),
-      _Tile(Icons.cleaning_services_outlined, 'Cleaner', accent, onCleaner),
-      _Tile(Icons.dns_outlined, 'Network storage', accent, onNetworkStorage),
-      _Tile(Icons.queue_music_outlined, 'Playlists', accent, onPlaylist),
-      _Tile(Icons.folder_outlined, 'Folders', accent, onFolders),
-      _Tile(Icons.link, 'Open stream', accent, onOpenStream),
-    ];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: SizedBox(
-        height: 48,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: tiles.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 10),
-          itemBuilder: (context, i) => SizedBox(width: 168, child: tiles[i]),
-        ),
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        children: [
+          _Tile(Icons.lock_outline, 'Private', accent, onPrivate),
+          const SizedBox(width: 8),
+          _Tile(Icons.cleaning_services_outlined, 'Cleaner', accent, onCleaner),
+          const SizedBox(width: 8),
+          _Tile(Icons.queue_music_outlined, 'Playlists', accent, onPlaylist),
+          const SizedBox(width: 8),
+          _Tile(Icons.folder_outlined, 'Folders', accent, onFolders),
+          const SizedBox(width: 8),
+          _Tile(Icons.dns_outlined, 'Network Storage', accent, onNetworkStorage),
+          const SizedBox(width: 8),
+          _Tile(Icons.cloud_queue_outlined, 'Cloud Storage', accent, onCloudStorage),
+          const SizedBox(width: 8),
+          _Tile(Icons.link, 'Open Stream', accent, onOpenStream),
+        ],
       ),
     );
   }
@@ -1205,28 +888,26 @@ class _Tile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.05),
+      color: Colors.white.withValues(alpha: 0.06),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         splashColor: accent.withValues(alpha: 0.25),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: accent, size: 20),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
-                  ),
+              Icon(icon, color: accent, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                maxLines: 1,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -1326,32 +1007,4 @@ class _EmptyState extends StatelessWidget {
       ),
     );
   }
-}
-
-// ---------------------------------------------------------------------------
-// v32 BYOS: stream/server URL helpers for the Open stream dialog.
-// ---------------------------------------------------------------------------
-
-bool _isStreamUrl(String url) {
-  final uri = Uri.tryParse(url);
-  // v83: added ftp/ftps/smb for the new Network Storage tile. Whether a
-  // given protocol actually connects depends on what the bundled
-  // libmpv/ffmpeg was compiled with - ftp is supported by virtually all
-  // ffmpeg builds; smb needs libsmbclient specifically and may not be
-  // present. This only controls what the app is willing to try.
-  const schemes = {
-    'http', 'https', 'rtsp', 'rtmp', 'mms', 'ftp', 'ftps', 'smb',
-  };
-  return uri != null &&
-      schemes.contains(uri.scheme.toLowerCase()) &&
-      uri.host.isNotEmpty;
-}
-
-
-String _serverNameFor(String url) {
-  final uri = Uri.tryParse(url);
-  if (uri == null) return url;
-  return uri.hasPort && uri.port != 80 && uri.port != 443
-      ? '${uri.host}:${uri.port}'
-      : uri.host;
 }

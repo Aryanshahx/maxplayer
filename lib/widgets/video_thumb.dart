@@ -34,7 +34,7 @@ class VideoThumb extends StatefulWidget {
   static final List<Completer<void>> _thumbWaiters = [];
 
   static Future<void> acquireThumbSlot() async {
-    if (_thumbJobsRunning < 4) {
+    if (_thumbJobsRunning < 2) {
       _thumbJobsRunning++;
       return;
     }

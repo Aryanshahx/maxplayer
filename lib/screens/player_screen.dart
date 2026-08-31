@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -315,7 +314,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     // v21: push the playback-extras settings into the player state.
     unawaited(widget.player.setVolumeBoost200(s.volumeBoost200));
-    unawaited(widget.player.setDialogueBoost(s.dialogueBoost));
     widget.player.setBackgroundAudio(s.backgroundAudio);
     // v32: picture settings - HDR tone-mapping curve + Enhance shader.
     unawaited(widget.player.setToneMapping(s.toneMapping));
@@ -660,13 +658,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     final player = widget.player;
     showModalBottomSheet<void>(
       context: context,
-      // v78: without this, the sheet gets a fixed height budget that a
-      // landscape phone's short screen can't satisfy for 6 rows of
-      // content, and (with no scroll wrapper either) the extra rows were
-      // simply unreachable - "sleep timer not opening properly in
-      // landscape". isScrollControlled + the SingleChildScrollView below
-      // let it size itself and scroll instead of clipping.
-      isScrollControlled: true,
       backgroundColor: const Color(0xFF1a1a24),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -708,61 +699,54 @@ class _PlayerScreenState extends State<PlayerScreen>
         }
 
         return SafeArea(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(sheetContext).size.height * 0.9,
-            ),
-            child: SingleChildScrollView(
-              child: AnimatedBuilder(
-                animation: player,
-                builder: (context, _) {
-                  final label = player.sleepTimerLabel;
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(height: 10),
-                      Container(
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+          child: AnimatedBuilder(
+            animation: player,
+            builder: (context, _) {
+              final label = player.sleepTimerLabel;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    label == null
+                        ? 'Sleep timer'
+                        : 'Sleep timer: stops in $label',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  for (final mins in const [15, 30, 45, 60])
+                    item(
+                      Icons.bedtime_outlined,
+                      '$mins minutes',
+                      active: label == '$mins min',
+                      onTap: () => player.setSleepTimer(
+                        forDuration: Duration(minutes: mins),
                       ),
-                      const SizedBox(height: 10),
-                      Text(
-                        label == null
-                            ? 'Sleep timer'
-                            : 'Sleep timer: stops in $label',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      for (final mins in const [15, 30, 45, 60])
-                        item(
-                          Icons.bedtime_outlined,
-                          '$mins minutes',
-                          active: label == '$mins min',
-                          onTap: () => player.setSleepTimer(
-                            forDuration: Duration(minutes: mins),
-                          ),
-                        ),
-                      item(
-                        Icons.movie_outlined,
-                        'Until end of this video',
-                        active: label == 'end of video',
-                        onTap: () => player.setSleepTimer(atEndOfVideo: true),
-                      ),
-                      item(Icons.close, 'Off', onTap: player.cancelSleepTimer),
-                      const SizedBox(height: 8),
-                    ],
-                  );
-                },
-              ),
-            ),
+                    ),
+                  item(
+                    Icons.movie_outlined,
+                    'Until end of this video',
+                    active: label == 'end of video',
+                    onTap: () => player.setSleepTimer(atEndOfVideo: true),
+                  ),
+                  item(Icons.close, 'Off', onTap: player.cancelSleepTimer),
+                  const SizedBox(height: 8),
+                ],
+              );
+            },
           ),
         );
       },
@@ -1081,8 +1065,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _openVideoAsk() async {
     final track = widget.player.currentTrack;
     if (track == null) return;
-    final cues = await widget.player.awaitTranscriptCues();
-    if (!mounted) return;
+    final cues = widget.player.transcriptCues;
     await VideoAskSheet.show(
       context,
       title: track.title,
@@ -1311,68 +1294,42 @@ class _PlayerScreenState extends State<PlayerScreen>
                                 // replaying a scale animation each time.
                                 // Now: ONE stable container, only opacity
                                 // animates, text/icon swap in place.
-                                // v78: real frosted-glass bubble (blurred
-                                // backdrop + soft border) with a scale+fade
-                                // pop, replacing the old flat dark chip.
-                                child: AnimatedScale(
-                                  duration: const Duration(milliseconds: 160),
-                                  curve: Curves.easeOutBack,
-                                  scale: (_indicatorText != null && !_isPip)
+                                child: AnimatedOpacity(
+                                  duration: const Duration(milliseconds: 120),
+                                  opacity: (_indicatorText != null && !_isPip)
                                       ? 1.0
-                                      : 0.92,
-                                  child: AnimatedOpacity(
-                                    duration: const Duration(milliseconds: 120),
-                                    opacity: (_indicatorText != null && !_isPip)
-                                        ? 1.0
-                                        : 0.0,
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(14),
-                                      child: BackdropFilter(
-                                        filter: ui.ImageFilter.blur(
-                                          sigmaX: 18,
-                                          sigmaY: 18,
-                                        ),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black.withValues(
-                                              alpha: 0.45,
-                                            ),
-                                            borderRadius:
-                                                BorderRadius.circular(14),
-                                            border: Border.all(
-                                              color: Colors.white.withValues(
-                                                alpha: 0.14,
-                                              ),
-                                              width: 1,
-                                            ),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              if (_indicatorIcon != null) ...[
-                                                Icon(
-                                                  _indicatorIcon,
-                                                  color: Colors.white,
-                                                  size: 20,
-                                                ),
-                                                const SizedBox(width: 8),
-                                              ],
-                                              Text(
-                                                _indicatorText ?? '',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 15,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
+                                      : 0.0,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.72,
                                       ),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (_indicatorIcon != null) ...[
+                                          Icon(
+                                            _indicatorIcon,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                        Text(
+                                          _indicatorText ?? '',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
@@ -1724,6 +1681,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         switch (v) {
           case 'info':
             VideoInfoSheet.show(context, widget.player);
+          case 'ask':
+            _openVideoAsk();
           case 'eq':
             EqualizerSheet.show(context, widget.player);
           case 'shot':
@@ -1740,6 +1699,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       },
       itemBuilder: (context) => [
         _topMenuItem('info', Icons.info_outline, 'Video info'),
+        _topMenuItem('ask', Icons.auto_awesome, 'Ask AI about this video'),
         _topMenuItem('eq', Icons.graphic_eq, 'Equalizer'),
         if (_settings.screenshotButton)
           _topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot'),

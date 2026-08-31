@@ -302,15 +302,6 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 onChanged: (v) =>
                     _update(_settings.copyWith(backgroundAudio: v)),
               ),
-              _SwitchTile(
-                icon: Icons.record_voice_over_outlined,
-                label: 'Smart dialogue booster',
-                subtitle:
-                    'Isolates and boosts 1 kHz–4 kHz vocal clarity band so speech is clear without raising overall volume',
-                value: _settings.dialogueBoost,
-                onChanged: (v) =>
-                    _update(_settings.copyWith(dialogueBoost: v)),
-              ),
               // v65: the old "Skip intro chip" setting is gone - smart
               // skip (intro AND credits) is now automatic whenever usable
               // subtitles exist. The player shows a brief chip the user can

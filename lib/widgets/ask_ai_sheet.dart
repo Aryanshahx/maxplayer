@@ -1,5 +1,3 @@
-import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -60,73 +58,10 @@ class _AskAiSheetState extends State<AskAiSheet> {
   String? _error;
   int _askToken = 0;
 
-  /// v76: in-memory cache of the last question/answer per movie, so
-  /// closing this sheet (a dismissible bottom sheet - Flutter tears its
-  /// whole State down on close) and reopening it for the same movie
-  /// shows what the AI already generated instead of a blank sheet.
-  /// Separate from MovieAiClient's 7-day on-disk cache, which only
-  /// speeds up re-asking the identical question - this restores what
-  /// was actually on screen.
-  /// v79: now also backed by disk (SharedPreferences via NativeBridge),
-  /// so it survives restarting the app too.
-  static final Map<int, ({String question, String answer, String? model})>
-      _sessionCache = {};
-  static bool _diskLoaded = false;
-  static const String _kPrefKey = 'ai.movieAskCache';
-  static const int _kMaxMoviesCached = 50;
-
-  static Future<void> _loadCacheFromDisk() async {
-    if (_diskLoaded) return;
-    _diskLoaded = true;
-    try {
-      final raw = (await NativeBridge.loadSettings())[_kPrefKey];
-      if (raw == null || raw.isEmpty) return;
-      final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      decoded.forEach((id, v) {
-        final m = v as Map<String, dynamic>;
-        _sessionCache[int.parse(id)] = (
-          question: m['q'] as String,
-          answer: m['a'] as String,
-          model: m['m'] as String?,
-        );
-      });
-    } catch (_) {
-      // Corrupt/old cache - ignore, just start fresh.
-    }
-  }
-
-  static void _persistCacheToDisk() {
-    while (_sessionCache.length > _kMaxMoviesCached) {
-      _sessionCache.remove(_sessionCache.keys.first);
-    }
-    final encoded = jsonEncode({
-      for (final e in _sessionCache.entries)
-        '${e.key}': {'q': e.value.question, 'a': e.value.answer, 'm': e.value.model},
-    });
-    unawaited(NativeBridge.saveSetting(_kPrefKey, encoded));
-  }
-
   @override
   void initState() {
     super.initState();
     _bootCache();
-    final cached = _sessionCache[widget.movie.id];
-    if (cached != null) {
-      _questionCtrl.text = cached.question;
-      _answer = cached.answer;
-      _answerModel = cached.model;
-    }
-    _loadCacheFromDisk().then((_) {
-      if (!mounted || _answer != null) return;
-      final diskCached = _sessionCache[widget.movie.id];
-      if (diskCached != null) {
-        setState(() {
-          _questionCtrl.text = diskCached.question;
-          _answer = diskCached.answer;
-          _answerModel = diskCached.model;
-        });
-      }
-    });
   }
 
   /// v46: the 7-day answer cache lives next to the TMDB caches.
@@ -163,12 +98,6 @@ class _AskAiSheetState extends State<AskAiSheet> {
       } else {
         _answer = result.text;
         _answerModel = result.model;
-        _sessionCache[widget.movie.id] = (
-          question: q,
-          answer: result.text,
-          model: result.model,
-        );
-        _persistCacheToDisk();
       }
     });
   }
