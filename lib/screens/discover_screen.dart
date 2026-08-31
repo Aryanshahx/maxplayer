@@ -255,16 +255,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   Future<void> _loadRelated(int movieId, int token,
       {String kind = 'movie'}) async {
-    final relList = <TmdbMovie>[];
-    final seen = <int>{};
+    List<TmdbMovie> rel;
     try {
-      final sim = await _client.similar(movieId, kind: kind);
-      for (final m in sim) {
-        if (seen.add(m.id)) relList.add(m);
-      }
-    } catch (_) {}
+      rel = await _client.similar(movieId, kind: kind);
+    } catch (_) {
+      rel = const [];
+    }
     if (!mounted || token != _loadToken || !_searching) return;
-    setState(() => _related = relList.take(15).toList());
+    setState(() => _related = rel.take(12).toList());
   }
 
   /// Hard switch of browse/search mode: clears the grid, invalidates any

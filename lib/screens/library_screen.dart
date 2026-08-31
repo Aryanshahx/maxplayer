@@ -480,26 +480,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
           PopupMenuButton<String>(
             tooltip: 'More',
             icon: Icon(Icons.more_vert, color: themeState.accent),
-            color: const Color(0xFF1a1a24),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            color: const Color(0xFF26262f),
             onSelected: (choice) => _onMenuChoice(choice, lib),
+            // v26: menu icons follow the picked theme colour.
             itemBuilder: (context) => [
               PopupMenuItem(
-                value: 'display',
+                value: 'stream',
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.tune, color: themeState.accent),
-                  title: const Text('Display settings', style: TextStyle(color: Colors.white)),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'rescan',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.sync, color: themeState.accent),
-                  title: const Text('Rescan library', style: TextStyle(color: Colors.white)),
+                  leading: Icon(Icons.link, color: themeState.accent),
+                  title: const Text('Open stream URL'),
                 ),
               ),
               PopupMenuItem(
@@ -507,18 +498,38 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.bar_chart_rounded, color: themeState.accent),
-                  title: const Text('Watch statistics', style: TextStyle(color: Colors.white)),
+                  leading: Icon(Icons.bar_chart, color: themeState.accent),
+                  title: const Text('Statistics'),
                 ),
               ),
-              const PopupMenuDivider(height: 1),
+              PopupMenuItem(
+                value: 'rescan',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.refresh, color: themeState.accent),
+                  title: const Text('Rescan library'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'display',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.tune, color: themeState.accent),
+                  title: const Text('Display settings'),
+                ),
+              ),
               PopupMenuItem(
                 value: 'manual',
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.menu_book_outlined, color: themeState.accent),
-                  title: const Text('User manual', style: TextStyle(color: Colors.white)),
+                  leading: Icon(
+                    Icons.menu_book_outlined,
+                    color: themeState.accent,
+                  ),
+                  title: const Text('User manual'),
                 ),
               ),
               PopupMenuItem(
@@ -527,19 +538,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.info_outline, color: themeState.accent),
-                  title: const Text('About Max Player', style: TextStyle(color: Colors.white)),
+                  title: const Text('About'),
                 ),
               ),
-              PopupMenuItem(
-                value: 'privacy',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.privacy_tip_outlined, color: themeState.accent),
-                  title: const Text('Privacy policy', style: TextStyle(color: Colors.white)),
-                ),
-              ),
-              const PopupMenuDivider(height: 1),
               // Footer: app version (not selectable).
               const PopupMenuItem(
                 value: 'version',
@@ -548,7 +549,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 padding: EdgeInsets.zero,
                 child: Center(
                   child: Text(
-                    'Max Player v$kAppVersion',
+                    'Version $kAppVersion',
                     style: TextStyle(color: Colors.white38, fontSize: 11),
                   ),
                 ),
@@ -682,7 +683,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
             ),
-          // v28/v86: Two slideable 2x2 grids with 2 dots indicator.
+          // v28/v87: Two slideable 2x2 grids with 2 dots indicator.
           ClipRect(
             child: AnimatedAlign(
               duration: const Duration(milliseconds: 220),
@@ -778,13 +779,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
           if (lib.viewMode == ViewMode.grid)
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 12),
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
               sliver: SliverGrid(
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                   maxCrossAxisExtent: 200,
                   mainAxisSpacing: 8,
                   crossAxisSpacing: 8,
-                  childAspectRatio: 0.85,
+                  childAspectRatio: 1.18,
                 ),
                 delegate: SliverChildBuilderDelegate((context, i) {
                   final track = group.videos[i];
@@ -826,7 +827,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 }
 
-/// v28/v86: Two slideable 2x2 grids with 2 dots page indicator.
+/// v28/v87: Two slideable 2x2 grids with 2 dots page indicator.
 /// Page 1: Private Space, Playlists, Folders, File Manager
 /// Page 2: Network Storage, Cloud Storage, Open Stream, Cleaner
 class _QuickTiles extends StatefulWidget {

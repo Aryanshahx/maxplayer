@@ -2851,4 +2851,30 @@ void main() {
       expect(askVideo, contains('video_ai_history_'));
     });
   });
+
+  // -------------------------------------------------------------------------
+  // v87: Tight grid aspect ratio, redesigned display settings, player more actions sheet
+  // -------------------------------------------------------------------------
+  group('v87 tight grid + redesigned display settings + player sheet', () {
+    test('LibraryScreen sets tight childAspectRatio 1.18 to eliminate empty space', () {
+      final lib = File('lib/screens/library_screen.dart').readAsStringSync();
+      expect(lib, contains('childAspectRatio: 1.18'));
+    });
+
+    test('DisplaySettingsSheet has card-based layout and sort options', () {
+      final display = File('lib/widgets/display_settings_sheet.dart').readAsStringSync();
+      expect(display, contains('Layout & View Mode'));
+      expect(display, contains('Grid View'));
+      expect(display, contains('List View'));
+      expect(display, contains('Theme Accent Color'));
+    });
+
+    test('PlayerScreen top menu uses more-actions bottom sheet without ask AI', () {
+      final playerScreen = File('lib/screens/player_screen.dart').readAsStringSync();
+      expect(playerScreen, contains('_showMoreActionsSheet'));
+      expect(playerScreen, contains('Video Information'));
+      expect(playerScreen, contains('Equalizer & Audio FX'));
+      expect(playerScreen.contains("Ask AI about this video"), isFalse);
+    });
+  });
 }

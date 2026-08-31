@@ -96,6 +96,14 @@ class MediaPlaybackService : Service() {
         Notifications.ensureChannels(applicationContext)
         acquireWakeLock()
         initMediaSession()
+        try {
+            val initialNotif = buildNotification("Max Player", "", true, "", null, 0L, 0L)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIF_ID, initialNotif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            } else {
+                startForeground(NOTIF_ID, initialNotif)
+            }
+        } catch (_: Throwable) {}
     }
 
     private var audioFocusRequest: Any? = null

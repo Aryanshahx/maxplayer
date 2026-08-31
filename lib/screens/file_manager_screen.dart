@@ -10,7 +10,7 @@ import '../state/video_library_state.dart';
 import '../utils/formatters.dart';
 import 'player_screen.dart';
 
-/// v86: Advance File Manager for local & SD-card storage.
+/// v87: Advanced Full-Featured File Manager.
 class FileManagerScreen extends StatefulWidget {
   final VideoLibraryState library;
   final MediaPlayerState player;
@@ -28,7 +28,18 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   String _searchQuery = '';
   String _sortBy = 'name'; // 'name', 'date', 'size'
   bool _sortAsc = true;
+  String _typeFilter = 'all'; // 'all', 'video', 'audio', 'subs', 'doc'
+  bool _isGridView = false;
+
   final TextEditingController _searchCtrl = TextEditingController();
+
+  static const List<Map<String, String>> _shortcuts = [
+    {'name': 'Internal', 'path': '/storage/emulated/0', 'icon': 'storage'},
+    {'name': 'Camera', 'path': '/storage/emulated/0/DCIM/Camera', 'icon': 'camera'},
+    {'name': 'Movies', 'path': '/storage/emulated/0/Movies', 'icon': 'movie'},
+    {'name': 'Download', 'path': '/storage/emulated/0/Download', 'icon': 'download'},
+    {'name': 'WhatsApp', 'path': '/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video', 'icon': 'chat'},
+  ];
 
   @override
   void initState() {
@@ -53,7 +64,6 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
 
     try {
       final list = await dir.list(followLinks: false).toList();
-      // Filter hidden/system files starting with .
       final visible = list.where((e) {
         final name = p.basename(e.path);
         return !name.startsWith('.') || name == '.thumbnails';
@@ -134,15 +144,53 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
           MaterialPageRoute(builder: (_) => PlayerScreen(player: widget.player)),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(p.basename(path)),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        _showFileDetails(entity);
       }
     }
   }
+
+  void _showFileDetails(FileSystemEntity entity) {
+    final name = p.basename(entity.path);
+    final stat = entity.statSync();
+    final isDir = entity is Directory;
+    final size = isDir ? 'Folder' : formatFileSize(stat.size);
+    final modified = '${stat.modified.year}-${stat.modified.month.toString().padLeft(2, '0')}-${stat.modified.day.toString().padLeft(2, '0')} ${stat.modified.hour.toString().padLeft(2, '0')}:${stat.modified.minute.toString().padLeft(2, '0')}';
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a24),
+        title: Text(name, style: const TextStyle(color: Colors.white, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _metaRow('Path', entity.path),
+            _metaRow('Size', size),
+            _metaRow('Modified', modified),
+            _metaRow('Type', isDir ? 'Directory' : p.extension(entity.path).toUpperCase()),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metaRow(String label, String val) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 70, child: Text(label, style: const TextStyle(color: Colors.white38, fontSize: 12))),
+            Expanded(child: SelectableText(val, style: const TextStyle(color: Colors.white70, fontSize: 12.5))),
+          ],
+        ),
+      );
 
   void _showFileOptions(FileSystemEntity entity) {
     final name = p.basename(entity.path);
@@ -198,6 +246,14 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                   _onEntityTap(entity);
                 },
               ),
+            ListTile(
+              leading: const Icon(Icons.info_outline, color: Colors.white70),
+              title: const Text('File Details', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _showFileDetails(entity);
+              },
+            ),
             if (isVideo)
               ListTile(
                 leading: const Icon(Icons.lock_outline, color: Colors.white70),
@@ -266,8 +322,18 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   Widget build(BuildContext context) {
     final accent = themeState.accent;
     final visibleEntries = _entries.where((e) {
-      if (_searchQuery.isEmpty) return true;
-      return p.basename(e.path).toLowerCase().contains(_searchQuery.toLowerCase());
+      if (_searchQuery.isNotEmpty) {
+        final matches = p.basename(e.path).toLowerCase().contains(_searchQuery.toLowerCase());
+        if (!matches) return false;
+      }
+      if (_typeFilter != 'all' && e is File) {
+        final ext = p.extension(e.path).toLowerCase();
+        if (_typeFilter == 'video') return isVideoFile(e.path);
+        if (_typeFilter == 'audio') return ext == '.mp3' || ext == '.m4a' || ext == '.flac' || ext == '.wav' || ext == '.aac';
+        if (_typeFilter == 'subs') return ext == '.srt' || ext == '.vtt' || ext == '.ass' || ext == '.sub';
+        if (_typeFilter == 'doc') return ext == '.txt' || ext == '.pdf' || ext == '.json';
+      }
+      return true;
     }).toList();
 
     return PopScope(
@@ -285,10 +351,15 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
             onPressed: _navigateUp,
           ),
           title: Text(
-            p.basename(_currentPath).isEmpty ? 'Storage' : p.basename(_currentPath),
+            p.basename(_currentPath).isEmpty ? 'Internal Storage' : p.basename(_currentPath),
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17),
           ),
           actions: [
+            IconButton(
+              icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view, color: Colors.white70),
+              tooltip: _isGridView ? 'List View' : 'Grid View',
+              onPressed: () => setState(() => _isGridView = !_isGridView),
+            ),
             PopupMenuButton<String>(
               icon: const Icon(Icons.sort, color: Colors.white70),
               tooltip: 'Sort by',
@@ -317,10 +388,31 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
         ),
         body: Column(
           children: [
+            // Shortcuts bar
+            SizedBox(
+              height: 42,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                children: [
+                  for (final s in _shortcuts)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ActionChip(
+                        label: Text(s['name']!),
+                        labelStyle: const TextStyle(fontSize: 11.5, color: Colors.white70),
+                        backgroundColor: _currentPath == s['path'] ? accent.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.05),
+                        side: BorderSide(color: _currentPath == s['path'] ? accent : Colors.white12),
+                        onPressed: () => _loadDirectory(s['path']!),
+                      ),
+                    ),
+                ],
+              ),
+            ),
             // Breadcrumbs path
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               color: Colors.white.withValues(alpha: 0.03),
               child: Text(
                 _currentPath.replaceAll('/storage/emulated/0', 'Internal Storage'),
@@ -331,7 +423,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
             ),
             // Search in folder
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+              padding: const EdgeInsets.fromLTRB(14, 6, 14, 4),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
@@ -347,6 +439,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                     hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
                     icon: const Icon(Icons.search, size: 18, color: Colors.white38),
                     border: InputBorder.none,
+                    isDense: true,
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear, size: 16, color: Colors.white38),
@@ -358,6 +451,21 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                         : null,
                   ),
                 ),
+              ),
+            ),
+            // File type filter chips
+            SizedBox(
+              height: 38,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                children: [
+                  _typeChip('all', 'All Files', accent),
+                  _typeChip('video', 'Videos', accent),
+                  _typeChip('audio', 'Audio', accent),
+                  _typeChip('subs', 'Subtitles', accent),
+                  _typeChip('doc', 'Documents', accent),
+                ],
               ),
             ),
             Expanded(
@@ -374,63 +482,132 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                             ],
                           ),
                         )
-                      : ListView.separated(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                          itemCount: visibleEntries.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
-                          itemBuilder: (context, i) {
-                            final entity = visibleEntries[i];
-                            final name = p.basename(entity.path);
-                            final isDir = entity is Directory;
-                            final isVid = !isDir && isVideoFile(entity.path);
+                      : _isGridView
+                          ? GridView.builder(
+                              padding: const EdgeInsets.all(10),
+                              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent: 130,
+                                childAspectRatio: 0.9,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                              ),
+                              itemCount: visibleEntries.length,
+                              itemBuilder: (context, i) {
+                                final entity = visibleEntries[i];
+                                final name = p.basename(entity.path);
+                                final isDir = entity is Directory;
+                                final isVid = !isDir && isVideoFile(entity.path);
 
-                            String subtitle = '';
-                            if (!isDir && entity is File) {
-                              try {
-                                final len = entity.lengthSync();
-                                subtitle = formatFileSize(len);
-                              } catch (_) {}
-                            }
+                                return GestureDetector(
+                                  onTap: () => _onEntityTap(entity),
+                                  onLongPress: () => _showFileOptions(entity),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.04),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: Colors.white10),
+                                    ),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          isDir ? Icons.folder : (isVid ? Icons.videocam : Icons.insert_drive_file),
+                                          color: isDir ? accent : (isVid ? Colors.purpleAccent : Colors.white70),
+                                          size: 36,
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          name,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(color: Colors.white, fontSize: 11.5),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              itemCount: visibleEntries.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
+                              itemBuilder: (context, i) {
+                                final entity = visibleEntries[i];
+                                final name = p.basename(entity.path);
+                                final isDir = entity is Directory;
+                                final isVid = !isDir && isVideoFile(entity.path);
 
-                            return ListTile(
-                              dense: true,
-                              leading: CircleAvatar(
-                                radius: 18,
-                                backgroundColor: isDir
-                                    ? accent.withValues(alpha: 0.18)
-                                    : (isVid ? Colors.purple.withValues(alpha: 0.2) : Colors.white10),
-                                child: Icon(
-                                  isDir
-                                      ? Icons.folder
-                                      : (isVid ? Icons.videocam : Icons.insert_drive_file),
-                                  color: isDir ? accent : (isVid ? Colors.purpleAccent : Colors.white70),
-                                  size: 18,
-                                ),
-                              ),
-                              title: Text(
-                                name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13.5,
-                                  fontWeight: isDir ? FontWeight.w600 : FontWeight.normal,
-                                ),
-                              ),
-                              subtitle: subtitle.isNotEmpty
-                                  ? Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 11))
-                                  : null,
-                              trailing: IconButton(
-                                icon: const Icon(Icons.more_vert, size: 18, color: Colors.white38),
-                                onPressed: () => _showFileOptions(entity),
-                              ),
-                              onTap: () => _onEntityTap(entity),
-                            );
-                          },
-                        ),
+                                String subtitle = '';
+                                if (!isDir && entity is File) {
+                                  try {
+                                    final len = entity.lengthSync();
+                                    subtitle = formatFileSize(len);
+                                  } catch (_) {}
+                                }
+
+                                return ListTile(
+                                  dense: true,
+                                  leading: CircleAvatar(
+                                    radius: 18,
+                                    backgroundColor: isDir
+                                        ? accent.withValues(alpha: 0.18)
+                                        : (isVid ? Colors.purple.withValues(alpha: 0.2) : Colors.white10),
+                                    child: Icon(
+                                      isDir
+                                          ? Icons.folder
+                                          : (isVid ? Icons.videocam : Icons.insert_drive_file),
+                                      color: isDir ? accent : (isVid ? Colors.purpleAccent : Colors.white70),
+                                      size: 18,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13.5,
+                                      fontWeight: isDir ? FontWeight.w600 : FontWeight.normal,
+                                    ),
+                                  ),
+                                  subtitle: subtitle.isNotEmpty
+                                      ? Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 11))
+                                      : null,
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.more_vert, size: 18, color: Colors.white38),
+                                    onPressed: () => _showFileOptions(entity),
+                                  ),
+                                  onTap: () => _onEntityTap(entity),
+                                );
+                              },
+                            ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _typeChip(String key, String label, Color accent) {
+    final selected = _typeFilter == key;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: FilterChip(
+        label: Text(label),
+        selected: selected,
+        selectedColor: accent.withValues(alpha: 0.2),
+        checkmarkColor: accent,
+        labelStyle: TextStyle(
+          color: selected ? accent : Colors.white60,
+          fontSize: 11.5,
+          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+        ),
+        backgroundColor: Colors.white.withValues(alpha: 0.04),
+        side: BorderSide(color: selected ? accent : Colors.white12),
+        onSelected: (_) => setState(() => _typeFilter = key),
       ),
     );
   }

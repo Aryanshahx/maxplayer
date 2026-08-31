@@ -3,15 +3,13 @@ import '../models/video_track.dart';
 import '../state/video_library_state.dart';
 import '../state/theme_state.dart';
 
-/// VLC-style "Display settings" sheet: list/grid toggle, favourites filter,
-/// grouping, playback action and grouped sort options with direction choices.
+/// v87: Redesigned modern card-based "Display settings" sheet.
 class DisplaySettingsSheet extends StatelessWidget {
   final VideoLibraryState library;
 
   const DisplaySettingsSheet({super.key, required this.library});
 
-  static Color get _accent => themeState.accent;
-  static const Color _surface = Color(0xFF1a1a24);
+  static const Color _surface = Color(0xFF14141c);
 
   static Future<void> show(BuildContext context, VideoLibraryState library) {
     return showModalBottomSheet(
@@ -19,7 +17,7 @@ class DisplaySettingsSheet extends StatelessWidget {
       isScrollControlled: true,
       backgroundColor: _surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) => DisplaySettingsSheet(library: library),
     );
@@ -27,24 +25,21 @@ class DisplaySettingsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Rebuilds whenever the library OR theme notifies, so checkmarks and
-    // swatch selection update in place.
     return AnimatedBuilder(
       animation: Listenable.merge([library, themeState]),
       builder: (context, _) {
         final lib = library;
+        final accent = themeState.accent;
+
         return SafeArea(
           child: SingleChildScrollView(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom,
-            ),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Center(
                   child: Container(
-                    margin: const EdgeInsets.only(top: 10),
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
@@ -53,121 +48,241 @@ class DisplaySettingsSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
-                  child: Text(
-                    'Display settings',
-                    style: TextStyle(
-                      color: _accent,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Icon(Icons.tune, color: accent, size: 22),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Display Settings',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-                _SwitchRow(
-                  icon: Icons.view_list_outlined,
-                  label: 'Display in list',
-                  value: lib.viewMode == ViewMode.list,
-                  onChanged: (v) =>
-                      lib.setViewMode(v ? ViewMode.list : ViewMode.grid),
-                ),
-                _CheckRow(
-                  icon: Icons.favorite_border,
-                  label: 'Show only favourites',
-                  value: lib.favoritesOnly,
-                  onChanged: (v) => lib.setFavoritesOnly(v ?? false),
-                ),
-                _DropdownRow<GroupMode>(
-                  icon: Icons.collections_outlined,
-                  label: 'Group videos',
-                  value: lib.groupMode,
-                  entries: const {
-                    GroupMode.none: "Don't group",
-                    GroupMode.name: 'Group by name',
-                    GroupMode.folder: 'Group by folder',
-                  },
-                  onChanged: (m) => lib.setGroupMode(m ?? GroupMode.none),
-                ),
-                _DropdownRow<PlaybackAction>(
-                  icon: Icons.play_arrow,
-                  label: 'Playback action',
-                  subtitle: 'When tapping a video',
-                  value: lib.playbackAction,
-                  entries: const {
-                    PlaybackAction.all: 'Play all (queue)',
-                    PlaybackAction.single: 'Play single video',
-                  },
-                  onChanged: (a) =>
-                      lib.setPlaybackAction(a ?? PlaybackAction.all),
-                ),
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(20, 14, 20, 2),
-                  child: Text(
-                    'Theme color',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
+                const SizedBox(height: 16),
+
+                // Layout Mode Cards
+                _sectionLabel('Layout & View Mode', accent),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _layoutCard(
+                        icon: Icons.grid_view_rounded,
+                        title: 'Grid View',
+                        subtitle: 'Visual cards',
+                        selected: lib.viewMode == ViewMode.grid,
+                        accent: accent,
+                        onTap: () => lib.setViewMode(ViewMode.grid),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _layoutCard(
+                        icon: Icons.view_list_rounded,
+                        title: 'List View',
+                        subtitle: 'Compact rows',
+                        selected: lib.viewMode == ViewMode.list,
+                        accent: accent,
+                        onTap: () => lib.setViewMode(ViewMode.list),
+                      ),
+                    ),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 6),
-                  // v22: Wrap (was Row) - seven swatches can overflow very
-                  // narrow phones.
-                  child: Wrap(
-                    runSpacing: 10,
+                const SizedBox(height: 16),
+
+                // Grouping & Sorting
+                _sectionLabel('Sorting', accent),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                  ),
+                  child: Column(
                     children: [
-                      for (final c in ThemeState.swatches)
-                        _ColorSwatch(
-                          color: c,
-                          selected: themeState.accent.toARGB32() == c.toARGB32(),
-                          onTap: () => themeState.setAccent(c),
-                        ),
+                      _sortTile(
+                        icon: Icons.sort_by_alpha,
+                        title: 'Name',
+                        desc: lib.sortAscending ? 'A → Z' : 'Z → A',
+                        selected: lib.sortMode == SortMode.name,
+                        accent: accent,
+                        onTap: () {
+                          if (lib.sortMode == SortMode.name) {
+                            lib.toggleSortDirection();
+                          } else {
+                            lib.setSort(SortMode.name, true);
+                          }
+                        },
+                      ),
+                      const Divider(height: 1, color: Colors.white10),
+                      _sortTile(
+                        icon: Icons.history,
+                        title: 'Date Added',
+                        desc: lib.sortAscending ? 'Oldest first' : 'Newest first',
+                        selected: lib.sortMode == SortMode.date,
+                        accent: accent,
+                        onTap: () {
+                          if (lib.sortMode == SortMode.date) {
+                            lib.toggleSortDirection();
+                          } else {
+                            lib.setSort(SortMode.date, false);
+                          }
+                        },
+                      ),
+                      const Divider(height: 1, color: Colors.white10),
+                      _sortTile(
+                        icon: Icons.data_usage_rounded,
+                        title: 'File Size',
+                        desc: lib.sortAscending ? 'Smallest first' : 'Largest first',
+                        selected: lib.sortMode == SortMode.size,
+                        accent: accent,
+                        onTap: () {
+                          if (lib.sortMode == SortMode.size) {
+                            lib.toggleSortDirection();
+                          } else {
+                            lib.setSort(SortMode.size, false);
+                          }
+                        },
+                      ),
+                      const Divider(height: 1, color: Colors.white10),
+                      _sortTile(
+                        icon: Icons.timer_outlined,
+                        title: 'Video Length',
+                        desc: lib.sortAscending ? 'Shortest first' : 'Longest first',
+                        selected: lib.sortMode == SortMode.length,
+                        accent: accent,
+                        onTap: () {
+                          if (lib.sortMode == SortMode.length) {
+                            lib.toggleSortDirection();
+                          } else {
+                            lib.setSort(SortMode.length, false);
+                          }
+                        },
+                      ),
                     ],
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-                  child: Text(
-                    'Sort by...',
-                    style: TextStyle(
-                      color: _accent,
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                    ),
+                const SizedBox(height: 16),
+
+                // Grouping & Filtering
+                _sectionLabel('Grouping & Actions', accent),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.collections_outlined, size: 20, color: accent),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Group videos by',
+                              style: TextStyle(color: Colors.white, fontSize: 14),
+                            ),
+                          ),
+                          DropdownButton<GroupMode>(
+                            value: lib.groupMode,
+                            dropdownColor: const Color(0xFF22222e),
+                            underline: const SizedBox.shrink(),
+                            style: TextStyle(color: accent, fontSize: 13, fontWeight: FontWeight.bold),
+                            items: const [
+                              DropdownMenuItem(value: GroupMode.none, child: Text('None')),
+                              DropdownMenuItem(value: GroupMode.folder, child: Text('Folder')),
+                              DropdownMenuItem(value: GroupMode.name, child: Text('Name (A-Z)')),
+                            ],
+                            onChanged: (m) => lib.setGroupMode(m ?? GroupMode.none),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 1, color: Colors.white10),
+                      Row(
+                        children: [
+                          Icon(Icons.play_circle_outline, size: 20, color: accent),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Playback action',
+                              style: TextStyle(color: Colors.white, fontSize: 14),
+                            ),
+                          ),
+                          DropdownButton<PlaybackAction>(
+                            value: lib.playbackAction,
+                            dropdownColor: const Color(0xFF22222e),
+                            underline: const SizedBox.shrink(),
+                            style: TextStyle(color: accent, fontSize: 13, fontWeight: FontWeight.bold),
+                            items: const [
+                              DropdownMenuItem(value: PlaybackAction.all, child: Text('Queue All')),
+                              DropdownMenuItem(value: PlaybackAction.single, child: Text('Single Video')),
+                            ],
+                            onChanged: (a) => lib.setPlaybackAction(a ?? PlaybackAction.all),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 1, color: Colors.white10),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        secondary: Icon(Icons.favorite_border, size: 20, color: accent),
+                        title: const Text('Show only favourites', style: TextStyle(color: Colors.white, fontSize: 14)),
+                        value: lib.favoritesOnly,
+                        activeThumbColor: accent,
+                        onChanged: (v) => lib.setFavoritesOnly(v),
+                      ),
+                    ],
                   ),
                 ),
-                _SortGroup(
-                  icon: Icons.sort_by_alpha,
-                  title: 'Name',
-                  mode: SortMode.name,
-                  options: const ['A → Z', 'Z → A'],
-                  library: lib,
+                const SizedBox(height: 16),
+
+                // Theme Palette
+                _sectionLabel('Theme Accent Color', accent),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  children: [
+                    for (final c in ThemeState.swatches)
+                      GestureDetector(
+                        onTap: () => themeState.setAccent(c),
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: themeState.accent.toARGB32() == c.toARGB32()
+                                  ? Colors.white
+                                  : Colors.transparent,
+                              width: 2.5,
+                            ),
+                            boxShadow: themeState.accent.toARGB32() == c.toARGB32()
+                                ? [
+                                    BoxShadow(
+                                      color: c.withValues(alpha: 0.5),
+                                      blurRadius: 10,
+                                      spreadRadius: 2,
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: themeState.accent.toARGB32() == c.toARGB32()
+                              ? Icon(
+                                  Icons.check,
+                                  size: 18,
+                                  color: c.computeLuminance() > 0.7 ? Colors.black87 : Colors.white,
+                                )
+                              : null,
+                        ),
+                      ),
+                  ],
                 ),
-                _SortGroup(
-                  icon: Icons.timer_outlined,
-                  title: 'Length',
-                  mode: SortMode.length,
-                  options: const ['Shortest first', 'Longest first'],
-                  library: lib,
-                ),
-                _SortGroup(
-                  icon: Icons.history,
-                  title: 'Recently added',
-                  mode: SortMode.date,
-                  // lastModified ascending = oldest files first
-                  options: const ['Oldest first', 'Newest first'],
-                  library: lib,
-                ),
-                _SortGroup(
-                  icon: Icons.sd_storage_outlined,
-                  title: 'Size',
-                  mode: SortMode.size,
-                  options: const ['Smallest first', 'Largest first'],
-                  library: lib,
-                ),
-                const SizedBox(height: 8),
               ],
             ),
           ),
@@ -175,291 +290,110 @@ class DisplaySettingsSheet extends StatelessWidget {
       },
     );
   }
-}
 
-class _ColorSwatch extends StatelessWidget {
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
+  Widget _sectionLabel(String text, Color accent) => Padding(
+        padding: const EdgeInsets.only(bottom: 8, top: 4),
+        child: Text(
+          text.toUpperCase(),
+          style: TextStyle(
+            color: accent,
+            fontSize: 11.5,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.0,
+          ),
+        ),
+      );
 
-  const _ColorSwatch({
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _layoutCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool selected,
+    required Color accent,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(right: 12),
-        width: 32,
-        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
+          color: selected ? accent.withValues(alpha: 0.16) : Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            // White swatch needs a visible ring even when idle; others get
-            // the ring only while selected.
-            color: selected
-                ? (color.computeLuminance() > 0.7
-                    ? Colors.black87
-                    : Colors.white)
-                : (color.computeLuminance() > 0.7
-                    ? Colors.white24
-                    : Colors.transparent),
-            width: 2.5,
+            color: selected ? accent : Colors.white.withValues(alpha: 0.07),
+            width: selected ? 1.5 : 1,
           ),
         ),
-        child: selected
-            ? Icon(
-                Icons.check,
-                size: 16,
-                // v22: dark check on the white/light swatches.
-                color: color.computeLuminance() > 0.7
-                    ? Colors.black87
-                    : Colors.white,
-              )
-            : null,
-      ),
-    );
-  }
-}
-
-class _SwitchRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  const _SwitchRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white70, size: 22),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(label,
-                style:
-                    const TextStyle(color: Colors.white, fontSize: 15)),
-          ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: DisplaySettingsSheet._accent,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CheckRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool value;
-  final ValueChanged<bool?> onChanged;
-
-  const _CheckRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => onChanged(!value),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         child: Row(
           children: [
-            Icon(icon, color: Colors.white70, size: 22),
-            const SizedBox(width: 16),
+            Icon(icon, color: selected ? accent : Colors.white60, size: 24),
+            const SizedBox(width: 10),
             Expanded(
-              child: Text(label,
-                  style:
-                      const TextStyle(color: Colors.white, fontSize: 15)),
-            ),
-            Checkbox(
-              value: value,
-              onChanged: onChanged,
-              activeColor: DisplaySettingsSheet._accent,
-              checkColor: Colors.white,
-              side: const BorderSide(color: Colors.white38),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
     );
   }
-}
 
-class _DropdownRow<T> extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String? subtitle;
-  final T value;
-  final Map<T, String> entries;
-  final ValueChanged<T?> onChanged;
-
-  const _DropdownRow({
-    required this.icon,
-    required this.label,
-    this.subtitle,
-    required this.value,
-    required this.entries,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white70, size: 22),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: const TextStyle(
-                        color: Colors.white, fontSize: 15)),
-                if (subtitle != null)
-                  Text(subtitle!,
-                      style: const TextStyle(
-                          color: Colors.white38, fontSize: 12)),
-              ],
-            ),
-          ),
-          DropdownButton<T>(
-            value: value,
-            dropdownColor: const Color(0xFF26262f),
-            underline: const SizedBox.shrink(),
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
-            items: [
-              for (final e in entries.entries)
-                DropdownMenuItem(value: e.key, child: Text(e.value)),
-            ],
-            onChanged: onChanged,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// One VLC-style sort block: title on the left, its two direction options on
-/// the right, purple checkmark on the active option. Option 0 is ascending,
-/// option 1 is descending.
-class _SortGroup extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final SortMode mode;
-  final List<String> options;
-  final VideoLibraryState library;
-
-  const _SortGroup({
-    required this.icon,
-    required this.title,
-    required this.mode,
-    required this.options,
-    required this.library,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: Icon(icon, color: Colors.white70, size: 22),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(title,
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 15)),
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var i = 0; i < options.length; i++)
-                  _SortOption(
-                    label: options[i],
-                    active: library.sortMode == mode &&
-                        library.sortAscending == (i == 0),
-                    onTap: () => library.setSort(mode, i == 0),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SortOption extends StatelessWidget {
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _SortOption({
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
+  Widget _sortTile({
+    required IconData icon,
+    required String title,
+    required String desc,
+    required bool selected,
+    required Color accent,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      dense: true,
       onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+      leading: Icon(icon, color: selected ? accent : Colors.white60, size: 20),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: selected ? Colors.white : Colors.white70,
+          fontSize: 14,
+          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: selected ? accent.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  color:
-                      active ? DisplaySettingsSheet._accent : Colors.white70,
-                  fontWeight: active ? FontWeight.bold : FontWeight.normal,
-                ),
+            Text(
+              desc,
+              style: TextStyle(
+                color: selected ? accent : Colors.white38,
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
               ),
             ),
-            SizedBox(
-              width: 22,
-              child: active
-                  ? Icon(Icons.check,
-                      size: 18, color: DisplaySettingsSheet._accent)
-                  : null,
-            ),
+            if (selected) ...[
+              const SizedBox(width: 4),
+              Icon(Icons.check, size: 14, color: accent),
+            ],
           ],
         ),
       ),
