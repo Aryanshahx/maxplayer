@@ -822,6 +822,13 @@ void main() {
       final names = ['movie.srt.txt', 'other.srt', 'movie.txt', '.srt'];
       expect(sidecarSrtCandidates(names, '/m/movie.mp4'), isEmpty);
     });
+    test('v82: .vtt sidecar is picked the same way as .srt', () {
+      final names = ['movie.vtt', 'movie.eng.vtt'];
+      expect(sidecarSrtCandidates(names, '/m/movie.mp4'), [
+        'movie.vtt',
+        'movie.eng.vtt',
+      ]);
+    });
   });
 
   // -------------------------------------------------------------------------

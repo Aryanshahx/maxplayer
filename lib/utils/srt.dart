@@ -107,9 +107,16 @@ List<SrtCue> parseSrt(String doc) {
 /// files mpv auto-loads, so parsing the same pick lets karaoke + skip-intro
 /// work on ordinary subtitled videos. Pure + unit-tested.
 ///
-/// Ranking: exact "<name>.srt" first, then language-suffixed
-/// "<name>.<xx>.srt" (alphabetical). The AI sidecar ("<name>.maxai.srt")
-/// has its own pipeline and is always excluded.
+/// Ranking: exact "<name>.srt"/"<name>.vtt" first, then language-suffixed
+/// "<name>.<xx>.srt"/"<name>.<xx>.vtt" (alphabetical). The AI sidecar
+/// ("<name>.maxai.srt") has its own pipeline and is always excluded.
+///
+/// v82: matches .vtt (WebVTT) as well as .srt now - mpv auto-loads and
+/// displays .vtt sidecars the exact same way as .srt, but this used to
+/// only ever look for .srt, so Ask-AI reported "no transcript" for any
+/// video whose visible subtitle was a .vtt file. [parseSrt]'s timing
+/// regex already accepts VTT's dot-decimal timestamps, so no separate
+/// parser is needed - just recognizing the extension was the whole fix.
 List<String> sidecarSrtCandidates(List<String> fileNames, String videoPath) {
   final base = videoPath.replaceAll(r'\', '/').split('/').last;
   final dot = base.lastIndexOf('.');
@@ -118,8 +125,9 @@ List<String> sidecarSrtCandidates(List<String> fileNames, String videoPath) {
   final langMatches = <String>[];
   for (final raw in fileNames) {
     final f = raw.toLowerCase();
-    if (!f.endsWith('.srt')) continue;
-    if (f == '$stem.srt') {
+    final isSub = f.endsWith('.srt') || f.endsWith('.vtt');
+    if (!isSub) continue;
+    if (f == '$stem.srt' || f == '$stem.vtt') {
       exact ??= raw;
       continue;
     }
