@@ -43,6 +43,10 @@ class GDriveService {
       '998035561765-4tlp75rcp5549fej391bc8pbj8q3htc0.apps.googleusercontent.com';
   static const String projectId = 'max-player-507121';
 
+  /// Fallback Drive API key for the manual "paste a key" mode. Public
+  /// links only - real sign-in (GoogleSignIn) does not use this at all.
+  static const String defaultApiKey = 'AIzaSyBXBjyHeD1OiTm2KjENGVMk1LjN1MtHGi0';
+
   static final HttpClient _http = HttpClient()
     ..connectionTimeout = const Duration(seconds: 12)
     ..idleTimeout = const Duration(seconds: 10);
@@ -78,13 +82,11 @@ class GDriveService {
   /// OAuth tokens as a URL query param) - see [oauthHeaders]. This method
   /// only builds the URL.
   static String getDirectStreamUrl(String fileId, {String? apiKey, String? accessToken}) {
-    if (apiKey != null && apiKey.isNotEmpty) {
-      return 'https://www.googleapis.com/drive/v3/files/$fileId?alt=media&key=$apiKey';
-    }
     if (accessToken != null && accessToken.isNotEmpty) {
       return 'https://www.googleapis.com/drive/v3/files/$fileId?alt=media';
     }
-    return 'https://drive.google.com/uc?export=download&id=$fileId';
+    final key = (apiKey != null && apiKey.isNotEmpty) ? apiKey : defaultApiKey;
+    return 'https://www.googleapis.com/drive/v3/files/$fileId?alt=media&key=$key';
   }
 
   /// v88: HTTP headers to send alongside [getDirectStreamUrl]'s OAuth-mode

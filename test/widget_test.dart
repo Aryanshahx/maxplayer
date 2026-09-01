@@ -2905,7 +2905,7 @@ void main() {
       final cloud = File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
       expect(cloud, contains('CloudStorageSheet'));
       expect(cloud, contains('Sign in with Google'));
-      expect(cloud, contains('GDriveService.projectId'));
+      expect(cloud, contains('GoogleSignIn'));
       expect(cloud, contains('_fetchAllVideos'));
     });
 

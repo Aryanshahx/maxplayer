@@ -4,7 +4,6 @@ import 'package:path/path.dart' as p;
 
 import '../models/video_track.dart';
 import '../state/media_player_state.dart';
-import '../state/playlist_store.dart';
 import '../state/private_vault.dart';
 import '../state/theme_state.dart';
 import '../state/video_library_state.dart';
@@ -289,13 +288,12 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   }
 
   void _addToPlaylist(String path) {
-    final track = widget.library.findByPath(path) ??
-        VideoTrack(
-          id: path,
-          title: p.basenameWithoutExtension(path),
-          path: path,
-        );
-    PlaylistsSheet.show(context, widget.player, trackToAdd: track);
+    // v89: PlaylistsSheet.show() takes named library:/player: args and has
+    // no "add this specific file" shortcut (trackToAdd never existed on
+    // it) - the previous call didn't match its real signature at all and
+    // failed to compile. This opens the picker; pick a playlist there and
+    // add the file from its own "Add" flow.
+    PlaylistsSheet.show(context, library: widget.library, player: widget.player);
   }
 
   @override
