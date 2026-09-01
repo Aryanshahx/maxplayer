@@ -408,20 +408,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  /// v88: for files fetched via real Google sign-in - private Drive files
-  /// need an Authorization header to stream, not just a URL.
-  Future<void> _playAuthenticatedCloudStream(
-    String url,
-    String title,
-    Map<String, String> headers,
-  ) async {
-    await widget.player.playCloudStream(url, title, headers);
-    if (!mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PlayerScreen(player: widget.player)),
-    );
-  }
-
   void _openStreamSheet() {
     OpenStreamSheet.show(context, onPlay: _playNetworkOrStream);
   }
@@ -431,11 +417,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   void _openCloudStorage() {
-    CloudStorageSheet.show(
-      context,
-      onPlay: _playNetworkOrStream,
-      onPlayAuthenticated: _playAuthenticatedCloudStream,
-    );
+    CloudStorageSheet.show(context, onPlay: _playNetworkOrStream);
   }
 
   @override
@@ -496,70 +478,70 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
 
           PopupMenuButton<String>(
-            tooltip: 'More',
+            tooltip: 'More options',
             icon: Icon(Icons.more_vert, color: themeState.accent),
-            color: const Color(0xFF26262f),
+            color: const Color(0xFF1a1a24),
+            elevation: 8,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             onSelected: (choice) => _onMenuChoice(choice, lib),
-            // v26: menu icons follow the picked theme colour.
             itemBuilder: (context) => [
               PopupMenuItem(
                 value: 'display',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.tune, color: themeState.accent),
-                  title: const Text('Display settings'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'rescan',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.refresh, color: themeState.accent),
-                  title: const Text('Rescan library'),
+                height: 44,
+                child: Row(
+                  children: [
+                    Icon(Icons.tune, color: themeState.accent, size: 19),
+                    const SizedBox(width: 12),
+                    const Text('Display settings', style: TextStyle(color: Colors.white, fontSize: 13.5)),
+                  ],
                 ),
               ),
               PopupMenuItem(
                 value: 'stats',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.bar_chart, color: themeState.accent),
-                  title: const Text('Statistics'),
+                height: 44,
+                child: Row(
+                  children: [
+                    Icon(Icons.bar_chart, color: themeState.accent, size: 19),
+                    const SizedBox(width: 12),
+                    const Text('Watch statistics', style: TextStyle(color: Colors.white, fontSize: 13.5)),
+                  ],
                 ),
               ),
               PopupMenuItem(
                 value: 'manual',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    Icons.menu_book_outlined,
-                    color: themeState.accent,
-                  ),
-                  title: const Text('User manual'),
+                height: 44,
+                child: Row(
+                  children: [
+                    Icon(Icons.menu_book_outlined, color: themeState.accent, size: 19),
+                    const SizedBox(width: 12),
+                    const Text('User manual', style: TextStyle(color: Colors.white, fontSize: 13.5)),
+                  ],
                 ),
               ),
               PopupMenuItem(
                 value: 'about',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.info_outline, color: themeState.accent),
-                  title: const Text('About'),
+                height: 44,
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: themeState.accent, size: 19),
+                    const SizedBox(width: 12),
+                    const Text('About Max Player', style: TextStyle(color: Colors.white, fontSize: 13.5)),
+                  ],
                 ),
               ),
               PopupMenuItem(
                 value: 'privacy',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.privacy_tip_outlined, color: themeState.accent),
-                  title: const Text('Privacy policy'),
+                height: 44,
+                child: Row(
+                  children: [
+                    Icon(Icons.privacy_tip_outlined, color: themeState.accent, size: 19),
+                    const SizedBox(width: 12),
+                    const Text('Privacy policy', style: TextStyle(color: Colors.white, fontSize: 13.5)),
+                  ],
                 ),
               ),
-              // Footer: app version (not selectable).
+              const PopupMenuDivider(height: 1),
+              // Footer: app version
               const PopupMenuItem(
                 value: 'version',
                 enabled: false,
@@ -771,76 +753,101 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final visibleCount = groups.fold<int>(0, (sum, g) => sum + g.videos.length);
 
     if (visibleCount == 0) {
-      return _EmptyState(
-        key: const ValueKey('empty'),
-        isScanning: lib.isScanning,
-        permissionDenied: lib.permissionDenied,
-        favoritesOnly: lib.favoritesOnly,
-        onGrantAccess: lib.scanAllStorage,
+      return RefreshIndicator(
+        color: themeState.accent,
+        backgroundColor: const Color(0xFF1c1c28),
+        onRefresh: () async {
+          lib.rescan();
+          await Future.delayed(const Duration(milliseconds: 600));
+        },
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+          children: [
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.5,
+              child: _EmptyState(
+                key: const ValueKey('empty'),
+                isScanning: lib.isScanning,
+                permissionDenied: lib.permissionDenied,
+                favoritesOnly: lib.favoritesOnly,
+                onGrantAccess: lib.scanAllStorage,
+              ),
+            ),
+          ],
+        ),
       );
     }
 
     // Keyed by view mode so grid <-> list crossfades through the
     // AnimatedSwitcher above. v28: the controller drives the quick-tiles
     // auto-hide on downward scrolls.
-    return CustomScrollView(
-      key: ValueKey(lib.viewMode),
-      controller: _listScroll,
-      slivers: [
-        for (final group in groups) ...[
-          if (lib.groupMode != GroupMode.none)
-            SliverToBoxAdapter(
-              child: _GroupHeader(
-                title: group.title,
-                count: group.videos.length,
-              ),
-            ),
-          if (lib.viewMode == ViewMode.grid)
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-              sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 200,
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 1.18,
+    return RefreshIndicator(
+      color: themeState.accent,
+      backgroundColor: const Color(0xFF1c1c28),
+      onRefresh: () async {
+        lib.rescan();
+        await Future.delayed(const Duration(milliseconds: 600));
+      },
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+        key: ValueKey(lib.viewMode),
+        controller: _listScroll,
+        slivers: [
+          for (final group in groups) ...[
+            if (lib.groupMode != GroupMode.none)
+              SliverToBoxAdapter(
+                child: _GroupHeader(
+                  title: group.title,
+                  count: group.videos.length,
                 ),
-                delegate: SliverChildBuilderDelegate((context, i) {
-                  final track = group.videos[i];
-                  return GestureDetector(
-                    // v21: long-press moves the video to the Private folder.
-                    onLongPress: () => _offerHide(track, lib),
-                    child: VideoTile(
-                      track: track,
-                      isFavorite: lib.isFavorite(track),
-                      onTap: () => _playVideo(track),
-                      onFavorite: () => lib.toggleFavorite(track),
-                    ),
-                  );
-                }, childCount: group.videos.length),
               ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate((context, i) {
-                  final track = group.videos[i];
-                  return GestureDetector(
-                    // v21: long-press moves the video to the Private folder.
-                    onLongPress: () => _offerHide(track, lib),
-                    child: VideoListItem(
-                      track: track,
-                      isFavorite: lib.isFavorite(track),
-                      onTap: () => _playVideo(track),
-                      onFavorite: () => lib.toggleFavorite(track),
-                    ),
-                  );
-                }, childCount: group.videos.length),
+            if (lib.viewMode == ViewMode.grid)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 200,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 1.18,
+                  ),
+                  delegate: SliverChildBuilderDelegate((context, i) {
+                    final track = group.videos[i];
+                    return GestureDetector(
+                      // v21: long-press moves the video to the Private folder.
+                      onLongPress: () => _offerHide(track, lib),
+                      child: VideoTile(
+                        track: track,
+                        isFavorite: lib.isFavorite(track),
+                        onTap: () => _playVideo(track),
+                        onFavorite: () => lib.toggleFavorite(track),
+                      ),
+                    );
+                  }, childCount: group.videos.length),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate((context, i) {
+                    final track = group.videos[i];
+                    return GestureDetector(
+                      // v21: long-press moves the video to the Private folder.
+                      onLongPress: () => _offerHide(track, lib),
+                      child: VideoListItem(
+                        track: track,
+                        isFavorite: lib.isFavorite(track),
+                        onTap: () => _playVideo(track),
+                        onFavorite: () => lib.toggleFavorite(track),
+                      ),
+                    );
+                  }, childCount: group.videos.length),
+                ),
               ),
-            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

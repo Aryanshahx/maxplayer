@@ -44,13 +44,7 @@ String movieAiSystemPrompt(TmdbMovie movie) {
   final title = movie.year != null
       ? '"${movie.title}" (${movie.year})'
       : '"${movie.title}"';
-  return 'You are Max Player\'s movie expert. You answer ONLY questions '
-      'about movies, TV series, actors, directors and cinema. If the user '
-      'asks about anything else (math, coding, news, weather, personal '
-      'advice etc.), politely refuse in one short line and suggest 2 movie '
-      'questions instead. Use simple words, max 120 words. Movie in '
-      'context: $title.'
-      '${movie.overview.isNotEmpty ? ' Story: ${movie.overview}' : ''}';
+  return 'You are Max Player\'s AI movie specialist. Answer the user\'s specific question about the movie/series $title accurately, directly, and engagingly. Story overview: ${movie.overview}. Rating: ${movie.rating}/10. Keep answers informative, concise, and focused on cinema.';
 }
 
 /// One OpenRouter chat-completion request body. Pure for tests.
@@ -197,7 +191,7 @@ class MovieAiClient {
 /// Smart, high-quality instant local movie AI responder.
 /// Guarantees instant responses and 100% reliability when OpenRouter is slow or rate-limited.
 String _smartLocalMovieAnswer(TmdbMovie movie, String question) {
-  final q = question.toLowerCase();
+  final q = question.toLowerCase().trim();
   final title = movie.title;
   final year = movie.year != null ? ' (${movie.year})' : '';
   final rating = movie.rating > 0 ? movie.rating.toStringAsFixed(1) : '7.5';
@@ -206,16 +200,17 @@ String _smartLocalMovieAnswer(TmdbMovie movie, String question) {
   if (q.contains('worth watching') ||
       q.contains('good') ||
       q.contains('review') ||
-      q.contains('recommend')) {
+      q.contains('recommend') ||
+      q.contains('should i watch')) {
     final score = movie.rating;
     if (score >= 7.5) {
-      return '$title$year is definitely worth watching! It holds a strong $rating/10 rating on TMDB, with praise for its engaging storytelling, standout performances, and high production value. Highly recommended for cinema fans.'
+      return '$title$year is definitely worth watching! It holds a strong $rating/10 rating on TMDB, with praise for its engaging storytelling, standout performances, and high production value.'
           '${overview.isNotEmpty ? "\n\nStory premise: $overview" : ""}';
     } else if (score >= 6.0) {
-      return '$title$year is a solid entertainer with a $rating/10 rating on TMDB. It delivers good moments and enjoyable scenes if you enjoy its genre.'
+      return '$title$year is an enjoyable watch with a $rating/10 rating on TMDB. It delivers fun moments and great scenes for fans of the genre.'
           '${overview.isNotEmpty ? "\n\nPremise: $overview" : ""}';
     } else {
-      return '$title$year has a $rating/10 user score. It offers casual entertainment with distinctive scenes for fans of the cast.'
+      return '$title$year has a $rating/10 score on TMDB. It offers casual entertainment with memorable highlights.'
           '${overview.isNotEmpty ? "\n\nStory: $overview" : ""}';
     }
   }
@@ -224,7 +219,8 @@ String _smartLocalMovieAnswer(TmdbMovie movie, String question) {
       q.contains('explain') ||
       q.contains('story') ||
       q.contains('plot') ||
-      q.contains('summary')) {
+      q.contains('summary') ||
+      q.contains('about')) {
     if (overview.isNotEmpty) {
       final sentences = overview.split(RegExp(r'(?<=[.!?])\s+'));
       if (sentences.length >= 3) {
@@ -237,30 +233,34 @@ String _smartLocalMovieAnswer(TmdbMovie movie, String question) {
 
   if (q.contains('like this') ||
       q.contains('similar') ||
-      q.contains('recommendations')) {
-    return 'Great movies similar to $title$year include acclaimed cinema in the same genre that offer thrilling narratives, emotional depth, and impressive visuals. Check the "Related movies" section below the details for hand-picked similar titles with posters.';
+      q.contains('recommendation') ||
+      q.contains('suggestion')) {
+    return 'If you enjoyed $title$year, check out acclaimed titles in the same genre that share its visual style, tone, and pacing. You can browse hand-picked related titles right under the details section!';
   }
 
-  if (q.contains('fact') || q.contains('trivia') || q.contains('interesting')) {
-    return 'Interesting facts about $title$year:\n'
-        '• Features an international rating of $rating/10 from global audiences.\n'
-        '• Was officially released in ${movie.year ?? "theaters worldwide"}.\n'
-        '• Known for its distinct cinematography and immersive soundtrack.';
+  if (q.contains('fact') || q.contains('trivia') || q.contains('behind the scene')) {
+    return 'Key facts about $title$year:\n'
+        '• Community Rating: ⭐ $rating/10 on TMDB.\n'
+        '• Released: ${movie.year ?? "International distribution"}.\n'
+        '• Celebrated for its unique narrative style and dedicated fanbase.';
   }
 
-  if (q.contains('ending') || q.contains('climax') || q.contains('twist')) {
-    return 'Without spoiling major surprises: $title$year delivers a powerful climax that ties its narrative threads together, offering emotional and thematic closure to its characters.';
+  if (q.contains('ending') || q.contains('climax') || q.contains('twist') || q.contains('spoiler')) {
+    return 'Without spoiling major plot twists: $title$year builds towards a dramatic climax where central conflicts reach a decisive resolution, delivering emotional closure for the main characters.';
   }
 
-  if (q.contains('director') || q.contains('cast') || q.contains('actor')) {
-    return '$title$year showcases a talented ensemble cast and direction. Check the Cast & Crew section above in the movie details sheet to see the full list of actors and director photos.';
+  if (q.contains('director') || q.contains('cast') || q.contains('actor') || q.contains('star') || q.contains('who is in')) {
+    return '$title$year features a talented ensemble cast and creative direction. Check the Top Cast slider in the detail sheet to view all actor profile photos and character names!';
   }
 
-  // General fallback
+  if (q.contains('rating') || q.contains('score') || q.contains('imdb') || q.contains('tmdb')) {
+    return '$title$year has an audience rating of ⭐ $rating/10 based on TMDB user reviews.';
+  }
+
   if (overview.isNotEmpty) {
-    return '$title$year: $overview\n\nUser Score: ⭐ $rating/10 on TMDB.';
+    return '$title$year ($rating/10):\n\n$overview\n\nFor more specific questions about characters, ending, or trivia, tap one of the template chips above!';
   }
-  return '$title$year is a featured title on TMDB with a user rating of ⭐ $rating/10.';
+  return '$title$year is featured on TMDB with a community rating of ⭐ $rating/10.';
 }
 
 // ---------------------------------------------------------------------------

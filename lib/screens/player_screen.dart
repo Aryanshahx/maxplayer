@@ -1280,56 +1280,56 @@ class _PlayerScreenState extends State<PlayerScreen>
                             ),
                           ),
                           // Transient indicator (seek / volume / brightness /
-                          // zoom / resume / fit / play-pause) - pops in and
-                          // out with a small scale+fade.
+                          // zoom / resume / fit / play-pause) - smooth scale + fade + glassmorphic pill.
                           Positioned(
-                            top: 72,
+                            top: 64,
                             left: 0,
                             right: 0,
                             child: IgnorePointer(
                               child: Center(
-                                // v19: this sign used to BLINK during
-                                // volume/brightness swipes - the old
-                                // switcher re-keyed itself on every tick,
-                                // replaying a scale animation each time.
-                                // Now: ONE stable container, only opacity
-                                // animates, text/icon swap in place.
-                                child: AnimatedOpacity(
-                                  duration: const Duration(milliseconds: 120),
-                                  opacity: (_indicatorText != null && !_isPip)
-                                      ? 1.0
-                                      : 0.0,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 10,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.72,
-                                      ),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (_indicatorIcon != null) ...[
-                                          Icon(
-                                            _indicatorIcon,
-                                            color: Colors.white,
-                                            size: 20,
-                                          ),
-                                          const SizedBox(width: 8),
-                                        ],
-                                        Text(
-                                          _indicatorText ?? '',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                child: AnimatedScale(
+                                  scale: (_indicatorText != null && !_isPip) ? 1.0 : 0.85,
+                                  duration: const Duration(milliseconds: 200),
+                                  curve: Curves.easeOutBack,
+                                  child: AnimatedOpacity(
+                                    duration: const Duration(milliseconds: 200),
+                                    curve: Curves.easeOutCubic,
+                                    opacity: (_indicatorText != null && !_isPip) ? 1.0 : 0.0,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF161622).withValues(alpha: 0.88),
+                                        borderRadius: BorderRadius.circular(24),
+                                        border: Border.all(
+                                          color: themeState.accent.withValues(alpha: 0.35),
+                                          width: 1.2,
                                         ),
-                                      ],
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: 0.45),
+                                            blurRadius: 16,
+                                            offset: const Offset(0, 4),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (_indicatorIcon != null) ...[
+                                            Icon(_indicatorIcon, color: themeState.accent, size: 20),
+                                            const SizedBox(width: 8),
+                                          ],
+                                          Text(
+                                            _indicatorText ?? '',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 0.2,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1633,7 +1633,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                                         _toggleOrientationLock,
                                     karaokeOn: _settings.karaokeSubs,
                                     onToggleKaraoke: _toggleKaraoke,
-                                    onAskAi: _openVideoAsk,
                                   ),
                                 ),
                               ),
@@ -1669,77 +1668,156 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  /// Player more-actions menu (v88): compact, fast native popup menu.
+  /// Redesigned player more-actions sheet (v87).
   Widget _topMenu(BuildContext context) {
-    return PopupMenuButton<String>(
+    return IconButton(
       tooltip: 'More actions',
       icon: Icon(Icons.more_vert, size: 22, color: themeState.accent),
-      color: const Color(0xFF1a1a24),
-      elevation: 8,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      onSelected: (v) {
-        _onUserInteraction();
-        switch (v) {
-          case 'info':
-            VideoInfoSheet.show(context, widget.player);
-            break;
-          case 'eq':
-            EqualizerSheet.show(context, widget.player);
-            break;
-          case 'shot':
-            _takeScreenshot();
-            break;
-          case 'cast':
-            _openCast();
-            break;
-          case 'pip':
-            NativeBridge.enterPip(playing: widget.player.isPlaying);
-            break;
-          case 'sleep':
-            _showSleepSheet();
-            break;
-        }
-      },
-      itemBuilder: (context) => [
-        _topMenuItem('info', Icons.info_outline, 'Video info'),
-        _topMenuItem('eq', Icons.graphic_eq, 'Equalizer'),
-        if (_settings.screenshotButton)
-          _topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot'),
-        if (_settings.castButton)
-          _topMenuItem('cast', Icons.cast_outlined, 'Cast to TV'),
-        _topMenuItem(
-          'pip',
-          Icons.picture_in_picture_alt_outlined,
-          'Picture in picture',
-        ),
-        _topMenuItem(
-          'sleep',
-          Icons.bedtime_outlined,
-          widget.player.sleepTimerActive
-              ? 'Sleep timer (${widget.player.sleepTimerLabel})'
-              : 'Sleep timer',
-        ),
-      ],
+      onPressed: _showMoreActionsSheet,
     );
   }
 
-  PopupMenuItem<String> _topMenuItem(String v, IconData icon, String label) {
-    return PopupMenuItem(
-      value: v,
-      height: 42,
-      child: Row(
-        children: [
-          Icon(icon, size: 19, color: themeState.accent),
-          const SizedBox(width: 12),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
+  void _showMoreActionsSheet() {
+    _onUserInteraction();
+    final accent = themeState.accent;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF14141c),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Icon(Icons.more_horiz, color: accent, size: 22),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'More Actions',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _actionTile(
+                icon: Icons.info_outline,
+                title: 'Video Information',
+                subtitle: 'Codec, resolution, bitrate, audio channels',
+                accent: accent,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  VideoInfoSheet.show(context, widget.player);
+                },
+              ),
+              _actionTile(
+                icon: Icons.graphic_eq,
+                title: 'Equalizer & Audio FX',
+                subtitle: '5-band equalizer, bass boost, vocal clarity',
+                accent: accent,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  EqualizerSheet.show(context, widget.player);
+                },
+              ),
+              if (_settings.screenshotButton)
+                _actionTile(
+                  icon: Icons.camera_alt_outlined,
+                  title: 'Take Screenshot',
+                  subtitle: 'Save current video frame to gallery',
+                  accent: accent,
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _takeScreenshot();
+                  },
+                ),
+              if (_settings.castButton)
+                _actionTile(
+                  icon: Icons.cast_outlined,
+                  title: 'Cast to Smart TV / DLNA',
+                  subtitle: 'Stream video directly over Wi-Fi',
+                  accent: accent,
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _openCast();
+                  },
+                ),
+              _actionTile(
+                icon: Icons.picture_in_picture_alt_outlined,
+                title: 'Picture-in-Picture (PiP)',
+                subtitle: 'Play in floating window while multitasking',
+                accent: accent,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  NativeBridge.enterPip(playing: widget.player.isPlaying);
+                },
+              ),
+              _actionTile(
+                icon: Icons.bedtime_outlined,
+                title: widget.player.sleepTimerActive
+                    ? 'Sleep Timer (${widget.player.sleepTimerLabel})'
+                    : 'Sleep Timer',
+                subtitle: 'Auto-pause playback after timer ends',
+                accent: accent,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _showSleepSheet();
+                },
+              ),
+            ],
           ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _actionTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color accent,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        dense: true,
+        leading: CircleAvatar(
+          radius: 18,
+          backgroundColor: accent.withValues(alpha: 0.18),
+          child: Icon(icon, color: accent, size: 18),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13.5),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(color: Colors.white38, fontSize: 11),
+        ),
+        trailing: const Icon(Icons.chevron_right, color: Colors.white24, size: 18),
+        onTap: onTap,
       ),
     );
   }

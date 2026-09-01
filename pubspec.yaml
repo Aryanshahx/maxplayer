@@ -1,7 +1,7 @@
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+88
+version: 1.0.0+90
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -24,12 +24,6 @@ dependencies:
 
   path: ^1.9.0
   intl: ^0.19.0
-
-  # v88: real "Sign in with Google" for private Drive file access (the
-  # existing API-key mode can only see publicly-shared files). No client
-  # secret ships in the app - Android matches the OAuth client by package
-  # name + signing certificate SHA-1, registered once in Cloud Console.
-  google_sign_in: ^6.2.1
 
 dev_dependencies:
   flutter_test:

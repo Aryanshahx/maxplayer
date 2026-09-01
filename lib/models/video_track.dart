@@ -12,11 +12,6 @@ class VideoTrack {
   final int? width; // pixels, from native metadata
   final int? height;
 
-  /// v88: for cloud-streamed tracks (Google Drive via OAuth) that need
-  /// an Authorization header to actually play. Null for every ordinary
-  /// local file/URL - fully backward compatible.
-  final Map<String, String>? httpHeaders;
-
   const VideoTrack({
     required this.id,
     required this.title,
@@ -27,7 +22,6 @@ class VideoTrack {
     this.lastModifiedMs,
     this.width,
     this.height,
-    this.httpHeaders,
   });
 
   /// Name of the folder containing this video (used by "Group by folder" and "Folders" quick-tile).
@@ -75,7 +69,6 @@ class VideoTrack {
       lastModifiedMs: lastModifiedMs,
       width: width,
       height: height,
-      httpHeaders: httpHeaders,
     );
   }
 }

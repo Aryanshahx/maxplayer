@@ -119,9 +119,6 @@ class _AskAiSheetState extends State<AskAiSheet> {
 
   @override
   Widget build(BuildContext context) {
-    if (kOpenRouterApiKey.isEmpty) {
-      return const _AiSetupNote();
-    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
       child: Column(

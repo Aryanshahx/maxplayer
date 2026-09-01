@@ -51,34 +51,22 @@ class AboutSheet extends StatelessWidget {
           ),
         ),
         // Brand header.
-        Row(
+        const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(14),
+            Text(
+              'Max Player',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.3,
               ),
-              child: Icon(Icons.play_circle_fill, color: accent, size: 32),
             ),
-            const SizedBox(width: 12),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Max Player',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  'by Hyper Tech Labs',
-                  style: TextStyle(color: Colors.white54, fontSize: 12.5),
-                ),
-              ],
+            SizedBox(height: 2),
+            Text(
+              'by Hyper Tech Labs',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
             ),
           ],
         ),

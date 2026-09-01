@@ -183,10 +183,24 @@ class TmdbPage {
   });
 }
 
+/// Cast member with photo, character and real name.
+class TmdbCastMember {
+  final String name;
+  final String character;
+  final String? profilePath;
+
+  const TmdbCastMember({
+    required this.name,
+    this.character = '',
+    this.profilePath,
+  });
+}
+
 /// Extra facts from the detail call (append_to_response=videos,credits).
 class TmdbDetailExtras {
   final String director;
   final List<String> cast;
+  final List<TmdbCastMember> castMembers;
   final int runtimeMinutes;
   final List<String> genres;
   final String tagline;
@@ -211,6 +225,7 @@ class TmdbDetailExtras {
   const TmdbDetailExtras({
     this.director = '',
     this.cast = const [],
+    this.castMembers = const [],
     this.runtimeMinutes = 0,
     this.genres = const [],
     this.tagline = '',
@@ -225,6 +240,44 @@ class TmdbDetailExtras {
     this.certification = '',
     this.allLanguages = const [],
     this.spokenLanguages = const [],
+  });
+}
+
+/// One episode of a TV / web series season.
+class TmdbEpisode {
+  final int episodeNumber;
+  final String name;
+  final String overview;
+  final double rating;
+  final int runtimeMinutes;
+  final String? stillPath;
+  final String? airDate;
+
+  const TmdbEpisode({
+    required this.episodeNumber,
+    required this.name,
+    this.overview = '',
+    this.rating = 0.0,
+    this.runtimeMinutes = 0,
+    this.stillPath,
+    this.airDate,
+  });
+}
+
+/// Full season detail containing episode list, ratings and durations.
+class TmdbSeasonDetail {
+  final int seasonNumber;
+  final String name;
+  final double rating;
+  final String overview;
+  final List<TmdbEpisode> episodes;
+
+  const TmdbSeasonDetail({
+    required this.seasonNumber,
+    required this.name,
+    this.rating = 0.0,
+    this.overview = '',
+    this.episodes = const [],
   });
 }
 
@@ -254,12 +307,14 @@ class TmdbSeason {
   final String name;
   final int episodes;
   final int? year;
+  final double rating;
 
   const TmdbSeason({
     required this.number,
     required this.name,
     required this.episodes,
     this.year,
+    this.rating = 0.0,
   });
 }
 
@@ -278,11 +333,13 @@ List<TmdbSeason> parseTmdbSeasons(String jsonBody) {
       final name = '${e['name'] ?? ''}'.trim();
       final eps = e['episode_count'] is num ? (e['episode_count'] as num).toInt() : 0;
       final air = '${e['air_date'] ?? ''}';
+      final vote = e['vote_average'] is num ? (e['vote_average'] as num).toDouble() : 0.0;
       out.add(TmdbSeason(
         number: n,
         name: name.isEmpty ? (n == 0 ? 'Specials' : 'Season $n') : name,
         episodes: eps,
         year: air.length >= 4 ? int.tryParse(air.substring(0, 4)) : null,
+        rating: vote,
       ));
     }
     // v60 belt & braces (his report: "series parts not showing"): some
@@ -306,6 +363,52 @@ List<TmdbSeason> parseTmdbSeasons(String jsonBody) {
     return out;
   } catch (_) {
     return const [];
+  }
+}
+
+/// Parses /tv/{id}/season/{season_number} detail response.
+TmdbSeasonDetail? parseTmdbSeasonDetail(String jsonBody, {int seasonNumber = 1}) {
+  try {
+    final decoded = jsonDecode(jsonBody);
+    if (decoded is! Map) return null;
+    final name = '${decoded['name'] ?? 'Season $seasonNumber'}'.trim();
+    final vote = decoded['vote_average'] is num ? (decoded['vote_average'] as num).toDouble() : 0.0;
+    final overview = '${decoded['overview'] ?? ''}'.trim();
+    final rawEps = decoded['episodes'];
+    final episodes = <TmdbEpisode>[];
+
+    if (rawEps is List) {
+      for (final ep in rawEps) {
+        if (ep is! Map) continue;
+        final epNum = ep['episode_number'] is num ? (ep['episode_number'] as num).toInt() : 0;
+        final epName = '${ep['name'] ?? 'Episode $epNum'}'.trim();
+        final epVote = ep['vote_average'] is num ? (ep['vote_average'] as num).toDouble() : 0.0;
+        final epRuntime = ep['runtime'] is num ? (ep['runtime'] as num).toInt() : 0;
+        final epOverview = '${ep['overview'] ?? ''}'.trim();
+        final epStill = ep['still_path']?.toString();
+        final epAir = ep['air_date']?.toString();
+
+        episodes.add(TmdbEpisode(
+          episodeNumber: epNum,
+          name: epName,
+          overview: epOverview,
+          rating: epVote,
+          runtimeMinutes: epRuntime,
+          stillPath: epStill,
+          airDate: epAir,
+        ));
+      }
+    }
+
+    return TmdbSeasonDetail(
+      seasonNumber: seasonNumber,
+      name: name,
+      rating: vote,
+      overview: overview,
+      episodes: episodes,
+    );
+  } catch (_) {
+    return null;
   }
 }
 
@@ -485,6 +588,7 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
     if (decoded is! Map) return const TmdbDetailExtras();
     String director = '';
     final cast = <String>[];
+    final castMembers = <TmdbCastMember>[];
     final credits = decoded['credits'];
     if (credits is Map) {
       final crew = credits['crew'];
@@ -501,8 +605,17 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
         for (final c in castList) {
           if (c is! Map) continue;
           final name = '${c['name'] ?? ''}'.trim();
-          if (name.isNotEmpty) cast.add(name);
-          if (cast.length >= 6) break;
+          final character = '${c['character'] ?? ''}'.trim();
+          final prof = c['profile_path']?.toString();
+          if (name.isNotEmpty) {
+            cast.add(name);
+            castMembers.add(TmdbCastMember(
+              name: name,
+              character: character,
+              profilePath: prof,
+            ));
+          }
+          if (castMembers.length >= 20) break;
         }
       }
     }
@@ -530,8 +643,9 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
     return TmdbDetailExtras(
       director: director,
       cast: cast,
+      castMembers: castMembers,
       runtimeMinutes:
-          decoded['runtime'] is num ? (decoded['runtime'] as num).toInt() : 0,
+          decoded['runtime'] is num ? (decoded['runtime'] as num).toInt() : (decoded['episode_run_time'] is List && (decoded['episode_run_time'] as List).isNotEmpty ? ((decoded['episode_run_time'] as List).first as num).toInt() : 0),
       genres: genres,
       tagline: '${decoded['tagline'] ?? ''}'.trim(),
       voteCount: decoded['vote_count'] is num
@@ -988,5 +1102,18 @@ class TmdbClient {
         uri,
         ttl: force ? Duration.zero : const Duration(hours: 24));
     return body == null ? const [] : parseTmdbList(body, kind: kind);
+  }
+
+  /// v90: Fetches detailed episode list, ratings, and durations for a specific season of a TV show.
+  Future<TmdbSeasonDetail?> seasonDetail(int tvId, int seasonNumber, {bool force = false}) async {
+    if (kTmdbApiKey.isEmpty) return null;
+    final cacheName = 'tmdb_tv_${tvId}_s${seasonNumber}_detail.json';
+    final uri = Uri.https(_host, '/3/tv/$tvId/season/$seasonNumber', {
+      'api_key': kTmdbApiKey,
+      'language': 'en-US',
+    });
+    final body = await _fetch(cacheName, uri, ttl: force ? Duration.zero : const Duration(hours: 24));
+    if (body == null) return null;
+    return parseTmdbSeasonDetail(body, seasonNumber: seasonNumber);
   }
 }

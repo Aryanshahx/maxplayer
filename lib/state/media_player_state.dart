@@ -340,23 +340,6 @@ class MediaPlayerState extends ChangeNotifier {
     await setPlaylistAndPlay([track], 0);
   }
 
-  /// v88: same as [playStream] but for cloud sources (Google Drive signed
-  /// in via OAuth) that need an Authorization header to actually serve
-  /// the bytes - the URL alone isn't playable without it.
-  Future<void> playCloudStream(
-    String url,
-    String title,
-    Map<String, String> headers,
-  ) async {
-    final track = VideoTrack(
-      id: url,
-      title: title,
-      path: url,
-      httpHeaders: headers,
-    );
-    await setPlaylistAndPlay([track], 0);
-  }
-
   List<int> _generateShuffledOrder(int length, int currentIdx) {
     final indices = List.generate(length, (i) => i)..remove(currentIdx);
     indices.shuffle(_rand);
@@ -463,10 +446,7 @@ class MediaPlayerState extends ChangeNotifier {
       // reset it at open, while our cache would think it's still applied).
       _appliedSubVisibility = null;
     }
-    await player.open(
-      Media(track.path, httpHeaders: track.httpHeaders),
-      play: autoplay,
-    );
+    await player.open(Media(track.path), play: autoplay);
     await player.setRate(playbackRate);
     await _applyMpvVolume();
     // v77: these three used to be awaited here too, serially, before this

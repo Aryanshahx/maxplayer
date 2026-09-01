@@ -162,6 +162,7 @@ class _NetworkStorageSheetState extends State<NetworkStorageSheet> {
   @override
   Widget build(BuildContext context) {
     final accent = themeState.accent;
+    final btnTextColor = accent.computeLuminance() > 0.55 ? const Color(0xFF14141c) : Colors.white;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final screenH = MediaQuery.of(context).size.height;
 
@@ -274,6 +275,7 @@ class _NetworkStorageSheetState extends State<NetworkStorageSheet> {
                                   child: FilledButton(
                                     style: FilledButton.styleFrom(
                                       backgroundColor: accent,
+                                      foregroundColor: btnTextColor,
                                       padding: const EdgeInsets.symmetric(vertical: 12),
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                     ),
@@ -303,11 +305,12 @@ class _NetworkStorageSheetState extends State<NetworkStorageSheet> {
                                   FilledButton.icon(
                                     style: FilledButton.styleFrom(
                                       backgroundColor: accent,
+                                      foregroundColor: btnTextColor,
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                     ),
                                     onPressed: () => setState(() => _showAddForm = true),
                                     icon: const Icon(Icons.add),
-                                    label: const Text('Add Network Storage'),
+                                    label: const Text('Add Network Storage', style: TextStyle(fontWeight: FontWeight.bold)),
                                   ),
                                 ],
                               ),
@@ -368,12 +371,15 @@ class _NetworkStorageSheetState extends State<NetworkStorageSheet> {
 
   Widget _protoChip(String proto, String label, Color accent) {
     final selected = _protocol == proto;
+    final chipTextColor = selected
+        ? (accent.computeLuminance() > 0.55 ? const Color(0xFF14141c) : Colors.white)
+        : Colors.white70;
     return ChoiceChip(
       label: Text(label),
       selected: selected,
       selectedColor: accent,
       labelStyle: TextStyle(
-        color: selected ? Colors.white : Colors.white70,
+        color: chipTextColor,
         fontSize: 12,
         fontWeight: selected ? FontWeight.bold : FontWeight.normal,
       ),

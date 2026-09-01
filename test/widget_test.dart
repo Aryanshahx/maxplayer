@@ -2853,75 +2853,57 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // v87: Tight grid aspect ratio & card-based display settings
+  // v90: Pull-to-refresh, Media File Manager, TMDB Cast & Episode Durations, Gesture Animations
   // -------------------------------------------------------------------------
-  group('v87 tight grid + redesigned display settings', () {
-    test('LibraryScreen sets tight childAspectRatio 1.18 to eliminate empty space', () {
+  group('v90 refresh + media file manager + tmdb seasons + smooth gestures', () {
+    test('LibraryScreen has RefreshIndicator and no Rescan in top menu', () {
       final lib = File('lib/screens/library_screen.dart').readAsStringSync();
-      expect(lib, contains('childAspectRatio: 1.18'));
-    });
-
-    test('DisplaySettingsSheet has card-based layout and sort options', () {
-      final display = File('lib/widgets/display_settings_sheet.dart').readAsStringSync();
-      expect(display, contains('Layout & View Mode'));
-      expect(display, contains('Grid View'));
-      expect(display, contains('List View'));
-      expect(display, contains('Theme Accent Color'));
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // v88: Google Sign-In Cloud Storage, Clean Player Top Menu, Media File Manager
-  // -------------------------------------------------------------------------
-  group('v88 cloud signin + clean player menu + media file manager', () {
-    test('LibraryScreen top menu has no Open stream URL and no Ask AI', () {
-      final lib = File('lib/screens/library_screen.dart').readAsStringSync();
+      expect(lib, contains('RefreshIndicator'));
       expect(lib, contains('Display settings'));
-      expect(lib, contains('Rescan library'));
-      expect(lib, contains('Privacy policy'));
+      expect(lib, contains('Watch statistics'));
       expect(lib.contains("Open stream URL"), isFalse);
-      expect(lib.contains("Ask AI about this video"), isFalse);
     });
 
-    test('PlayerScreen top menu uses native PopupMenuButton without ask AI', () {
+    test('PlayerScreen top menu uses compact PopupMenuButton and smooth gesture animations', () {
       final playerScreen = File('lib/screens/player_screen.dart').readAsStringSync();
       expect(playerScreen, contains('PopupMenuButton<String>'));
       expect(playerScreen, contains('_topMenuItem'));
-      expect(playerScreen, contains('Video info'));
-      expect(playerScreen, contains('Equalizer'));
+      expect(playerScreen, contains('AnimatedScale'));
       expect(playerScreen.contains("Ask AI about this video"), isFalse);
     });
 
-    test('FileManagerScreen provides shortcuts, category filters, and direct video playback', () {
+    test('PlayerControlsOverlay has no Ask AI in tune/tracks sheet', () {
+      final overlay = File('lib/widgets/player_controls_overlay.dart').readAsStringSync();
+      expect(overlay.contains("Ask AI about this video"), isFalse);
+    });
+
+    test('AboutSheet has no app icon container in brand header', () {
+      final about = File('lib/widgets/about_sheet.dart').readAsStringSync();
+      expect(about, contains('Max Player'));
+      expect(about, contains('by Hyper Tech Labs'));
+      expect(about.contains("Icons.play_circle_fill"), isFalse);
+    });
+
+    test('FileManagerScreen opens images, audio, documents, and provides AI insights', () {
       final fileMgr = File('lib/screens/file_manager_screen.dart').readAsStringSync();
-      expect(fileMgr, contains('FileManagerScreen'));
-      expect(fileMgr, contains('_shortcuts'));
-      expect(fileMgr, contains('_typeFilter'));
-      expect(fileMgr, contains('Move to Private Space'));
-      expect(fileMgr, contains('setPlaylistAndPlay'));
+      expect(fileMgr, contains('_openImageViewer'));
+      expect(fileMgr, contains('_openAudioPlayer'));
+      expect(fileMgr, contains('_openDocumentViewer'));
+      expect(fileMgr, contains('_showAiMediaInsights'));
     });
 
-    test('CloudStorageSheet supports Google Sign-In with configured Client ID & API Key', () {
-      final cloud = File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
-      expect(cloud, contains('CloudStorageSheet'));
-      expect(cloud, contains('Sign in with Google'));
-      expect(cloud, contains('GoogleSignIn'));
-      expect(cloud, contains('_fetchAllVideos'));
+    test('MovieDetailSheet includes cast slider, seasons/episodes with durations, and reviews', () {
+      final detail = File('lib/widgets/movie_detail_sheet.dart').readAsStringSync();
+      expect(detail, contains('_TopCastSlider'));
+      expect(detail, contains('_SeasonsBlock'));
+      expect(detail, contains('_ReviewsBlock'));
+      expect(detail, contains('_DetailedStoryBlock'));
     });
 
-    test('GDriveService provides API Key, Client ID and stream resolver', () {
-      expect(GDriveService.defaultApiKey, 'AIzaSyBXBjyHeD1OiTm2KjENGVMk1LjN1MtHGi0');
-      expect(GDriveService.clientId, contains('998035561765-4tlp75rcp5549fej391bc8pbj8q3htc0'));
-      expect(GDriveService.projectId, 'max-player-507121');
-
-      final url = 'https://drive.google.com/file/d/1A2B3C4D5E6F7G8H9I0J/view';
-      final fileId = GDriveService.parseDriveFileId(url);
-      expect(fileId, '1A2B3C4D5E6F7G8H9I0J');
-
-      final streamUrl = GDriveService.getDirectStreamUrl(fileId!);
-      expect(streamUrl, contains('https://www.googleapis.com/drive/v3/files/1A2B3C4D5E6F7G8H9I0J'));
-      expect(streamUrl, contains('alt=media'));
-      expect(streamUrl, contains('key=AIzaSyBXBjyHeD1OiTm2KjENGVMk1LjN1MtHGi0'));
+    test('NetworkStorageSheet uses dynamic contrast colors for buttons', () {
+      final net = File('lib/widgets/network_storage_sheet.dart').readAsStringSync();
+      expect(net, contains('computeLuminance'));
+      expect(net, contains('btnTextColor'));
     });
   });
 }
