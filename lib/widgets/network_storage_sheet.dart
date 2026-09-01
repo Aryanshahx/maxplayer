@@ -53,7 +53,7 @@ class NetworkLocation {
       );
 }
 
-/// v86: Phone & Tablet responsive Network Storage sheet (SMB, FTP, WebDAV).
+/// v91: Phone & Tablet responsive Network Storage sheet (SMB, FTP, WebDAV) with dynamic contrast.
 class NetworkStorageSheet extends StatefulWidget {
   final Future<void> Function(String url, String title) onPlay;
 

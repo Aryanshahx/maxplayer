@@ -11,7 +11,7 @@ import '../utils/formatters.dart';
 import '../widgets/playlists_sheet.dart';
 import 'player_screen.dart';
 
-/// v90: Advanced Media File Manager & Storage Explorer with full media viewers
+/// v91: Advanced Media File Manager & Storage Explorer with full media viewers
 /// (Images, Audio/Music, Documents) and AI Media Insights.
 class FileManagerScreen extends StatefulWidget {
   final VideoLibraryState library;
@@ -297,7 +297,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.replay_10, color: Colors.white70, size: 28),
-                    onPressed: () => widget.player.seekRelative(-10),
+                    onPressed: () => widget.player.seekBy(-10),
                   ),
                   const SizedBox(width: 20),
                   CircleAvatar(
@@ -306,7 +306,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                     child: IconButton(
                       icon: Icon(widget.player.isPlaying ? Icons.pause : Icons.play_arrow, color: themeState.onAccent, size: 30),
                       onPressed: () {
-                        widget.player.togglePlayPause();
+                        widget.player.togglePlay();
                         setState(() {});
                       },
                     ),
@@ -314,7 +314,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                   const SizedBox(width: 20),
                   IconButton(
                     icon: const Icon(Icons.forward_10, color: Colors.white70, size: 28),
-                    onPressed: () => widget.player.seekRelative(10),
+                    onPressed: () => widget.player.seekBy(10),
                   ),
                 ],
               ),

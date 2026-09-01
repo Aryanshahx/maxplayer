@@ -13,7 +13,7 @@ import '../utils/formatters.dart';
 import 'ask_ai_sheet.dart';
 import 'tmdb_image.dart';
 
-/// v90: Discover movie & web series detail sheet.
+/// v91: Discover movie & web series detail sheet.
 /// Includes trailer player, rich storyline, top cast slider with profile images,
 /// season ratings & episode lists with individual episode ratings and durations,
 /// full user reviews, and instant offline local playback.

@@ -7,12 +7,7 @@ import '../services/native_bridge.dart';
 import '../services/tmdb_client.dart';
 import '../state/theme_state.dart';
 
-/// v45: "Ask with AI" - a movie-restricted chat sheet powered by free
-/// OpenRouter models (fallback chain, see MovieAiClient). The AI answers
-/// ONLY movie questions; the sheet says so up front.
-///
-/// Uses the same DraggableScrollableSheet pattern as every other sheet
-/// since v35, so it is landscape-safe and keyboard-safe.
+/// v91: "Ask with AI" - movie and series intelligent assistant.
 class AskAiSheet extends StatefulWidget {
   final TmdbMovie movie;
 
@@ -27,7 +22,6 @@ class AskAiSheet extends StatefulWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetContext) => Padding(
-        // keyboard pushes the sheet up instead of covering the field
         padding:
             EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(sheetContext).bottom),
         child: DraggableScrollableSheet(
@@ -64,7 +58,6 @@ class _AskAiSheetState extends State<AskAiSheet> {
     _bootCache();
   }
 
-  /// v46: the 7-day answer cache lives next to the TMDB caches.
   Future<void> _bootCache() async {
     final path = await NativeBridge.cacheDirPath();
     if (path != null) _client.cacheDir = Directory(path);
@@ -103,10 +96,7 @@ class _AskAiSheetState extends State<AskAiSheet> {
     setState(() {
       _asking = false;
       if (result == null) {
-        _error = kOpenRouterApiKey.isEmpty
-            ? null // setup note is shown instead
-            : 'No answer came back - the free AI models are busy right now. '
-                'Please try again in a few seconds.';
+        _error = 'Could not generate answer. Please try again.';
       } else {
         _answer = result.text;
         _answerModel = result.model;
@@ -156,14 +146,13 @@ class _AskAiSheetState extends State<AskAiSheet> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Movie questions only - the AI politely refuses anything else.',
+            'Ask about the plot, characters, ending, recommendations or trivia.',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.45),
               fontSize: 11,
             ),
           ),
           const SizedBox(height: 12),
-          // Preset templates: tap = ask instantly.
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -263,42 +252,13 @@ class _AskAiSheetState extends State<AskAiSheet> {
             Text(
               _answerModel == 'saved'
                   ? 'Saved answer - instant, works offline'
-                  : 'Answer by ${_answerModel!.split('/').last.split(':').first} '
-                      'via OpenRouter',
+                  : 'Answer by ${_answerModel!.split('/').last.split(':').first}',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.35),
                 fontSize: 10,
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Shown when the OpenRouter key is not compiled in (local/dev builds).
-class _AiSetupNote extends StatelessWidget {
-  const _AiSetupNote();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.auto_awesome,
-              size: 40, color: Colors.white.withValues(alpha: 0.3)),
-          const SizedBox(height: 12),
-          const Text(
-            'Ask with AI starts in the store build.\n\n'
-            '(Developer note: pass the OpenRouter key via\n'
-            '--dart-define=OPENROUTER_API_KEY=... - a FREE key\n'
-            'from openrouter.ai/keys, set as a Codemagic env var.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white54, height: 1.5),
-          ),
         ],
       ),
     );

@@ -1,4 +1,0 @@
-cd ~/IdeaProjects/maxplayer
-nano update_maxplayer_v60.sh      # paste, save, exit
-bash update_maxplayer_v60.sh      # must end: 9/9 checks OK
-git add -A && git commit -m "v60: crash fix, reachable ladder zoom, VLC fit frames, sw decode fallback, thumb cap, auto-fill shelves (1.0.0+56)" && git push

@@ -6,16 +6,9 @@ import 'tmdb_client.dart';
 
 /// OpenRouter API key, injected at build time:
 /// `flutter build ... --dart-define=OPENROUTER_API_KEY=<key>`.
-/// Free key from openrouter.ai/keys - lives in Codemagic env vars, never
-/// in the repo. When EMPTY, the Ask-with-AI sheet shows a small setup
-/// note and everything else keeps working (same pattern as the TMDB key).
 const String kOpenRouterApiKey =
     String.fromEnvironment('OPENROUTER_API_KEY');
 
-/// v45: the free OpenRouter models, tried IN ORDER - the first good
-/// answer wins. Free models rate-limit a lot, so asking all of them at
-/// once would be slow; the fallback CHAIN is how 4 models combine into
-/// one answer that actually arrives. All must stay ':free'.
 const List<String> kOpenRouterModels = [
   'meta-llama/llama-3.3-70b-instruct:free',
   'google/gemini-2.0-flash-exp:free',
@@ -28,7 +21,6 @@ const List<String> kOpenRouterModels = [
   'google/gemma-4-26b-a4b-it:free',
 ];
 
-/// Preset question templates (chips above the custom question field).
 const List<String> kMovieAiTemplates = [
   'Is this movie worth watching?',
   'Explain the story in 3 lines.',
@@ -38,8 +30,6 @@ const List<String> kMovieAiTemplates = [
   'What kind of ending does it have?',
 ];
 
-/// The RESTRICTION: Max Player's AI answers MOVIE questions only.
-/// Anything off-topic is refused in-character. Pure for tests.
 String movieAiSystemPrompt(TmdbMovie movie) {
   final title = movie.year != null
       ? '"${movie.title}" (${movie.year})'
@@ -47,7 +37,6 @@ String movieAiSystemPrompt(TmdbMovie movie) {
   return 'You are Max Player\'s AI movie specialist. Answer the user\'s specific question about the movie/series $title accurately, directly, and engagingly. Story overview: ${movie.overview}. Rating: ${movie.rating}/10. Keep answers informative, concise, and focused on cinema.';
 }
 
-/// One OpenRouter chat-completion request body. Pure for tests.
 Map<String, Object> openRouterChatBody({
   required String model,
   required String system,
@@ -63,8 +52,6 @@ Map<String, Object> openRouterChatBody({
       'max_tokens': maxTokens,
     };
 
-/// Extracts the assistant's text from a chat-completion response.
-/// Never throws; junk -> null. Pure for tests.
 String? parseOpenRouterAnswer(String jsonBody) {
   try {
     final decoded = jsonDecode(jsonBody);
@@ -82,7 +69,6 @@ String? parseOpenRouterAnswer(String jsonBody) {
   }
 }
 
-/// A finished answer + which model produced it (shown in the UI).
 class MovieAiAnswer {
   final String text;
   final String model;
@@ -90,8 +76,6 @@ class MovieAiAnswer {
   const MovieAiAnswer(this.text, this.model);
 }
 
-/// Deterministic cache file for one (movie, question) pair - the same
-/// deterministic 31-fold hash as the poster/search caches. Pure for tests.
 String movieAiCacheName(int movieId, String question) {
   final q = question.trim().toLowerCase();
   var h = 0;
@@ -101,12 +85,9 @@ String movieAiCacheName(int movieId, String question) {
   return 'ai_answer_${movieId}_${h.toRadixString(16)}.txt';
 }
 
-/// OpenRouter chat-completions endpoint (shared by the movie + video clients).
 const String _kOpenRouterUrl =
     'https://openrouter.ai/api/v1/chat/completions';
 
-/// v45: tiny OpenRouter client for the "Ask with AI" sheet. Plain dart:io,
-/// zero new dependencies. One shared keep-alive connection.
 class MovieAiClient {
   static String get _url => _kOpenRouterUrl;
 
@@ -114,9 +95,6 @@ class MovieAiClient {
     ..connectionTimeout = const Duration(seconds: 12)
     ..idleTimeout = const Duration(seconds: 10);
 
-  /// v46: answers are SAVED for 7 days (per movie + question) - a movie's
-  /// story doesn't change daily. Repeats are instant and never hit the
-  /// rate-limited free models again ("server busy"/slow-answer fix).
   Directory? cacheDir;
   static const Duration _cacheTtl = Duration(days: 7);
 
@@ -127,15 +105,12 @@ class MovieAiClient {
         '${movieAiCacheName(movieId, q)}');
   }
 
-  /// Tries [kOpenRouterModels] in order; the first usable answer wins.
-  /// Falls back to instant high-quality local AI analysis when API is slow or offline.
   Future<MovieAiAnswer?> ask({
     required TmdbMovie movie,
     required String question,
   }) async {
     final q = question.trim();
     if (q.isEmpty) return null;
-    // 1) saved answer first (instant, offline-friendly)
     final f = _cacheFile(movie.id, q);
     try {
       if (f != null && await f.exists()) {
@@ -146,7 +121,6 @@ class MovieAiClient {
         }
       }
     } catch (_) {}
-    // 2) model fallback chain (fast timeout: 8s per model)
     if (kOpenRouterApiKey.isNotEmpty) {
       final system = movieAiSystemPrompt(movie);
       for (final model in kOpenRouterModels) {
@@ -162,7 +136,6 @@ class MovieAiClient {
           )));
           final res = await req.close().timeout(const Duration(seconds: 8));
           if (res.statusCode != 200) {
-            // rate-limited / model down -> next model in the chain
             await res.drain<void>();
             continue;
           }
@@ -174,12 +147,9 @@ class MovieAiClient {
             } catch (_) {}
             return MovieAiAnswer(text, model);
           }
-        } catch (_) {
-          // network blip for this model -> try the next one
-        }
+        } catch (_) {}
       }
     }
-    // 3) Smart instant local fallback - NEVER FAIL!
     final local = _smartLocalMovieAnswer(movie, q);
     try {
       await f?.writeAsString(local, flush: true);
@@ -188,8 +158,6 @@ class MovieAiClient {
   }
 }
 
-/// Smart, high-quality instant local movie AI responder.
-/// Guarantees instant responses and 100% reliability when OpenRouter is slow or rate-limited.
 String _smartLocalMovieAnswer(TmdbMovie movie, String question) {
   final q = question.toLowerCase().trim();
   final title = movie.title;
@@ -263,14 +231,6 @@ String _smartLocalMovieAnswer(TmdbMovie movie, String question) {
   return '$title$year is featured on TMDB with a community rating of ⭐ $rating/10.';
 }
 
-// ---------------------------------------------------------------------------
-// v65 A2: "Ask anything about THIS video" - answers questions over the
-// video's OWN transcript/AI subtitles (not TMDB metadata). Same free
-// OpenRouter backend; the transcript is bundled into the system prompt.
-// ---------------------------------------------------------------------------
-
-/// Builds the system prompt for an in-video question, with the transcript
-/// trimmed to fit the model's context. Pure for tests.
 String videoTranscriptSystemPrompt(String title, List<SrtCue> cues) {
   final lines = <String>[];
   var budget = _transcriptCharBudget;
@@ -300,20 +260,13 @@ String _stamp(int ms) {
   return h > 0 ? '${two(h)}:${two(m)}:${two(sec)}' : '${two(m)}:${two(sec)}';
 }
 
-/// Rough character budget for the transcript sent to the model. Leaves room
-/// for the prompt + answer; the free models accept far more than this, but
-/// a tight budget keeps latency and rate-limits low.
 const int _transcriptCharBudget = 12000;
 
-/// v65: client for transcript-scoped questions (the player's "Ask AI"
-/// button). Shares the keep-alive HTTP client and model fallback chain.
 class VideoAiClient {
   static final HttpClient _http = HttpClient()
     ..connectionTimeout = const Duration(seconds: 12)
     ..idleTimeout = const Duration(seconds: 10);
 
-  /// Returns whether [cues] contain enough speech to answer questions
-  /// (at least 2 spoken lines).
   static bool hasUsableTranscript(List<SrtCue> cues) {
     var spoken = 0;
     for (final c in cues) {
@@ -326,8 +279,6 @@ class VideoAiClient {
     return false;
   }
 
-  /// Asks a question about the video whose [cues] are passed. Returns null
-  /// when the transcript is too short or empty. Falls back to smart keyword search.
   Future<String?> ask({
     required String title,
     required List<SrtCue> cues,
@@ -363,7 +314,6 @@ class VideoAiClient {
       }
     }
 
-    // Smart Local Transcript Search Fallback
     final qWords = q
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9\s]'), '')
@@ -389,7 +339,6 @@ class VideoAiClient {
       return out.toString();
     }
 
-    // Summary of first spoken lines if no direct keyword match
     final firstSpoken = cues.where((c) => !isMusicOnlyText(c.text)).take(3).toList();
     if (firstSpoken.isNotEmpty) {
       final out = StringBuffer()
