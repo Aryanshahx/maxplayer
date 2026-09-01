@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../services/gdrive_service.dart';
 import '../services/native_bridge.dart';
@@ -10,11 +11,28 @@ import '../utils/formatters.dart';
 class CloudStorageSheet extends StatefulWidget {
   final Future<void> Function(String url, String title) onPlay;
 
-  const CloudStorageSheet({super.key, required this.onPlay});
+  /// v88: used instead of [onPlay] for files fetched via real Google
+  /// sign-in (private files need an Authorization header to stream, not
+  /// just a URL). Optional - the sheet still works API-key-only without
+  /// it, just can't see private files.
+  final Future<void> Function(
+    String url,
+    String title,
+    Map<String, String> headers,
+  )?
+  onPlayAuthenticated;
+
+  const CloudStorageSheet({
+    super.key,
+    required this.onPlay,
+    this.onPlayAuthenticated,
+  });
 
   static Future<void> show(
     BuildContext context, {
     required Future<void> Function(String url, String title) onPlay,
+    Future<void> Function(String url, String title, Map<String, String> headers)?
+    onPlayAuthenticated,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -23,7 +41,10 @@ class CloudStorageSheet extends StatefulWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => CloudStorageSheet(onPlay: onPlay),
+      builder: (_) => CloudStorageSheet(
+        onPlay: onPlay,
+        onPlayAuthenticated: onPlayAuthenticated,
+      ),
     );
   }
 
@@ -44,10 +65,111 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
   static const String _kDriveUserKey = 'gdrive.user_email';
   static const String _kDriveVideosCacheKey = 'gdrive.videos_cache';
 
+  /// v88: real Google Sign-In, alongside the existing manual API-key/
+  /// token entry. Separate scope so this ONLY ever asks for read access
+  /// to Drive files, nothing else on the account.
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: const ['https://www.googleapis.com/auth/drive.readonly'],
+  );
+  String? _oauthAccessToken;
+  String? _oauthEmail;
+  bool get _isOAuthMode => _oauthAccessToken != null;
+
   @override
   void initState() {
     super.initState();
     _loadStoredSession();
+    _trySilentGoogleSignIn();
+  }
+
+  /// v88: if the user already signed in on a previous app run, Play
+  /// Services can often restore that silently (no picker shown) - this
+  /// is what makes sign-in "stick" across restarts.
+  Future<void> _trySilentGoogleSignIn() async {
+    try {
+      final account = await _googleSignIn.signInSilently();
+      if (account == null || !mounted) return;
+      final auth = await account.authentication;
+      final token = auth.accessToken;
+      if (token == null || !mounted) return;
+      setState(() {
+        _oauthAccessToken = token;
+        _oauthEmail = account.email;
+        _isConnected = true;
+      });
+      _fetchAllVideosOAuth(token);
+    } catch (_) {
+      // No stored session, or Play Services unavailable - the manual
+      // token field / explicit sign-in button still work either way.
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() {
+      _loading = true;
+    });
+    try {
+      final account = await _googleSignIn.signIn();
+      if (account == null) {
+        // User cancelled the picker.
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+      final auth = await account.authentication;
+      final token = auth.accessToken;
+      if (token == null) {
+        if (mounted) {
+          setState(() => _loading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Google sign-in did not return an access token'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _oauthAccessToken = token;
+        _oauthEmail = account.email;
+        _isConnected = true;
+      });
+      NativeBridge.saveSetting(_kDriveUserKey, account.email);
+      await _fetchAllVideosOAuth(token);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Google sign-in failed: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _fetchAllVideosOAuth(String token) async {
+    setState(() => _loading = true);
+    final items = await GDriveService.listDriveFilesOAuth(accessToken: token);
+    if (!mounted) return;
+    setState(() {
+      _driveVideos = items
+          .map(
+            (i) => GDriveItem(
+              id: i.id,
+              name: i.name,
+              mimeType: i.mimeType,
+              sizeBytes: i.sizeBytes,
+              thumbnailLink: i.thumbnailLink,
+              isFolder: i.isFolder,
+              oauthAccessToken: token,
+            ),
+          )
+          .toList();
+      _loading = false;
+      _isConnected = true;
+    });
   }
 
   Future<void> _loadStoredSession() async {
@@ -112,19 +234,30 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
     _fetchAllVideos(clean);
   }
 
-  void _disconnect() {
+  Future<void> _disconnect() async {
     NativeBridge.saveSetting(_kDriveTokenKey, '');
     NativeBridge.saveSetting(_kDriveUserKey, '');
     NativeBridge.saveSetting(_kDriveVideosCacheKey, '');
+    if (_isOAuthMode) {
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {}
+    }
     setState(() {
       _isConnected = false;
       _driveVideos = [];
+      _oauthAccessToken = null;
+      _oauthEmail = null;
     });
   }
 
   void _playVideo(GDriveItem item) {
     Navigator.of(context).pop();
-    widget.onPlay(item.streamUrl, item.name);
+    if (item.oauthAccessToken != null && widget.onPlayAuthenticated != null) {
+      widget.onPlayAuthenticated!(item.streamUrl, item.name, item.authHeaders);
+    } else {
+      widget.onPlay(item.streamUrl, item.name);
+    }
   }
 
   @override
@@ -165,14 +298,31 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
                   children: [
                     Icon(Icons.cloud_queue, color: accent, size: 24),
                     const SizedBox(width: 10),
-                    const Expanded(
-                      child: Text(
-                        'Google Drive Cloud Storage',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                        ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'Google Drive Cloud Storage',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (_isOAuthMode && _oauthEmail != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                _oauthEmail!,
+                                style: const TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                     if (_isConnected)
@@ -218,6 +368,51 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
                                 style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.4),
                               ),
                               const SizedBox(height: 24),
+                              // v88: real Google Sign-In - this is what
+                              // lets the app see the user's PRIVATE Drive
+                              // files, which the API key/manual token
+                              // field below cannot (that mode only ever
+                              // sees publicly-shared links).
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: accent,
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  icon: _loading
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Icon(Icons.account_circle_outlined),
+                                  label: Text(
+                                    _loading ? 'Signing in...' : 'Sign in with Google',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+                                  ),
+                                  onPressed: _loading ? null : _signInWithGoogle,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: const [
+                                  Expanded(child: Divider(color: Colors.white12)),
+                                  Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 10),
+                                    child: Text(
+                                      'OR',
+                                      style: TextStyle(color: Colors.white24, fontSize: 11),
+                                    ),
+                                  ),
+                                  Expanded(child: Divider(color: Colors.white12)),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
                                 decoration: BoxDecoration(
@@ -229,7 +424,7 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
                                   controller: _tokenCtrl,
                                   style: const TextStyle(color: Colors.white, fontSize: 13.5),
                                   decoration: const InputDecoration(
-                                    hintText: 'Enter Google Drive Access Key / Token…',
+                                    hintText: 'Or paste an API key (public links only)…',
                                     hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
                                     border: InputBorder.none,
                                   ),
@@ -292,6 +487,10 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
                                 IconButton(
                                   icon: const Icon(Icons.refresh, color: Colors.white70),
                                   onPressed: () {
+                                    if (_isOAuthMode) {
+                                      _fetchAllVideosOAuth(_oauthAccessToken!);
+                                      return;
+                                    }
                                     final s = NativeBridge.loadSettings();
                                     s.then((map) {
                                       final t = map[_kDriveTokenKey];

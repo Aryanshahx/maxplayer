@@ -2853,9 +2853,9 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // v87: Tight grid aspect ratio, redesigned display settings, player more actions sheet
+  // v87: Tight grid aspect ratio & card-based display settings
   // -------------------------------------------------------------------------
-  group('v87 tight grid + redesigned display settings + player sheet', () {
+  group('v87 tight grid + redesigned display settings', () {
     test('LibraryScreen sets tight childAspectRatio 1.18 to eliminate empty space', () {
       final lib = File('lib/screens/library_screen.dart').readAsStringSync();
       expect(lib, contains('childAspectRatio: 1.18'));
@@ -2868,13 +2868,60 @@ void main() {
       expect(display, contains('List View'));
       expect(display, contains('Theme Accent Color'));
     });
+  });
 
-    test('PlayerScreen top menu uses more-actions bottom sheet without ask AI', () {
+  // -------------------------------------------------------------------------
+  // v88: Google Sign-In Cloud Storage, Clean Player Top Menu, Media File Manager
+  // -------------------------------------------------------------------------
+  group('v88 cloud signin + clean player menu + media file manager', () {
+    test('LibraryScreen top menu has no Open stream URL and no Ask AI', () {
+      final lib = File('lib/screens/library_screen.dart').readAsStringSync();
+      expect(lib, contains('Display settings'));
+      expect(lib, contains('Rescan library'));
+      expect(lib, contains('Privacy policy'));
+      expect(lib.contains("Open stream URL"), isFalse);
+      expect(lib.contains("Ask AI about this video"), isFalse);
+    });
+
+    test('PlayerScreen top menu uses native PopupMenuButton without ask AI', () {
       final playerScreen = File('lib/screens/player_screen.dart').readAsStringSync();
-      expect(playerScreen, contains('_showMoreActionsSheet'));
-      expect(playerScreen, contains('Video Information'));
-      expect(playerScreen, contains('Equalizer & Audio FX'));
+      expect(playerScreen, contains('PopupMenuButton<String>'));
+      expect(playerScreen, contains('_topMenuItem'));
+      expect(playerScreen, contains('Video info'));
+      expect(playerScreen, contains('Equalizer'));
       expect(playerScreen.contains("Ask AI about this video"), isFalse);
+    });
+
+    test('FileManagerScreen provides shortcuts, category filters, and direct video playback', () {
+      final fileMgr = File('lib/screens/file_manager_screen.dart').readAsStringSync();
+      expect(fileMgr, contains('FileManagerScreen'));
+      expect(fileMgr, contains('_shortcuts'));
+      expect(fileMgr, contains('_typeFilter'));
+      expect(fileMgr, contains('Move to Private Space'));
+      expect(fileMgr, contains('setPlaylistAndPlay'));
+    });
+
+    test('CloudStorageSheet supports Google Sign-In with configured Client ID & API Key', () {
+      final cloud = File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
+      expect(cloud, contains('CloudStorageSheet'));
+      expect(cloud, contains('Sign in with Google'));
+      expect(cloud, contains('GDriveService.projectId'));
+      expect(cloud, contains('_fetchAllVideos'));
+    });
+
+    test('GDriveService provides API Key, Client ID and stream resolver', () {
+      expect(GDriveService.defaultApiKey, 'AIzaSyBXBjyHeD1OiTm2KjENGVMk1LjN1MtHGi0');
+      expect(GDriveService.clientId, contains('998035561765-4tlp75rcp5549fej391bc8pbj8q3htc0'));
+      expect(GDriveService.projectId, 'max-player-507121');
+
+      final url = 'https://drive.google.com/file/d/1A2B3C4D5E6F7G8H9I0J/view';
+      final fileId = GDriveService.parseDriveFileId(url);
+      expect(fileId, '1A2B3C4D5E6F7G8H9I0J');
+
+      final streamUrl = GDriveService.getDirectStreamUrl(fileId!);
+      expect(streamUrl, contains('https://www.googleapis.com/drive/v3/files/1A2B3C4D5E6F7G8H9I0J'));
+      expect(streamUrl, contains('alt=media'));
+      expect(streamUrl, contains('key=AIzaSyBXBjyHeD1OiTm2KjENGVMk1LjN1MtHGi0'));
     });
   });
 }

@@ -408,6 +408,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
+  /// v88: for files fetched via real Google sign-in - private Drive files
+  /// need an Authorization header to stream, not just a URL.
+  Future<void> _playAuthenticatedCloudStream(
+    String url,
+    String title,
+    Map<String, String> headers,
+  ) async {
+    await widget.player.playCloudStream(url, title, headers);
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PlayerScreen(player: widget.player)),
+    );
+  }
+
   void _openStreamSheet() {
     OpenStreamSheet.show(context, onPlay: _playNetworkOrStream);
   }
@@ -417,7 +431,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   void _openCloudStorage() {
-    CloudStorageSheet.show(context, onPlay: _playNetworkOrStream);
+    CloudStorageSheet.show(
+      context,
+      onPlay: _playNetworkOrStream,
+      onPlayAuthenticated: _playAuthenticatedCloudStream,
+    );
   }
 
   @override
@@ -485,21 +503,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
             // v26: menu icons follow the picked theme colour.
             itemBuilder: (context) => [
               PopupMenuItem(
-                value: 'stream',
+                value: 'display',
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.link, color: themeState.accent),
-                  title: const Text('Open stream URL'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'stats',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.bar_chart, color: themeState.accent),
-                  title: const Text('Statistics'),
+                  leading: Icon(Icons.tune, color: themeState.accent),
+                  title: const Text('Display settings'),
                 ),
               ),
               PopupMenuItem(
@@ -512,12 +521,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
               PopupMenuItem(
-                value: 'display',
+                value: 'stats',
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.tune, color: themeState.accent),
-                  title: const Text('Display settings'),
+                  leading: Icon(Icons.bar_chart, color: themeState.accent),
+                  title: const Text('Statistics'),
                 ),
               ),
               PopupMenuItem(
@@ -539,6 +548,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.info_outline, color: themeState.accent),
                   title: const Text('About'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'privacy',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.privacy_tip_outlined, color: themeState.accent),
+                  title: const Text('Privacy policy'),
                 ),
               ),
               // Footer: app version (not selectable).

@@ -294,7 +294,7 @@ const List<_Item> _homeItems = [
   _Item(
     Icons.link,
     'Network streams',
-    '⋮ → Open stream URL: paste a direct video link (http/https) or a live '
+    'Quick Tiles → Open Stream: paste a direct video link (http/https) or a live '
         'stream (rtsp/rtmp/mms) and it plays immediately. Links opened in a '
         'browser can also be handed to Max Player directly from the "Open '
         'with" dialog.',
