@@ -1685,6 +1685,9 @@ class _PlayerScreenState extends State<PlayerScreen>
           case 'eq':
             EqualizerSheet.show(context, widget.player);
             break;
+          case 'ask':
+            _openVideoAsk();
+            break;
           case 'shot':
             _takeScreenshot();
             break;
@@ -1702,6 +1705,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       itemBuilder: (context) => [
         _topMenuItem('info', Icons.info_outline, 'Video info'),
         _topMenuItem('eq', Icons.graphic_eq, 'Equalizer & Audio FX'),
+        _topMenuItem('ask', Icons.auto_awesome, 'Ask AI about this video'),
         if (_settings.screenshotButton)
           _topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot'),
         if (_settings.castButton)
