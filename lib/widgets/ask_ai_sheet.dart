@@ -7,7 +7,7 @@ import '../services/native_bridge.dart';
 import '../services/tmdb_client.dart';
 import '../state/theme_state.dart';
 
-/// v91: "Ask with AI" - movie and series intelligent assistant.
+/// v93: "Ask with AI" - movie and series intelligent assistant.
 class AskAiSheet extends StatefulWidget {
   final TmdbMovie movie;
 

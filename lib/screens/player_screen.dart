@@ -1280,6 +1280,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                             ),
                           ),
                           // Transient indicator (seek / volume / brightness /
+                          // zoom / resume / fit / play-pause) - pops in and
+                          // out with a small scale+fade.
+                          // Transient indicator (seek / volume / brightness /
                           // zoom / resume / fit / play-pause) - smooth scale + fade + glassmorphic pill.
                           Positioned(
                             top: 64,
@@ -1633,7 +1636,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                         _toggleOrientationLock,
                                     karaokeOn: _settings.karaokeSubs,
                                     onToggleKaraoke: _toggleKaraoke,
-                                  ),
+                                                                      ),
                                 ),
                               ),
                             ),
@@ -1668,7 +1671,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  /// Player more-actions menu (v91): sleek, compact native popup menu.
+  /// Player more-actions menu (v93): sleek, compact native popup menu.
   Widget _topMenu(BuildContext context) {
     return PopupMenuButton<String>(
       tooltip: 'More actions',
@@ -1684,9 +1687,6 @@ class _PlayerScreenState extends State<PlayerScreen>
             break;
           case 'eq':
             EqualizerSheet.show(context, widget.player);
-            break;
-          case 'ask':
-            _openVideoAsk();
             break;
           case 'shot':
             _takeScreenshot();
@@ -1705,7 +1705,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       itemBuilder: (context) => [
         _topMenuItem('info', Icons.info_outline, 'Video info'),
         _topMenuItem('eq', Icons.graphic_eq, 'Equalizer & Audio FX'),
-        _topMenuItem('ask', Icons.auto_awesome, 'Ask AI about this video'),
         if (_settings.screenshotButton)
           _topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot'),
         if (_settings.castButton)
@@ -1743,6 +1742,151 @@ class _PlayerScreenState extends State<PlayerScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showMoreActionsSheet() {
+    _onUserInteraction();
+    final accent = themeState.accent;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF14141c),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Icon(Icons.more_horiz, color: accent, size: 22),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'More Actions',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _actionTile(
+                icon: Icons.info_outline,
+                title: 'Video Information',
+                subtitle: 'Codec, resolution, bitrate, audio channels',
+                accent: accent,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  VideoInfoSheet.show(context, widget.player);
+                },
+              ),
+              _actionTile(
+                icon: Icons.graphic_eq,
+                title: 'Equalizer & Audio FX',
+                subtitle: '5-band equalizer, bass boost, vocal clarity',
+                accent: accent,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  EqualizerSheet.show(context, widget.player);
+                },
+              ),
+              if (_settings.screenshotButton)
+                _actionTile(
+                  icon: Icons.camera_alt_outlined,
+                  title: 'Take Screenshot',
+                  subtitle: 'Save current video frame to gallery',
+                  accent: accent,
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _takeScreenshot();
+                  },
+                ),
+              if (_settings.castButton)
+                _actionTile(
+                  icon: Icons.cast_outlined,
+                  title: 'Cast to Smart TV / DLNA',
+                  subtitle: 'Stream video directly over Wi-Fi',
+                  accent: accent,
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _openCast();
+                  },
+                ),
+              _actionTile(
+                icon: Icons.picture_in_picture_alt_outlined,
+                title: 'Picture-in-Picture (PiP)',
+                subtitle: 'Play in floating window while multitasking',
+                accent: accent,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  NativeBridge.enterPip(playing: widget.player.isPlaying);
+                },
+              ),
+              _actionTile(
+                icon: Icons.bedtime_outlined,
+                title: widget.player.sleepTimerActive
+                    ? 'Sleep Timer (${widget.player.sleepTimerLabel})'
+                    : 'Sleep Timer',
+                subtitle: 'Auto-pause playback after timer ends',
+                accent: accent,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _showSleepSheet();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _actionTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color accent,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        dense: true,
+        leading: CircleAvatar(
+          radius: 18,
+          backgroundColor: accent.withValues(alpha: 0.18),
+          child: Icon(icon, color: accent, size: 18),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13.5),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(color: Colors.white38, fontSize: 11),
+        ),
+        trailing: const Icon(Icons.chevron_right, color: Colors.white24, size: 18),
+        onTap: onTap,
       ),
     );
   }

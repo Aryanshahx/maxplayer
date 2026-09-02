@@ -4,8 +4,6 @@ import 'dart:io';
 import '../utils/srt.dart';
 import 'tmdb_client.dart';
 
-/// OpenRouter API key, injected at build time:
-/// `flutter build ... --dart-define=OPENROUTER_API_KEY=<key>`.
 const String kOpenRouterApiKey =
     String.fromEnvironment('OPENROUTER_API_KEY');
 

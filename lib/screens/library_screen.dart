@@ -753,28 +753,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final visibleCount = groups.fold<int>(0, (sum, g) => sum + g.videos.length);
 
     if (visibleCount == 0) {
-      return RefreshIndicator(
-        color: themeState.accent,
-        backgroundColor: const Color(0xFF1c1c28),
-        onRefresh: () async {
-          lib.rescan();
-          await Future.delayed(const Duration(milliseconds: 600));
-        },
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-          children: [
-            SizedBox(
-              height: MediaQuery.of(context).size.height * 0.5,
-              child: _EmptyState(
-                key: const ValueKey('empty'),
-                isScanning: lib.isScanning,
-                permissionDenied: lib.permissionDenied,
-                favoritesOnly: lib.favoritesOnly,
-                onGrantAccess: lib.scanAllStorage,
-              ),
-            ),
-          ],
-        ),
+      return _EmptyState(
+        key: const ValueKey('empty'),
+        isScanning: lib.isScanning,
+        permissionDenied: lib.permissionDenied,
+        favoritesOnly: lib.favoritesOnly,
+        onGrantAccess: lib.scanAllStorage,
       );
     }
 
@@ -790,64 +774,64 @@ class _LibraryScreenState extends State<LibraryScreen> {
       },
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-        key: ValueKey(lib.viewMode),
-        controller: _listScroll,
-        slivers: [
-          for (final group in groups) ...[
-            if (lib.groupMode != GroupMode.none)
-              SliverToBoxAdapter(
-                child: _GroupHeader(
-                  title: group.title,
-                  count: group.videos.length,
-                ),
+      key: ValueKey(lib.viewMode),
+      controller: _listScroll,
+      slivers: [
+        for (final group in groups) ...[
+          if (lib.groupMode != GroupMode.none)
+            SliverToBoxAdapter(
+              child: _GroupHeader(
+                title: group.title,
+                count: group.videos.length,
               ),
-            if (lib.viewMode == ViewMode.grid)
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 200,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                    childAspectRatio: 1.18,
-                  ),
-                  delegate: SliverChildBuilderDelegate((context, i) {
-                    final track = group.videos[i];
-                    return GestureDetector(
-                      // v21: long-press moves the video to the Private folder.
-                      onLongPress: () => _offerHide(track, lib),
-                      child: VideoTile(
-                        track: track,
-                        isFavorite: lib.isFavorite(track),
-                        onTap: () => _playVideo(track),
-                        onFavorite: () => lib.toggleFavorite(track),
-                      ),
-                    );
-                  }, childCount: group.videos.length),
+            ),
+          if (lib.viewMode == ViewMode.grid)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 200,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 1.18,
                 ),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate((context, i) {
-                    final track = group.videos[i];
-                    return GestureDetector(
-                      // v21: long-press moves the video to the Private folder.
-                      onLongPress: () => _offerHide(track, lib),
-                      child: VideoListItem(
-                        track: track,
-                        isFavorite: lib.isFavorite(track),
-                        onTap: () => _playVideo(track),
-                        onFavorite: () => lib.toggleFavorite(track),
-                      ),
-                    );
-                  }, childCount: group.videos.length),
-                ),
+                delegate: SliverChildBuilderDelegate((context, i) {
+                  final track = group.videos[i];
+                  return GestureDetector(
+                    // v21: long-press moves the video to the Private folder.
+                    onLongPress: () => _offerHide(track, lib),
+                    child: VideoTile(
+                      track: track,
+                      isFavorite: lib.isFavorite(track),
+                      onTap: () => _playVideo(track),
+                      onFavorite: () => lib.toggleFavorite(track),
+                    ),
+                  );
+                }, childCount: group.videos.length),
               ),
-          ],
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate((context, i) {
+                  final track = group.videos[i];
+                  return GestureDetector(
+                    // v21: long-press moves the video to the Private folder.
+                    onLongPress: () => _offerHide(track, lib),
+                    child: VideoListItem(
+                      track: track,
+                      isFavorite: lib.isFavorite(track),
+                      onTap: () => _playVideo(track),
+                      onFavorite: () => lib.toggleFavorite(track),
+                    ),
+                  );
+                }, childCount: group.videos.length),
+              ),
+            ),
         ],
-      ),
+      ],
+      )
     );
   }
 }

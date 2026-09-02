@@ -123,3 +123,26 @@ String formatAspectRatio(int w, int h) {
   if (num <= 40 && den <= 40) return '$num:$den';
   return '${(w / h).toStringAsFixed(2)}:1';
 }
+/// "7.834" -> "7.8" (badge text). Pure for tests.
+String tmdbRatingText(double rating) => rating.toStringAsFixed(1);
+
+/// 136 -> "2h 16m", 45 -> "45m", 120 -> "2h", 0 -> ''. Pure for tests.
+String formatRuntime(int minutes) {
+  if (minutes <= 0) return '';
+  final h = minutes ~/ 60;
+  final m = minutes % 60;
+  if (h == 0) return '${m}m';
+  if (m == 0) return '${h}h';
+  return '${h}h ${m}m';
+}
+
+/// 24513 -> "24,513" (hand-rolled so no intl locale setup is needed). Pure.
+String formatVoteCount(int votes) {
+  final s = '$votes';
+  final out = StringBuffer();
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) out.write(',');
+    out.write(s[i]);
+  }
+  return out.toString();
+}

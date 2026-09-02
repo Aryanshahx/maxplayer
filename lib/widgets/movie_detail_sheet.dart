@@ -13,10 +13,7 @@ import '../utils/formatters.dart';
 import 'ask_ai_sheet.dart';
 import 'tmdb_image.dart';
 
-/// v91: Discover movie & web series detail sheet.
-/// Includes trailer player, rich storyline, top cast slider with profile images,
-/// season ratings & episode lists with individual episode ratings and durations,
-/// full user reviews, and instant offline local playback.
+/// v93: Discover movie & web series detail sheet.
 class MovieDetailSheet extends StatefulWidget {
   final TmdbMovie movie;
   final VideoTrack? localMatch;
@@ -320,7 +317,6 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
   }
 }
 
-/// Horizontal strip of scene "screenshots" (TMDB backdrops).
 class _ScreenshotsRow extends StatelessWidget {
   final List<String> paths;
 
@@ -349,7 +345,6 @@ class _ScreenshotsRow extends StatelessWidget {
   }
 }
 
-/// Detailed storyline and synopsis block.
 class _DetailedStoryBlock extends StatelessWidget {
   final TmdbMovie movie;
   final TmdbDetailExtras extras;
@@ -441,7 +436,6 @@ class _DetailedStoryBlock extends StatelessWidget {
   }
 }
 
-/// Top cast horizontal slider with profile shape images.
 class _TopCastSlider extends StatelessWidget {
   final List<TmdbCastMember> cast;
 
@@ -536,7 +530,6 @@ class _TopCastSlider extends StatelessWidget {
   }
 }
 
-/// Web series seasons & episodes breakdown with ratings & durations.
 class _SeasonsBlock extends StatefulWidget {
   final int tvId;
   final List<TmdbSeason> seasons;
@@ -806,7 +799,6 @@ class _WatchBlock extends StatelessWidget {
   }
 }
 
-/// All user reviews.
 class _ReviewsBlock extends StatelessWidget {
   final List<TmdbReview> reviews;
 
@@ -903,7 +895,6 @@ class _ReviewsBlock extends StatelessWidget {
   }
 }
 
-/// Technical and business metadata.
 class _AllDataBlock extends StatelessWidget {
   final TmdbDetailExtras extras;
   final int movieId;
@@ -950,7 +941,6 @@ class _AllDataBlock extends StatelessWidget {
   }
 }
 
-/// OpenSubtitles language checker.
 class _RealSubtitlesBlock extends StatefulWidget {
   final int movieId;
   const _RealSubtitlesBlock({required this.movieId});

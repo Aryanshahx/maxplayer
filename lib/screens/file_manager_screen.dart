@@ -11,7 +11,7 @@ import '../utils/formatters.dart';
 import '../widgets/playlists_sheet.dart';
 import 'player_screen.dart';
 
-/// v91: Advanced Media File Manager & Storage Explorer with full media viewers
+/// v93: Advanced Media File Manager & Storage Explorer with full media viewers
 /// (Images, Audio/Music, Documents) and AI Media Insights.
 class FileManagerScreen extends StatefulWidget {
   final VideoLibraryState library;
@@ -181,7 +181,6 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     }
   }
 
-  // --- Image Viewer Modal ---
   void _openImageViewer(File file) {
     final name = p.basename(file.path);
     final size = formatFileSize(file.lengthSync());
@@ -244,7 +243,6 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     );
   }
 
-  // --- Audio / Music Player Modal ---
   void _openAudioPlayer(File file) {
     final name = p.basename(file.path);
     final track = VideoTrack(
@@ -326,7 +324,6 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     );
   }
 
-  // --- Document Viewer Modal ---
   void _openDocumentViewer(File file) async {
     final name = p.basename(file.path);
     final ext = p.extension(file.path).toLowerCase();
@@ -404,9 +401,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     );
   }
 
-  // --- AI Smart Media Insights ---
   void _showAiMediaInsights() {
-    final totalFiles = _entries.whereType<File>().length;
     final totalDirs = _entries.whereType<Directory>().length;
     int videoCount = 0;
     int audioCount = 0;
@@ -419,10 +414,15 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
         try {
           final len = e.lengthSync();
           totalBytes += len;
-          if (isVideoFile(e.path)) videoCount++;
-          else if (_isAudioFile(e.path)) audioCount++;
-          else if (_isImageFile(e.path)) imageCount++;
-          else if (_isDocFile(e.path)) docCount++;
+          if (isVideoFile(e.path)) {
+            videoCount++;
+          } else if (_isAudioFile(e.path)) {
+            audioCount++;
+          } else if (_isImageFile(e.path)) {
+            imageCount++;
+          } else if (_isDocFile(e.path)) {
+            docCount++;
+          }
         } catch (_) {}
       }
     }
