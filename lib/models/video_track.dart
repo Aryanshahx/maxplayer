@@ -12,6 +12,9 @@ class VideoTrack {
   final int? width; // pixels, from native metadata
   final int? height;
 
+  /// Optional HTTP headers for authenticated cloud streams.
+  final Map<String, String>? httpHeaders;
+
   const VideoTrack({
     required this.id,
     required this.title,
@@ -22,6 +25,7 @@ class VideoTrack {
     this.lastModifiedMs,
     this.width,
     this.height,
+    this.httpHeaders,
   });
 
   /// Name of the folder containing this video (used by "Group by folder" and "Folders" quick-tile).
@@ -58,6 +62,9 @@ class VideoTrack {
   VideoTrack copyWith({
     String? thumbnailPath,
     Duration? duration,
+    int? width,
+    int? height,
+    Map<String, String>? httpHeaders,
   }) {
     return VideoTrack(
       id: id,
@@ -67,8 +74,9 @@ class VideoTrack {
       duration: duration ?? this.duration,
       sizeBytes: sizeBytes,
       lastModifiedMs: lastModifiedMs,
-      width: width,
-      height: height,
+      width: width ?? this.width,
+      height: height ?? this.height,
+      httpHeaders: httpHeaders ?? this.httpHeaders,
     );
   }
 }

@@ -400,8 +400,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  Future<void> _playNetworkOrStream(String url, String title) async {
-    await widget.player.playStream(url, title);
+  Future<void> _playNetworkOrStream(
+    String url,
+    String title, {
+    Map<String, String>? httpHeaders,
+  }) async {
+    await widget.player.playStream(url, title, httpHeaders: httpHeaders);
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => PlayerScreen(player: widget.player)),
@@ -409,11 +413,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   void _openStreamSheet() {
-    OpenStreamSheet.show(context, onPlay: _playNetworkOrStream);
+    OpenStreamSheet.show(
+      context,
+      onPlay: (url, title) => _playNetworkOrStream(url, title),
+    );
   }
 
   void _openNetworkStorage() {
-    NetworkStorageSheet.show(context, onPlay: _playNetworkOrStream);
+    NetworkStorageSheet.show(
+      context,
+      onPlay: (url, title) => _playNetworkOrStream(url, title),
+    );
   }
 
   void _openCloudStorage() {

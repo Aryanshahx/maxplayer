@@ -287,6 +287,10 @@ class MediaPlayerState extends ChangeNotifier {
   /// Move the just-opened video to the top of the history, preserving its
   /// previous resume position.
   Future<void> _recordOpen(VideoTrack track) async {
+    // v98: authenticated cloud streams depend on short-lived OAuth headers.
+    // Storing them in History would create dead entries after the token
+    // expires, so only durable local/public URLs are remembered here.
+    if (track.httpHeaders?.isNotEmpty == true) return;
     try {
       await _ensureHistoryLoaded();
       final prevPos = _historyEntryFor(track.path)?.lastPositionSecs ?? 0;
@@ -335,8 +339,17 @@ class MediaPlayerState extends ChangeNotifier {
 
   /// Play a network stream URL (http/https/rtsp/rtmp). Handled directly by
   /// libmpv - the local-file metadata pipeline is skipped upstream.
-  Future<void> playStream(String url, String title) async {
-    final track = VideoTrack(id: url, title: title, path: url);
+  Future<void> playStream(
+    String url,
+    String title, {
+    Map<String, String>? httpHeaders,
+  }) async {
+    final track = VideoTrack(
+      id: url,
+      title: title,
+      path: url,
+      httpHeaders: httpHeaders,
+    );
     await setPlaylistAndPlay([track], 0);
   }
 
@@ -358,6 +371,11 @@ class MediaPlayerState extends ChangeNotifier {
     final len = playlist.length;
     return forward ? (currentIndex + 1) % len : (currentIndex - 1 + len) % len;
   }
+
+  Media _mediaForTrack(VideoTrack track) => Media(
+        track.path,
+        httpHeaders: track.httpHeaders,
+      );
 
   /// Replace the whole queue and start playing at [startIndex].
   Future<void> setPlaylistAndPlay(
@@ -413,7 +431,7 @@ class MediaPlayerState extends ChangeNotifier {
       unawaited(plat.setProperty('hwdec', 'no')); // software from now on
     }
     final resume = player.state.position;
-    unawaited(player.open(Media(track.path), play: true).then((_) {
+    unawaited(player.open(_mediaForTrack(track), play: true).then((_) {
       if (resume > Duration.zero && resume < player.state.duration) {
         player.seek(resume);
       }
@@ -446,7 +464,7 @@ class MediaPlayerState extends ChangeNotifier {
       // reset it at open, while our cache would think it's still applied).
       _appliedSubVisibility = null;
     }
-    await player.open(Media(track.path), play: autoplay);
+    await player.open(_mediaForTrack(track), play: autoplay);
     await player.setRate(playbackRate);
     await _applyMpvVolume();
     // v77: these three used to be awaited here too, serially, before this

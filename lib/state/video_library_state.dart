@@ -82,6 +82,7 @@ class VideoLibraryState extends ChangeNotifier {
   Set<String> _favoritePaths = {};
 
   bool _disposed = false;
+  int _scanGeneration = 0;
 
   /// Folders under a storage volume that are never worth scanning for videos
   /// (app-private caches, thumbnails, etc) - skipping these keeps the
@@ -419,7 +420,15 @@ class VideoLibraryState extends ChangeNotifier {
   /// v40: walks every storage-volume root in [roots] (internal + SD card).
   /// The same file can surface twice (e.g. an SD card that is ALSO mounted
   /// under "/storage/emulated/0/..." on some phones) - [seenPaths] dedupes.
+  ///
+  /// v98: scanning is now two-phase for low-end phones. Phase 1 builds a
+  /// light file list fast (name/size/date only) so the library becomes
+  /// usable quickly; Phase 2 hydrates duration + thumbnail in the
+  /// background with low concurrency. This avoids hammering cheap CPUs/GPU
+  /// decoders with many metadata frame-grabs at once during the initial
+  /// scan, which was the main source of home-screen lag.
   Future<void> _scanDirectories(List<String> roots) async {
+    final scanGen = ++_scanGeneration;
     isScanning = true;
     _videos = [];
     scanProgress = const ScanProgress();
@@ -430,20 +439,25 @@ class VideoLibraryState extends ChangeNotifier {
     for (final root in roots) {
       await for (final entity
           in _listVideosSkippingJunk(Directory(root))) {
+        if (_disposed || scanGen != _scanGeneration) return;
         if (seenPaths.add(entity.path)) foundFiles.add(entity);
       }
     }
+
+    if (_disposed || scanGen != _scanGeneration) return;
 
     scanProgress =
         ScanProgress(found: foundFiles.length, total: foundFiles.length);
     notifyListeners();
 
     final allVideos = <VideoTrack>[];
-    // Process in small batches so the UI can show progress incrementally.
-    const batchSize = 8;
+    // Fast phase: only cheap filesystem stats, in larger batches.
+    const batchSize = 24;
     for (var i = 0; i < foundFiles.length; i += batchSize) {
       final batch = foundFiles.skip(i).take(batchSize);
-      final tracks = await Future.wait(batch.map((f) => _buildTrack(f.path)));
+      final tracks =
+          await Future.wait(batch.map((f) => _buildTrackSkeleton(f.path)));
+      if (_disposed || scanGen != _scanGeneration) return;
       allVideos.addAll(tracks.whereType<VideoTrack>());
       _videos = [...allVideos];
       scanProgress = ScanProgress(
@@ -456,6 +470,35 @@ class VideoLibraryState extends ChangeNotifier {
 
     isScanning = false;
     notifyListeners();
+    unawaited(_hydrateMetadata(scanGen));
+  }
+
+  /// Phase 2 of the v98 scan: resolve duration/size/thumbnail lazily after
+  /// the file list is already visible. Low concurrency keeps old phones
+  /// responsive while the richer metadata trickles in.
+  Future<void> _hydrateMetadata(int scanGen) async {
+    const batchSize = 2;
+    for (var i = 0; i < _videos.length; i += batchSize) {
+      if (_disposed || scanGen != _scanGeneration) return;
+      final batch = _videos.skip(i).take(batchSize).toList(growable: false);
+      final hydrated = await Future.wait(batch.map(_hydrateTrack));
+      if (_disposed || scanGen != _scanGeneration) return;
+      var changed = false;
+      for (final track in hydrated.whereType<VideoTrack>()) {
+        final index = _videos.indexWhere((v) => v.path == track.path);
+        if (index < 0) continue;
+        final current = _videos[index];
+        if (current.thumbnailPath != track.thumbnailPath ||
+            current.duration != track.duration ||
+            current.width != track.width ||
+            current.height != track.height) {
+          _videos[index] = track;
+          changed = true;
+        }
+      }
+      if (changed) notifyListeners();
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+    }
   }
 
   /// Recursively lists video files under [dir], skipping subfolders per [shouldSkipDir]
@@ -478,28 +521,35 @@ class VideoLibraryState extends ChangeNotifier {
     }
   }
 
-  Future<VideoTrack?> _buildTrack(String path) async {
+  Future<VideoTrack?> _buildTrackSkeleton(String path) async {
     try {
       final file = File(path);
       final stat = await file.stat();
-      // Duration + thumbnail come from native MediaMetadataRetriever code
-      // (replaces the AGP-incompatible video_thumbnail plugin). Thumbnails
-      // are cached on disk natively, so this is cheap on repeat scans.
-      final meta = await NativeBridge.fetchMetadata(path);
       return VideoTrack(
         id: '$path-${stat.modified.millisecondsSinceEpoch}',
         title: p.basenameWithoutExtension(path),
         path: path,
-        thumbnailPath: meta.thumbnailPath,
-        duration: meta.duration,
         sizeBytes: stat.size,
         lastModifiedMs: stat.modified.millisecondsSinceEpoch,
-        width: meta.width,
-        height: meta.height,
       );
     } catch (e) {
       debugPrint('Failed to read $path: $e');
       return null;
+    }
+  }
+
+  Future<VideoTrack?> _hydrateTrack(VideoTrack base) async {
+    try {
+      final meta = await NativeBridge.fetchMetadata(base.path);
+      return base.copyWith(
+        thumbnailPath: meta.thumbnailPath,
+        duration: meta.duration,
+        width: meta.width,
+        height: meta.height,
+      );
+    } catch (e) {
+      debugPrint('Failed to hydrate ${base.path}: $e');
+      return base;
     }
   }
 

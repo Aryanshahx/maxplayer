@@ -72,6 +72,14 @@ class _VideoThumbState extends State<VideoThumb> {
       _thumbPath = null;
       _asked = false;
       _resolve();
+      return;
+    }
+    // v98: when the library later hydrates metadata (or playback captures
+    // an mpv fallback frame), the tile must pick up the NEW thumbnail path
+    // even though the video path itself did not change.
+    final updated = widget.track.thumbnailPath;
+    if (updated != null && updated != oldWidget.track.thumbnailPath && updated != _thumbPath) {
+      setState(() => _thumbPath = updated);
     }
   }
 
