@@ -20,7 +20,6 @@ import '../widgets/karaoke_subtitle.dart';
 import '../widgets/player_controls_overlay.dart';
 import '../widgets/player_settings_sheet.dart';
 import '../widgets/playlist_panel.dart';
-import '../widgets/video_ask_sheet.dart';
 import '../widgets/video_info_sheet.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -1060,20 +1059,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   // Screenshot + cast
   // ---------------------------------------------------------------------------
 
-  /// v65 A2: opens the "Ask about this video" sheet, scoped to the
-  /// current video's own transcript/subtitles (not TMDB metadata).
-  Future<void> _openVideoAsk() async {
-    final track = widget.player.currentTrack;
-    if (track == null) return;
-    final cues = widget.player.transcriptCues;
-    await VideoAskSheet.show(
-      context,
-      title: track.title,
-      cues: cues ?? const [],
-      onSeek: (at) => widget.player.seek(at),
-    );
-  }
-
   Future<void> _takeScreenshot() async {
     final path = await widget.player.captureScreenshot();
     if (!mounted) return;
@@ -1688,9 +1673,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           case 'eq':
             EqualizerSheet.show(context, widget.player);
             break;
-          case 'ask':
-            _openVideoAsk();
-            break;
           case 'shot':
             _takeScreenshot();
             break;
@@ -1708,7 +1690,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       itemBuilder: (context) => [
         _topMenuItem('info', Icons.info_outline, 'Video info'),
         _topMenuItem('eq', Icons.graphic_eq, 'Equalizer & Audio FX'),
-        _topMenuItem('ask', Icons.auto_awesome, 'Ask AI about this video'),
         if (_settings.screenshotButton)
           _topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot'),
         if (_settings.castButton)

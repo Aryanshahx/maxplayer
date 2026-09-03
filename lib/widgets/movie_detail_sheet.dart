@@ -285,6 +285,10 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                   if (full.screenshots.isNotEmpty)
                     _ScreenshotsRow(paths: full.screenshots),
 
+                  // v95: "show contents details ABOVE the storyline" -
+                  // this production/technical block used to sit dead last.
+                  _AllDataBlock(extras: full.extras, movieId: movie.id),
+
                   // Rich Storyline & Overview
                   _DetailedStoryBlock(movie: movie, extras: full.extras),
 
@@ -300,12 +304,9 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                   if (!full.watch.isEmpty)
                     _WatchBlock(info: full.watch),
 
-                  // User Reviews
+                  // v95: "show ALL user reviews at the END of the details"
                   if (full.reviews.isNotEmpty)
                     _ReviewsBlock(reviews: full.reviews),
-
-                  // Production & Technical metadata
-                  _AllDataBlock(extras: full.extras, movieId: movie.id),
                 ],
               );
             },
@@ -612,20 +613,88 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                   selected: isSelected,
                   selectedColor: themeState.accent,
                   labelStyle: TextStyle(
-                    color: isSelected ? Colors.white : Colors.white70,
+                    // v95 FIX: the app's DEFAULT accent is white
+                    // (theme_state.dart:23), so `selectedColor: accent`
+                    // + a hardcoded white label = white-on-white, i.e.
+                    // invisible season buttons. Use the app's own
+                    // contrast helper, exactly like the Discover filter
+                    // chips already do (discover_screen.dart:646).
+                    color: isSelected
+                        ? themeState.onAccent
+                        : Colors.white70,
                     fontSize: 12,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight:
+                        isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
                   backgroundColor: Colors.white.withValues(alpha: 0.06),
                   side: BorderSide(
                     color: isSelected ? themeState.accent : Colors.white12,
                   ),
-                  onSelected: (_) => _loadSeasonDetail(s.number),
                 );
               },
             ),
           ),
           const SizedBox(height: 10),
+          // v95: the selected season's OWN rating + synopsis. TMDB's
+          // /tv/{id} payload often omits vote_average per season, but the
+          // /tv/{id}/season/{n} detail call always carries it - and that
+          // call was already being made and thrown away.
+          if (!_loadingSeason && _seasonDetail != null)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _seasonDetail!.name.isNotEmpty
+                              ? _seasonDetail!.name
+                              : 'Season $_selectedSeason',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      if (_seasonDetail!.rating > 0)
+                        Text(
+                          '⭐ ${_seasonDetail!.rating.toStringAsFixed(1)} / 10',
+                          style: TextStyle(
+                            color: themeState.onAccent == Colors.white
+                                ? themeState.accent
+                                : Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (_seasonDetail!.overview.isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      _seasonDetail!.overview,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 11.5,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           if (_loadingSeason)
             const Padding(
               padding: EdgeInsets.all(16),

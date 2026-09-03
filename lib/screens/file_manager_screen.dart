@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/video_track.dart';
+import '../services/media_ai.dart';
 import '../state/media_player_state.dart';
 import '../state/private_vault.dart';
 import '../state/theme_state.dart';
 import '../state/video_library_state.dart';
 import '../utils/formatters.dart';
+import '../utils/storage_permission.dart';
 import '../widgets/playlists_sheet.dart';
 import 'player_screen.dart';
 
@@ -38,24 +40,68 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
   String _typeFilter = 'all'; // 'all', 'video', 'audio', 'image', 'subs', 'doc'
   bool _isGridView = false;
 
+  /// v95: the File Manager never asked for storage access. On Android 11+
+  /// Directory.list() then throws, the old catch swallowed it and the list
+  /// rendered EMPTY with no explanation - which is exactly why WhatsApp
+  /// media "was not showing".
+  bool _permissionDenied = false;
+  String? _errorMsg;
+
   final TextEditingController _searchCtrl = TextEditingController();
 
-  static const List<Map<String, String>> _shortcuts = [
-    {'name': 'Internal', 'path': '/storage/emulated/0', 'icon': 'storage'},
-    {'name': 'Camera', 'path': '/storage/emulated/0/DCIM/Camera', 'icon': 'camera'},
-    {'name': 'Movies', 'path': '/storage/emulated/0/Movies', 'icon': 'movie'},
-    {'name': 'Download', 'path': '/storage/emulated/0/Download', 'icon': 'download'},
-    {
-      'name': 'WhatsApp',
-      'path': '/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video',
-      'icon': 'chat',
-    },
+  /// v95 FIX: WhatsApp media was not showing. Two reasons: (1) no storage
+  /// permission was ever requested, and (2) the shortcut hardcoded ONE
+  /// path. WhatsApp moved under Android/media/<pkg> on Android 11+,
+  /// WhatsApp Business uses com.whatsapp.w4b, and older installs still use
+  /// /sdcard/WhatsApp. Probe them in order and use the first that exists.
+  static const List<String> _whatsAppCandidates = [
+    '/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video',
+    '/storage/emulated/0/Android/media/com.whatsapp.w4b/WhatsApp/Media/WhatsApp Video',
+    '/storage/emulated/0/WhatsApp/Media/WhatsApp Video',
+    '/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media',
+    '/storage/emulated/0/Android/media/com.whatsapp.w4b/WhatsApp/Media',
+    '/storage/emulated/0/WhatsApp/Media',
   ];
+
+  static String _resolveWhatsApp() {
+    for (final c in _whatsAppCandidates) {
+      try {
+        if (Directory(c).existsSync()) return c;
+      } catch (_) {}
+    }
+    return _whatsAppCandidates.first;
+  }
+
+  static List<Map<String, String>> get _shortcuts => [
+        {'name': 'Internal', 'path': '/storage/emulated/0', 'icon': 'storage'},
+        {
+          'name': 'Camera',
+          'path': '/storage/emulated/0/DCIM/Camera',
+          'icon': 'camera'
+        },
+        {'name': 'Movies', 'path': '/storage/emulated/0/Movies', 'icon': 'movie'},
+        {
+          'name': 'Download',
+          'path': '/storage/emulated/0/Download',
+          'icon': 'download'
+        },
+        {'name': 'WhatsApp', 'path': _resolveWhatsApp(), 'icon': 'chat'},
+      ];
 
   @override
   void initState() {
     super.initState();
-    _loadDirectory(_currentPath);
+    _bootstrap();
+  }
+
+  /// v95: ask for "All files access" ONCE up front, then list. Without
+  /// this the shortcut tiles (WhatsApp especially) silently showed nothing
+  /// on Android 11+. Re-used by the in-list "Grant access" button.
+  Future<void> _bootstrap() async {
+    final granted = await ensureStorageAccess();
+    if (!mounted) return;
+    setState(() => _permissionDenied = !granted);
+    if (mounted) _loadDirectory(_currentPath);
   }
 
   Future<void> _loadDirectory(String path) async {
@@ -66,10 +112,13 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
 
     final dir = Directory(path);
     if (!dir.existsSync()) {
-      setState(() {
-        _entries = [];
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _entries = [];
+          _loading = false;
+          _errorMsg = 'This folder does not exist on this device.';
+        });
+      }
       return;
     }
 
@@ -86,13 +135,19 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
         setState(() {
           _entries = visible;
           _loading = false;
+          _errorMsg = null;
         });
       }
     } catch (_) {
+      // v95: never fail silently. An unreadable folder used to render as a
+      // bare "No files found", which reads as "my videos are gone".
       if (mounted) {
         setState(() {
           _entries = [];
           _loading = false;
+          _errorMsg = _permissionDenied
+              ? 'Max Player needs "All files access" to read this folder.'
+              : 'Android blocked access to this folder.';
         });
       }
     }
@@ -150,7 +205,17 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
 
   bool _isDocFile(String path) {
     final ext = p.extension(path).toLowerCase();
-    return ext == '.txt' || ext == '.pdf' || ext == '.json' || ext == '.doc' || ext == '.docx' || ext == '.log' || ext == '.xml' || ext == '.csv' || ext == '.md' || ext == '.srt' || ext == '.vtt';
+    // v95: .srt/.vtt used to count as BOTH Documents and Subtitles, so the
+    // two filter chips overlapped and the counts disagreed.
+    return ext == '.txt' ||
+        ext == '.pdf' ||
+        ext == '.json' ||
+        ext == '.doc' ||
+        ext == '.docx' ||
+        ext == '.log' ||
+        ext == '.xml' ||
+        ext == '.csv' ||
+        ext == '.md';
   }
 
   void _onEntityTap(FileSystemEntity entity) {
@@ -401,35 +466,45 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     );
   }
 
-  void _showAiMediaInsights() {
-    final totalDirs = _entries.whereType<Directory>().length;
-    int videoCount = 0;
-    int audioCount = 0;
-    int imageCount = 0;
-    int docCount = 0;
-    int totalBytes = 0;
-
+  /// v95 FIX: "ai tool is meaning less". The old version counted files and then
+  /// printed ONE hardcoded marketing sentence, identical for every folder on the
+  /// device, so it was not really looking at anything. (The exact wording is
+  /// recorded in services/media_ai.dart, and a test forbids it back in here.)
+  /// Now it computes findings that are genuinely
+  /// derived from this folder (orphaned subtitles, probable duplicates,
+  /// unrecognized extensions, largest file) via services/media_ai.dart, and asks
+  /// the app's EXISTING OpenRouter client for commentary on top. With no API key
+  /// or no network it still shows the real findings and says plainly that the AI
+  /// part is unavailable - it never invents a sentence.
+  Future<void> _showAiMediaInsights() async {
+    final files = <MediaFileInfo>[];
+    int dirs = 0;
     for (final e in _entries) {
-      if (e is File) {
-        try {
-          final len = e.lengthSync();
-          totalBytes += len;
-          if (isVideoFile(e.path)) {
-            videoCount++;
-          } else if (_isAudioFile(e.path)) {
-            audioCount++;
-          } else if (_isImageFile(e.path)) {
-            imageCount++;
-          } else if (_isDocFile(e.path)) {
-            docCount++;
-          }
-        } catch (_) {}
+      if (e is Directory) {
+        dirs++;
+        continue;
       }
+      if (e is! File) continue;
+      try {
+        files.add(MediaFileInfo(
+          p.basename(e.path),
+          e.lengthSync(),
+          _mediaKind(e.path),
+        ));
+      } catch (_) {}
     }
+    final stats = MediaFolderStats(
+      folderName: p.basename(_currentPath),
+      dirs: dirs,
+      files: files,
+    );
+    final findings = localMediaInsights(stats);
+    // Start the request now so it is already in flight while the dialog builds.
+    // Deliberately NOT awaited here: there must be no `await` before the
+    // context use below (use_build_context_synchronously).
+    final ai = MediaAiClient.ask(stats);
 
-    final totalSizeStr = formatFileSize(totalBytes);
-
-    showDialog<void>(
+    await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF181826),
@@ -441,40 +516,106 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
             const Text('AI Media Insights', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Directory: ${p.basename(_currentPath)}', style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 10),
-            _aiStatRow('Total Storage Used', totalSizeStr),
-            _aiStatRow('Videos Found', '$videoCount files'),
-            _aiStatRow('Audio Tracks', '$audioCount files'),
-            _aiStatRow('Images & Photos', '$imageCount files'),
-            _aiStatRow('Documents', '$docCount files'),
-            _aiStatRow('Subfolders', '$totalDirs folders'),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: themeState.accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: themeState.accent.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.lightbulb_outline, color: themeState.accent, size: 18),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'AI Recommendation: All media formats here are fully accelerated by libmpv for 100% smooth playback.',
-                      style: TextStyle(color: Colors.white70, fontSize: 11.5, height: 1.35),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 420),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Directory: ${p.basename(_currentPath)}', style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 10),
+                _aiStatRow('Total Storage Used', formatFileSize(stats.totalBytes)),
+                _aiStatRow('Videos Found', '${stats.videos} files'),
+                _aiStatRow('Audio Tracks', '${stats.audios} files'),
+                _aiStatRow('Images & Photos', '${stats.images} files'),
+                _aiStatRow('Documents', '${stats.docs} files'),
+                _aiStatRow('Subtitles', '${stats.subtitles} files'),
+                _aiStatRow('Subfolders', '$dirs folders'),
+                const SizedBox(height: 12),
+                // v95: real, computed, folder-specific findings. Always shown.
+                for (final f in findings)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 7),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.insights_outlined, color: themeState.accent, size: 15),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            f,
+                            style: const TextStyle(color: Colors.white70, fontSize: 11.5, height: 1.35),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                const SizedBox(height: 4),
+                FutureBuilder<MediaAiAnswer?>(
+                  future: ai,
+                  builder: (context, snap) {
+                    if (snap.connectionState != ConnectionState.done) {
+                      return Row(
+                        children: [
+                          SizedBox(
+                            width: 13,
+                            height: 13,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: themeState.accent),
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text('Asking Max AI about this folder...',
+                                style: TextStyle(color: Colors.white38, fontSize: 11.5)),
+                          ),
+                        ],
+                      );
+                    }
+                    final ans = snap.data;
+                    return Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: themeState.accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: themeState.accent.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.lightbulb_outline, color: themeState.accent, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  ans == null
+                                      ? 'Max AI commentary unavailable (no API key or no network). The findings above were computed on your device.'
+                                      : ans.text,
+                                  style: const TextStyle(color: Colors.white70, fontSize: 11.5, height: 1.35),
+                                ),
+                                if (ans != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: Text('Max AI - ${ans.model}',
+                                        style: const TextStyle(color: Colors.white24, fontSize: 10)),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'AI commentary uses only this folder\'s file names, sizes and counts - never file contents.',
+                  style: TextStyle(color: Colors.white24, fontSize: 9.5, height: 1.3),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
         actions: [
           TextButton(
@@ -484,6 +625,20 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
         ],
       ),
     );
+  }
+
+  /// v95: classify with the SAME rules the filter chips use, so the counts in
+  /// this dialog and the counts behind Videos/Music/Images/Subtitles agree.
+  MediaKind _mediaKind(String path) {
+    if (isVideoFile(path)) return MediaKind.video;
+    if (_isAudioFile(path)) return MediaKind.audio;
+    if (_isImageFile(path)) return MediaKind.image;
+    final ext = p.extension(path).toLowerCase();
+    if (ext == '.srt' || ext == '.vtt' || ext == '.ass' || ext == '.sub') {
+      return MediaKind.subtitle;
+    }
+    if (_isDocFile(path)) return MediaKind.doc;
+    return MediaKind.other;
   }
 
   Widget _aiStatRow(String label, String value) => Padding(
@@ -643,7 +798,12 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
         final matches = p.basename(e.path).toLowerCase().contains(_searchQuery.toLowerCase());
         if (!matches) return false;
       }
-      if (_typeFilter != 'all' && e is File) {
+      // v95 FIX: this block was guarded by `&& e is File`, so EVERY folder
+      // stayed visible whichever chip was picked - the list looked exactly
+      // the same after tapping Videos/Music/Images, i.e. "filters are not
+      // working". A type filter now filters everything, folders included.
+      if (_typeFilter != 'all') {
+        if (e is! File) return false;
         if (_typeFilter == 'video') return isVideoFile(e.path);
         if (_typeFilter == 'audio') return _isAudioFile(e.path);
         if (_typeFilter == 'image') return _isImageFile(e.path);
@@ -830,9 +990,41 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.folder_open, size: 54, color: Colors.white24),
+                              Icon(
+                                _errorMsg != null
+                                    ? Icons.lock_outline
+                                    : Icons.folder_open,
+                                size: 54,
+                                color: Colors.white24,
+                              ),
                               const SizedBox(height: 12),
-                              const Text('No files found', style: TextStyle(color: Colors.white54, fontSize: 15)),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 24),
+                                child: Text(
+                                  _errorMsg ??
+                                      (_typeFilter != 'all'
+                                          ? 'Nothing of this type in this folder.\nTap "All Files" to browse into subfolders.'
+                                          : 'No files found'),
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: Colors.white54, fontSize: 14),
+                                ),
+                              ),
+                              if (_errorMsg != null && _permissionDenied)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 10),
+                                  child: TextButton.icon(
+                                    onPressed: _bootstrap,
+                                    icon: const Icon(
+                                        Icons.folder_shared_outlined,
+                                        size: 16),
+                                    label: const Text('Grant access'),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: themeState.accent,
+                                    ),
+                                  ),
+                                ),
                               if (_searchQuery.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4),

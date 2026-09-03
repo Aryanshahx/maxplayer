@@ -428,14 +428,39 @@ class _LibraryScreenState extends State<LibraryScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black.withValues(alpha: 0.3),
         elevation: 0,
-        title: ShaderMask(
-          shaderCallback: (bounds) => const LinearGradient(
-            colors: [Color(0xFFA78BFA), Color(0xFF8B5CF6), Color(0xFF22D3EE)],
-          ).createShader(bounds),
-          child: const Text(
-            'Max Player',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-          ),
+        // v95: two-line app-bar title - brand line plus the new tagline.
+        title: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ShaderMask(
+              shaderCallback: (bounds) => const LinearGradient(
+                colors: [
+                  Color(0xFFA78BFA),
+                  Color(0xFF8B5CF6),
+                  Color(0xFF22D3EE)
+                ],
+              ).createShader(bounds),
+              child: const Text(
+                'Max Player',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  fontSize: 19,
+                ),
+              ),
+            ),
+            const Text(
+              'Proudly Developed in India \u{1F1EE}\u{1F1F3}',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 9.5,
+                letterSpacing: 0.3,
+                height: 1.3,
+              ),
+            ),
+          ],
         ),
         actions: [
           // v44: library search moved HERE - a full-screen search page,

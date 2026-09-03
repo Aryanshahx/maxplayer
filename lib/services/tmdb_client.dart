@@ -379,11 +379,19 @@ List<TmdbSeason> parseTmdbSeasons(String jsonBody) {
       final name = '${e['name'] ?? ''}'.trim();
       final eps = e['episode_count'] is num ? (e['episode_count'] as num).toInt() : 0;
       final air = '${e['air_date'] ?? ''}';
+      // v95 FIX: `TmdbSeason.rating` was NEVER populated - the field
+      // existed and defaulted to 0.0, so the chip's `s.rating > 0` guard
+      // was always false and the star never rendered. TMDB does return
+      // vote_average per season on /tv/{id}.
+      final vote = e['vote_average'] is num
+          ? (e['vote_average'] as num).toDouble()
+          : 0.0;
       out.add(TmdbSeason(
         number: n,
         name: name.isEmpty ? (n == 0 ? 'Specials' : 'Season $n') : name,
         episodes: eps,
         year: air.length >= 4 ? int.tryParse(air.substring(0, 4)) : null,
+        rating: vote,
       ));
     }
     // v60 belt & braces (his report: "series parts not showing"): some
@@ -1080,7 +1088,10 @@ class TmdbClient {
       parseTmdbExtras(body),
       screenshots: parseTmdbScreenshots(body),
       watch: parseTmdbWatchProviders(body),
-      reviews: parseTmdbReviews(body),
+      // v95: "show ALL user reviews" - this was hardcoded to TWO reviews
+      // truncated at 420 characters. TMDB's append_to_response returns the
+      // first page (up to 20); take all of it and stop chopping the text.
+      reviews: parseTmdbReviews(body, count: 20, maxChars: 4000),
       // v59: every part (season) of the series, for the detail sheet.
       seasons: isTv ? parseTmdbSeasons(body) : const [],
     );

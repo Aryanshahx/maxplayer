@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 // problems. (They were invisible in v93 only because the file's resolution
 // errors suppressed the hint.)
 import 'package:maxplayer/models/video_track.dart';
+import 'package:maxplayer/services/media_ai.dart';
 import 'package:maxplayer/services/tmdb_client.dart';
 import 'package:maxplayer/utils/formatters.dart';
 
@@ -75,9 +76,10 @@ void main() {
       expect(playerScreen, contains('PopupMenuButton<String>'));
       expect(playerScreen, contains('_topMenuItem'));
       expect(playerScreen, contains('AnimatedScale'));
-      // v94: Ask AI lives in the player's THREE-DOT menu (request #4),
-      // not next to Subtitles/Audio in the tracks sheet.
-      expect(playerScreen.contains("Ask AI about this video"), isTrue);
+      // v95: Ask AI is REMOVED from the player entirely (developer
+      // request: "remove ask ai about this video from three dots").
+      // lib/widgets/video_ask_sheet.dart stays on disk, unwired.
+      expect(playerScreen.contains("Ask AI about this video"), isFalse);
     });
 
     test('PlayerControlsOverlay has no Ask AI in tune/tracks sheet', () {
@@ -122,6 +124,55 @@ void main() {
       final net = File('lib/widgets/network_storage_sheet.dart').readAsStringSync();
       expect(net, contains('computeLuminance'));
       expect(net, contains('btnTextColor'));
+    });
+  });
+
+  group('v95 media_ai - real File Manager insights', () {
+    test('finds orphaned subtitles, duplicates and the largest file', () {
+      final stats = MediaFolderStats(
+        folderName: 'Movies',
+        dirs: 1,
+        files: const [
+          MediaFileInfo('Dune.mkv', 2147483648, MediaKind.video),
+          MediaFileInfo('Dune.mkv', 2147483648, MediaKind.video),
+          MediaFileInfo('Dune.srt', 40960, MediaKind.subtitle),
+          MediaFileInfo('Orphan.srt', 30720, MediaKind.subtitle),
+          MediaFileInfo('notes.xyz', 1024, MediaKind.other),
+        ],
+      );
+      expect(stats.videos, 2);
+      expect(stats.subtitles, 2);
+      expect(stats.others, 1);
+      // 'Dune.srt' pairs with 'Dune.mkv'; 'Orphan.srt' has nothing to attach to.
+      expect(stats.orphanedSubtitles.map((f) => f.name).toList(), ['Orphan.srt']);
+      // Two byte-identical videos over the 1 MB floor = one duplicate group.
+      expect(stats.duplicateCandidates.length, 1);
+      expect(stats.largest!.bytes, 2147483648);
+      expect(stats.topExtensions['mkv'], 2);
+    });
+
+    test('insights come from the data, never from one fixed sentence', () {
+      final empty = MediaFolderStats(folderName: 'A', dirs: 0, files: const []);
+      final one = MediaFolderStats(
+        folderName: 'B',
+        dirs: 0,
+        files: const [MediaFileInfo('Orphan.srt', 1024, MediaKind.subtitle)],
+      );
+      final emptyText = localMediaInsights(empty).join(' ');
+      final oneText = localMediaInsights(one).join(' ');
+      expect(emptyText, isNot(oneText));
+      expect(oneText, contains('Orphan.srt'));
+      // The v93 hardcoded marketing line must never come back.
+      expect(oneText, isNot(contains('fully accelerated by libmpv')));
+      expect(emptyText, isNot(contains('fully accelerated by libmpv')));
+    });
+
+    test('File Manager wires the real service, not a static string', () {
+      final fm = File('lib/screens/file_manager_screen.dart').readAsStringSync();
+      expect(fm, contains("import '../services/media_ai.dart';"));
+      expect(fm, contains('MediaAiClient.ask('));
+      expect(fm, contains('localMediaInsights('));
+      expect(fm, isNot(contains('fully accelerated by libmpv')));
     });
   });
 }
