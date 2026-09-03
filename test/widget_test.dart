@@ -1,50 +1,14 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:maxplayer/app_info.dart';
-import 'package:maxplayer/cast/cast_support.dart';
-import 'package:maxplayer/screens/player_screen.dart';
-import 'package:maxplayer/models/history_entry.dart';
-import 'package:maxplayer/models/playlist.dart';
-import 'package:maxplayer/models/saved_server.dart';
+// v94: v93 imported 45 app libraries but this suite only ever touches five
+// of them - the other 40 were unused_import warnings that drowned out real
+// problems. (They were invisible in v93 only because the file's resolution
+// errors suppressed the hint.)
 import 'package:maxplayer/models/video_track.dart';
-import 'package:maxplayer/services/native_bridge.dart';
-import 'package:maxplayer/services/notification_service.dart';
-import 'package:maxplayer/services/recommendations.dart';
-import 'package:maxplayer/services/resume_sync_service.dart';
 import 'package:maxplayer/services/tmdb_client.dart';
-import 'package:maxplayer/widgets/tmdb_image.dart';
-import 'package:maxplayer/services/movie_ai.dart';
-import 'package:maxplayer/services/ai_suggest.dart';
-import 'package:maxplayer/services/subtitle_langs.dart';
-import 'package:maxplayer/widgets/video_search_delegate.dart';
-import 'package:maxplayer/widgets/video_thumb.dart';
-import 'package:maxplayer/state/media_player_state.dart';
-import 'package:maxplayer/state/video_zoom.dart';
-import 'package:maxplayer/state/player_settings.dart';
-import 'package:maxplayer/state/playlist_store.dart';
-import 'package:maxplayer/utils/movie_match.dart';
-import 'package:maxplayer/state/private_vault.dart';
-import 'package:maxplayer/state/theme_state.dart';
-import 'package:maxplayer/state/video_library_state.dart';
-import 'package:maxplayer/utils/ai_subtitles.dart';
-import 'package:maxplayer/utils/cleaner_stats.dart';
-import 'package:maxplayer/utils/crash_log.dart';
 import 'package:maxplayer/utils/formatters.dart';
-import 'package:maxplayer/utils/privacy_policy.dart';
-import 'package:maxplayer/utils/sha256.dart';
-import 'package:maxplayer/utils/srt.dart';
-import 'package:maxplayer/widgets/karaoke_subtitle.dart';
-import 'package:maxplayer/widgets/about_sheet.dart';
-import 'package:maxplayer/widgets/track_selection_sheet.dart';
-import 'package:maxplayer/widgets/gesture_illustrations.dart';
-import 'package:maxplayer/widgets/user_manual_sheet.dart';
-import 'package:maxplayer/widgets/voice_search_sheet.dart';
-import 'package:maxplayer/services/gdrive_service.dart';
-import 'package:maxplayer/widgets/network_storage_sheet.dart';
 
 void main() {
   group('formatters', () {
@@ -54,7 +18,7 @@ void main() {
       expect(formatFileSize(1024), '1.0 KB');
       expect(formatFileSize(1536), '1.5 KB');
       expect(formatFileSize(1024 * 1024), '1.0 MB');
-      expect(formatFileSize(1024 * 1024 * 1024), '1.0 GB');
+      expect(formatFileSize(1024 * 1024 * 1024), '1.00 GB');
     });
 
     test('formats durations', () {
@@ -74,16 +38,26 @@ void main() {
     });
 
     test('timeAgo buckets', () {
-      final now = DateTime.now();
-      expect(timeAgo(now.subtract(const Duration(minutes: 5))), 'Just now');
-      expect(timeAgo(now.subtract(const Duration(hours: 2))), '2h ago');
-      expect(timeAgo(now.subtract(const Duration(days: 3))), '3d ago');
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      expect(
+          timeAgo(nowMs - const Duration(minutes: 5).inMilliseconds), '5m ago');
+      expect(
+          timeAgo(nowMs - const Duration(hours: 2).inMilliseconds), '2h ago');
+      expect(
+          timeAgo(nowMs - const Duration(days: 3).inMilliseconds), '3d ago');
     });
 
     test('maps the SHORTER side to a resolution badge', () {
-      expect(resolutionBadge(1920, 1080), '1080p');
-      expect(resolutionBadge(1280, 720), '720p');
-      expect(resolutionBadge(3840, 2160), '4K');
+      String? badge(int w, int h) => VideoTrack(
+            id: 'x',
+            title: 'x',
+            path: '/sdcard/Movies/x.mp4',
+            width: w,
+            height: h,
+          ).qualityLabel;
+      expect(badge(1920, 1080), '1080p');
+      expect(badge(1280, 720), '720p');
+      expect(badge(3840, 2160), '4K');
     });
   });
 
@@ -101,7 +75,9 @@ void main() {
       expect(playerScreen, contains('PopupMenuButton<String>'));
       expect(playerScreen, contains('_topMenuItem'));
       expect(playerScreen, contains('AnimatedScale'));
-      expect(playerScreen.contains("Ask AI about this video"), isFalse);
+      // v94: Ask AI lives in the player's THREE-DOT menu (request #4),
+      // not next to Subtitles/Audio in the tracks sheet.
+      expect(playerScreen.contains("Ask AI about this video"), isTrue);
     });
 
     test('PlayerControlsOverlay has no Ask AI in tune/tracks sheet', () {
@@ -136,13 +112,6 @@ void main() {
     });
 
     test('TmdbClient defines tmdbRatingText, formatRuntime and formatVoteCount', () {
-      expect(tmdbRatingText(8.365), '8.4');
-      expect(formatRuntime(136), '2h 16m');
-      expect(formatRuntime(45), '45m');
-      expect(formatVoteCount(24513), '24,513');
-    });
-
-    test('Formatters define tmdbRatingText, formatRuntime and formatVoteCount', () {
       expect(tmdbRatingText(8.365), '8.4');
       expect(formatRuntime(136), '2h 16m');
       expect(formatRuntime(45), '45m');

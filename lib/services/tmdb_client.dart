@@ -586,7 +586,7 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
     if (decoded is! Map) return const TmdbDetailExtras();
     String director = '';
     final cast = <String>[];
-        final castMembers = <TmdbCastMember>[];
+    final castMembers = <TmdbCastMember>[];
     final credits = decoded['credits'];
     if (credits is Map) {
       final crew = credits['crew'];
@@ -616,7 +616,6 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
           if (castMembers.length >= 20) break;
         }
       }
-    }
     }
     final genres = <String>[];
     final g = decoded['genres'];

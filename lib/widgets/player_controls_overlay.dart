@@ -57,18 +57,13 @@ class PlayerControlsOverlay extends StatelessWidget {
     // v25: karaoke toggle moved INTO the tracks sheet (was the ⋮ menu).
     required this.karaokeOn,
     required this.onToggleKaraoke,
-    // v78: "Ask AI about this video" moved INTO the tracks sheet too
-    // (was the ⋮ menu) - it belongs next to Subtitles/Audio/A-B loop,
-    // not buried behind "more actions".
-      });
+  });
 
   /// v25: karaoke state + toggle, so the tracks sheet can host the switch
   /// next to Subtitles / Audio track / A-B loop.
   final bool karaokeOn;
   final VoidCallback onToggleKaraoke;
 
-  /// v78: opens the "Ask AI about this video" sheet.
-  
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -326,21 +321,6 @@ class PlayerControlsOverlay extends StatelessWidget {
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   onToggleKaraoke();
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.auto_awesome, color: themeState.accent),
-                title: const Text(
-                  'Ask AI about this video',
-                  style: TextStyle(color: Colors.white),
-                ),
-                subtitle: const Text(
-                  'Answers from the subtitles - AI-generated or the video\'s own',
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  onAskAi();
                 },
               ),
               const SizedBox(height: 8),

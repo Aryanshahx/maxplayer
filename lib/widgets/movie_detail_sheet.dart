@@ -9,7 +9,6 @@ import '../services/tmdb_client.dart';
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
 import '../services/subtitle_langs.dart';
-import '../utils/formatters.dart';
 import 'ask_ai_sheet.dart';
 import 'tmdb_image.dart';
 
