@@ -160,4 +160,41 @@ void main() {
       expect(detail.contains('ep.overview,\n                                  maxLines'), isFalse);
     });
   });
+  group('v97 low-end performance', () {
+    test('hardware decoding is enabled at startup, not left to the default', () {
+      final s = File('lib/state/media_player_state.dart').readAsStringSync();
+      // libmpv's own default for hwdec is `no` (software). Before v97 nothing
+      // set it at startup - it was only touched when toggling Enhance - so a
+      // cold launch could software-decode every video.
+      expect(s, contains("'hwdec': 'auto-safe'"));
+      // The software fallback for buggy decoders must still exist.
+      expect(s, contains('_hwFallbackForPath'));
+      expect(s, contains("unawaited(plat.setProperty('hwdec', 'no'))"));
+    });
+
+    test('mpv render-side scalers take the cheap path', () {
+      final s = File('lib/state/media_player_state.dart').readAsStringSync();
+      for (final k in ['scale', 'cscale', 'dscale']) {
+        expect(s, contains("'$k': 'bilinear'"));
+      }
+      expect(s, contains("'deband': 'no'"));
+      // The v51 demuxer/decode caps must not have been lost.
+      expect(s, contains("'demuxer-max-bytes': '32MiB'"));
+      expect(s, contains("'vd-lavc-skiploopfilter': 'nonref'"));
+    });
+
+    test('position events no longer rebuild the UI at 10-30 Hz', () {
+      final s = File('lib/state/media_player_state.dart').readAsStringSync();
+      expect(s, contains('static const int kPosNotifyMs'));
+      expect(s, contains('_lastPosNotify'));
+      // Seeks must still notify at once so scrubbing stays responsive.
+      expect(s, contains('final jumped = (v - prev).abs()'));
+      // The per-event logic that genuinely needs full precision must survive.
+      expect(s, contains('_checkSleepAtEnd(v);'));
+      expect(s, contains('_maybeAutoSkipCredits(v);'));
+      expect(s, contains('_maybeCaptureThumb(v);'));
+      // The 500ms guaranteed pulse is what keeps the bar from looking frozen.
+      expect(s, contains('Timer.periodic(const Duration(milliseconds: 500)'));
+    });
+  });
 }

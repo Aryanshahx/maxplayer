@@ -117,6 +117,12 @@ class MediaPlayerState extends ChangeNotifier {
   Timer? _uiTicker;
   late final List<StreamSubscription> _subs;
 
+  /// v97 PERF (low-end devices): minimum gap between position-driven
+  /// [notifyListeners] calls. See the throttle inside the
+  /// `player.stream.position` listener for why this exists.
+  static const int kPosNotifyMs = 200;
+  DateTime _lastPosNotify = DateTime.fromMillisecondsSinceEpoch(0);
+
   MediaPlayerState() {
     // v51: cap mpv's demuxer cache once. Without explicit values some
     // builds fall back to mpv's desktop-oriented defaults, which wastes
@@ -137,6 +143,9 @@ class MediaPlayerState extends ChangeNotifier {
         _syncNowPlaying();
       }),
       player.stream.position.listen((v) {
+        // v97 PERF: keep the previous value so a SEEK can be distinguished
+        // from ordinary playback progress by the throttle at the bottom.
+        final prev = position;
         position = v;
         // Enforce the A-B loop window.
         final a = loopA;
@@ -147,7 +156,25 @@ class MediaPlayerState extends ChangeNotifier {
         _checkSleepAtEnd(v); // "sleep at end of video" timer
         _maybeAutoSkipCredits(v); // v65 smart skip
         _maybeCaptureThumb(v); // 4K/HDR thumbnail fallback (v22)
-        notifyListeners();
+        // v97 PERF (low-end devices): media_kit forwards mpv's `time-pos`
+        // observation roughly 10-30 times a second, and every single one of
+        // those used to call notifyListeners() - rebuilding the player
+        // overlay, the scrub bar and the home-screen mini player on the UI
+        // thread 10-30x per second. On a weak SoC that rebuild storm, not the
+        // video decode, is what makes the interface stutter during playback.
+        // Everything above still runs at full precision (A-B looping, the
+        // sleep timer and credit skipping all need it); only the REBUILD is
+        // throttled. A jump of more than a second means the user seeked, so
+        // that notifies immediately and scrubbing stays responsive. The
+        // pre-existing 500ms _uiTicker below still guarantees a pulse even if
+        // this stream coalesces, so nothing can ever look frozen.
+        final now = DateTime.now();
+        final jumped = (v - prev).abs() > const Duration(seconds: 1);
+        if (jumped ||
+            now.difference(_lastPosNotify).inMilliseconds >= kPosNotifyMs) {
+          _lastPosNotify = now;
+          notifyListeners();
+        }
       }),
       player.stream.duration.listen((v) {
         duration = v;
@@ -1201,6 +1228,26 @@ class MediaPlayerState extends ChangeNotifier {
   /// keeps instant seek-back; cache-secs bounds network-stream caching by
   /// time so live http links cannot pile up RAM. (The 800 MB storage
   /// bloat was on-disk seek strips - fixed natively in MainActivity.)
+  ///
+  /// v97 PERF (low-end devices). The v51 block capped the DEMUXER and the
+  /// DECODER, but two far larger costs were never addressed:
+  ///
+  /// 1. HARDWARE DECODING WAS NEVER ENABLED. libmpv's own default for `hwdec`
+  ///    is `no`, i.e. pure software decoding. Nothing in the app set it at
+  ///    startup - the only writes were `hwdec=no` after a decoder failure and
+  ///    `enhanceHwdecFor()` when toggling Enhance - so a cold launch could
+  ///    software-decode every file. That is the single biggest reason playback
+  ///    lagged on weak SoCs while VLC did not: VLC uses MediaCodec by default.
+  ///    `auto-safe` enables Android's MediaCodec paths while skipping the hwdec
+  ///    backends mpv itself documents as buggy. The existing `_hwFallbackForPath`
+  ///    machinery already handles a device whose decoder misbehaves, so this is
+  ///    safe: if hwdec was somehow already on, setting it again is a no-op.
+  ///
+  /// 2. THE RENDER/SCALING CHAIN WAS STOCK DESKTOP. mpv's default scalers and
+  ///    debanding are per-output-pixel fragment shaders tuned for desktop GPUs.
+  ///    On a low-end Adreno/Mali that dominates frame cost once decoding is in
+  ///    hardware. bilinear + no deband is all a ~6" handset panel needs, and
+  ///    mirrors mpv's own `--profile=fast`.
   static const Map<String, String> kMpvCacheCapProps = {
     'demuxer-max-bytes': '32MiB',
     'demuxer-max-back-bytes': '8MiB',
@@ -1209,6 +1256,17 @@ class MediaPlayerState extends ChangeNotifier {
     'hr-seek-framedrop': 'yes',
     'vd-lavc-fast': 'yes',
     'vd-lavc-skiploopfilter': 'nonref',
+    // --- v97: hardware decode (see note 1 above) ---
+    'hwdec': 'auto-safe',
+    // --- v97: render-side / GPU (see note 2 above) ---
+    'scale': 'bilinear',
+    'cscale': 'bilinear',
+    'dscale': 'bilinear',
+    'deband': 'no',
+    'dither-depth': 'no',
+    'interpolation': 'no',
+    'sigmoid-upscaling': 'no',
+    'correct-downscaling': 'no',
   };
 
   bool _enhanceApplied = false;
