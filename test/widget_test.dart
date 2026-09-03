@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 // problems. (They were invisible in v93 only because the file's resolution
 // errors suppressed the hint.)
 import 'package:maxplayer/models/video_track.dart';
-import 'package:maxplayer/services/media_ai.dart';
 import 'package:maxplayer/services/tmdb_client.dart';
 import 'package:maxplayer/utils/formatters.dart';
 
@@ -94,12 +93,14 @@ void main() {
       expect(about.contains("Icons.play_circle_fill"), isFalse);
     });
 
-    test('FileManagerScreen opens images, audio, documents, and provides AI insights', () {
+    test('FileManagerScreen opens images, audio and documents', () {
       final fileMgr = File('lib/screens/file_manager_screen.dart').readAsStringSync();
       expect(fileMgr, contains('_openImageViewer'));
       expect(fileMgr, contains('_openAudioPlayer'));
       expect(fileMgr, contains('_openDocumentViewer'));
-      expect(fileMgr, contains('_showAiMediaInsights'));
+      // v96: the developer asked for the File Manager's AI to be removed
+      // entirely, so pin its absence instead of its presence.
+      expect(fileMgr.contains('_showAiMediaInsights'), isFalse);
       expect(fileMgr, contains('widget.player.seekBy'));
       expect(fileMgr, contains('widget.player.togglePlay'));
       expect(fileMgr.contains('seekRelative'), isFalse);
@@ -127,52 +128,36 @@ void main() {
     });
   });
 
-  group('v95 media_ai - real File Manager insights', () {
-    test('finds orphaned subtitles, duplicates and the largest file', () {
-      final stats = MediaFolderStats(
-        folderName: 'Movies',
-        dirs: 1,
-        files: const [
-          MediaFileInfo('Dune.mkv', 2147483648, MediaKind.video),
-          MediaFileInfo('Dune.mkv', 2147483648, MediaKind.video),
-          MediaFileInfo('Dune.srt', 40960, MediaKind.subtitle),
-          MediaFileInfo('Orphan.srt', 30720, MediaKind.subtitle),
-          MediaFileInfo('notes.xyz', 1024, MediaKind.other),
-        ],
-      );
-      expect(stats.videos, 2);
-      expect(stats.subtitles, 2);
-      expect(stats.others, 1);
-      // 'Dune.srt' pairs with 'Dune.mkv'; 'Orphan.srt' has nothing to attach to.
-      expect(stats.orphanedSubtitles.map((f) => f.name).toList(), ['Orphan.srt']);
-      // Two byte-identical videos over the 1 MB floor = one duplicate group.
-      expect(stats.duplicateCandidates.length, 1);
-      expect(stats.largest!.bytes, 2147483648);
-      expect(stats.topExtensions['mkv'], 2);
-    });
-
-    test('insights come from the data, never from one fixed sentence', () {
-      final empty = MediaFolderStats(folderName: 'A', dirs: 0, files: const []);
-      final one = MediaFolderStats(
-        folderName: 'B',
-        dirs: 0,
-        files: const [MediaFileInfo('Orphan.srt', 1024, MediaKind.subtitle)],
-      );
-      final emptyText = localMediaInsights(empty).join(' ');
-      final oneText = localMediaInsights(one).join(' ');
-      expect(emptyText, isNot(oneText));
-      expect(oneText, contains('Orphan.srt'));
-      // The v93 hardcoded marketing line must never come back.
-      expect(oneText, isNot(contains('fully accelerated by libmpv')));
-      expect(emptyText, isNot(contains('fully accelerated by libmpv')));
-    });
-
-    test('File Manager wires the real service, not a static string', () {
+  group('v96 removals and regression guards', () {
+    test('File Manager AI and its service are gone', () {
+      expect(File('lib/services/media_ai.dart').existsSync(), isFalse);
       final fm = File('lib/screens/file_manager_screen.dart').readAsStringSync();
-      expect(fm, contains("import '../services/media_ai.dart';"));
-      expect(fm, contains('MediaAiClient.ask('));
-      expect(fm, contains('localMediaInsights('));
-      expect(fm, isNot(contains('fully accelerated by libmpv')));
+      expect(fm.contains('media_ai.dart'), isFalse);
+      expect(fm.contains('_showAiMediaInsights'), isFalse);
+      expect(fm.contains('AI Media Insights'), isFalse);
+      expect(fm.contains('_aiStatRow'), isFalse);
+      expect(fm.contains('_mediaKind'), isFalse);
+    });
+
+    test('season chips are tappable again (v95 dropped onSelected)', () {
+      // A ChoiceChip with a null onSelected is DISABLED. v95 lost that line,
+      // which is why season buttons stopped responding to taps. This guard
+      // exists because `flutter analyze` structurally cannot catch it.
+      final detail = File('lib/widgets/movie_detail_sheet.dart').readAsStringSync();
+      expect(detail, contains('onSelected: (_) => _loadSeasonDetail(s.number)'));
+    });
+
+    test('no white-on-white buttons survive on an accent background', () {
+      // Both the season chips (v95) and the Resume button (v96) painted
+      // hardcoded white on themeState.accent, and the default accent IS white.
+      final lib = File('lib/screens/library_screen.dart').readAsStringSync();
+      expect(lib, contains('foregroundColor: themeState.onAccent'));
+    });
+
+    test('episode and season synopses are no longer clamped', () {
+      final detail = File('lib/widgets/movie_detail_sheet.dart').readAsStringSync();
+      expect(detail.contains('_seasonDetail!.overview,\n                      maxLines'), isFalse);
+      expect(detail.contains('ep.overview,\n                                  maxLines'), isFalse);
     });
   });
 }

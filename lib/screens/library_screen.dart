@@ -584,7 +584,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ],
       ),
       // Mini player sits at the bottom while something is loaded.
-      bottomNavigationBar: MiniPlayer(player: widget.player),
+      // v96 FIX: 'navigation bar of device is overflow over home screen'.
+      // android/app/build.gradle.kts sets targetSdk = 36, and Android 15+
+      // ENFORCES edge-to-edge, so the system navigation bar now draws ON TOP
+      // of the bottom of the app. Scaffold does not inset a custom
+      // bottomNavigationBar (Material's NavigationBar does it internally;
+      // MiniPlayer is hand-rolled and did not), so the mini player - and the
+      // home list behind it - sat underneath the gesture bar / 3-button nav.
+      // SafeArea(top: false) adds exactly the bottom inset and nothing else.
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: MiniPlayer(player: widget.player),
+      ),
       body: Column(
         children: [
           // v44: the search BOX became an app-bar icon (full-screen
@@ -649,7 +660,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       TextButton(
                         style: TextButton.styleFrom(
                           backgroundColor: themeState.accent,
-                          foregroundColor: Colors.white,
+                          // v96 FIX: 'resume button is getting invisible in
+                          // white theme'. Same bug class as the season chips:
+                          // accent background + a hardcoded WHITE foreground,
+                          // and the app's DEFAULT accent is white
+                          // (theme_state.dart:23) => white on white.
+                          foregroundColor: themeState.onAccent,
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           visualDensity: VisualDensity.compact,
                         ),

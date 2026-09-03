@@ -285,12 +285,15 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                   if (full.screenshots.isNotEmpty)
                     _ScreenshotsRow(paths: full.screenshots),
 
-                  // v95: "show contents details ABOVE the storyline" -
-                  // this production/technical block used to sit dead last.
+                  // Contents / production details (v95: above the storyline)
                   _AllDataBlock(extras: full.extras, movieId: movie.id),
 
                   // Rich Storyline & Overview
                   _DetailedStoryBlock(movie: movie, extras: full.extras),
+
+                  // v96: 'show where to watch below storyline' - moved up from
+                  // its old slot down after the seasons block.
+                  if (!full.watch.isEmpty) _WatchBlock(info: full.watch),
 
                   // Top Cast Slider with Profile Images
                   if (full.extras.castMembers.isNotEmpty)
@@ -300,11 +303,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                   if (isTv && full.seasons.isNotEmpty)
                     _SeasonsBlock(tvId: movie.id, seasons: full.seasons),
 
-                  // Where to Watch
-                  if (!full.watch.isEmpty)
-                    _WatchBlock(info: full.watch),
-
-                  // v95: "show ALL user reviews at the END of the details"
+                  // v95: 'show ALL user reviews at the END of the details'
                   if (full.reviews.isNotEmpty)
                     _ReviewsBlock(reviews: full.reviews),
                 ],
@@ -630,6 +629,12 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                   side: BorderSide(
                     color: isSelected ? themeState.accent : Colors.white12,
                   ),
+                  // v96 REGRESSION FIX: v95's season-header patch accidentally
+                  // dropped this line. A ChoiceChip whose onSelected is null is
+                  // DISABLED, which is exactly why the season buttons stopped
+                  // responding to taps. `flutter analyze` cannot catch it: the
+                  // parameter is optional, so the chip just goes silently inert.
+                  onSelected: (_) => _loadSeasonDetail(s.number),
                 );
               },
             ),
@@ -682,9 +687,9 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                   if (_seasonDetail!.overview.isNotEmpty) ...[
                     const SizedBox(height: 5),
                     Text(
+                      // v96: 'dont cut its detail show full' - this season
+                      // synopsis was clamped to 3 lines with an ellipsis.
                       _seasonDetail!.overview,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white60,
                         fontSize: 11.5,
@@ -776,9 +781,9 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                               Padding(
                                 padding: const EdgeInsets.only(top: 3),
                                 child: Text(
+                                  // v96: episode synopses were clamped to 2
+                                  // lines with an ellipsis; show them in full.
                                   ep.overview,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(color: Colors.white54, fontSize: 11.5, height: 1.3),
                                 ),
                               ),

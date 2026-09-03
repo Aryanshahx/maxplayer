@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/video_track.dart';
-import '../services/media_ai.dart';
 import '../state/media_player_state.dart';
 import '../state/private_vault.dart';
 import '../state/theme_state.dart';
@@ -14,7 +13,11 @@ import '../widgets/playlists_sheet.dart';
 import 'player_screen.dart';
 
 /// v93: Advanced Media File Manager & Storage Explorer with full media viewers
-/// (Images, Audio/Music, Documents) and AI Media Insights.
+/// (Images, Audio/Music, Documents).
+/// v96: the AI media-insights feature was REMOVED at the developer's request
+/// ('remove ai from file manager'), together with its service file. The
+/// identifiers are deliberately not spelled out here: a test asserts that
+/// this file contains no residue of them at all.
 class FileManagerScreen extends StatefulWidget {
   final VideoLibraryState library;
   final MediaPlayerState player;
@@ -466,192 +469,6 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     );
   }
 
-  /// v95 FIX: "ai tool is meaning less". The old version counted files and then
-  /// printed ONE hardcoded marketing sentence, identical for every folder on the
-  /// device, so it was not really looking at anything. (The exact wording is
-  /// recorded in services/media_ai.dart, and a test forbids it back in here.)
-  /// Now it computes findings that are genuinely
-  /// derived from this folder (orphaned subtitles, probable duplicates,
-  /// unrecognized extensions, largest file) via services/media_ai.dart, and asks
-  /// the app's EXISTING OpenRouter client for commentary on top. With no API key
-  /// or no network it still shows the real findings and says plainly that the AI
-  /// part is unavailable - it never invents a sentence.
-  Future<void> _showAiMediaInsights() async {
-    final files = <MediaFileInfo>[];
-    int dirs = 0;
-    for (final e in _entries) {
-      if (e is Directory) {
-        dirs++;
-        continue;
-      }
-      if (e is! File) continue;
-      try {
-        files.add(MediaFileInfo(
-          p.basename(e.path),
-          e.lengthSync(),
-          _mediaKind(e.path),
-        ));
-      } catch (_) {}
-    }
-    final stats = MediaFolderStats(
-      folderName: p.basename(_currentPath),
-      dirs: dirs,
-      files: files,
-    );
-    final findings = localMediaInsights(stats);
-    // Start the request now so it is already in flight while the dialog builds.
-    // Deliberately NOT awaited here: there must be no `await` before the
-    // context use below (use_build_context_synchronously).
-    final ai = MediaAiClient.ask(stats);
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF181826),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Row(
-          children: [
-            Icon(Icons.auto_awesome, color: themeState.accent, size: 22),
-            const SizedBox(width: 10),
-            const Text('AI Media Insights', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 420),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Directory: ${p.basename(_currentPath)}', style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 10),
-                _aiStatRow('Total Storage Used', formatFileSize(stats.totalBytes)),
-                _aiStatRow('Videos Found', '${stats.videos} files'),
-                _aiStatRow('Audio Tracks', '${stats.audios} files'),
-                _aiStatRow('Images & Photos', '${stats.images} files'),
-                _aiStatRow('Documents', '${stats.docs} files'),
-                _aiStatRow('Subtitles', '${stats.subtitles} files'),
-                _aiStatRow('Subfolders', '$dirs folders'),
-                const SizedBox(height: 12),
-                // v95: real, computed, folder-specific findings. Always shown.
-                for (final f in findings)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 7),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(Icons.insights_outlined, color: themeState.accent, size: 15),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            f,
-                            style: const TextStyle(color: Colors.white70, fontSize: 11.5, height: 1.35),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 4),
-                FutureBuilder<MediaAiAnswer?>(
-                  future: ai,
-                  builder: (context, snap) {
-                    if (snap.connectionState != ConnectionState.done) {
-                      return Row(
-                        children: [
-                          SizedBox(
-                            width: 13,
-                            height: 13,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: themeState.accent),
-                          ),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Text('Asking Max AI about this folder...',
-                                style: TextStyle(color: Colors.white38, fontSize: 11.5)),
-                          ),
-                        ],
-                      );
-                    }
-                    final ans = snap.data;
-                    return Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: themeState.accent.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: themeState.accent.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.lightbulb_outline, color: themeState.accent, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  ans == null
-                                      ? 'Max AI commentary unavailable (no API key or no network). The findings above were computed on your device.'
-                                      : ans.text,
-                                  style: const TextStyle(color: Colors.white70, fontSize: 11.5, height: 1.35),
-                                ),
-                                if (ans != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 6),
-                                    child: Text('Max AI - ${ans.model}',
-                                        style: const TextStyle(color: Colors.white24, fontSize: 10)),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'AI commentary uses only this folder\'s file names, sizes and counts - never file contents.',
-                  style: TextStyle(color: Colors.white24, fontSize: 9.5, height: 1.3),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Close', style: TextStyle(color: themeState.accent)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// v95: classify with the SAME rules the filter chips use, so the counts in
-  /// this dialog and the counts behind Videos/Music/Images/Subtitles agree.
-  MediaKind _mediaKind(String path) {
-    if (isVideoFile(path)) return MediaKind.video;
-    if (_isAudioFile(path)) return MediaKind.audio;
-    if (_isImageFile(path)) return MediaKind.image;
-    final ext = p.extension(path).toLowerCase();
-    if (ext == '.srt' || ext == '.vtt' || ext == '.ass' || ext == '.sub') {
-      return MediaKind.subtitle;
-    }
-    if (_isDocFile(path)) return MediaKind.doc;
-    return MediaKind.other;
-  }
-
-  Widget _aiStatRow(String label, String value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 3),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 12)),
-        Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12.5)),
-      ],
-    ),
-  );
-
   void _showFileDetails(FileSystemEntity entity) {
     final name = p.basename(entity.path);
     final stat = entity.statSync();
@@ -858,11 +675,6 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                   ],
                 ),
           actions: [
-            IconButton(
-              icon: Icon(Icons.auto_awesome, color: accent),
-              tooltip: 'AI Media Insights',
-              onPressed: _showAiMediaInsights,
-            ),
             IconButton(
               icon: Icon(_searchActive ? Icons.close : Icons.search, color: Colors.white70),
               tooltip: _searchActive ? 'Close Search' : 'Search',
