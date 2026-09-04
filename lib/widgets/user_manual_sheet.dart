@@ -567,14 +567,23 @@ const List<_Item> _smartItems = [
     Icons.face_outlined,
     'Look-away auto-pause',
     'Player tune sheet → Look-away auto-pause: looking away for a few '
-        'seconds pauses, looking back resumes. Same camera rules as above.',
+        'seconds pauses, looking back resumes. Same camera rules as above. '
+        'If it never triggers, the Status line in the sleep sheet tells '
+        'whether the camera is actually watching.',
+  ),
+  _Item(
+    Icons.pan_tool_outlined,
+    'Air gestures',
+    'Player tune sheet → Air gestures: open palm holds play/pause, index '
+        'swipes seek ±10s, two-finger swipes on the right change volume '
+        'and on the left brightness, OK sign toggles 2x speed. Needs good '
+        'light on your hand; off by default.',
   ),
   _Item(
     Icons.graphic_eq_outlined,
-    'Dialogue boost & volume leveling',
-    'Player tune sheet: Dialogue boost lifts quiet speech; Auto volume '
-        'leveling smooths sudden loud spikes. Both on-device audio '
-        'filters, off by default.',
+    'Dialogue boost',
+    'Player tune sheet: Dialogue boost lifts quiet speech. On-device '
+        'audio filter, off by default.',
   ),
   _Item(
     Icons.speed,

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -8,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 // errors suppressed the hint.)
 import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/services/tmdb_client.dart';
+import 'package:maxplayer/utils/air_gestures.dart';
 import 'package:maxplayer/utils/formatters.dart';
 
 void main() {
@@ -272,18 +274,16 @@ void main() {
       expect(detector, contains('InputImageFormat.nv21'));
     });
 
-    test('player state owns the camera flags + leveling filter', () {
+    test('player state owns the camera flags (v101 keeps flags, leveling deleted)', () {
       final s = File('lib/state/media_player_state.dart').readAsStringSync();
       for (final k in [
         'autoSleepDetect',
         'lookAwayPause',
-        'autoLeveling',
         'setAutoSleepDetect',
         'setLookAwayPause',
-        'setAutoLeveling',
         'setDrowsyForeground',
         '_syncDrowsy',
-        'dynaudnorm',
+        'drowsyStatus',
       ]) {
         expect(s, contains(k));
       }
@@ -292,10 +292,150 @@ void main() {
       for (final k in [
         'kAutoSleepDetect',
         'kLookAwayPause',
-        'kAutoLeveling',
       ]) {
         expect(settings, contains(k));
       }
+    });
+
+    test('v101 engine maps the gesture table', () {
+      List<Point<double>> handOf(Map<int, Point<double>> over) {
+        final pts = List<Point<double>>.filled(21, const Point(0.5, 0.5));
+        over.forEach((k, v) => pts[k] = v);
+        return pts;
+      }
+
+      // Open palm held 300 ms toggles play/pause.
+      final palmEngine = AirGestureEngine();
+      final palm = handOf({
+        8: const Point(0.3, 0.3),
+        6: const Point(0.3, 0.5),
+        12: const Point(0.4, 0.3),
+        10: const Point(0.4, 0.5),
+        16: const Point(0.6, 0.3),
+        14: const Point(0.6, 0.5),
+        20: const Point(0.7, 0.3),
+        18: const Point(0.7, 0.5),
+        4: const Point(0.1, 0.3),
+        2: const Point(0.2, 0.5),
+        17: const Point(0.8, 0.6),
+      });
+      final t0 = DateTime(2026, 1, 1);
+      expect(palmEngine.push(palm, t0), isNull);
+      expect(
+          palmEngine.push(palm, t0.add(const Duration(milliseconds: 100))),
+          isNull);
+      expect(
+          palmEngine.push(palm, t0.add(const Duration(milliseconds: 350))),
+          AirAction.playPause);
+
+      // Index sweep right across 5 frames seeks forward.
+      final swipeEngine = AirGestureEngine();
+      List<Point<double>> swipeAt(double x) => handOf({
+            8: Point(x, 0.3),
+            6: const Point(0.3, 0.5),
+            12: const Point(0.4, 0.7),
+            10: const Point(0.4, 0.5),
+          });
+      AirAction? fired;
+      for (var i = 0; i < 5; i++) {
+        fired = swipeEngine.push(
+            swipeAt(0.20 + i * 0.055),
+            t0.add(Duration(milliseconds: 500 + i * 100)));
+      }
+      expect(fired, AirAction.seekForward);
+
+      // Two fingers on the right half moving up raises volume.
+      final vertEngine = AirGestureEngine();
+      List<Point<double>> vertAt(double y) => handOf({
+            8: Point(0.70, y),
+            6: const Point(0.70, 0.9),
+            12: Point(0.75, y),
+            10: const Point(0.75, 0.9),
+            16: const Point(0.6, 0.9),
+            14: const Point(0.6, 0.5),
+            20: const Point(0.65, 0.9),
+            18: const Point(0.65, 0.5),
+          });
+      expect(vertEngine.push(vertAt(0.60), t0), isNull);
+      expect(vertEngine.push(
+          vertAt(0.52), t0.add(const Duration(milliseconds: 100))),
+          AirAction.volumeUp);
+
+      // OK closes to 2x, opens back to 1x.
+      final okEngine = AirGestureEngine();
+      final okClosed = handOf({
+        8: const Point(0.50, 0.30),
+        6: const Point(0.50, 0.50),
+        12: const Point(0.60, 0.30),
+        10: const Point(0.60, 0.50),
+        4: const Point(0.51, 0.32),
+      });
+      final okOpen = handOf({
+        8: const Point(0.50, 0.30),
+        6: const Point(0.50, 0.50),
+        12: const Point(0.60, 0.30),
+        10: const Point(0.60, 0.50),
+        4: const Point(0.20, 0.50),
+      });
+      expect(okEngine.push(okClosed, t0), AirAction.speed2x);
+      expect(
+          okEngine.push(okOpen, t0.add(const Duration(milliseconds: 900))),
+          AirAction.speed1x);
+
+      // A bare fist is nothing.
+      final fistEngine = AirGestureEngine();
+      final fist = handOf({
+        8: const Point(0.5, 0.7),
+        6: const Point(0.5, 0.5),
+        12: const Point(0.55, 0.7),
+        10: const Point(0.55, 0.5),
+        16: const Point(0.6, 0.7),
+        14: const Point(0.6, 0.5),
+        20: const Point(0.65, 0.7),
+        18: const Point(0.65, 0.5),
+      });
+      expect(fistEngine.push(fist, t0), isNull);
+      expect(fistEngine.push(null, t0), isNull);
+    });
+
+    test('v101 MediaPipe wiring + leveling deletion', () {
+      final pub = File('pubspec.yaml').readAsStringSync();
+      expect(pub, contains('hand_landmarker'));
+      final s = File('lib/state/media_player_state.dart').readAsStringSync();
+      for (final k in [
+        'HandLandmarkerPlugin',
+        'landmarkStream',
+        'processFrame',
+        'applyAirAction',
+        'onAirAction',
+        'setAirGestures',
+        'kAirGestures',
+      ]) {
+        expect(s, contains(k));
+      }
+      final overlay =
+          File('lib/widgets/player_controls_overlay.dart').readAsStringSync();
+      expect(overlay, contains('Air gestures'));
+      final ps = File('lib/screens/player_screen.dart').readAsStringSync();
+      expect(ps, contains('_onAirAction'));
+      // Leveling deleted everywhere (settings keys die with it).
+      for (final f in [
+        'lib/state/media_player_state.dart',
+        'lib/state/player_settings.dart',
+        'lib/widgets/player_controls_overlay.dart',
+        'lib/widgets/user_manual_sheet.dart',
+      ]) {
+        final src = File(f).readAsStringSync();
+        expect(src.contains('autoLeveling'), isFalse);
+        expect(src.contains('dynaudnorm'), isFalse);
+        expect(src.contains('Auto volume leveling'), isFalse);
+      }
+      // Dialogue subtitle trimmed as requested.
+      expect(
+          overlay,
+          contains(
+              "'Lifts quiet speech (1-4 kHz). Off by default.'"));
+      expect(overlay.contains('Same on-device filter as before'), isFalse);
     });
 
     test('sleep sheet + tracks sheet host the new rows', () {
@@ -307,7 +447,6 @@ void main() {
       for (final k in [
         'Look-away auto-pause',
         'Dialogue boost',
-        'Auto volume leveling',
       ]) {
         expect(overlay, contains(k));
       }

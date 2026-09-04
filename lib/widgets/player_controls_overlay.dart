@@ -219,7 +219,7 @@ class PlayerControlsOverlay extends StatelessWidget {
       ),
       builder: (sheetContext) => DraggableScrollableSheet(
         initialChildSize: trackSheetInitialSize(
-          8, // handle + subtitles + audio + A-B + karaoke + look-away + dialogue + leveling
+          8, // handle + subtitles + audio + A-B + karaoke + air + look-away + dialogue
           MediaQuery.of(sheetContext).size.height,
         ),
         minChildSize: 0.3,
@@ -324,9 +324,52 @@ class PlayerControlsOverlay extends StatelessWidget {
                   onToggleKaraoke();
                 },
               ),
-              // v100: camera + audio helpers below Karaoke (user request).
+              // v100/v101: helpers below Karaoke (user request).
               // Switches stay live in the sheet (no pop) so several can be
               // flipped at once; the player state persists each one.
+              StatefulBuilder(
+                builder: (sbCtx, setSb) {
+                  return SwitchListTile(
+                    dense: true,
+                    secondary: Icon(
+                      Icons.pan_tool_outlined,
+                      color: player.airGestures
+                          ? themeState.accent
+                          : Colors.white70,
+                    ),
+                    title: const Text(
+                      'Air gestures',
+                      style: TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Palm=play/pause, swipes=seek/volume/brightness, OK=2x. Off by default.',
+                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                    value: player.airGestures,
+                    activeThumbColor: themeState.accent,
+                    onChanged: (v) async {
+                      if (v) {
+                        final st = await Permission.camera.request();
+                        if (!st.isGranted) {
+                          ScaffoldMessenger.of(context)
+                            ..clearSnackBars()
+                            ..showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Camera permission needed for air gestures'),
+                                duration: Duration(milliseconds: 1800),
+                              ),
+                            );
+                          return;
+                        }
+                      }
+                      await player.setAirGestures(v);
+                      setSb(() {});
+                      onInteract();
+                    },
+                  );
+                },
+              ),
               StatefulBuilder(
                 builder: (sbCtx, setSb) {
                   return SwitchListTile(
@@ -385,41 +428,13 @@ class PlayerControlsOverlay extends StatelessWidget {
                       style: TextStyle(color: Colors.white, fontSize: 14),
                     ),
                     subtitle: const Text(
-                      'Lifts quiet speech (1-4 kHz). Same on-device filter as before.',
+                      'Lifts quiet speech (1-4 kHz). Off by default.',
                       style: TextStyle(color: Colors.white38, fontSize: 12),
                     ),
                     value: player.dialogueBoost,
                     activeThumbColor: themeState.accent,
                     onChanged: (v) async {
                       await player.setDialogueBoost(v);
-                      setSb(() {});
-                      onInteract();
-                    },
-                  );
-                },
-              ),
-              StatefulBuilder(
-                builder: (sbCtx, setSb) {
-                  return SwitchListTile(
-                    dense: true,
-                    secondary: Icon(
-                      Icons.volume_up_outlined,
-                      color: player.autoLeveling
-                          ? themeState.accent
-                          : Colors.white70,
-                    ),
-                    title: const Text(
-                      'Auto volume leveling',
-                      style: TextStyle(color: Colors.white, fontSize: 14),
-                    ),
-                    subtitle: const Text(
-                      'Smooths sudden loud spikes on-device. Off by default.',
-                      style: TextStyle(color: Colors.white38, fontSize: 12),
-                    ),
-                    value: player.autoLeveling,
-                    activeThumbColor: themeState.accent,
-                    onChanged: (v) async {
-                      await player.setAutoLeveling(v);
                       setSb(() {});
                       onInteract();
                     },

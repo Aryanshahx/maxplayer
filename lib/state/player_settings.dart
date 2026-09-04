@@ -62,9 +62,10 @@ class PlayerSettings {
   /// Strictly opt-in, OFF by default.
   final bool lookAwayPause;
 
-  /// v100: mpv dynamic normalization against sudden loud spikes.
+  /// v101: MediaPipe air gestures (palm/swipe/OK). Strictly opt-in,
   /// OFF by default.
-  final bool autoLeveling;
+  final bool airGestures;
+
 
   /// v67 B2: keep playing audio when the screen is turned off or app minimised.
   final bool backgroundAudio;
@@ -101,7 +102,7 @@ class PlayerSettings {
     this.dialogueBoost = false,
     this.autoSleepDetect = false,
     this.lookAwayPause = false,
-    this.autoLeveling = false,
+    this.airGestures = false,
     // v67 B2: ON by default (background audio playback).
     this.backgroundAudio = true,
     this.karaokeSubs = false,
@@ -155,7 +156,7 @@ class PlayerSettings {
   static const String kDialogueBoost = 'player.dialogueBoost';
   static const String kAutoSleepDetect = 'player.autoSleepDetect';
   static const String kLookAwayPause = 'player.lookAwayPause';
-  static const String kAutoLeveling = 'player.autoLeveling';
+  static const String kAirGestures = 'player.airGestures';
   static const String kBackgroundAudio = 'player.backgroundAudio';
   static const String kKaraokeSubs = 'player.karaokeSubs';
   static const String kEnhanceVideo = 'player.enhanceVideo';
@@ -190,7 +191,7 @@ class PlayerSettings {
       dialogueBoost: s[kDialogueBoost] == 'true',
       autoSleepDetect: s[kAutoSleepDetect] == 'true',
       lookAwayPause: s[kLookAwayPause] == 'true',
-      autoLeveling: s[kAutoLeveling] == 'true',
+      airGestures: s[kAirGestures] == 'true',
       backgroundAudio: s[kBackgroundAudio] != 'false',
       karaokeSubs: s[kKaraokeSubs] == 'true',
       enhanceVideo: s[kEnhanceVideo] == 'true',
@@ -234,7 +235,7 @@ class PlayerSettings {
     NativeBridge.saveSetting(kDialogueBoost, '$dialogueBoost');
     NativeBridge.saveSetting(kAutoSleepDetect, '$autoSleepDetect');
     NativeBridge.saveSetting(kLookAwayPause, '$lookAwayPause');
-    NativeBridge.saveSetting(kAutoLeveling, '$autoLeveling');
+    NativeBridge.saveSetting(kAirGestures, '$airGestures');
     NativeBridge.saveSetting(kBackgroundAudio, '$backgroundAudio');
     NativeBridge.saveSetting(kKaraokeSubs, '$karaokeSubs');
     NativeBridge.saveSetting(kEnhanceVideo, '$enhanceVideo');
@@ -262,7 +263,7 @@ class PlayerSettings {
     bool? dialogueBoost,
     bool? autoSleepDetect,
     bool? lookAwayPause,
-    bool? autoLeveling,
+    bool? airGestures,
     bool? backgroundAudio,
     bool? karaokeSubs,
     bool? enhanceVideo,
@@ -289,7 +290,7 @@ class PlayerSettings {
       dialogueBoost: dialogueBoost ?? this.dialogueBoost,
       autoSleepDetect: autoSleepDetect ?? this.autoSleepDetect,
       lookAwayPause: lookAwayPause ?? this.lookAwayPause,
-      autoLeveling: autoLeveling ?? this.autoLeveling,
+      airGestures: airGestures ?? this.airGestures,
       backgroundAudio: backgroundAudio ?? this.backgroundAudio,
       karaokeSubs: karaokeSubs ?? this.karaokeSubs,
       enhanceVideo: enhanceVideo ?? this.enhanceVideo,

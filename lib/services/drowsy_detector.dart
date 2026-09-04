@@ -57,6 +57,16 @@ class DrowsyDetector {
 
   void Function(DrowsyEvent event)? onEvent;
 
+  /// Every streamed frame is also offered here (air gestures share the
+  /// session; a throwing subscriber never breaks face watching).
+  void Function(CameraImage image)? onFrame;
+
+  bool _wantHands = false;
+
+  /// Rotation of the owned camera for frame consumers (MediaPipe).
+  int get cameraRotation =>
+      _controller?.description.sensorOrientation ?? 0;
+
   CameraController? _controller;
   FaceDetector? _faceDetector;
   bool _wantSleep = false;
@@ -75,10 +85,15 @@ class DrowsyDetector {
 
   /// (Re)configures which watchers are armed. Starts the camera when at
   /// least one is armed AND the app is foregrounded; stops it otherwise.
-  Future<void> configure({required bool sleep, required bool lookAway}) async {
+  Future<void> configure({
+    required bool sleep,
+    required bool lookAway,
+    bool hands = false,
+  }) async {
     _wantSleep = sleep;
     _wantLookAway = lookAway;
-    if (!_wantSleep && !_wantLookAway) {
+    _wantHands = hands;
+    if (!_wantSleep && !_wantLookAway && !_wantHands) {
       await stop();
       return;
     }
@@ -91,7 +106,7 @@ class DrowsyDetector {
     _foreground = fg;
     if (!fg) {
       await stop();
-    } else if (_wantSleep || _wantLookAway) {
+    } else if (_wantSleep || _wantLookAway || _wantHands) {
       await ensureStarted();
     }
   }
@@ -139,6 +154,11 @@ class DrowsyDetector {
   }
 
   void _onFrame(CameraImage image) {
+    if (onFrame != null) {
+      try {
+        onFrame!(image);
+      } catch (_) {}
+    }
     if (_busy) return;
     _frameCount++;
     if (_frameCount % kFrameStride != 0) return;
