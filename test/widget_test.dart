@@ -361,11 +361,13 @@ void main() {
         expect(src.contains('Auto volume leveling'), isFalse);
       }
       // Dialogue subtitle trimmed as requested.
+      final overlaySrc =
+          File('lib/widgets/player_controls_overlay.dart').readAsStringSync();
       expect(
-          overlay,
+          overlaySrc,
           contains(
               "'Lifts quiet speech (1-4 kHz). Off by default.'"));
-      expect(overlay.contains('Same on-device filter as before'), isFalse);
+      expect(overlaySrc.contains('Same on-device filter as before'), isFalse);
     });
 
     test('sleep sheet keeps plain timers, camera rows gone', () {
@@ -393,16 +395,20 @@ void main() {
       expect(tone, greaterThan(enhance));
       expect(dialogue, greaterThan(tone));
       // Rows are wired to the player state + persisted settings keys.
+      // (Tone persistence lives in the state setter - single writer - so
+      // the overlay only calls setToneMapping.)
       for (final k in [
         'player.enhanceVideoOn',
         'setEnhanceVideo',
         'PlayerSettings.kEnhanceVideo',
         'player.toneMappingMode',
         'setToneMapping',
-        'PlayerSettings.kToneMapping',
       ]) {
         expect(overlay, contains(k));
       }
+      final state =
+          File('lib/state/media_player_state.dart').readAsStringSync();
+      expect(state, contains('PlayerSettings.kToneMapping'));
       // Gone from Player settings (moved, not duplicated).
       final sheet =
           File('lib/widgets/player_settings_sheet.dart').readAsStringSync();

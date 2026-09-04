@@ -362,7 +362,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                 builder: (sbCtx, setSb) {
                   return ListTile(
                     dense: true,
-                    leading: Icon(
+                    leading: const Icon(
                       Icons.hdr_on_outlined,
                       color: Colors.white70,
                     ),
@@ -388,7 +388,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                           .map((e) => DropdownMenuItem(
                                 value: e.key,
                                 child: Text(e.value,
-                                    style: TextStyle(
+                                    style: const TextStyle(
                                         color: Colors.white, fontSize: 13)),
                               ))
                           .toList(),
