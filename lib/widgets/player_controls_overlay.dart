@@ -349,9 +349,10 @@ class PlayerControlsOverlay extends StatelessWidget {
                     activeThumbColor: themeState.accent,
                     onChanged: (v) async {
                       if (v) {
+                        final messenger = ScaffoldMessenger.of(context);
                         final st = await Permission.camera.request();
                         if (!st.isGranted) {
-                          ScaffoldMessenger.of(context)
+                          messenger
                             ..clearSnackBars()
                             ..showSnackBar(
                               const SnackBar(
@@ -392,9 +393,10 @@ class PlayerControlsOverlay extends StatelessWidget {
                     activeThumbColor: themeState.accent,
                     onChanged: (v) async {
                       if (v) {
+                        final messenger = ScaffoldMessenger.of(context);
                         final st = await Permission.camera.request();
                         if (!st.isGranted) {
-                          ScaffoldMessenger.of(context)
+                          messenger
                             ..clearSnackBars()
                             ..showSnackBar(
                               const SnackBar(

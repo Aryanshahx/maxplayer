@@ -21,6 +21,7 @@
 /// Anti-misfire notes: the OK requires index+middle extended (a bare fist
 /// never counts); every action has a cooldown; motion baselines go stale
 /// after 1.5 s so slow drifts never fire.
+library;
 import 'dart:math';
 
 /// Player-level gesture actions (the state maps these onto transport calls).

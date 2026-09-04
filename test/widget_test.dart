@@ -220,8 +220,14 @@ void main() {
     test('indicator content cross-fades on every change', () {
       final ps = File('lib/screens/player_screen.dart').readAsStringSync();
       expect(ps, contains('AnimatedSwitcher'));
-      expect(ps, contains("ValueKey(_indicatorKey ?? 'hidden')"));
-      expect(ps, contains('reverseDuration'));
+      // v100 removed the old blink pill (ValueKey(_indicatorKey..) wrapper +
+      // reverseDuration); the switcher that remains is the speed badge with
+      // a fade+scale transition on every change.
+      expect(ps.contains("ValueKey(_indicatorKey ?? 'hidden')"), isFalse);
+      expect(ps.contains('reverseDuration'), isFalse);
+      expect(ps, contains("ValueKey('speedBadge')"));
+      expect(ps, contains('FadeTransition'));
+      expect(ps, contains('ScaleTransition'));
       // The pill show/hide animation must survive.
       expect(ps, contains('AnimatedScale'));
       expect(ps, contains('AnimatedOpacity'));

@@ -17,6 +17,7 @@
 /// the UI before arming), missing ML model, or a bad frame just means no
 /// events fire. [ensureStarted] reports success so the player state can
 /// tell the user once when the camera itself will not start.
+library;
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui';
