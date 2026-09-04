@@ -68,6 +68,23 @@ class PlayerSettings {
   /// 'mobius' | 'hable' | 'bt.2390').
   final String toneMapping;
 
+  /// v98: mic button in the player top bar (tap-to-talk voice commands).
+  /// ON by default. The mic is ONLY live while the voice sheet is open -
+  /// there is no always-on listening.
+  final bool voiceControl;
+
+  /// v98: sleep timer fades the volume out over ~18 s instead of pausing
+  /// abruptly. ON by default.
+  final bool gentleWindDown;
+
+  /// v98: high-quality mpv scalers for old 480p/720p videos (track sheet >
+  /// Picture quality). OFF by default - costs GPU on weak phones.
+  final bool qualityUpscale;
+
+  /// v98: mpv motion interpolation for smoother 24/30 fps playback
+  /// (track sheet > Picture quality). OFF by default.
+  final bool smoothMotion;
+
   const PlayerSettings({
     this.doubleTapSeek = true,
     this.seekSeconds = 10,
@@ -92,6 +109,10 @@ class PlayerSettings {
     this.karaokeSubs = false,
     this.enhanceVideo = false,
     this.toneMapping = 'auto',
+    this.voiceControl = true,
+    this.gentleWindDown = true,
+    this.qualityUpscale = false,
+    this.smoothMotion = false,
   });
 
   // Persisted keys (MediaPlayerState reads the resume key directly).
@@ -142,6 +163,10 @@ class PlayerSettings {
   static const String kKaraokeSubs = 'player.karaokeSubs';
   static const String kEnhanceVideo = 'player.enhanceVideo';
   static const String kToneMapping = 'player.toneMapping';
+  static const String kVoiceControl = 'player.voiceControl';
+  static const String kGentleWindDown = 'player.gentleWindDown';
+  static const String kQualityUpscale = 'player.qualityUpscale';
+  static const String kSmoothMotion = 'player.smoothMotion';
 
   static Future<PlayerSettings> load() async {
     final s = await NativeBridge.loadSettings();
@@ -176,6 +201,10 @@ class PlayerSettings {
       toneMapping: kToneMappingModes.contains(s[kToneMapping])
           ? s[kToneMapping]!
           : d.toneMapping,
+      voiceControl: s[kVoiceControl] != 'false',
+      gentleWindDown: s[kGentleWindDown] != 'false',
+      qualityUpscale: s[kQualityUpscale] == 'true',
+      smoothMotion: s[kSmoothMotion] == 'true',
     );
   }
 
@@ -214,7 +243,11 @@ class PlayerSettings {
     NativeBridge.saveSetting(kBackgroundAudio, '$backgroundAudio');
     NativeBridge.saveSetting(kKaraokeSubs, '$karaokeSubs');
     NativeBridge.saveSetting(kEnhanceVideo, '$enhanceVideo');
-    return NativeBridge.saveSetting(kToneMapping, toneMapping);
+    NativeBridge.saveSetting(kToneMapping, toneMapping);
+    NativeBridge.saveSetting(kVoiceControl, '$voiceControl');
+    NativeBridge.saveSetting(kGentleWindDown, '$gentleWindDown');
+    NativeBridge.saveSetting(kQualityUpscale, '$qualityUpscale');
+    return NativeBridge.saveSetting(kSmoothMotion, '$smoothMotion');
   }
 
   PlayerSettings copyWith({
@@ -240,6 +273,10 @@ class PlayerSettings {
     bool? karaokeSubs,
     bool? enhanceVideo,
     String? toneMapping,
+    bool? voiceControl,
+    bool? gentleWindDown,
+    bool? qualityUpscale,
+    bool? smoothMotion,
   }) {
     return PlayerSettings(
       doubleTapSeek: doubleTapSeek ?? this.doubleTapSeek,
@@ -264,6 +301,10 @@ class PlayerSettings {
       karaokeSubs: karaokeSubs ?? this.karaokeSubs,
       enhanceVideo: enhanceVideo ?? this.enhanceVideo,
       toneMapping: toneMapping ?? this.toneMapping,
+      voiceControl: voiceControl ?? this.voiceControl,
+      gentleWindDown: gentleWindDown ?? this.gentleWindDown,
+      qualityUpscale: qualityUpscale ?? this.qualityUpscale,
+      smoothMotion: smoothMotion ?? this.smoothMotion,
     );
   }
 }

@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/services/tmdb_client.dart';
 import 'package:maxplayer/utils/formatters.dart';
+import 'package:maxplayer/utils/voice_commands.dart';
 
 void main() {
   group('formatters', () {
@@ -195,6 +196,77 @@ void main() {
       expect(s, contains('_maybeCaptureThumb(v);'));
       // The 500ms guaranteed pulse is what keeps the bar from looking frozen.
       expect(s, contains('Timer.periodic(const Duration(milliseconds: 500)'));
+    });
+  });
+  group('v98 voice control, picture quality, wind-down, player cleanup', () {
+    test('voice parser maps transport, relative and absolute commands', () {
+      expect(parseVoiceCommand('Pause')?.action, VoicePlaybackAction.pause);
+      expect(
+          parseVoiceCommand('please resume playing')?.action,
+          VoicePlaybackAction.play);
+      final back = parseVoiceCommand('Go back 30 seconds')!;
+      expect(back.action, VoicePlaybackAction.back);
+      expect(back.seconds, 30);
+      final words = parseVoiceCommand('go back five minutes')!;
+      expect(words.action, VoicePlaybackAction.back);
+      expect(words.seconds, 300);
+      final fwd = parseVoiceCommand('Skip ahead 5 minutes')!;
+      expect(fwd.action, VoicePlaybackAction.forward);
+      expect(fwd.seconds, 300);
+      final jump = parseVoiceCommand('Jump to 12 minutes')!;
+      expect(jump.action, VoicePlaybackAction.jumpTo);
+      expect(jump.seconds, 720);
+      expect(
+        parseVoiceCommand('start over')?.action,
+        VoicePlaybackAction.jumpTo,
+      );
+      // Semantic transcript questions are NOT commands (transcript Q&A
+      // was removed in v95) - the UI must show a hint, not guess.
+      expect(
+        parseVoiceCommand('what did the speaker say about the budget'),
+        isNull,
+      );
+      expect(parseVoiceCommand(''), isNull);
+    });
+
+    test('Cast to TV and Screenshot are gone from the player UI', () {
+      final screen =
+          File('lib/screens/player_screen.dart').readAsStringSync();
+      expect(screen, contains('Voice control'));
+      expect(screen, contains('Wind down gently'));
+      expect(screen.contains("'Cast to TV'"), isFalse);
+      expect(screen.contains("'Screenshot'"), isFalse);
+      final sheet =
+          File('lib/widgets/player_settings_sheet.dart').readAsStringSync();
+      expect(sheet.contains('Cast to TV (DLNA)'), isFalse);
+      expect(sheet.contains('Screenshot button'), isFalse);
+      expect(sheet, contains('Voice control'));
+    });
+
+    test('picture-quality toggles drive real mpv render properties', () {
+      final s = File('lib/state/media_player_state.dart').readAsStringSync();
+      expect(s, contains("'scale': 'spline36'"));
+      expect(s, contains("'tscale': 'oversample'"));
+      expect(s, contains('_applyQualityProps'));
+      expect(s, contains('setQualityUpscale'));
+      expect(s, contains('setSmoothMotion'));
+      // The v97 fast profile must still be the default that OFF restores.
+      expect(s, contains("'scale': 'bilinear'"));
+      expect(s, contains("'hwdec': 'auto-safe'"));
+      final tracks =
+          File('lib/widgets/track_selection_sheet.dart').readAsStringSync();
+      expect(tracks, contains('Picture quality'));
+      expect(tracks, contains('Upscale old videos'));
+      expect(tracks, contains('Smooth motion'));
+    });
+
+    test('sleep timer winds down gently instead of stopping abruptly', () {
+      final s = File('lib/state/media_player_state.dart').readAsStringSync();
+      expect(s, contains('gentleWindDown'));
+      expect(s, contains('setGentleWindDown'));
+      expect(s, contains('_fadeVolumeAndPause'));
+      // The abrupt-stop path must still exist for wind-down OFF.
+      expect(s, contains("_notices.add('Sleep timer paused playback')"));
     });
   });
 }

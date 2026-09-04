@@ -258,22 +258,20 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   ],
                 ),
               ),
-              const _SectionHeader('Player buttons'),
+              const _SectionHeader('Voice'),
               _SwitchTile(
-                icon: Icons.cast_outlined,
-                label: 'Cast to TV (DLNA)',
-                subtitle: 'Show the cast button in the player top bar',
-                value: _settings.castButton,
-                onChanged: (v) => _update(_settings.copyWith(castButton: v)),
-              ),
-              _SwitchTile(
-                icon: Icons.camera_alt_outlined,
-                label: 'Screenshot button',
-                subtitle: 'Save the current frame to the gallery',
-                value: _settings.screenshotButton,
+                icon: Icons.mic_outlined,
+                label: 'Voice control',
+                subtitle: 'Mic button in the player: say "pause", "go back '
+                    '10 seconds" or "jump to 12 minutes". The mic is live '
+                    'only while listening.',
+                value: _settings.voiceControl,
                 onChanged: (v) =>
-                    _update(_settings.copyWith(screenshotButton: v)),
+                    _update(_settings.copyWith(voiceControl: v)),
               ),
+              const _SectionHeader('Player buttons'),
+              // v98: Cast to TV + Screenshot removed from the player UI at
+              // the developer's request (settings gone with them).
               _SwitchTile(
                 icon: Icons.lock_outline,
                 label: 'Screen lock (kids mode)',
