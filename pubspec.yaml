@@ -1,7 +1,7 @@
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+99
+version: 1.0.0+100
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -21,6 +21,14 @@ dependencies:
   # instead of file_picker's native SAF dialog (file_picker's Android side has
   # proven incompatible with current AGP/Kotlin toolchains as of this writing).
   permission_handler: ^11.3.1
+
+  # v100: front-camera drowsiness + look-away detection (both opt-in, off by
+  # default). camera_android pins the legacy Camera2 backend (API 21+) instead
+  # of the CameraX default; ML Kit face detection is on-device (its model
+  # downloads once via Play Services, then works offline).
+  camera: ^0.11.0
+  camera_android: ^0.10.11+1
+  google_mlkit_face_detection: ^0.13.0
 
   path: ^1.9.0
   intl: ^0.19.0

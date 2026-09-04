@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../state/media_player_state.dart';
 import '../state/theme_state.dart';
@@ -218,7 +219,7 @@ class PlayerControlsOverlay extends StatelessWidget {
       ),
       builder: (sheetContext) => DraggableScrollableSheet(
         initialChildSize: trackSheetInitialSize(
-          5, // handle + subtitles + audio + A-B loop + karaoke + ask AI rows
+          8, // handle + subtitles + audio + A-B + karaoke + look-away + dialogue + leveling
           MediaQuery.of(sheetContext).size.height,
         ),
         minChildSize: 0.3,
@@ -321,6 +322,108 @@ class PlayerControlsOverlay extends StatelessWidget {
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   onToggleKaraoke();
+                },
+              ),
+              // v100: camera + audio helpers below Karaoke (user request).
+              // Switches stay live in the sheet (no pop) so several can be
+              // flipped at once; the player state persists each one.
+              StatefulBuilder(
+                builder: (sbCtx, setSb) {
+                  return SwitchListTile(
+                    dense: true,
+                    secondary: Icon(
+                      Icons.visibility_outlined,
+                      color: player.lookAwayPause
+                          ? themeState.accent
+                          : Colors.white70,
+                    ),
+                    title: const Text(
+                      'Look-away auto-pause',
+                      style: TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Front camera pauses when you look away, resumes when you return. Off by default.',
+                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                    value: player.lookAwayPause,
+                    activeThumbColor: themeState.accent,
+                    onChanged: (v) async {
+                      if (v) {
+                        final st = await Permission.camera.request();
+                        if (!st.isGranted) {
+                          ScaffoldMessenger.of(context)
+                            ..clearSnackBars()
+                            ..showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Camera permission needed for look-away pause'),
+                                duration: Duration(milliseconds: 1800),
+                              ),
+                            );
+                          return;
+                        }
+                      }
+                      await player.setLookAwayPause(v);
+                      setSb(() {});
+                      onInteract();
+                    },
+                  );
+                },
+              ),
+              StatefulBuilder(
+                builder: (sbCtx, setSb) {
+                  return SwitchListTile(
+                    dense: true,
+                    secondary: Icon(
+                      Icons.graphic_eq_outlined,
+                      color: player.dialogueBoost
+                          ? themeState.accent
+                          : Colors.white70,
+                    ),
+                    title: const Text(
+                      'Dialogue boost',
+                      style: TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Lifts quiet speech (1-4 kHz). Same on-device filter as before.',
+                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                    value: player.dialogueBoost,
+                    activeThumbColor: themeState.accent,
+                    onChanged: (v) async {
+                      await player.setDialogueBoost(v);
+                      setSb(() {});
+                      onInteract();
+                    },
+                  );
+                },
+              ),
+              StatefulBuilder(
+                builder: (sbCtx, setSb) {
+                  return SwitchListTile(
+                    dense: true,
+                    secondary: Icon(
+                      Icons.volume_up_outlined,
+                      color: player.autoLeveling
+                          ? themeState.accent
+                          : Colors.white70,
+                    ),
+                    title: const Text(
+                      'Auto volume leveling',
+                      style: TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Smooths sudden loud spikes on-device. Off by default.',
+                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                    value: player.autoLeveling,
+                    activeThumbColor: themeState.accent,
+                    onChanged: (v) async {
+                      await player.setAutoLeveling(v);
+                      setSb(() {});
+                      onInteract();
+                    },
+                  );
                 },
               ),
               const SizedBox(height: 8),

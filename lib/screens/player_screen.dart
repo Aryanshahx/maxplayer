@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../cast/cast_state.dart';
 import '../services/native_bridge.dart';
@@ -286,6 +287,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
+      // v100: camera never runs in the background.
+      unawaited(widget.player.setDrowsyForeground(false));
       if (!widget.player.backgroundAudio) {
         widget.player.pause();
       }
@@ -298,6 +301,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     } else if (state == AppLifecycleState.resumed) {
       // Coming back to the app: the resume nudge is no longer needed.
       unawaited(NotificationService.cancelContinueWatching());
+      // v100: re-arm the camera watchers (if the user enabled them).
+      unawaited(widget.player.setDrowsyForeground(true));
     }
   }
 
@@ -740,6 +745,50 @@ class _PlayerScreenState extends State<PlayerScreen>
                     'Until end of this video',
                     active: label == 'end of video',
                     onTap: () => player.setSleepTimer(atEndOfVideo: true),
+                  ),
+                  // v100: auto-detect sleep - the front camera pauses the
+                  // video after the user's eyes stay closed for 30 s.
+                  // Strictly opt-in (OFF by default); the camera runs only
+                  // while a video plays, nothing is recorded or uploaded.
+                  StatefulBuilder(
+                    builder: (sheetCtx, setSheetState) {
+                      return SwitchListTile(
+                        secondary: Icon(
+                          Icons.visibility_outlined,
+                          color: player.autoSleepDetect
+                              ? themeState.accent
+                              : Colors.white70,
+                        ),
+                        title: const Text(
+                          'Auto-detect sleep',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        subtitle: const Text(
+                          'Front camera pauses when eyes stay closed 30s',
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 12,
+                          ),
+                        ),
+                        value: player.autoSleepDetect,
+                        activeThumbColor: themeState.accent,
+                        onChanged: (v) async {
+                          if (v) {
+                            final st = await Permission.camera.request();
+                            if (!st.isGranted) {
+                              _showIndicator(
+                                'Camera permission needed for sleep detect',
+                                Icons.videocam_off_outlined,
+                              );
+                              return;
+                            }
+                          }
+                          await player.setAutoSleepDetect(v);
+                          setSheetState(() {});
+                          _onUserInteraction();
+                        },
+                      );
+                    },
                   ),
                   item(Icons.close, 'Off', onTap: player.cancelSleepTimer),
                   const SizedBox(height: 8),
@@ -1266,8 +1315,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                           ),
                           // Transient indicator (seek / volume / brightness /
                           // zoom / resume / fit / play-pause) - pill pops
-                          // with scale+fade; every content change
-                          // cross-fades via AnimatedSwitcher below.
+                          // with scale+fade; values swap instantly (v100:
+                          // the cross-fade blinked during swipes).
                           Positioned(
                             top: 64,
                             left: 0,
@@ -1299,41 +1348,23 @@ class _PlayerScreenState extends State<PlayerScreen>
                                           ),
                                         ],
                                       ),
-                                      // v99: content cross-fade - volume /
-                                      // brightness / seek values glide out
-                                      // and in on every change instead of
-                                      // snapping while the pill stays put.
-                                      child: AnimatedSwitcher(
-                                        duration: const Duration(milliseconds: 160),
-                                        reverseDuration: const Duration(milliseconds: 120),
-                                        transitionBuilder: (child, animation) {
-                                          return FadeTransition(
-                                            opacity: animation,
-                                            child: ScaleTransition(
-                                              scale: Tween<double>(begin: 0.92, end: 1.0).animate(animation),
-                                              child: child,
-                                            ),
-                                          );
-                                        },
-                                        child: Row(
-                                          key: ValueKey(_indicatorKey ?? 'hidden'),
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            if (_indicatorIcon != null) ...[
-                                              Icon(_indicatorIcon, color: themeState.accent, size: 20),
-                                              const SizedBox(width: 8),
-                                            ],
-                                            Text(
-                                              _indicatorText ?? '',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 14.5,
-                                                fontWeight: FontWeight.bold,
-                                                letterSpacing: 0.2,
-                                              ),
-                                            ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (_indicatorIcon != null) ...[
+                                            Icon(_indicatorIcon, color: themeState.accent, size: 20),
+                                            const SizedBox(width: 8),
                                           ],
-                                        ),
+                                          Text(
+                                            _indicatorText ?? '',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 0.2,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),

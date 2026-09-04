@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p;
 
 import '../models/history_entry.dart';
 import '../models/video_track.dart';
+import '../services/drowsy_detector.dart';
 import '../services/native_bridge.dart';
 import '../utils/formatters.dart';
 import '../utils/srt.dart';
@@ -137,6 +138,10 @@ class MediaPlayerState extends ChangeNotifier {
       player.stream.playing.listen((v) {
         isPlaying = v;
         notifyListeners();
+        // v100: manual resume clears a look-away auto-pause; the camera
+        // only runs while it can do something useful.
+        if (v) _lookAwayPaused = false;
+        unawaited(_syncDrowsy());
         // Keep the PiP window's play/pause remote action in sync
         // (native side ignores this when not in PiP).
         NativeBridge.setPipPlaying(v);
@@ -261,13 +266,16 @@ class MediaPlayerState extends ChangeNotifier {
       _watchByVideo = const {}; // corrupt payload -> start fresh
     }
     // Restore equalizer & audio optimization settings.
+    autoSleepDetect = s[PlayerSettings.kAutoSleepDetect] == 'true';
+    lookAwayPause = s[PlayerSettings.kLookAwayPause] == 'true';
+    autoLeveling = s[PlayerSettings.kAutoLeveling] == 'true';
     dialogueBoost = s[PlayerSettings.kDialogueBoost] == 'true';
     eqEnabled = s[_kEqEnabledKey] == 'true';
     final gainsRaw = (s[_kEqGainsKey] ?? '').split(',');
     for (var i = 0; i < eqFrequencies.length && i < gainsRaw.length; i++) {
       eqGains[i] = double.tryParse(gainsRaw[i]) ?? 0;
     }
-    if (eqEnabled || dialogueBoost) _applyAudioFilters();
+    if (eqEnabled || dialogueBoost || autoLeveling) _applyAudioFilters();
   }
 
   // ---------------------------------------------------------------------------
@@ -1318,12 +1326,107 @@ class MediaPlayerState extends ChangeNotifier {
     await _applyAudioFilters();
   }
 
-  /// v74: Builds the combined audio filter chain (Dialogue booster + Equalizer).
-  /// Night Mode DRC was removed in v74 (setting dropped from Settings).
+  // ---------------------------------------------------------------------------
+  // v100: camera watchers (auto sleep-detect + look-away pause) + auto
+  // volume leveling. Camera flags are strictly opt-in (default OFF); the
+  // shared camera session runs only while a video is present, the app is
+  // foregrounded, and playback is active (or look-away paused).
+  // ---------------------------------------------------------------------------
+
+  /// v100: pause when the front camera sees closed eyes for 30 s.
+  bool autoSleepDetect = false;
+
+  /// v100: pause when the user looks away; resume when they look back.
+  bool lookAwayPause = false;
+
+  /// v100: mpv dynamic normalization against sudden loud spikes.
+  bool autoLeveling = false;
+
+  final DrowsyDetector _drowsy = DrowsyDetector();
+  bool _drowsyForeground = true;
+  bool _lookAwayPaused = false;
+  bool _drowsyWarned = false;
+
+  Future<void> setAutoSleepDetect(bool on) async {
+    autoSleepDetect = on;
+    if (on) _drowsyWarned = false;
+    NativeBridge.saveSetting(PlayerSettings.kAutoSleepDetect, '$on');
+    notifyListeners();
+    await _syncDrowsy();
+  }
+
+  Future<void> setLookAwayPause(bool on) async {
+    lookAwayPause = on;
+    if (on) _drowsyWarned = false;
+    NativeBridge.saveSetting(PlayerSettings.kLookAwayPause, '$on');
+    notifyListeners();
+    await _syncDrowsy();
+  }
+
+  Future<void> setAutoLeveling(bool on) async {
+    autoLeveling = on;
+    NativeBridge.saveSetting(PlayerSettings.kAutoLeveling, '$on');
+    notifyListeners();
+    await _applyAudioFilters();
+  }
+
+  /// The app left / returned (the player screen forwards lifecycle events).
+  Future<void> setDrowsyForeground(bool fg) async {
+    _drowsyForeground = fg;
+    await _drowsy.setForeground(fg);
+    await _syncDrowsy();
+  }
+
+  void _onDrowsyEvent(DrowsyEvent e) {
+    switch (e) {
+      case DrowsyEvent.sleepPause:
+        if (!isPlaying || currentTrack == null) return;
+        unawaited(pause());
+        _notices.add('Paused - eyes closed for 30s');
+        notifyListeners();
+      case DrowsyEvent.lookAwayPause:
+        if (!isPlaying || currentTrack == null) return;
+        _lookAwayPaused = true;
+        unawaited(pause());
+        _notices.add('Paused - look back to resume');
+        notifyListeners();
+      case DrowsyEvent.lookBackResume:
+        if (!_lookAwayPaused || currentTrack == null) return;
+        _lookAwayPaused = false;
+        unawaited(resumePlayback());
+        _notices.add('Welcome back');
+        notifyListeners();
+    }
+  }
+
+  /// Starts/stops the shared camera session from the current flags.
+  Future<void> _syncDrowsy() async {
+    _drowsy.onEvent = _onDrowsyEvent;
+    final want = _drowsyForeground &&
+        (autoSleepDetect || lookAwayPause) &&
+        currentTrack != null &&
+        (isPlaying || _lookAwayPaused);
+    await _drowsy.configure(
+      sleep: autoSleepDetect && want,
+      lookAway: lookAwayPause && want,
+    );
+    // Camera broken/missing: say so once per arming, then stay quiet.
+    if (want && !_drowsyWarned && !_drowsy.isRunning) {
+      _drowsyWarned = true;
+      _notices.add('Camera unavailable - auto-detect paused');
+      notifyListeners();
+    }
+  }
+
+  /// v74: Builds the combined audio filter chain (Dialogue booster +
+  /// Equalizer + v100 auto leveling). Night Mode DRC was removed in v74
+  /// (setting dropped from Settings); v100 leveling is its honest DSP
+  /// successor (single-pass dynamics, no lag).
   static String buildCombinedAudioFilter({
     bool dialogueBoost = false,
     bool eqEnabled = false,
     List<double> eqGains = const [],
+    bool autoLeveling = false,
   }) {
     final parts = <String>[];
     if (dialogueBoost) {
@@ -1333,6 +1436,11 @@ class MediaPlayerState extends ChangeNotifier {
     }
     if (eqEnabled && eqGains.isNotEmpty) {
       parts.addAll(equalizerFilterParts(eqGains));
+    }
+    if (autoLeveling) {
+      // v100: single-pass dynamic normalization against sudden loud
+      // spikes. Runs LAST so it levels the boosted/equalized signal.
+      parts.add('dynaudnorm=f=150:g=7');
     }
     return parts.isEmpty ? '' : 'lavfi=[${parts.join(',')}]';
   }
@@ -1345,6 +1453,7 @@ class MediaPlayerState extends ChangeNotifier {
       dialogueBoost: dialogueBoost,
       eqEnabled: eqEnabled,
       eqGains: eqGains,
+      autoLeveling: autoLeveling,
     );
     if (_lastAppliedAf == af) return;
     try {
@@ -1721,6 +1830,7 @@ class MediaPlayerState extends ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(_drowsy.dispose());
     _uiTicker?.cancel();
     _bookmarkTimer?.cancel();
     _notices.close();

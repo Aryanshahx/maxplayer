@@ -484,8 +484,8 @@ const List<_Item> _playerItems = [
     'Player settings (⚙ top bar)',
     'Every gesture can be turned on/off individually (including horizontal '
         'swipe-to-seek), plus: seek step, auto-hide delay, speed-boost '
-        'multiplier, resume playback, and which extra buttons (cast / '
-        'screenshot / lock) show in the player.',
+        'multiplier, resume playback, and the screen-lock (kids mode) '
+        'button.',
   ),
 ];
 
@@ -554,6 +554,27 @@ const List<_Item> _smartItems = [
     'Player ⋮ menu → Sleep timer: pauses playback after 15/30/45/60 '
         'minutes, or exactly at the end of the current video. While it '
         'runs, the remaining time shows under the video title.',
+  ),
+  _Item(
+    Icons.visibility_outlined,
+    'Auto-detect sleep (camera)',
+    'Sleep timer sheet → Auto-detect sleep: the front camera pauses the '
+        'video when your eyes stay closed for 30 seconds. Strictly opt-in '
+        'and off by default; the camera runs only while a video plays, '
+        'nothing is recorded or sent anywhere.',
+  ),
+  _Item(
+    Icons.face_outlined,
+    'Look-away auto-pause',
+    'Player tune sheet → Look-away auto-pause: looking away for a few '
+        'seconds pauses, looking back resumes. Same camera rules as above.',
+  ),
+  _Item(
+    Icons.graphic_eq_outlined,
+    'Dialogue boost & volume leveling',
+    'Player tune sheet: Dialogue boost lifts quiet speech; Auto volume '
+        'leveling smooths sudden loud spikes. Both on-device audio '
+        'filters, off by default.',
   ),
   _Item(
     Icons.speed,

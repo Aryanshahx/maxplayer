@@ -244,4 +244,73 @@ void main() {
       expect(ps.contains('if (_settings.castButton)'), isFalse);
     });
   });
+  group('v100 blink removal, camera watchers, audio helpers', () {
+    test('volume/brightness values swap instantly again (no blink)', () {
+      final ps = File('lib/screens/player_screen.dart').readAsStringSync();
+      // The v99 wrapper (and only it) is gone - a pre-existing, unrelated
+      // AnimatedSwitcher lives on elsewhere in this file.
+      expect(ps.contains("ValueKey(_indicatorKey ?? 'hidden')"), isFalse);
+      // The pill pop itself must survive.
+      expect(ps, contains('AnimatedScale'));
+      expect(ps, contains('AnimatedOpacity'));
+      expect(ps, contains('_indicatorKey'));
+    });
+
+    test('camera permission + plugins are wired', () {
+      final manifest =
+          File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      expect(manifest, contains('android.permission.CAMERA'));
+      final pub = File('pubspec.yaml').readAsStringSync();
+      expect(pub, contains('google_mlkit_face_detection'));
+      expect(pub, contains('camera_android'));
+      final detector =
+          File('lib/services/drowsy_detector.dart').readAsStringSync();
+      expect(detector, contains('class DrowsyDetector'));
+      expect(detector, contains('leftEyeOpenProbability'));
+      expect(detector, contains('FaceDetectorOptions'));
+      expect(detector, contains('ResolutionPreset.low'));
+      expect(detector, contains('InputImageFormat.nv21'));
+    });
+
+    test('player state owns the camera flags + leveling filter', () {
+      final s = File('lib/state/media_player_state.dart').readAsStringSync();
+      for (final k in [
+        'autoSleepDetect',
+        'lookAwayPause',
+        'autoLeveling',
+        'setAutoSleepDetect',
+        'setLookAwayPause',
+        'setAutoLeveling',
+        'setDrowsyForeground',
+        '_syncDrowsy',
+        'dynaudnorm',
+      ]) {
+        expect(s, contains(k));
+      }
+      final settings =
+          File('lib/state/player_settings.dart').readAsStringSync();
+      for (final k in [
+        'kAutoSleepDetect',
+        'kLookAwayPause',
+        'kAutoLeveling',
+      ]) {
+        expect(settings, contains(k));
+      }
+    });
+
+    test('sleep sheet + tracks sheet host the new rows', () {
+      final ps = File('lib/screens/player_screen.dart').readAsStringSync();
+      expect(ps, contains('Auto-detect sleep'));
+      expect(ps, contains('Permission.camera.request'));
+      final overlay =
+          File('lib/widgets/player_controls_overlay.dart').readAsStringSync();
+      for (final k in [
+        'Look-away auto-pause',
+        'Dialogue boost',
+        'Auto volume leveling',
+      ]) {
+        expect(overlay, contains(k));
+      }
+    });
+  });
 }
