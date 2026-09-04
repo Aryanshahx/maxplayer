@@ -205,59 +205,6 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 onChanged: (v) =>
                     _update(_settings.copyWith(resumePlayback: v)),
               ),
-              const _SectionHeader('Picture'),
-              _SwitchTile(
-                icon: Icons.auto_fix_high_outlined,
-                label: 'Enhance video (real-time)',
-                subtitle: 'GPU sharpen + contrast + colour boost',
-                value: _settings.enhanceVideo,
-                onChanged: (v) => _update(_settings.copyWith(enhanceVideo: v)),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 2,
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.hdr_on_outlined,
-                      color: Colors.white70,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 16),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'HDR tone-mapping',
-                            style: TextStyle(color: Colors.white, fontSize: 15),
-                          ),
-                          Text(
-                            'How HDR10/Dolby sources fit your screen',
-                            style: TextStyle(
-                              color: Colors.white38,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    _MiniDropdown<String>(
-                      value: _settings.toneMapping,
-                      entries: const {
-                        'auto': 'Auto',
-                        'mobius': 'Mobius',
-                        'hable': 'Hable',
-                        'bt.2390': 'BT.2390',
-                      },
-                      onChanged: (v) =>
-                          _update(_settings.copyWith(toneMapping: v ?? 'auto')),
-                    ),
-                  ],
-                ),
-              ),
               const _SectionHeader('Player buttons'),
               // v99: Cast to TV + Screenshot toggles removed here at the
               // developer's request. Both stay in the player three-dots

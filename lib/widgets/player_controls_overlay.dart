@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
 
+import '../services/native_bridge.dart';
 import '../state/media_player_state.dart';
+import '../state/player_settings.dart';
 import '../state/theme_state.dart';
 import '../utils/formatters.dart';
 import 'progress_bar.dart';
@@ -219,7 +220,7 @@ class PlayerControlsOverlay extends StatelessWidget {
       ),
       builder: (sheetContext) => DraggableScrollableSheet(
         initialChildSize: trackSheetInitialSize(
-          8, // handle + subtitles + audio + A-B + karaoke + air + look-away + dialogue
+          8, // handle + subtitles + audio + A-B + karaoke + enhance + tone + dialogue
           MediaQuery.of(sheetContext).size.height,
         ),
         minChildSize: 0.3,
@@ -324,7 +325,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                   onToggleKaraoke();
                 },
               ),
-              // v100/v101: helpers below Karaoke (user request).
+              // v105: picture rows live here now (were Settings > Picture).
               // Switches stay live in the sheet (no pop) so several can be
               // flipped at once; the player state persists each one.
               StatefulBuilder(
@@ -332,39 +333,25 @@ class PlayerControlsOverlay extends StatelessWidget {
                   return SwitchListTile(
                     dense: true,
                     secondary: Icon(
-                      Icons.pan_tool_outlined,
-                      color: player.airGestures
+                      Icons.auto_fix_high_outlined,
+                      color: player.enhanceVideoOn
                           ? themeState.accent
                           : Colors.white70,
                     ),
                     title: const Text(
-                      'Air gestures',
+                      'Enhance video',
                       style: TextStyle(color: Colors.white, fontSize: 14),
                     ),
                     subtitle: const Text(
-                      'Palm=play/pause, swipes=seek/volume/brightness, OK=2x. Off by default.',
+                      'GPU sharpen + contrast + colour boost',
                       style: TextStyle(color: Colors.white38, fontSize: 12),
                     ),
-                    value: player.airGestures,
+                    value: player.enhanceVideoOn,
                     activeThumbColor: themeState.accent,
                     onChanged: (v) async {
-                      if (v) {
-                        final messenger = ScaffoldMessenger.of(context);
-                        final st = await Permission.camera.request();
-                        if (!st.isGranted) {
-                          messenger
-                            ..clearSnackBars()
-                            ..showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'Camera permission needed for air gestures'),
-                                duration: Duration(milliseconds: 1800),
-                              ),
-                            );
-                          return;
-                        }
-                      }
-                      await player.setAirGestures(v);
+                      await player.setEnhanceVideo(v);
+                      await NativeBridge.saveSetting(
+                          PlayerSettings.kEnhanceVideo, '$v');
                       setSb(() {});
                       onInteract();
                     },
@@ -373,45 +360,44 @@ class PlayerControlsOverlay extends StatelessWidget {
               ),
               StatefulBuilder(
                 builder: (sbCtx, setSb) {
-                  return SwitchListTile(
+                  return ListTile(
                     dense: true,
-                    secondary: Icon(
-                      Icons.visibility_outlined,
-                      color: player.lookAwayPause
-                          ? themeState.accent
-                          : Colors.white70,
+                    leading: Icon(
+                      Icons.hdr_on_outlined,
+                      color: Colors.white70,
                     ),
                     title: const Text(
-                      'Look-away auto-pause',
+                      'HDR tone-mapping',
                       style: TextStyle(color: Colors.white, fontSize: 14),
                     ),
                     subtitle: const Text(
-                      'Front camera pauses when you look away, resumes when you return. Off by default.',
+                      'How HDR10/Dolby sources fit your screen',
                       style: TextStyle(color: Colors.white38, fontSize: 12),
                     ),
-                    value: player.lookAwayPause,
-                    activeThumbColor: themeState.accent,
-                    onChanged: (v) async {
-                      if (v) {
-                        final messenger = ScaffoldMessenger.of(context);
-                        final st = await Permission.camera.request();
-                        if (!st.isGranted) {
-                          messenger
-                            ..clearSnackBars()
-                            ..showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'Camera permission needed for look-away pause'),
-                                duration: Duration(milliseconds: 1800),
-                              ),
-                            );
-                          return;
-                        }
+                    trailing: DropdownButton<String>(
+                      value: player.toneMappingMode,
+                      dropdownColor: const Color(0xFF1a1a24),
+                      underline: const SizedBox(),
+                      items: const {
+                        'auto': 'Auto',
+                        'mobius': 'Mobius',
+                        'hable': 'Hable',
+                        'bt.2390': 'BT.2390',
                       }
-                      await player.setLookAwayPause(v);
-                      setSb(() {});
-                      onInteract();
-                    },
+                          .entries
+                          .map((e) => DropdownMenuItem(
+                                value: e.key,
+                                child: Text(e.value,
+                                    style: TextStyle(
+                                        color: Colors.white, fontSize: 13)),
+                              ))
+                          .toList(),
+                      onChanged: (v) async {
+                        await player.setToneMapping(v ?? 'auto');
+                        setSb(() {});
+                        onInteract();
+                      },
+                    ),
                   );
                 },
               ),

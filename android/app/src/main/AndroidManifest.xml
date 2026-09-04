@@ -27,10 +27,6 @@
     <!-- v66 A5: voice search in Discover movies section -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- v100: opt-in front-camera drowsiness + look-away detection. Requested
-         at runtime only when the user flips one of those switches; the camera
-         runs only while a video plays. Declare camera use in Play Data Safety. -->
-    <uses-permission android:name="android.permission.CAMERA" />
 
     <!-- v67 B1/B2: background / screen-off audio playback & media controls -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />

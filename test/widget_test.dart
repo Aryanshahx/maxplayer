@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -9,7 +8,6 @@ import 'package:flutter_test/flutter_test.dart';
 // errors suppressed the hint.)
 import 'package:maxplayer/models/video_track.dart';
 import 'package:maxplayer/services/tmdb_client.dart';
-import 'package:maxplayer/utils/air_gestures.dart';
 import 'package:maxplayer/utils/formatters.dart';
 
 void main() {
@@ -252,7 +250,7 @@ void main() {
       expect(ps.contains('if (_settings.castButton)'), isFalse);
     });
   });
-  group('v100 blink removal, camera watchers, audio helpers', () {
+  group('v100 blink removal, audio helpers', () {
     test('volume/brightness values swap instantly again (no blink)', () {
       final ps = File('lib/screens/player_screen.dart').readAsStringSync();
       // The v99 wrapper (and only it) is gone - a pre-existing, unrelated
@@ -264,166 +262,92 @@ void main() {
       expect(ps, contains('_indicatorKey'));
     });
 
-    test('camera permission + plugins are wired', () {
+    test('v105 camera features are fully removed', () {
+      // Source files deleted (git history keeps them if ever needed).
+      expect(File('lib/services/drowsy_detector.dart').existsSync(), isFalse);
+      expect(File('lib/utils/air_gestures.dart').existsSync(), isFalse);
+      // No plugin left behind (storage permission stays - File Manager
+      // scans folders through it, nothing to do with the camera).
+      final pub = File('pubspec.yaml').readAsStringSync();
+      for (final k in [
+        'hand_landmarker',
+        'google_mlkit_face_detection',
+        'camera_android',
+        'camera:',
+      ]) {
+        expect(pub.contains(k), isFalse);
+      }
+      expect(pub, contains('permission_handler'));
       final manifest =
           File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
-      expect(manifest, contains('android.permission.CAMERA'));
-      final pub = File('pubspec.yaml').readAsStringSync();
-      expect(pub, contains('google_mlkit_face_detection'));
-      expect(pub, contains('camera_android'));
-      final detector =
-          File('lib/services/drowsy_detector.dart').readAsStringSync();
-      expect(detector, contains('class DrowsyDetector'));
-      expect(detector, contains('leftEyeOpenProbability'));
-      expect(detector, contains('FaceDetectorOptions'));
-      expect(detector, contains('ResolutionPreset.low'));
-      expect(detector, contains('InputImageFormat.nv21'));
-    });
-
-    test('player state owns the camera flags (v101 keeps flags, leveling deleted)', () {
+      expect(manifest.contains('android.permission.CAMERA'), isFalse);
+      // No dangling references in the six touched files.
       final s = File('lib/state/media_player_state.dart').readAsStringSync();
       for (final k in [
+        'DrowsyDetector',
+        'drowsy_detector',
+        'DrowsyEvent',
+        'AirAction',
+        'air_gestures',
+        'drowsyStatus',
+        'applyAirAction',
+        'onAirAction',
         'autoSleepDetect',
         'lookAwayPause',
-        'setAutoSleepDetect',
-        'setLookAwayPause',
+        'airGestures',
         'setDrowsyForeground',
+        '_onAirAction',
         '_syncDrowsy',
-        'drowsyStatus',
-      ]) {
-        expect(s, contains(k));
-      }
-      final settings =
-          File('lib/state/player_settings.dart').readAsStringSync();
-      for (final k in [
-        'kAutoSleepDetect',
-        'kLookAwayPause',
-      ]) {
-        expect(settings, contains(k));
-      }
-    });
-
-    test('v101 engine maps the gesture table', () {
-      List<Point<double>> handOf(Map<int, Point<double>> over) {
-        final pts = List<Point<double>>.filled(21, const Point(0.5, 0.5));
-        over.forEach((k, v) => pts[k] = v);
-        return pts;
-      }
-
-      // Open palm held 300 ms toggles play/pause.
-      final palmEngine = AirGestureEngine();
-      final palm = handOf({
-        8: const Point(0.3, 0.3),
-        6: const Point(0.3, 0.5),
-        12: const Point(0.4, 0.3),
-        10: const Point(0.4, 0.5),
-        16: const Point(0.6, 0.3),
-        14: const Point(0.6, 0.5),
-        20: const Point(0.7, 0.3),
-        18: const Point(0.7, 0.5),
-        4: const Point(0.1, 0.3),
-        2: const Point(0.2, 0.5),
-        17: const Point(0.8, 0.6),
-      });
-      final t0 = DateTime(2026, 1, 1);
-      expect(palmEngine.push(palm, t0), isNull);
-      expect(
-          palmEngine.push(palm, t0.add(const Duration(milliseconds: 100))),
-          isNull);
-      expect(
-          palmEngine.push(palm, t0.add(const Duration(milliseconds: 350))),
-          AirAction.playPause);
-
-      // Index sweep right across 5 frames seeks forward.
-      final swipeEngine = AirGestureEngine();
-      List<Point<double>> swipeAt(double x) => handOf({
-            8: Point(x, 0.3),
-            6: const Point(0.3, 0.5),
-            12: const Point(0.4, 0.7),
-            10: const Point(0.4, 0.5),
-          });
-      AirAction? fired;
-      for (var i = 0; i < 5; i++) {
-        fired = swipeEngine.push(
-            swipeAt(0.20 + i * 0.055),
-            t0.add(Duration(milliseconds: 500 + i * 100)));
-      }
-      expect(fired, AirAction.seekForward);
-
-      // Two fingers on the right half moving up raises volume.
-      final vertEngine = AirGestureEngine();
-      List<Point<double>> vertAt(double y) => handOf({
-            8: Point(0.70, y),
-            6: const Point(0.70, 0.9),
-            12: Point(0.75, y),
-            10: const Point(0.75, 0.9),
-            16: const Point(0.6, 0.9),
-            14: const Point(0.6, 0.5),
-            20: const Point(0.65, 0.9),
-            18: const Point(0.65, 0.5),
-          });
-      expect(vertEngine.push(vertAt(0.60), t0), isNull);
-      expect(vertEngine.push(
-          vertAt(0.52), t0.add(const Duration(milliseconds: 100))),
-          AirAction.volumeUp);
-
-      // OK closes to 2x, opens back to 1x.
-      final okEngine = AirGestureEngine();
-      final okClosed = handOf({
-        8: const Point(0.50, 0.30),
-        6: const Point(0.50, 0.50),
-        12: const Point(0.60, 0.30),
-        10: const Point(0.60, 0.50),
-        4: const Point(0.51, 0.32),
-      });
-      final okOpen = handOf({
-        8: const Point(0.50, 0.30),
-        6: const Point(0.50, 0.50),
-        12: const Point(0.60, 0.30),
-        10: const Point(0.60, 0.50),
-        4: const Point(0.20, 0.50),
-      });
-      expect(okEngine.push(okClosed, t0), AirAction.speed2x);
-      expect(
-          okEngine.push(okOpen, t0.add(const Duration(milliseconds: 900))),
-          AirAction.speed1x);
-
-      // A bare fist is nothing.
-      final fistEngine = AirGestureEngine();
-      final fist = handOf({
-        8: const Point(0.5, 0.7),
-        6: const Point(0.5, 0.5),
-        12: const Point(0.55, 0.7),
-        10: const Point(0.55, 0.5),
-        16: const Point(0.6, 0.7),
-        14: const Point(0.6, 0.5),
-        20: const Point(0.65, 0.7),
-        18: const Point(0.65, 0.5),
-      });
-      expect(fistEngine.push(fist, t0), isNull);
-      expect(fistEngine.push(null, t0), isNull);
-    });
-
-    test('v101 MediaPipe wiring + leveling deletion', () {
-      final pub = File('pubspec.yaml').readAsStringSync();
-      expect(pub, contains('hand_landmarker'));
-      final s = File('lib/state/media_player_state.dart').readAsStringSync();
-      for (final k in [
+        '_handsSub',
         'HandLandmarkerPlugin',
         'landmarkStream',
         'processFrame',
-        'applyAirAction',
-        'onAirAction',
         'setAirGestures',
-        'kAirGestures',
+        'Permission.camera',
+        'permission_handler',
+        'Camera will pause',
       ]) {
-        expect(s, contains(k));
+        expect(s.contains(k), isFalse);
       }
-      final overlay =
-          File('lib/widgets/player_controls_overlay.dart').readAsStringSync();
-      expect(overlay, contains('Air gestures'));
+      for (final f in [
+        'lib/state/player_settings.dart',
+        'lib/widgets/player_controls_overlay.dart',
+        'lib/widgets/user_manual_sheet.dart',
+        'lib/screens/player_screen.dart',
+        'lib/widgets/player_settings_sheet.dart',
+      ]) {
+        final src = File(f).readAsStringSync();
+        for (final k in [
+          'autoSleepDetect',
+          'lookAwayPause',
+          'airGestures',
+          'kAutoSleepDetect',
+          'kLookAwayPause',
+          'kAirGestures',
+          'Air gestures',
+          'Look-away auto-pause',
+          'Auto-detect sleep',
+          'Permission.camera',
+        ]) {
+          expect(src.contains(k), isFalse);
+        }
+      }
+      // The relocated picture rows persist through the kept settings keys.
+      final settings =
+          File('lib/state/player_settings.dart').readAsStringSync();
+      for (final k in [
+        'kEnhanceVideo',
+        'kToneMapping',
+        'player.enhanceVideo',
+        'player.toneMapping',
+        'kDialogueBoost',
+        'kKaraokeSubs',
+      ]) {
+        expect(settings, contains(k));
+      }
+      // Screenshot icons are not camera features - they must survive.
       final ps = File('lib/screens/player_screen.dart').readAsStringSync();
-      expect(ps, contains('_onAirAction'));
+      expect(ps, contains('Icons.camera_alt'));
       // Leveling deleted everywhere (settings keys die with it).
       for (final f in [
         'lib/state/media_player_state.dart',
@@ -444,18 +368,47 @@ void main() {
       expect(overlay.contains('Same on-device filter as before'), isFalse);
     });
 
-    test('sleep sheet + tracks sheet host the new rows', () {
+    test('sleep sheet keeps plain timers, camera rows gone', () {
       final ps = File('lib/screens/player_screen.dart').readAsStringSync();
-      expect(ps, contains('Auto-detect sleep'));
-      expect(ps, contains('Permission.camera.request'));
+      expect(ps.contains('Auto-detect sleep'), isFalse);
+      expect(ps.contains('Permission.camera.request'), isFalse);
+      // The plain sleep timer rows stay.
+      expect(ps, contains('Until end of this video'));
       final overlay =
           File('lib/widgets/player_controls_overlay.dart').readAsStringSync();
+      expect(overlay.contains('Look-away auto-pause'), isFalse);
+      expect(overlay, contains('Dialogue boost'));
+    });
+
+    test('v105 picture rows live below Karaoke', () {
+      final overlay =
+          File('lib/widgets/player_controls_overlay.dart').readAsStringSync();
+      final karaoke = overlay.indexOf('Karaoke subtitles');
+      final enhance = overlay.indexOf('Enhance video');
+      final tone = overlay.indexOf('HDR tone-mapping');
+      final dialogue = overlay.indexOf('Dialogue boost');
+      expect(karaoke, greaterThanOrEqualTo(0));
+      // Karaoke, then Enhance, then tone-mapping, then dialogue.
+      expect(enhance, greaterThan(karaoke));
+      expect(tone, greaterThan(enhance));
+      expect(dialogue, greaterThan(tone));
+      // Rows are wired to the player state + persisted settings keys.
       for (final k in [
-        'Look-away auto-pause',
-        'Dialogue boost',
+        'player.enhanceVideoOn',
+        'setEnhanceVideo',
+        'PlayerSettings.kEnhanceVideo',
+        'player.toneMappingMode',
+        'setToneMapping',
+        'PlayerSettings.kToneMapping',
       ]) {
         expect(overlay, contains(k));
       }
+      // Gone from Player settings (moved, not duplicated).
+      final sheet =
+          File('lib/widgets/player_settings_sheet.dart').readAsStringSync();
+      expect(sheet.contains("_SectionHeader('Picture')"), isFalse);
+      expect(sheet.contains('Enhance video'), isFalse);
+      expect(sheet.contains('HDR tone-mapping'), isFalse);
     });
   });
 }

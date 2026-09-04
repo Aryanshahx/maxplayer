@@ -54,19 +54,6 @@ class PlayerSettings {
   /// v72: Smart dialogue booster (boosts 1 kHz - 4 kHz vocal clarity band).
   final bool dialogueBoost;
 
-  /// v100: sleep timer pauses when the front camera sees closed eyes for
-  /// 30 s. Strictly opt-in, OFF by default.
-  final bool autoSleepDetect;
-
-  /// v100: pause when the user looks away; resume when they look back.
-  /// Strictly opt-in, OFF by default.
-  final bool lookAwayPause;
-
-  /// v101: MediaPipe air gestures (palm/swipe/OK). Strictly opt-in,
-  /// OFF by default.
-  final bool airGestures;
-
-
   /// v67 B2: keep playing audio when the screen is turned off or app minimised.
   final bool backgroundAudio;
 
@@ -100,9 +87,6 @@ class PlayerSettings {
     this.lockButton = true,
     this.volumeBoost200 = true,
     this.dialogueBoost = false,
-    this.autoSleepDetect = false,
-    this.lookAwayPause = false,
-    this.airGestures = false,
     // v67 B2: ON by default (background audio playback).
     this.backgroundAudio = true,
     this.karaokeSubs = false,
@@ -154,9 +138,6 @@ class PlayerSettings {
   static const String kLockButton = 'player.lockButton';
   static const String kVolumeBoost200 = 'player.volumeBoost200';
   static const String kDialogueBoost = 'player.dialogueBoost';
-  static const String kAutoSleepDetect = 'player.autoSleepDetect';
-  static const String kLookAwayPause = 'player.lookAwayPause';
-  static const String kAirGestures = 'player.airGestures';
   static const String kBackgroundAudio = 'player.backgroundAudio';
   static const String kKaraokeSubs = 'player.karaokeSubs';
   static const String kEnhanceVideo = 'player.enhanceVideo';
@@ -189,9 +170,6 @@ class PlayerSettings {
       lockButton: s[kLockButton] != 'false',
       volumeBoost200: s[kVolumeBoost200] != 'false',
       dialogueBoost: s[kDialogueBoost] == 'true',
-      autoSleepDetect: s[kAutoSleepDetect] == 'true',
-      lookAwayPause: s[kLookAwayPause] == 'true',
-      airGestures: s[kAirGestures] == 'true',
       backgroundAudio: s[kBackgroundAudio] != 'false',
       karaokeSubs: s[kKaraokeSubs] == 'true',
       enhanceVideo: s[kEnhanceVideo] == 'true',
@@ -233,9 +211,6 @@ class PlayerSettings {
     NativeBridge.saveSetting(kLockButton, '$lockButton');
     NativeBridge.saveSetting(kVolumeBoost200, '$volumeBoost200');
     NativeBridge.saveSetting(kDialogueBoost, '$dialogueBoost');
-    NativeBridge.saveSetting(kAutoSleepDetect, '$autoSleepDetect');
-    NativeBridge.saveSetting(kLookAwayPause, '$lookAwayPause');
-    NativeBridge.saveSetting(kAirGestures, '$airGestures');
     NativeBridge.saveSetting(kBackgroundAudio, '$backgroundAudio');
     NativeBridge.saveSetting(kKaraokeSubs, '$karaokeSubs');
     NativeBridge.saveSetting(kEnhanceVideo, '$enhanceVideo');
@@ -261,9 +236,6 @@ class PlayerSettings {
     bool? lockButton,
     bool? volumeBoost200,
     bool? dialogueBoost,
-    bool? autoSleepDetect,
-    bool? lookAwayPause,
-    bool? airGestures,
     bool? backgroundAudio,
     bool? karaokeSubs,
     bool? enhanceVideo,
@@ -288,9 +260,6 @@ class PlayerSettings {
       lockButton: lockButton ?? this.lockButton,
       volumeBoost200: volumeBoost200 ?? this.volumeBoost200,
       dialogueBoost: dialogueBoost ?? this.dialogueBoost,
-      autoSleepDetect: autoSleepDetect ?? this.autoSleepDetect,
-      lookAwayPause: lookAwayPause ?? this.lookAwayPause,
-      airGestures: airGestures ?? this.airGestures,
       backgroundAudio: backgroundAudio ?? this.backgroundAudio,
       karaokeSubs: karaokeSubs ?? this.karaokeSubs,
       enhanceVideo: enhanceVideo ?? this.enhanceVideo,

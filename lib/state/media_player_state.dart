@@ -12,12 +12,8 @@ import 'package:path/path.dart' as p;
 
 import '../models/history_entry.dart';
 import '../models/video_track.dart';
-import 'package:camera/camera.dart';
-import 'package:hand_landmarker/hand_landmarker.dart';
 
-import '../services/drowsy_detector.dart';
 import '../services/native_bridge.dart';
-import '../utils/air_gestures.dart';
 import '../utils/formatters.dart';
 import '../utils/srt.dart';
 import 'player_settings.dart';
@@ -142,10 +138,6 @@ class MediaPlayerState extends ChangeNotifier {
       player.stream.playing.listen((v) {
         isPlaying = v;
         notifyListeners();
-        // v100: manual resume clears a look-away auto-pause; the camera
-        // only runs while it can do something useful.
-        if (v) _lookAwayPaused = false;
-        unawaited(_syncDrowsy());
         // Keep the PiP window's play/pause remote action in sync
         // (native side ignores this when not in PiP).
         NativeBridge.setPipPlaying(v);
@@ -270,9 +262,6 @@ class MediaPlayerState extends ChangeNotifier {
       _watchByVideo = const {}; // corrupt payload -> start fresh
     }
     // Restore equalizer & audio optimization settings.
-    autoSleepDetect = s[PlayerSettings.kAutoSleepDetect] == 'true';
-    lookAwayPause = s[PlayerSettings.kLookAwayPause] == 'true';
-    airGestures = s[PlayerSettings.kAirGestures] == 'true';
     dialogueBoost = s[PlayerSettings.kDialogueBoost] == 'true';
     eqEnabled = s[_kEqEnabledKey] == 'true';
     final gainsRaw = (s[_kEqGainsKey] ?? '').split(',');
@@ -1210,11 +1199,19 @@ class MediaPlayerState extends ChangeNotifier {
   /// v32: mpv tone-mapping curve for HDR sources ("How does an HDR10 or
   /// Dolby Vision file render on this screen"). Values validated in
   /// PlayerSettings - anything unknown becomes 'auto' upstream.
+  /// v105: readable HDR tone-mapping mode for the tune-sheet row.
+  String toneMappingMode = 'auto';
+
   Future<void> setToneMapping(String mode) async {
+    toneMappingMode =
+        const ['auto', 'mobius', 'hable', 'bt.2390'].contains(mode)
+            ? mode
+            : 'auto';
+    NativeBridge.saveSetting(PlayerSettings.kToneMapping, toneMappingMode);
     final plat = player.platform;
     if (plat is! NativePlayer) return;
     try {
-      await plat.setProperty('tone-mapping', mode);
+      await plat.setProperty('tone-mapping', toneMappingMode);
     } catch (_) {}
   }
 
@@ -1282,6 +1279,9 @@ class MediaPlayerState extends ChangeNotifier {
   };
 
   bool _enhanceApplied = false;
+
+  /// v105: readable Enhance state for the tune-sheet row.
+  bool get enhanceVideoOn => _enhanceApplied;
   String? _enhanceShaderPath;
   String? _lastAppliedAf;
 
@@ -1328,208 +1328,6 @@ class MediaPlayerState extends ChangeNotifier {
     NativeBridge.saveSetting(PlayerSettings.kDialogueBoost, '$on');
     notifyListeners();
     await _applyAudioFilters();
-  }
-
-  // ---------------------------------------------------------------------------
-  // v100: camera watchers (auto sleep-detect + look-away pause) + v101
-  // air-gesture wiring. Camera flags are strictly opt-in (default OFF); the
-  // shared camera session runs only while a video is present, the app is
-  // foregrounded, and playback is active (or look-away paused).
-  // ---------------------------------------------------------------------------
-
-  /// v100: pause when the front camera sees closed eyes for 30 s.
-  bool autoSleepDetect = false;
-
-  /// v100: pause when the user looks away; resume when they look back.
-  bool lookAwayPause = false;
-
-  final DrowsyDetector _drowsy = DrowsyDetector();
-  bool _drowsyForeground = true;
-  bool _lookAwayPaused = false;
-  bool _drowsyWarned = false;
-
-  /// v101: one-line camera status for the sleep toggle ('off' / 'Standby' /
-  /// 'Watching…' / 'Camera unavailable'). v100 was silent on failure, which
-  /// is why a dead camera looked like "not working" with no clue.
-  String drowsyStatus = 'off';
-
-  /// v101: MediaPipe air gestures (opt-in, OFF by default). Frames come
-  /// from the SAME shared camera session as face watching - never a
-  /// second controller (two owners cannot open one camera).
-  bool airGestures = false;
-  HandLandmarkerPlugin? _hands;
-  StreamSubscription<List<Hand>>? _handsSub;
-  final AirGestureEngine _airEngine = AirGestureEngine();
-  int _handFrameSkip = 0;
-
-  /// The player screen sets this to toast what each gesture did.
-  void Function(AirAction action)? onAirAction;
-
-  Future<void> setAutoSleepDetect(bool on) async {
-    autoSleepDetect = on;
-    if (on) _drowsyWarned = false;
-    NativeBridge.saveSetting(PlayerSettings.kAutoSleepDetect, '$on');
-    notifyListeners();
-    await _syncDrowsy();
-  }
-
-  Future<void> setLookAwayPause(bool on) async {
-    lookAwayPause = on;
-    if (on) _drowsyWarned = false;
-    NativeBridge.saveSetting(PlayerSettings.kLookAwayPause, '$on');
-    notifyListeners();
-    await _syncDrowsy();
-  }
-
-  Future<void> setAirGestures(bool on) async {
-    airGestures = on;
-    NativeBridge.saveSetting(PlayerSettings.kAirGestures, '$on');
-    notifyListeners();
-    await _syncDrowsy();
-  }
-
-  /// The app left / returned (the player screen forwards lifecycle events).
-  Future<void> setDrowsyForeground(bool fg) async {
-    _drowsyForeground = fg;
-    await _drowsy.setForeground(fg);
-    await _syncDrowsy();
-  }
-
-  void _onDrowsyEvent(DrowsyEvent e) {
-    switch (e) {
-      case DrowsyEvent.sleepPause:
-        if (!isPlaying || currentTrack == null) return;
-        unawaited(pause());
-        _notices.add('Paused - eyes closed for 30s');
-        notifyListeners();
-      case DrowsyEvent.lookAwayPause:
-        if (!isPlaying || currentTrack == null) return;
-        _lookAwayPaused = true;
-        unawaited(pause());
-        _notices.add('Paused - look back to resume');
-        notifyListeners();
-      case DrowsyEvent.lookBackResume:
-        if (!_lookAwayPaused || currentTrack == null) return;
-        _lookAwayPaused = false;
-        unawaited(resumePlayback());
-        _notices.add('Welcome back');
-        notifyListeners();
-    }
-  }
-
-  /// Starts/stops the shared camera session from the current flags.
-  /// Air gestures ride the same session but do NOT need playback to be
-  /// active (a palm must be able to resume a paused video).
-  Future<void> _syncDrowsy() async {
-    _drowsy.onEvent = _onDrowsyEvent;
-    _drowsy.onFrame = _onSharedCameraFrame;
-    final faceArmed = autoSleepDetect || lookAwayPause;
-    final faceWant = _drowsyForeground &&
-        faceArmed &&
-        currentTrack != null &&
-        (isPlaying || _lookAwayPaused);
-    final handsWant =
-        _drowsyForeground && airGestures && currentTrack != null;
-    await _drowsy.configure(
-      sleep: autoSleepDetect && faceWant,
-      lookAway: lookAwayPause && faceWant,
-      hands: handsWant,
-    );
-    await _syncHands(handsWant);
-    // v101: live status so a dead camera is VISIBLE (v100's silence is
-    // why "not working" gave no clue). The sleep sheet listens to this.
-    if (!faceArmed) {
-      drowsyStatus = 'off';
-    } else if (!faceWant) {
-      drowsyStatus = 'Standby';
-    } else if (_drowsy.isRunning) {
-      drowsyStatus = 'Watching…';
-    } else {
-      drowsyStatus = 'Camera unavailable';
-    }
-    // Camera broken/missing: say so once per arming, then stay quiet.
-    if (faceWant && !_drowsyWarned && !_drowsy.isRunning) {
-      _drowsyWarned = true;
-      _notices.add('Camera unavailable - auto-detect paused');
-    }
-    notifyListeners();
-  }
-
-  /// Creates/tears down the MediaPipe plugin with the camera session.
-  Future<void> _syncHands(bool want) async {
-    if (!want) {
-      await _handsSub?.cancel();
-      _handsSub = null;
-      _hands?.dispose();
-      _hands = null;
-      return;
-    }
-    if (_hands != null) return;
-    try {
-      final plugin = HandLandmarkerPlugin.create(
-        numHands: 1,
-        minHandDetectionConfidence: 0.6,
-        delegate: HandLandmarkerDelegate.cpu,
-      );
-      _hands = plugin;
-      _handsSub = plugin.landmarkStream.listen(_onHandLandmarks);
-    } catch (e) {
-      debugPrint('HandLandmarker init failed: $e');
-      _hands = null;
-    }
-  }
-
-  /// Shared camera frames also feed MediaPipe (every 3rd - inference is
-  /// ~12-17 ms, so this stays far ahead of gesture speeds).
-  void _onSharedCameraFrame(CameraImage image) {
-    if (!airGestures) return;
-    final plugin = _hands;
-    if (plugin == null) return;
-    _handFrameSkip++;
-    if (_handFrameSkip % 3 != 0) return;
-    try {
-      plugin.processFrame(image, _drowsy.cameraRotation);
-    } catch (e) {
-      debugPrint('HandLandmarker processFrame error: $e');
-    }
-  }
-
-  void _onHandLandmarks(List<Hand> hands) {
-    if (!airGestures || currentTrack == null) return;
-    final action = _airEngine.push(
-      hands.isEmpty
-          ? null
-          : hands.first.landmarks.map((l) => Point(l.x, l.y)).toList(),
-      DateTime.now(),
-    );
-    if (action == null) return;
-    unawaited(applyAirAction(action));
-    onAirAction?.call(action);
-  }
-
-  /// Runs a recognized air gesture on the player.
-  Future<void> applyAirAction(AirAction action) async {
-    if (currentTrack == null) return;
-    switch (action) {
-      case AirAction.playPause:
-        await togglePlay();
-      case AirAction.seekForward:
-        await seekBy(10);
-      case AirAction.seekBackward:
-        await seekBy(-10);
-      case AirAction.volumeUp:
-        await setVolume(volume + 0.07);
-      case AirAction.volumeDown:
-        await setVolume(volume - 0.07);
-      case AirAction.brightnessUp:
-        await setBrightness((await currentBrightness()) + 0.08);
-      case AirAction.brightnessDown:
-        await setBrightness((await currentBrightness()) - 0.08);
-      case AirAction.speed2x:
-        await setPlaybackRate(2.0);
-      case AirAction.speed1x:
-        await setPlaybackRate(1.0);
-    }
   }
 
   /// v74: Builds the combined audio filter chain (Dialogue booster + Equalizer).
@@ -1935,10 +1733,6 @@ class MediaPlayerState extends ChangeNotifier {
 
   @override
   void dispose() {
-    unawaited(_handsSub?.cancel());
-    _hands?.dispose();
-    _drowsy.onFrame = null;
-    unawaited(_drowsy.dispose());
     _uiTicker?.cancel();
     _bookmarkTimer?.cancel();
     _notices.close();

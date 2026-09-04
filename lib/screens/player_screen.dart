@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../cast/cast_state.dart';
 import '../services/native_bridge.dart';
@@ -13,7 +12,6 @@ import '../state/media_player_state.dart';
 import '../state/player_settings.dart';
 import '../state/video_zoom.dart';
 import '../state/theme_state.dart';
-import '../utils/air_gestures.dart';
 import '../utils/formatters.dart';
 import '../utils/srt.dart';
 import '../widgets/cast_sheet.dart';
@@ -207,8 +205,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       _showIndicator(m, Icons.history);
     });
-    // v101: air-gesture feedback toasts.
-    widget.player.onAirAction = _onAirAction;
     NativeBridge.configureCallbacks(
       onPipChanged: (isPip) {
         if (!mounted) return;
@@ -256,7 +252,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     _hideTimer?.cancel();
     _indicatorTimer?.cancel();
     _noticeSub?.cancel();
-    widget.player.onAirAction = null;
     // v41: ALWAYS bring the bars back on the way out - landscape playback
     // now hides them even when manual fullscreen was never pressed, so the
     // old `if (_isFullscreen)` guard could leave the LIBRARY screen
@@ -291,8 +286,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
-      // v100: camera never runs in the background.
-      unawaited(widget.player.setDrowsyForeground(false));
       if (!widget.player.backgroundAudio) {
         widget.player.pause();
       }
@@ -305,8 +298,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     } else if (state == AppLifecycleState.resumed) {
       // Coming back to the app: the resume nudge is no longer needed.
       unawaited(NotificationService.cancelContinueWatching());
-      // v100: re-arm the camera watchers (if the user enabled them).
-      unawaited(widget.player.setDrowsyForeground(true));
     }
   }
 
@@ -750,52 +741,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                     active: label == 'end of video',
                     onTap: () => player.setSleepTimer(atEndOfVideo: true),
                   ),
-                  // v100: auto-detect sleep - the front camera pauses the
-                  // video after the user's eyes stay closed for 30 s.
-                  // Strictly opt-in (OFF by default); the camera runs only
-                  // while a video plays, nothing is recorded or uploaded.
-                  StatefulBuilder(
-                    builder: (sheetCtx, setSheetState) {
-                      return SwitchListTile(
-                        secondary: Icon(
-                          Icons.visibility_outlined,
-                          color: player.autoSleepDetect
-                              ? themeState.accent
-                              : Colors.white70,
-                        ),
-                        title: const Text(
-                          'Auto-detect sleep',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                        subtitle: Text(
-                          player.autoSleepDetect
-                              ? 'Status: ${player.drowsyStatus}'
-                              : 'Front camera pauses when eyes stay closed 30s',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 12,
-                          ),
-                        ),
-                        value: player.autoSleepDetect,
-                        activeThumbColor: themeState.accent,
-                        onChanged: (v) async {
-                          if (v) {
-                            final st = await Permission.camera.request();
-                            if (!st.isGranted) {
-                              _showIndicator(
-                                'Camera permission needed for sleep detect',
-                                Icons.videocam_off_outlined,
-                              );
-                              return;
-                            }
-                          }
-                          await player.setAutoSleepDetect(v);
-                          setSheetState(() {});
-                          _onUserInteraction();
-                        },
-                      );
-                    },
-                  ),
                   item(Icons.close, 'Off', onTap: player.cancelSleepTimer),
                   const SizedBox(height: 8),
                 ],
@@ -1166,44 +1111,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // v101: air-gesture feedback - the state runs the action, the screen
-  // shows what happened.
-  // ---------------------------------------------------------------------------
-
-  void _onAirAction(AirAction action) {
-    if (!mounted) return;
-    _onUserInteraction();
-    switch (action) {
-      case AirAction.playPause:
-        _showIndicator('Play / Pause', Icons.pan_tool);
-        break;
-      case AirAction.seekForward:
-        _showIndicator('Forward 10s', Icons.fast_forward);
-        break;
-      case AirAction.seekBackward:
-        _showIndicator('Back 10s', Icons.fast_rewind);
-        break;
-      case AirAction.volumeUp:
-        _showIndicator('Volume up', Icons.volume_up);
-        break;
-      case AirAction.volumeDown:
-        _showIndicator('Volume down', Icons.volume_down);
-        break;
-      case AirAction.brightnessUp:
-        _showIndicator('Brightness up', Icons.brightness_6);
-        break;
-      case AirAction.brightnessDown:
-        _showIndicator('Brightness down', Icons.brightness_6);
-        break;
-      case AirAction.speed2x:
-        _showIndicator('2x speed', Icons.speed);
-        break;
-      case AirAction.speed1x:
-        _showIndicator('1x speed', Icons.speed);
-        break;
-    }
-  }
 
   // ---------------------------------------------------------------------------
 

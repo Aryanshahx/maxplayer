@@ -33,54 +33,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.2"
-  camera:
-    dependency: "direct main"
-    description:
-      name: camera
-      sha256: "3f30ca0ff376f91534f23afa2a7aea06ebb6c889fd9e260642437b37e3d9f753"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.12.1"
-  camera_android:
-    dependency: "direct main"
-    description:
-      name: camera_android
-      sha256: "2bb7a5a070dc61a03721ab8b55d4d24a74683da32e9c9a47257b4fd4956f2280"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.10.11+1"
-  camera_android_camerax:
-    dependency: transitive
-    description:
-      name: camera_android_camerax
-      sha256: a13f12f9c067679bf11f0f61e3f2079ac5c740388dec2e46d82e9f28ea093b4f
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.7.4+7"
-  camera_avfoundation:
-    dependency: transitive
-    description:
-      name: camera_avfoundation
-      sha256: "843247230a583e04742ea1434ce3f91e536760922fab67c72ce46aa34fac3e9d"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.10.3"
-  camera_platform_interface:
-    dependency: transitive
-    description:
-      name: camera_platform_interface
-      sha256: "4524ca6eb4176b066864036ad4fe02c3e4863e63b77eadc21a5bf56824f43498"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.13.1"
-  camera_web:
-    dependency: transitive
-    description:
-      name: camera_web
-      sha256: "081441bd2f92b5841aa70ff4d6eddfe34078d97f9d085cc9e0f9d0102f145925"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.5+5"
   characters:
     dependency: transitive
     description:
@@ -105,14 +57,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.19.1"
-  cross_file:
-    dependency: transitive
-    description:
-      name: cross_file
-      sha256: f141ea4f277af142a0356955707f6556f37b03947d39d55585981a06ca437bd6
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.3.5+5"
   crypto:
     dependency: transitive
     description:
@@ -174,14 +118,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.0"
-  flutter_plugin_android_lifecycle:
-    dependency: transitive
-    description:
-      name: flutter_plugin_android_lifecycle
-      sha256: "3854fe5e3bff0b113c658f260b90c95dea17c92db0f2addeac2e343dd9969785"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.35"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -192,30 +128,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  google_mlkit_commons:
-    dependency: transitive
-    description:
-      name: google_mlkit_commons
-      sha256: "3e69fea4211727732cc385104e675ad1e40b29f12edd492ee52fa108423a6124"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.11.1"
-  google_mlkit_face_detection:
-    dependency: "direct main"
-    description:
-      name: google_mlkit_face_detection
-      sha256: "7b6ddcc69dbd6fbfa313fb2d974ad0f0c3a0d1657560f0da6be465baf1889687"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.13.2"
-  hand_landmarker:
-    dependency: "direct main"
-    description:
-      name: hand_landmarker
-      sha256: "2bb90d5857c8b69b414dc7ef077c5fbc654ca371da918072a47a2a564ee753e1"
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.0.1"
   http:
     dependency: transitive
     description:
@@ -248,30 +160,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.19.0"
-  jni:
-    dependency: transitive
-    description:
-      name: jni
-      sha256: f038e58b4dc2c9037f50e233175086337e0b305e356d28211bf55f21c504cbd3
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.3"
-  jni_flutter:
-    dependency: transitive
-    description:
-      name: jni_flutter
-      sha256: b2310cdd4c18c65c081ab141a41efa94aa26c65431803703ece51996f174f351
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.3"
-  jni_util:
-    dependency: transitive
-    description:
-      name: jni_util
-      sha256: "1ba86da04a5f2bf18fde2edb235587e70c5b0fc5bd4ba955f46b00942c3fc35f"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.0"
   leak_tracker:
     dependency: transitive
     description:
@@ -352,14 +240,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.18.0"
-  package_config:
-    dependency: transitive
-    description:
-      name: package_config
-      sha256: ffcf4cf3d6c0b74ac43708d9f56625506e8a68aa935abe9d267a7330f320eb5d
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.0.0"
   package_info_plus:
     dependency: transitive
     description:
@@ -509,14 +389,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.4"
-  stream_transform:
-    dependency: transitive
-    description:
-      name: stream_transform
-      sha256: a00e5f18bffc764f923e7dec1038527f7fe7a1791361a7117f0358193f13d53a
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.2"
   string_scanner:
     dependency: transitive
     description:
