@@ -23,10 +23,12 @@ dependencies:
   permission_handler: ^11.3.1
 
   # v100: front-camera drowsiness + look-away detection (both opt-in, off by
-  # default). camera_android pins the legacy Camera2 backend (API 21+) instead
-  # of the CameraX default; ML Kit face detection is on-device (its model
+  # default). camera_android pins the legacy Camera2 backend instead of the
+  # CameraX default; ML Kit face detection is on-device (its model
   # downloads once via Play Services, then works offline).
-  camera: ^0.11.0
+  # v101-fix: camera 0.12 (additions only, no Dart API breaks) because
+  # hand_landmarker 3 requires camera ^0.12.0+1.
+  camera: ^0.12.0+1
   camera_android: ^0.10.11+1
   google_mlkit_face_detection: ^0.13.0
 
