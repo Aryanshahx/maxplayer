@@ -65,6 +65,12 @@ android {
         }
     }
 
+    configurations.all {
+        resolutionStrategy {
+            force("com.google.mlkit:face-detection:16.1.6")
+        }
+    }
+
     buildTypes {
         release {
             // Real upload key when android/key.properties exists, otherwise

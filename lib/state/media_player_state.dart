@@ -1469,10 +1469,12 @@ class MediaPlayerState extends ChangeNotifier {
       final plugin = HandLandmarkerPlugin.create(
         numHands: 1,
         minHandDetectionConfidence: 0.6,
+        delegate: HandLandmarkerDelegate.cpu,
       );
       _hands = plugin;
       _handsSub = plugin.landmarkStream.listen(_onHandLandmarks);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('HandLandmarker init failed: $e');
       _hands = null;
     }
   }
@@ -1487,7 +1489,9 @@ class MediaPlayerState extends ChangeNotifier {
     if (_handFrameSkip % 3 != 0) return;
     try {
       plugin.processFrame(image, _drowsy.cameraRotation);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('HandLandmarker processFrame error: $e');
+    }
   }
 
   void _onHandLandmarks(List<Hand> hands) {
