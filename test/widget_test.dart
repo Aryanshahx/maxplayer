@@ -197,4 +197,51 @@ void main() {
       expect(s, contains('Timer.periodic(const Duration(milliseconds: 500)'));
     });
   });
+  group('v99 tile swap, indicator cross-fade, settings-only Cast/Screenshot removal', () {
+    test('Cloud Storage and File Manager swapped pages', () {
+      final lib = File('lib/screens/library_screen.dart').readAsStringSync();
+      // Page 1 now ends with Cloud Storage; File Manager moved to page 2.
+      // Both labels occur exactly once, so index order == page order.
+      expect(
+          lib.indexOf("'Cloud Storage'") < lib.indexOf("'File Manager'"),
+          isTrue);
+      expect(
+          lib,
+          contains(
+              'Page 1: Private Space, Playlists, Folders, Cloud Storage'));
+      expect(
+          lib,
+          contains(
+              'Page 2: Network Storage, File Manager, Open Stream, Cleaner'));
+    });
+
+    test('indicator content cross-fades on every change', () {
+      final ps = File('lib/screens/player_screen.dart').readAsStringSync();
+      expect(ps, contains('AnimatedSwitcher'));
+      expect(ps, contains("ValueKey(_indicatorKey ?? 'hidden')"));
+      expect(ps, contains('reverseDuration'));
+      // The pill show/hide animation must survive.
+      expect(ps, contains('AnimatedScale'));
+      expect(ps, contains('AnimatedOpacity'));
+    });
+
+    test('Cast/Screenshot leave Player settings but stay in the player menu',
+        () {
+      final sheet =
+          File('lib/widgets/player_settings_sheet.dart').readAsStringSync();
+      expect(sheet.contains('Cast to TV (DLNA)'), isFalse);
+      expect(sheet.contains('Screenshot button'), isFalse);
+      final ps = File('lib/screens/player_screen.dart').readAsStringSync();
+      // Ungated: no setting left to hide behind.
+      expect(
+          ps,
+          contains(
+              "_topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot')"));
+      expect(
+          ps,
+          contains("_topMenuItem('cast', Icons.cast_outlined, 'Cast to TV')"));
+      expect(ps.contains('if (_settings.screenshotButton)'), isFalse);
+      expect(ps.contains('if (_settings.castButton)'), isFalse);
+    });
+  });
 }

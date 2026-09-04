@@ -1265,10 +1265,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                             ),
                           ),
                           // Transient indicator (seek / volume / brightness /
-                          // zoom / resume / fit / play-pause) - pops in and
-                          // out with a small scale+fade.
-                          // Transient indicator (seek / volume / brightness /
-                          // zoom / resume / fit / play-pause) - smooth scale + fade + glassmorphic pill.
+                          // zoom / resume / fit / play-pause) - pill pops
+                          // with scale+fade; every content change
+                          // cross-fades via AnimatedSwitcher below.
                           Positioned(
                             top: 64,
                             left: 0,
@@ -1300,23 +1299,41 @@ class _PlayerScreenState extends State<PlayerScreen>
                                           ),
                                         ],
                                       ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (_indicatorIcon != null) ...[
-                                            Icon(_indicatorIcon, color: themeState.accent, size: 20),
-                                            const SizedBox(width: 8),
-                                          ],
-                                          Text(
-                                            _indicatorText ?? '',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 14.5,
-                                              fontWeight: FontWeight.bold,
-                                              letterSpacing: 0.2,
+                                      // v99: content cross-fade - volume /
+                                      // brightness / seek values glide out
+                                      // and in on every change instead of
+                                      // snapping while the pill stays put.
+                                      child: AnimatedSwitcher(
+                                        duration: const Duration(milliseconds: 160),
+                                        reverseDuration: const Duration(milliseconds: 120),
+                                        transitionBuilder: (child, animation) {
+                                          return FadeTransition(
+                                            opacity: animation,
+                                            child: ScaleTransition(
+                                              scale: Tween<double>(begin: 0.92, end: 1.0).animate(animation),
+                                              child: child,
                                             ),
-                                          ),
-                                        ],
+                                          );
+                                        },
+                                        child: Row(
+                                          key: ValueKey(_indicatorKey ?? 'hidden'),
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (_indicatorIcon != null) ...[
+                                              Icon(_indicatorIcon, color: themeState.accent, size: 20),
+                                              const SizedBox(width: 8),
+                                            ],
+                                            Text(
+                                              _indicatorText ?? '',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 14.5,
+                                                fontWeight: FontWeight.bold,
+                                                letterSpacing: 0.2,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -1690,10 +1707,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       itemBuilder: (context) => [
         _topMenuItem('info', Icons.info_outline, 'Video info'),
         _topMenuItem('eq', Icons.graphic_eq, 'Equalizer & Audio FX'),
-        if (_settings.screenshotButton)
-          _topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot'),
-        if (_settings.castButton)
-          _topMenuItem('cast', Icons.cast_outlined, 'Cast to TV'),
+        // v99: always shown - the Player-settings toggles are gone, so
+        // there is nothing left to gate these behind.
+        _topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot'),
+        _topMenuItem('cast', Icons.cast_outlined, 'Cast to TV'),
         _topMenuItem(
           'pip',
           Icons.picture_in_picture_alt_outlined,

@@ -878,8 +878,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
 }
 
 /// v28/v87: Two slideable 2x2 grids with 2 dots page indicator.
-/// Page 1: Private Space, Playlists, Folders, File Manager
-/// Page 2: Network Storage, Cloud Storage, Open Stream, Cleaner
+/// Page 1: Private Space, Playlists, Folders, Cloud Storage
+/// Page 2: Network Storage, File Manager, Open Stream, Cleaner
 class _QuickTiles extends StatefulWidget {
   final Color accent;
   final VoidCallback onPrivate;
@@ -932,7 +932,7 @@ class _QuickTilesState extends State<_QuickTiles> {
               controller: _pageCtrl,
               onPageChanged: (i) => setState(() => _currentPage = i),
               children: [
-                // Page 1 (2x2 Grid): Private Space, Playlists, Folders, File Manager
+                // Page 1 (2x2 Grid): Private Space, Playlists, Folders, Cloud Storage
                 Column(
                   children: [
                     Row(
@@ -970,10 +970,10 @@ class _QuickTilesState extends State<_QuickTiles> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: _Tile(
-                            Icons.folder_shared_outlined,
-                            'File Manager',
+                            Icons.cloud_queue_outlined,
+                            'Cloud Storage',
                             accent,
-                            widget.onFileManager,
+                            widget.onCloudStorage,
                           ),
                         ),
                       ],
@@ -981,7 +981,7 @@ class _QuickTilesState extends State<_QuickTiles> {
                   ],
                 ),
 
-                // Page 2 (2x2 Grid): Network Storage, Cloud Storage, Open Stream, Cleaner
+                // Page 2 (2x2 Grid): Network Storage, File Manager, Open Stream, Cleaner
                 Column(
                   children: [
                     Row(
@@ -997,10 +997,10 @@ class _QuickTilesState extends State<_QuickTiles> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: _Tile(
-                            Icons.cloud_queue_outlined,
-                            'Cloud Storage',
+                            Icons.folder_shared_outlined,
+                            'File Manager',
                             accent,
-                            widget.onCloudStorage,
+                            widget.onFileManager,
                           ),
                         ),
                       ],
