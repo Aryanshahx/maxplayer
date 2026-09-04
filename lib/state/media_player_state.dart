@@ -261,10 +261,6 @@ class MediaPlayerState extends ChangeNotifier {
       _watchByVideo = const {}; // corrupt payload -> start fresh
     }
     // Restore equalizer & audio optimization settings.
-    // v98: also restore the wind-down + picture-quality flags.
-    gentleWindDown = s[PlayerSettings.kGentleWindDown] != 'false';
-    qualityUpscale = s[PlayerSettings.kQualityUpscale] == 'true';
-    smoothMotion = s[PlayerSettings.kSmoothMotion] == 'true';
     dialogueBoost = s[PlayerSettings.kDialogueBoost] == 'true';
     eqEnabled = s[_kEqEnabledKey] == 'true';
     final gainsRaw = (s[_kEqGainsKey] ?? '').split(',');
@@ -473,9 +469,6 @@ class MediaPlayerState extends ChangeNotifier {
         unawaited(plat.setProperty('glsl-shaders', _enhanceShaderPath!));
         unawaited(plat.setProperty('hwdec', MediaPlayerState.kEnhanceHwdec));
       }
-      // v98: keep the picture-quality toggles asserted for every new
-      // file (mpv may reset render options when a new file opens).
-      unawaited(_applyQualityProps());
       // Force the sub-visibility to be re-pushed for the new file (mpv may
       // reset it at open, while our cache would think it's still applied).
       _appliedSubVisibility = null;
@@ -823,14 +816,6 @@ class MediaPlayerState extends ChangeNotifier {
 
   Future<void> _fireSleepTimer() async {
     cancelSleepTimer();
-    // v98: wind down gently instead of stopping abruptly (when enabled,
-    // playing, and something is actually open).
-    if (gentleWindDown && isPlaying && currentTrack != null) {
-      await _fadeVolumeAndPause();
-      _notices.add('Sleep timer paused playback');
-      notifyListeners();
-      return;
-    }
     _notices.add('Sleep timer paused playback');
     await pause();
   }
@@ -842,117 +827,6 @@ class MediaPlayerState extends ChangeNotifier {
       _notices.add('Sleep timer: stopped at end of video');
       pause();
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // v98: gentle sleep wind-down + picture-quality toggles.
-  //
-  // Wind-down: when the sleep timer fires, the volume fades out over ~18 s
-  // instead of pausing abruptly (the device MEDIA volume is stepped down,
-  // then restored so the next video starts at the user's real level). ON by
-  // default; the sleep sheet toggles it. Front-camera eye tracking is NOT
-  // part of this build - it needs a CAMERA permission, an on-device face
-  // model and real-device testing, so it stays a follow-up, not a stub.
-  //
-  // Picture quality: two OPT-IN mpv render switches for old 480p/720p
-  // files and 24 fps judder. These are stock mpv scalers / interpolator -
-  // NOT an ML upscaler (those need native GPU models that would undo the
-  // v97 low-end gains). OFF by default; the v97 fast profile stays until
-  // the user opts in. Applied live AND re-asserted for every new file,
-  // like Enhance.
-  // ---------------------------------------------------------------------------
-
-  /// v98: fade-out instead of an abrupt sleep stop. Persisted.
-  bool gentleWindDown = true;
-
-  Future<void> setGentleWindDown(bool on) async {
-    gentleWindDown = on;
-    NativeBridge.saveSetting(PlayerSettings.kGentleWindDown, '$on');
-    notifyListeners();
-  }
-
-  Future<void> _fadeVolumeAndPause() async {
-    final startVol = volume;
-    _notices.add('Sleep timer: fading out...');
-    notifyListeners();
-    try {
-      for (var i = 9; i >= 1; i--) {
-        await Future<void>.delayed(const Duration(seconds: 2));
-        // User paused mid-fade, or left the player: stop touching volume.
-        if (!isPlaying || currentTrack == null) break;
-        await setVolume(startVol * i / 10);
-      }
-    } catch (_) {}
-    await pause();
-    try {
-      await setVolume(startVol);
-    } catch (_) {}
-  }
-
-  /// v98: high-quality upscaling scalers for old low-res videos.
-  bool qualityUpscale = false;
-
-  /// v98: mpv motion interpolation (smoother 24/30 fps motion).
-  bool smoothMotion = false;
-
-  /// v98: upscale render properties (mpv's own high-quality scalers).
-  static const Map<String, String> kQualityUpscaleProps = {
-    'scale': 'spline36',
-    'cscale': 'spline36',
-    'dscale': 'mitchell',
-    'dither-depth': 'auto',
-    'correct-downscaling': 'yes',
-  };
-
-  /// v98: v97 fast-profile values, restored when upscaling is turned off.
-  static const Map<String, String> kQualityFastProps = {
-    'scale': 'bilinear',
-    'cscale': 'bilinear',
-    'dscale': 'bilinear',
-    'dither-depth': 'no',
-    'correct-downscaling': 'no',
-  };
-
-  /// v98: smooth-motion properties (mpv frame interpolation).
-  static const Map<String, String> kSmoothMotionProps = {
-    'interpolation': 'yes',
-    'tscale': 'oversample',
-  };
-
-  /// v98: interpolation off (matches the v97 fast profile).
-  static const Map<String, String> kSmoothMotionOffProps = {
-    'interpolation': 'no',
-  };
-
-  /// Pushes the current quality toggles into mpv. Safe to call any time:
-  /// a non-native platform or a rejected property is ignored.
-  Future<void> _applyQualityProps() async {
-    final plat = player.platform;
-    if (plat is! NativePlayer) return;
-    try {
-      final q = qualityUpscale ? kQualityUpscaleProps : kQualityFastProps;
-      for (final e in q.entries) {
-        await plat.setProperty(e.key, e.value);
-      }
-      final m = smoothMotion ? kSmoothMotionProps : kSmoothMotionOffProps;
-      for (final e in m.entries) {
-        await plat.setProperty(e.key, e.value);
-      }
-    } catch (_) {}
-  }
-
-  Future<void> setQualityUpscale(bool on) async {
-    qualityUpscale = on;
-    NativeBridge.saveSetting(PlayerSettings.kQualityUpscale, '$on');
-    notifyListeners();
-    await _applyQualityProps();
-  }
-
-  Future<void> setSmoothMotion(bool on) async {
-    smoothMotion = on;
-    NativeBridge.saveSetting(PlayerSettings.kSmoothMotion, '$on');
-    notifyListeners();
-    await _applyQualityProps();
   }
 
   /// Jump to where the user left off last time this file was open. The saved

@@ -104,15 +104,8 @@ class TrackSelectionSheet extends StatelessWidget {
           Expanded(
             child: ListView(
               controller: scrollController,
-              children: [
-                ...isSubtitle
-                    ? _subtitleTiles(context)
-                    : _audioTiles(context),
-                // v98: on-device picture quality (mpv render options, no
-                // downloads, no accounts). OFF by default: the v97 fast
-                // profile stays until the user opts in.
-                _QualityFooter(player: player),
-              ],
+              children:
+                  isSubtitle ? _subtitleTiles(context) : _audioTiles(context),
             ),
           ),
           const SizedBox(height: 8),
@@ -255,84 +248,6 @@ class _TrackTile extends StatelessWidget {
           ? Text(detail!,
               style: const TextStyle(color: Colors.white38, fontSize: 12))
           : null,
-    );
-  }
-}
-
-/// v98: on-device picture-quality switches (mpv render options - nothing
-/// leaves the phone). Shown under every track list. Upscaling costs GPU
-/// and smooth motion costs CPU/GPU, so weak phones may stutter with both
-/// on - turn one off if playback lags.
-class _QualityFooter extends StatefulWidget {
-  final MediaPlayerState player;
-
-  const _QualityFooter({required this.player});
-
-  @override
-  State<_QualityFooter> createState() => _QualityFooterState();
-}
-
-class _QualityFooterState extends State<_QualityFooter> {
-  late bool _upscale = widget.player.qualityUpscale;
-  late bool _smooth = widget.player.smoothMotion;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Divider(height: 16, color: Colors.white12),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-          child: Text(
-            'Picture quality',
-            style: TextStyle(
-              color: TrackSelectionSheet._accent,
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        SwitchListTile(
-          dense: true,
-          secondary: const Icon(Icons.hd_outlined, color: Colors.white70),
-          title: const Text(
-            'Upscale old videos',
-            style: TextStyle(color: Colors.white, fontSize: 14),
-          ),
-          subtitle: const Text(
-            'Sharper 480p/720p via high-quality scaling. Uses more battery.',
-            style: TextStyle(color: Colors.white38, fontSize: 12),
-          ),
-          value: _upscale,
-          activeThumbColor: TrackSelectionSheet._accent,
-          onChanged: (v) {
-            setState(() => _upscale = v);
-            widget.player.setQualityUpscale(v);
-          },
-        ),
-        SwitchListTile(
-          dense: true,
-          secondary: const Icon(
-            Icons.motion_photos_on_outlined,
-            color: Colors.white70,
-          ),
-          title: const Text(
-            'Smooth motion',
-            style: TextStyle(color: Colors.white, fontSize: 14),
-          ),
-          subtitle: const Text(
-            'Softer 24 fps motion via frame interpolation. Needs a fast phone.',
-            style: TextStyle(color: Colors.white38, fontSize: 12),
-          ),
-          value: _smooth,
-          activeThumbColor: TrackSelectionSheet._accent,
-          onChanged: (v) {
-            setState(() => _smooth = v);
-            widget.player.setSmoothMotion(v);
-          },
-        ),
-      ],
     );
   }
 }

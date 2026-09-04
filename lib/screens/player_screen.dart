@@ -17,12 +17,10 @@ import '../utils/srt.dart';
 import '../widgets/cast_sheet.dart';
 import '../widgets/equalizer_sheet.dart';
 import '../widgets/karaoke_subtitle.dart';
-import '../utils/voice_commands.dart';
 import '../widgets/player_controls_overlay.dart';
 import '../widgets/player_settings_sheet.dart';
 import '../widgets/playlist_panel.dart';
 import '../widgets/video_info_sheet.dart';
-import '../widgets/voice_search_sheet.dart';
 
 class PlayerScreen extends StatefulWidget {
   final MediaPlayerState player;
@@ -319,10 +317,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     // v32: picture settings - HDR tone-mapping curve + Enhance shader.
     unawaited(widget.player.setToneMapping(s.toneMapping));
     unawaited(widget.player.setEnhanceVideo(s.enhanceVideo));
-    // v98: picture-quality toggles + gentle sleep wind-down.
-    unawaited(widget.player.setQualityUpscale(s.qualityUpscale));
-    unawaited(widget.player.setSmoothMotion(s.smoothMotion));
-    widget.player.setGentleWindDown(s.gentleWindDown);
     _applyKaraokeSubtitleVisibility(s);
     _startHideTimer();
   }
@@ -747,40 +741,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                     active: label == 'end of video',
                     onTap: () => player.setSleepTimer(atEndOfVideo: true),
                   ),
-                  // v98: gentle wind-down - fade the volume out instead of
-                  // stopping abruptly. Camera/eye tracking is NOT in this
-                  // build (needs a camera permission + on-device ML + real
-                  // device testing); this is the safe part that ships now.
-                  StatefulBuilder(
-                    builder: (sheetCtx, setSheetState) {
-                      return SwitchListTile(
-                        secondary: Icon(
-                          Icons.nights_stay_outlined,
-                          color: player.gentleWindDown
-                              ? themeState.accent
-                              : Colors.white70,
-                        ),
-                        title: const Text(
-                          'Wind down gently',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                        subtitle: const Text(
-                          'Fade the volume out instead of stopping abruptly',
-                          style: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 12,
-                          ),
-                        ),
-                        value: player.gentleWindDown,
-                        activeThumbColor: themeState.accent,
-                        onChanged: (v) {
-                          unawaited(player.setGentleWindDown(v));
-                          setSheetState(() {});
-                          _onUserInteraction();
-                        },
-                      );
-                    },
-                  ),
                   item(Icons.close, 'Off', onTap: player.cancelSleepTimer),
                   const SizedBox(height: 8),
                 ],
@@ -1149,64 +1109,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (mounted) _showIndicator('Back on this phone', Icons.smartphone);
       },
     );
-  }
-
-  // ---------------------------------------------------------------------------
-  // v98: tap-to-talk voice commands (play/pause/seek/jump). Speech runs
-  // through the existing in-app recognizer (VoiceSearchSheet); the mic is
-  // live ONLY while that sheet is open - nothing listens in the
-  // background. Text the parser does not understand shows a hint instead
-  // of guessing (semantic "when the speaker mentioned X" needs a
-  // transcript, and transcript Q&A was removed in v95).
-  // ---------------------------------------------------------------------------
-
-  Future<void> _runVoiceCommand() async {
-    final text = await VoiceSearchSheet.show(context);
-    if (!mounted) return;
-    if (text == null || text.trim().isEmpty) return;
-    final player = widget.player;
-    final cmd = parseVoiceCommand(text);
-    if (cmd == null) {
-      _showIndicator(
-        'Try "pause" or "go back 10 seconds"',
-        Icons.mic_none_outlined,
-      );
-      return;
-    }
-    if (player.currentTrack == null) {
-      _showIndicator('Nothing playing right now', Icons.mic_off_outlined);
-      return;
-    }
-    switch (cmd.action) {
-      case VoicePlaybackAction.play:
-        await player.resumePlayback();
-        _showIndicator('Playing', Icons.play_arrow);
-        break;
-      case VoicePlaybackAction.pause:
-        await player.pause();
-        _showIndicator('Paused', Icons.pause);
-        break;
-      case VoicePlaybackAction.back:
-        final s = cmd.seconds ?? _settings.seekSeconds;
-        await player.seekBy(-s);
-        _showIndicator('Back $s s', Icons.fast_rewind);
-        break;
-      case VoicePlaybackAction.forward:
-        final s = cmd.seconds ?? _settings.seekSeconds;
-        await player.seekBy(s);
-        _showIndicator('Forward $s s', Icons.fast_forward);
-        break;
-      case VoicePlaybackAction.jumpTo:
-        final target = Duration(seconds: cmd.seconds ?? 0);
-        final d = player.duration;
-        final clamped = d > Duration.zero && target > d ? d : target;
-        await player.seek(clamped);
-        _showIndicator(
-          'Jumped to ${formatDuration(clamped)}',
-          Icons.skip_next,
-        );
-        break;
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1653,22 +1555,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                                             },
                                           ),
                                         ),
-                                        // v98: tap-to-talk voice commands
-                                        // (mic is live ONLY while the
-                                        // voice sheet is open).
-                                        if (_settings.voiceControl)
-                                          IconButton(
-                                            tooltip: 'Voice control',
-                                            icon: Icon(
-                                              Icons.mic_outlined,
-                                              size: 22,
-                                              color: themeState.accent,
-                                            ),
-                                            onPressed: () {
-                                              _onUserInteraction();
-                                              _runVoiceCommand();
-                                            },
-                                          ),
                                         _topMenu(context),
                                         IconButton(
                                           tooltip: 'Player settings',
@@ -1804,8 +1690,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       itemBuilder: (context) => [
         _topMenuItem('info', Icons.info_outline, 'Video info'),
         _topMenuItem('eq', Icons.graphic_eq, 'Equalizer & Audio FX'),
-        // v98: Screenshot + Cast to TV removed from the player UI at the
-        // developer's request (backend kept, nothing deleted on disk).
+        if (_settings.screenshotButton)
+          _topMenuItem('shot', Icons.camera_alt_outlined, 'Screenshot'),
+        if (_settings.castButton)
+          _topMenuItem('cast', Icons.cast_outlined, 'Cast to TV'),
         _topMenuItem(
           'pip',
           Icons.picture_in_picture_alt_outlined,

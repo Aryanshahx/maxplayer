@@ -455,6 +455,23 @@ const List<_Item> _playerItems = [
         'English).',
   ),
   _Item(
+    Icons.cast_outlined,
+    'Cast to TV (top bar)',
+    'Tap the cast icon to send the video to any DLNA smart TV or Android '
+        'box on the same Wi-Fi. The phone turns into a remote: play/pause, '
+        'a live seek slider, and "Stop casting" hands the video back to '
+        'the phone right where the TV left off. Closing the player stops '
+        'casting. (Chromecast dongles use a different protocol and are '
+        'not supported yet.)',
+  ),
+  _Item(
+    Icons.camera_alt_outlined,
+    'Screenshot (top bar)',
+    'Saves the current frame - with any subtitles burned in, exactly as '
+        'you see it - as a PNG into Pictures/Max Player, visible in your '
+        'gallery at once. Not available for online streams.',
+  ),
+  _Item(
     Icons.lock_outline,
     'Screen lock / kids mode (left edge)',
     'The lock button on the left edge of the video locks EVERY button and '
@@ -467,8 +484,8 @@ const List<_Item> _playerItems = [
     'Player settings (⚙ top bar)',
     'Every gesture can be turned on/off individually (including horizontal '
         'swipe-to-seek), plus: seek step, auto-hide delay, speed-boost '
-        'multiplier, resume playback, voice control, and the screen-lock '
-        '(kids mode) button.',
+        'multiplier, resume playback, and which extra buttons (cast / '
+        'screenshot / lock) show in the player.',
   ),
 ];
 
@@ -536,25 +553,7 @@ const List<_Item> _smartItems = [
     'Sleep timer',
     'Player ⋮ menu → Sleep timer: pauses playback after 15/30/45/60 '
         'minutes, or exactly at the end of the current video. While it '
-        'runs, the remaining time shows under the video title. With "Wind '
-        'down gently" (on by default) the volume fades out first instead '
-        'of stopping abruptly.',
-  ),
-  _Item(
-    Icons.mic_outlined,
-    'Voice control (player mic)',
-    'Tap the mic in the player top bar and say "pause", "go back 10 '
-        'seconds" or "jump to 12 minutes". The mic is live only while '
-        'listening - nothing records in the background. ON by default; '
-        'switch it off in player settings → Voice.',
-  ),
-  _Item(
-    Icons.hd_outlined,
-    'Picture quality for old videos',
-    'Track sheet → Picture quality: "Upscale old videos" sharpens '
-        '480p/720p family videos with high-quality scaling, and "Smooth '
-        'motion" eases 24 fps judder. Both run fully on-device and are '
-        'OFF by default to keep weak phones smooth.',
+        'runs, the remaining time shows under the video title.',
   ),
   _Item(
     Icons.speed,
