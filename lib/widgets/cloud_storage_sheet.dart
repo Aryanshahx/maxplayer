@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../services/gdrive_service.dart';
 import '../services/native_bridge.dart';
@@ -8,13 +9,16 @@ import '../utils/formatters.dart';
 
 /// v86: Dedicated Cloud Storage (Google Drive) manager with automatic video fetching.
 class CloudStorageSheet extends StatefulWidget {
-  final Future<void> Function(String url, String title) onPlay;
+  final Future<void> Function(String url, String title,
+      [Map<String, String>? httpHeaders]) onPlay;
 
   const CloudStorageSheet({super.key, required this.onPlay});
 
   static Future<void> show(
     BuildContext context, {
-    required Future<void> Function(String url, String title) onPlay,
+    required Future<void> Function(String url, String title,
+            [Map<String, String>? httpHeaders])
+        onPlay,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -33,14 +37,16 @@ class CloudStorageSheet extends StatefulWidget {
 
 class _CloudStorageSheetState extends State<CloudStorageSheet> {
   final TextEditingController _searchCtrl = TextEditingController();
-  final TextEditingController _tokenCtrl = TextEditingController();
 
   bool _isConnected = false;
   bool _loading = false;
+  bool _signingIn = false;
+  String _error = '';
+  String _email = '';
+  Map<String, String>? _headers;
   List<GDriveItem> _driveVideos = [];
   String _searchFilter = '';
 
-  static const String _kDriveTokenKey = 'gdrive.access_token';
   static const String _kDriveUserKey = 'gdrive.user_email';
   static const String _kDriveVideosCacheKey = 'gdrive.videos_cache';
 
@@ -51,17 +57,13 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
   }
 
   Future<void> _loadStoredSession() async {
+    // Instant UI from the last cached list, then a silent Google session.
     final s = await NativeBridge.loadSettings();
-    final token = s[_kDriveTokenKey];
     final cachedJson = s[_kDriveVideosCacheKey];
-
-    if (token != null && token.isNotEmpty) {
-      setState(() {
-        _isConnected = true;
-      });
-      if (cachedJson != null && cachedJson.isNotEmpty) {
-        try {
-          final list = jsonDecode(cachedJson) as List;
+    if (cachedJson != null && cachedJson.isNotEmpty) {
+      try {
+        final list = jsonDecode(cachedJson) as List;
+        if (mounted) {
           setState(() {
             _driveVideos = list
                 .map((e) => GDriveItem(
@@ -73,16 +75,81 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
                     ))
                 .toList();
           });
-        } catch (_) {}
+        }
+      } catch (_) {}
+    }
+    try {
+      final account = await GDriveAuth.signInSilently();
+      if (!mounted || account == null) return;
+      final headers = await GDriveAuth.authHeadersOf(account);
+      if (!mounted || headers == null) return;
+      _email = account.email;
+      _headers = headers;
+      setState(() => _isConnected = true);
+      _fetchAllVideos();
+    } catch (_) {}
+  }
+
+  Future<void> _signIn() async {
+    setState(() {
+      _signingIn = true;
+      _error = '';
+    });
+    try {
+      final account = await GDriveAuth.signIn();
+      final headers = await GDriveAuth.authHeadersOf(account);
+      if (!mounted) return;
+      if (headers == null) {
+        setState(() {
+          _signingIn = false;
+          _error = 'Drive permission was not granted.';
+        });
+        return;
       }
-      _fetchAllVideos(token);
+      _email = account.email;
+      NativeBridge.saveSetting(_kDriveUserKey, _email);
+      _headers = headers;
+      setState(() {
+        _signingIn = false;
+        _isConnected = true;
+      });
+      _fetchAllVideos();
+    } on GoogleSignInException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _signingIn = false;
+        _error = e.code == GoogleSignInExceptionCode.canceled
+            ? 'Sign in canceled.'
+            : 'Sign in failed (${e.code}). If this persists, the app '
+                'SHA-1 may not match the Cloud Console OAuth client.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _signingIn = false;
+        _error = 'Sign in failed: $e';
+      });
     }
   }
 
-  Future<void> _fetchAllVideos(String token) async {
-    setState(() => _loading = true);
-    final items = await GDriveService.listDriveFiles(apiKey: token);
+  Future<void> _fetchAllVideos() async {
+    final headers = _headers;
+    if (headers == null) return;
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+    final items = await GDriveService.listDriveFiles(headers: headers);
     if (!mounted) return;
+    if (items == null) {
+      // 401/403: the grant expired or was revoked - ask for sign-in again.
+      setState(() {
+        _loading = false;
+        _isConnected = false;
+        _error = 'Session expired - please sign in again.';
+      });
+      return;
+    }
     setState(() {
       _driveVideos = items;
       _loading = false;
@@ -101,36 +168,28 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
     NativeBridge.saveSetting(_kDriveVideosCacheKey, cacheData);
   }
 
-  void _connectWithToken(String token) {
-    final clean = token.trim();
-    if (clean.isEmpty) return;
-    NativeBridge.saveSetting(_kDriveTokenKey, clean);
-    NativeBridge.saveSetting(_kDriveUserKey, 'Connected Account');
-    setState(() {
-      _isConnected = true;
-    });
-    _fetchAllVideos(clean);
-  }
-
-  void _disconnect() {
-    NativeBridge.saveSetting(_kDriveTokenKey, '');
+  Future<void> _disconnect() async {
+    await GDriveAuth.signOut();
     NativeBridge.saveSetting(_kDriveUserKey, '');
     NativeBridge.saveSetting(_kDriveVideosCacheKey, '');
+    if (!mounted) return;
     setState(() {
       _isConnected = false;
       _driveVideos = [];
+      _headers = null;
+      _email = '';
+      _error = '';
     });
   }
 
   void _playVideo(GDriveItem item) {
     Navigator.of(context).pop();
-    widget.onPlay(item.streamUrl, item.name);
+    widget.onPlay(item.streamUrl, item.name, _headers);
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
-    _tokenCtrl.dispose();
     super.dispose();
   }
 
@@ -218,24 +277,17 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
                                 style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.4),
                               ),
                               const SizedBox(height: 24),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.06),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.white12),
+                              if (_error.isNotEmpty) ...[
+                                Text(
+                                  _error,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: Colors.redAccent,
+                                      fontSize: 12.5,
+                                      height: 1.4),
                                 ),
-                                child: TextField(
-                                  controller: _tokenCtrl,
-                                  style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                                  decoration: const InputDecoration(
-                                    hintText: 'Enter Google Drive Access Key / Token…',
-                                    hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
-                                    border: InputBorder.none,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
+                                const SizedBox(height: 12),
+                              ],
                               SizedBox(
                                 width: double.infinity,
                                 child: FilledButton.icon(
@@ -245,18 +297,16 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                   ),
                                   icon: const Icon(Icons.login),
-                                  label: const Text(
-                                    'Connect & Fetch Videos',
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+                                  label: Text(
+                                    _signingIn
+                                        ? 'Signing in…'
+                                        : 'Sign in with Google',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14.5),
                                   ),
-                                  onPressed: () => _connectWithToken(_tokenCtrl.text),
+                                  onPressed: _signingIn ? null : _signIn,
                                 ),
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'Client ID: ${GDriveService.clientId}',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.white24, fontSize: 10.5),
                               ),
                             ],
                           ),
@@ -264,6 +314,19 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
                       )
                     : Column(
                         children: [
+                          if (_email.isNotEmpty)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  _email,
+                                  style: const TextStyle(
+                                      color: Colors.white38, fontSize: 11.5),
+                                ),
+                              ),
+                            ),
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
                             child: Row(
@@ -290,14 +353,9 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
                                 ),
                                 const SizedBox(width: 8),
                                 IconButton(
-                                  icon: const Icon(Icons.refresh, color: Colors.white70),
-                                  onPressed: () {
-                                    final s = NativeBridge.loadSettings();
-                                    s.then((map) {
-                                      final t = map[_kDriveTokenKey];
-                                      if (t != null) _fetchAllVideos(t);
-                                    });
-                                  },
+                                  icon: const Icon(Icons.refresh,
+                                      color: Colors.white70),
+                                  onPressed: _fetchAllVideos,
                                 ),
                               ],
                             ),

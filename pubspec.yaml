@@ -1,7 +1,7 @@
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+105
+version: 1.0.0+106
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -21,6 +21,10 @@ dependencies:
   # instead of file_picker's native SAF dialog (file_picker's Android side has
   # proven incompatible with current AGP/Kotlin toolchains as of this writing).
   permission_handler: ^11.3.1
+
+  # v106: native Google Sign-In for Drive (no google-services.json - the
+  # SHA-1-registered OAuth client resolves via Play Services at runtime).
+  google_sign_in: ^7.2.0
 
   path: ^1.9.0
   intl: ^0.19.0

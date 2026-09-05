@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:google_sign_in/google_sign_in.dart';
+
 /// Google Drive item representation (file or folder).
 class GDriveItem {
   final String id;
@@ -19,15 +21,68 @@ class GDriveItem {
     this.isFolder = false,
   });
 
-  String get streamUrl => GDriveService.getDirectStreamUrl(id);
+  String get streamUrl => GDriveService.authStreamUrl(id);
+}
+
+/// v106: native Google Sign-In (google_sign_in v7). No google-services.json -
+/// Play Services resolves the SHA-1-registered Android OAuth client at
+/// runtime; the web client only travels as serverClientId. Nothing secret is
+/// shipped in the app (OAuth client IDs are public identifiers; there is no
+/// API key anywhere - Drive calls carry the user's Bearer token).
+class GDriveAuth {
+  // Web-application OAuth client (Cloud Console -> Credentials).
+  static const String webClientId =
+      '998035561765-idopfuk6vbo5bkavajiug911s4ceerro.apps.googleusercontent.com';
+  static const String driveReadonlyScope =
+      'https://www.googleapis.com/auth/drive.readonly';
+  static const List<String> scopes = [driveReadonlyScope];
+
+  static bool _ready = false;
+
+  static Future<void> ensureInitialized() async {
+    if (_ready) return;
+    await GoogleSignIn.instance.initialize(serverClientId: webClientId);
+    _ready = true;
+  }
+
+  /// Silent re-sign-in after a restart. Null when the user never signed in
+  /// (or revoked) - the sheet then shows the Sign-In button.
+  static Future<GoogleSignInAccount?> signInSilently() async {
+    await ensureInitialized();
+    return GoogleSignIn.instance.attemptLightweightAuthentication();
+  }
+
+  /// Interactive sign-in + Drive scope grant. Throws on cancel/failure -
+  /// the sheet turns that into a readable message.
+  static Future<GoogleSignInAccount> signIn() async {
+    await ensureInitialized();
+    final account = await GoogleSignIn.instance.authenticate();
+    await account.authorizationClient.authorizeScopes(scopes);
+    return account;
+  }
+
+  /// Fresh `Authorization: Bearer ...` headers for Drive REST calls.
+  /// Null when the grant is gone - the sheet asks for sign-in again.
+  static Future<Map<String, String>?> authHeadersOf(
+      GoogleSignInAccount account) async {
+    try {
+      return await account.authorizationClient.authorizationHeaders(scopes);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Revokes the grant and signs out (matches the sheet's Disconnect button).
+  static Future<void> signOut() async {
+    try {
+      await ensureInitialized();
+      await GoogleSignIn.instance.disconnect();
+    } catch (_) {}
+  }
 }
 
 /// Service for Google Drive API interaction and streaming link resolution.
 class GDriveService {
-  static const String clientId =
-      '998035561765-4tlp75rcp5549fej391bc8pbj8q3htc0.apps.googleusercontent.com';
-  static const String projectId = 'max-player-507121';
-
   static final HttpClient _http = HttpClient()
     ..connectionTimeout = const Duration(seconds: 12)
     ..idleTimeout = const Duration(seconds: 10);
@@ -57,21 +112,19 @@ class GDriveService {
     return null;
   }
 
-  /// Builds a direct streaming/download URL for a Google Drive file ID.
-  static String getDirectStreamUrl(String fileId, {String? apiKey, String? accessToken}) {
-    if (apiKey != null && apiKey.isNotEmpty) {
-      return 'https://www.googleapis.com/drive/v3/files/$fileId?alt=media&key=$apiKey';
-    }
-    return 'https://drive.google.com/uc?export=download&id=$fileId';
-  }
+  /// Authenticated streaming URL (the Bearer token travels in the player's
+  /// HTTP headers, never in the URL).
+  static String authStreamUrl(String fileId) =>
+      'https://www.googleapis.com/drive/v3/files/$fileId?alt=media';
 
-  /// Lists video files & folders from Google Drive API v3.
-  static Future<List<GDriveItem>> listDriveFiles({
-    required String apiKey,
+  /// Lists video files & folders from Google Drive API v3 using the user's
+  /// OAuth headers. Returns null on 401/403 (grant expired - sign in again),
+  /// empty list on any other failure.
+  static Future<List<GDriveItem>?> listDriveFiles({
+    Map<String, String>? headers,
     String? folderId,
   }) async {
-    final key = apiKey.trim();
-    if (key.isEmpty) return const [];
+    if (headers == null || headers.isEmpty) return const [];
 
     try {
       final q = folderId != null
@@ -79,7 +132,6 @@ class GDriveService {
           : "mimeType contains 'video/' and trashed = false";
 
       final uri = Uri.https('www.googleapis.com', '/drive/v3/files', {
-        'key': key,
         'q': q,
         'fields': 'files(id, name, mimeType, size, thumbnailLink)',
         'pageSize': '50',
@@ -87,7 +139,12 @@ class GDriveService {
       });
 
       final req = await _http.getUrl(uri);
+      headers.forEach((k, v) => req.headers.set(k, v));
       final res = await req.close().timeout(const Duration(seconds: 15));
+      if (res.statusCode == 401 || res.statusCode == 403) {
+        await res.drain<void>();
+        return null;
+      }
       if (res.statusCode != 200) {
         await res.drain<void>();
         return const [];

@@ -46,7 +46,7 @@ android {
         applicationId = "com.hypertechlabs.maxplayer"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = 24 // v106: google_sign_in needs 24+
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName

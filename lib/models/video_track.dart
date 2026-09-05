@@ -11,6 +11,9 @@ class VideoTrack {
   final int? lastModifiedMs;
   final int? width; // pixels, from native metadata
   final int? height;
+  /// v106: HTTP headers for authed streams (Google Drive Bearer token).
+  /// Null for local files and open streams.
+  final Map<String, String>? httpHeaders;
 
   const VideoTrack({
     required this.id,
@@ -22,6 +25,7 @@ class VideoTrack {
     this.lastModifiedMs,
     this.width,
     this.height,
+    this.httpHeaders,
   });
 
   /// Name of the folder containing this video (used by "Group by folder" and "Folders" quick-tile).
@@ -58,6 +62,7 @@ class VideoTrack {
   VideoTrack copyWith({
     String? thumbnailPath,
     Duration? duration,
+    Map<String, String>? httpHeaders,
   }) {
     return VideoTrack(
       id: id,
@@ -69,6 +74,7 @@ class VideoTrack {
       lastModifiedMs: lastModifiedMs,
       width: width,
       height: height,
+      httpHeaders: httpHeaders ?? this.httpHeaders,
     );
   }
 }

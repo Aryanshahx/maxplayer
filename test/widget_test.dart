@@ -415,6 +415,44 @@ void main() {
       expect(sheet.contains("_SectionHeader('Picture')"), isFalse);
       expect(sheet.contains('Enhance video'), isFalse);
       expect(sheet.contains('HDR tone-mapping'), isFalse);
+    test('v106 Google Sign-In powers Drive', () {
+      final pub = File('pubspec.yaml').readAsStringSync();
+      expect(pub, contains('google_sign_in'));
+      final gradle =
+          File('android/app/build.gradle.kts').readAsStringSync();
+      expect(gradle, contains('minSdk = 24'));
+      final svc =
+          File('lib/services/gdrive_service.dart').readAsStringSync();
+      for (final k in [
+        'GoogleSignIn.instance.initialize',
+        'serverClientId',
+        'drive.readonly',
+        'authorizationHeaders',
+        'attemptLightweightAuthentication',
+        'authenticate()',
+        'disconnect()',
+        'alt=media',
+      ]) {
+        expect(svc, contains(k));
+      }
+      // No pasted tokens, no shipped API key.
+      expect(svc.contains('AIza'), isFalse);
+      final sheet =
+          File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
+      expect(sheet, contains('Sign in with Google'));
+      expect(sheet.contains('Access Key'), isFalse);
+      expect(sheet.contains('gdrive.access_token'), isFalse);
+      // Authed playback path: headers ride the track into mpv.
+      final track =
+          File('lib/models/video_track.dart').readAsStringSync();
+      expect(track, contains('httpHeaders'));
+      final state =
+          File('lib/state/media_player_state.dart').readAsStringSync();
+      expect('httpHeaders: track.httpHeaders'.allMatches(state).length, 2);
+      expect(state, contains('playStream(String url, String title'));
+      expect(state, contains('httpHeaders: httpHeaders'));
+    });
+
     });
   });
 }
