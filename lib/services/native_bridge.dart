@@ -659,6 +659,58 @@ class NativeBridge {
   }
 
   // ---------------------------------------------------------------------------
+  // v110: Android system document picker (SAF) - "Select video", no sign-in
+  // ---------------------------------------------------------------------------
+
+  /// Opens Android's built-in file picker (ACTION_OPEN_DOCUMENT, video/*
+  /// only). The picker lists this device plus every installed storage
+  /// provider app - including Google Drive when the user has it - with NO
+  /// Google sign-in and no Drive-API OAuth verification. Returns null when
+  /// the user cancels or the document cannot be read. On success the map
+  /// holds: path (real device path, or a cache copy for cloud documents),
+  /// name, cached (true when path is a temporary copy), sourceUri,
+  /// sizeBytes.
+  static Future<Map<String, dynamic>?> pickVideoDocument() async {
+    try {
+      final res = await _channel
+          .invokeMethod<Map<Object?, Object?>>('pickVideoDocument');
+      if (res == null) return null;
+      return {
+        for (final e in res.entries)
+          if (e.key != null) e.key.toString(): e.value,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Saves a permanent copy of a picked cloud video into
+  /// Movies/Max Player (MediaStore on Android 10+, the public Movies folder
+  /// below that). Reads the SAF URI when its grant survived, otherwise the
+  /// cache copy made for playback. Returns {name, path, location} on
+  /// success, null on failure. path itself can be null even on success
+  /// (scoped storage hides real paths) - location always says where it went.
+  static Future<Map<String, dynamic>?> savePickedVideoToDevice({
+    String? sourceUri,
+    String? cachePath,
+    required String name,
+  }) async {
+    try {
+      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'saveDocumentToDevice',
+        {'sourceUri': sourceUri, 'cachePath': cachePath, 'name': name},
+      );
+      if (res == null) return null;
+      return {
+        for (final e in res.entries)
+          if (e.key != null) e.key.toString(): e.value,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // v62 Phase 1: notifications
   // ---------------------------------------------------------------------------
 

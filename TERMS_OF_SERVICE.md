@@ -1,7 +1,7 @@
 # Terms of Service — Max Player
 
 **Effective date:** 5 September 2026
-**Developer:** Hyper Tech Labs (Aryan Shah)
+**Developer:** HyperTech Labs (Aryan Shah)
 **Contact:** https://github.com/Aryanshahx/maxplayer
 
 ## The app
@@ -17,9 +17,11 @@ with the terms of any service you connect (Google Drive, stream providers).
 
 ## Google Drive
 Cloud Storage uses Google OAuth on your device with read-only access to list
-and stream your own Drive videos. File names, thumbnails and streams travel
-only between your phone and Google. Drive features are additionally subject
-to Google's Terms of Service and API policies.
+and stream your own Drive videos; alternatively, "Select video" uses
+Android's built-in file picker (no sign-in) to open files offered by the
+Drive app on your device. File names, thumbnails and streams travel only
+between your phone and Google. Drive features are additionally subject to
+Google's Terms of Service and API policies.
 
 ## Updates
 Builds installed from Google Play check for newer releases on launch and may
@@ -38,7 +40,7 @@ copyright or any other rights. We may change or discontinue features at any
 time.
 
 ## Liability
-To the maximum extent permitted by law, Hyper Tech Labs is not liable for any
+To the maximum extent permitted by law, HyperTech Labs is not liable for any
 direct, indirect, incidental or consequential loss arising from the use of,
 or inability to use, the app.
 

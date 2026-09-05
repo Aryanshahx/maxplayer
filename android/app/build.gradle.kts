@@ -111,4 +111,11 @@ dependencies {
     // suspend functions from Kotlin, so we need it explicitly at compile
     // time. Same version as the AAR's -> no conflict.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // v110: androidx.media NotificationCompat.MediaStyle — needed to bind the
+    // now-playing notification to the MediaSession token, which is what puts
+    // REAL media controls on the lock screen (plain ongoing notifications on
+    // a low-importance channel are hidden on the lock screen of MIUI/HyperOS,
+    // ColorOS and several other builds).
+    implementation("androidx.media:media:1.7.0")
 }

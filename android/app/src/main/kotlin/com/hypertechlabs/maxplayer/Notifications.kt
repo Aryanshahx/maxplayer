@@ -1,5 +1,6 @@
 package com.hypertechlabs.maxplayer
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -32,6 +33,11 @@ object Notifications {
     const val CHANNEL_CONTINUE = "continue"
     const val CHANNEL_NEW_EPISODES = "new_episodes"
     const val CHANNEL_PLAYBACK = "playback"
+
+    // v110: fresh channel id for now-playing. Android freezes a channel's
+    // lock-screen visibility at CREATION time, so devices that already hold
+    // the old "playback" channel could never gain PUBLIC visibility on it.
+    const val CHANNEL_PLAYBACK_V2 = "playback_v2"
     const val CHANNEL_GENERAL = "general"
 
     private val channels = listOf(
@@ -39,6 +45,7 @@ object Notifications {
         Triple(CHANNEL_CONTINUE, "Continue watching", NotificationManager.IMPORTANCE_DEFAULT),
         Triple(CHANNEL_NEW_EPISODES, "New episodes", NotificationManager.IMPORTANCE_DEFAULT),
         Triple(CHANNEL_PLAYBACK, "Playback", NotificationManager.IMPORTANCE_LOW),
+        Triple(CHANNEL_PLAYBACK_V2, "Now playing", NotificationManager.IMPORTANCE_DEFAULT),
         Triple(CHANNEL_GENERAL, "General", NotificationManager.IMPORTANCE_DEFAULT),
     )
 
@@ -56,6 +63,19 @@ object Notifications {
                 nm.createNotificationChannel(
                     NotificationChannel(id, title, importance).apply {
                         description = "Max Player notifications"
+                        if (id == CHANNEL_PLAYBACK_V2) {
+                            // A media channel must stay SILENT but VISIBLE:
+                            // importance DEFAULT (IMPORTANCE_LOW rows are
+                            // minimized or hidden on the lock screen by
+                            // several OEM skins) with sound and vibration
+                            // switched off, no badge, and explicitly
+                            // lock-screen PUBLIC - this is only honored
+                            // because the channel id is brand-new.
+                            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                            setShowBadge(false)
+                            setSound(null, null)
+                            enableVibration(false)
+                        }
                     }
                 )
             }
@@ -91,7 +111,9 @@ object Notifications {
             .setAutoCancel(!ongoing)
             .setOngoing(ongoing)
             .setPriority(
-                if (channel == CHANNEL_AI_SUBS || channel == CHANNEL_PLAYBACK)
+                if (channel == CHANNEL_AI_SUBS ||
+                    channel == CHANNEL_PLAYBACK ||
+                    channel == CHANNEL_PLAYBACK_V2)
                     NotificationCompat.PRIORITY_LOW
                 else
                     NotificationCompat.PRIORITY_DEFAULT
@@ -154,7 +176,7 @@ object Notifications {
         val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         val playPauseLabel = if (isPlaying) "Pause" else "Play"
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_PLAYBACK)
+        val builder = NotificationCompat.Builder(context, CHANNEL_PLAYBACK_V2)
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setContentTitle(title)
             .setContentText(artist)

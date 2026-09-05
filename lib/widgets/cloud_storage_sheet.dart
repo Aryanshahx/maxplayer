@@ -41,6 +41,7 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
   bool _isConnected = false;
   bool _loading = false;
   bool _signingIn = false;
+  bool _picking = false; // v110: Android system picker round-trip in progress
   String _error = '';
   String _email = '';
   Map<String, String>? _headers;
@@ -208,6 +209,126 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
     widget.onPlay(item.streamUrl, item.name, _headers);
   }
 
+  // v110 "The Easy Way": Android's built-in file picker lists this device
+  // AND the user's installed storage apps (Google Drive included) - no
+  // Google sign-in, no OAuth verification. Local files play straight from
+  // their path; cloud files arrive as a temporary copy, so the user is
+  // offered a permanent "Save to device" copy in Movies/Max Player.
+  Future<void> _pickViaAndroidPicker() async {
+    if (_picking) return;
+    setState(() => _picking = true);
+    final picked = await NativeBridge.pickVideoDocument();
+    if (!mounted) return;
+    setState(() => _picking = false);
+    if (picked == null) return; // user canceled the picker
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final path = picked['path']?.toString() ?? '';
+    final name = picked['name']?.toString() ?? 'video';
+    if (path.isEmpty) {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1b1b24),
+          title: const Text("Couldn't open that file",
+              style: TextStyle(color: Colors.white, fontSize: 17)),
+          content: const Text(
+            'The selected video could not be read. Try another file, or '
+            'sign in to Google Drive instead.',
+            style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (picked['cached'] != true) {
+      // Plain local file: already on the device, nothing to save.
+      _playPicked(path, name);
+      return;
+    }
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1b1b24),
+        title: const Text('Play or keep?',
+            style: TextStyle(color: Colors.white, fontSize: 17)),
+        content: Text(
+          '"$name" came from a cloud app and is stored only as a temporary '
+          'copy. Keep a permanent copy on this device?',
+          style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('play'),
+            child: const Text('Play once'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: themeState.accent,
+              foregroundColor: themeState.onAccent,
+            ),
+            onPressed: () => Navigator.of(ctx).pop('save'),
+            child: const Text('Save to device'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'play') {
+      _playPicked(path, name);
+      return;
+    }
+    final saved = await NativeBridge.savePickedVideoToDevice(
+      sourceUri: picked['sourceUri']?.toString(),
+      cachePath: path,
+      name: name,
+    );
+    if (!mounted) return;
+    if (saved == null) {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1b1b24),
+          title: const Text("Couldn't save",
+              style: TextStyle(color: Colors.white, fontSize: 17)),
+          content: const Text(
+            'The copy could not be written to Movies/Max Player. Playing '
+            'the temporary copy is still possible.',
+            style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    final savedPath = saved['path']?.toString() ?? '';
+    final location = saved['location']?.toString() ?? 'Movies/Max Player';
+    _playPicked(savedPath.isNotEmpty ? savedPath : path, name);
+    messenger?.showSnackBar(
+      SnackBar(
+        content: Text('Saved to $location'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _playPicked(String path, String name) {
+    Navigator.of(context).pop();
+    // Same onPlay pipeline the Drive list uses: libmpv opens local absolute
+    // paths exactly like stream URLs.
+    widget.onPlay(path, name);
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -329,6 +450,53 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
                                   onPressed: _signingIn ? null : _signIn,
                                 ),
                               ),
+                              const SizedBox(height: 14),
+                              const Text(
+                                'or',
+                                style: TextStyle(
+                                    color: Colors.white24, fontSize: 12),
+                              ),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side:
+                                        const BorderSide(color: Colors.white24),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 13),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12)),
+                                  ),
+                                  icon: const Icon(
+                                      Icons.folder_open_outlined),
+                                  label: Text(
+                                    _picking
+                                        ? 'Opening picker…'
+                                        : 'Select video (no sign-in)',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14),
+                                  ),
+                                  onPressed:
+                                      _picking ? null : _pickViaAndroidPicker,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              const Text(
+                                "Opens Android's file picker: choose a video "
+                                'from this device, your Google Drive app, or '
+                                'any storage app. Cloud files are copied '
+                                'first, so big ones take a moment - then you '
+                                'can keep them with Save to device.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 11.5,
+                                    height: 1.35),
+                              ),
                             ],
                           ),
                         ),
@@ -348,6 +516,39 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
                                 ),
                               ),
                             ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: const BorderSide(
+                                      color: Colors.white24),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 11),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(12)),
+                                ),
+                                icon: const Icon(
+                                    Icons.folder_open_outlined,
+                                    size: 20),
+                                label: Text(
+                                  _picking
+                                      ? 'Opening picker…'
+                                      : 'Select video via Android picker '
+                                          '(device / Drive app)',
+                                  style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w500),
+                                ),
+                                onPressed: _picking
+                                    ? null
+                                    : _pickViaAndroidPicker,
+                              ),
+                            ),
+                          ),
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
                             child: Row(

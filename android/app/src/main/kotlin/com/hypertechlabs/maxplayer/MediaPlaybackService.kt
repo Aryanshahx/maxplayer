@@ -335,7 +335,7 @@ class MediaPlaybackService : Service() {
         val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         val playPauseLabel = if (isPlaying) "Pause" else "Play"
 
-        val builder = NotificationCompat.Builder(applicationContext, Notifications.CHANNEL_PLAYBACK)
+        val builder = NotificationCompat.Builder(applicationContext, Notifications.CHANNEL_PLAYBACK_V2)
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setContentTitle(title)
             .setContentText(if (subtitle.isNotEmpty()) subtitle else "Max Player")
@@ -344,6 +344,8 @@ class MediaPlaybackService : Service() {
             .setAutoCancel(!isPlaying)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setShowWhen(false)
 
         if (thumbnailBitmap != null) {
             builder.setLargeIcon(thumbnailBitmap)
@@ -357,6 +359,23 @@ class MediaPlaybackService : Service() {
         builder.addAction(playPauseIcon, playPauseLabel, playPausePending)
         builder.addAction(android.R.drawable.ic_media_next, "Next", nextPending)
         builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPending)
+
+        // v110 lock-screen fix: attach a MediaStyle bound to the live
+        // MediaSession token. This promotes the row into the SYSTEM media
+        // player (the lock-screen media area on Android 11+, and the OEM
+        // media bubble on MIUI/OneUI/ColorOS). A plain ongoing notification -
+        // even with VISIBILITY_PUBLIC - is hidden on the lock screen of many
+        // devices because it sits on a silenced/minimized channel.
+        val sessionTokenCompat = mediaSession?.sessionToken?.let {
+            android.support.v4.media.session.MediaSessionCompat.Token.fromToken(it)
+        }
+        builder.setStyle(
+            androidx.media.app.NotificationCompat.MediaStyle()
+                .setMediaSession(sessionTokenCompat)
+                .setShowActionsInCompactView(0, 1, 2)
+                .setShowCancelButton(true)
+                .setCancelButtonIntent(stopPending)
+        )
 
         return builder.build()
     }

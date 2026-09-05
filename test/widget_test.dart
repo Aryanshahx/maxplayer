@@ -415,6 +415,8 @@ void main() {
       expect(sheet.contains("_SectionHeader('Picture')"), isFalse);
       expect(sheet.contains('Enhance video'), isFalse);
       expect(sheet.contains('HDR tone-mapping'), isFalse);
+    });
+
     test('v106 Google Sign-In powers Drive', () {
       final pub = File('pubspec.yaml').readAsStringSync();
       expect(pub, contains('google_sign_in'));
@@ -486,7 +488,7 @@ void main() {
       final sheet =
           File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
       expect(sheet, contains('email == null || email.isEmpty'));
-      expect(sheet, contains('wait for the button'));
+      expect(sheet, contains('Sign-In button'));
     });
 
     test('v107 forced updates, sticky sign-in, branding docs', () {
@@ -517,9 +519,6 @@ void main() {
       expect(privacy, contains('Drive'));
       final terms = File('docs/terms.html').readAsStringSync();
       expect(terms, contains('as is'));
-    });
-
-
     });
 
     test('v108 karaoke switch, iptv label, docs, sticky session', () {
@@ -580,5 +579,76 @@ void main() {
       expect(svc, contains('static Map<String, String>? _memHeaders'));
     });
 
+    group('v110 SAF picker, lock-screen media notification, docs', () {
+      test('system file picker is wired end-to-end', () {
+        final pub = File('pubspec.yaml').readAsStringSync();
+        expect(pub, contains('1.0.0+110'));
+        final bridge =
+            File('lib/services/native_bridge.dart').readAsStringSync();
+        for (final k in [
+          'pickVideoDocument',
+          'saveDocumentToDevice',
+          'savePickedVideoToDevice',
+        ]) {
+          expect(bridge, contains(k));
+        }
+        final sheet =
+            File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
+        expect(sheet, contains('Select video (no sign-in)'));
+        expect(sheet, contains('_pickViaAndroidPicker'));
+        expect(sheet, contains('Save to device'));
+        final mainKt = File(
+                'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt')
+            .readAsStringSync();
+        for (final k in [
+          'ACTION_OPEN_DOCUMENT',
+          'REQ_SAF_PICK',
+          'takePersistableUriPermission',
+          'private fun saveDocumentToDevice',
+        ]) {
+          expect(mainKt, contains(k));
+        }
+      });
+
+      test('now-playing is a lock-screen MediaStyle notification', () {
+        final svc = File(
+                'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MediaPlaybackService.kt')
+            .readAsStringSync();
+        expect(
+            svc, contains('androidx.media.app.NotificationCompat.MediaStyle'));
+        expect(svc, contains('MediaSessionCompat.Token.fromToken'));
+        expect(svc, contains('Notifications.CHANNEL_PLAYBACK_V2'));
+        final notifs = File(
+                'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/Notifications.kt')
+            .readAsStringSync();
+        expect(notifs, contains('playback_v2'));
+        expect(
+            notifs,
+            contains(
+                'lockscreenVisibility = Notification.VISIBILITY_PUBLIC'));
+        final gradle =
+            File('android/app/build.gradle.kts').readAsStringSync();
+        expect(gradle, contains('androidx.media'));
+      });
+
+      test('v110 docs updated; older pinned strings still intact', () {
+        final md = File('PRIVACY_POLICY.md').readAsStringSync();
+        expect(md, contains('5 September 2026'));
+        expect(md, contains('system file picker'));
+        expect(md, contains('Movies/Max Player'));
+        final inApp =
+            File('lib/utils/privacy_policy.dart').readAsStringSync();
+        expect(inApp, contains('SELECT VIDEO (ANDROID FILE PICKER)'));
+        final terms = File('TERMS_OF_SERVICE.md').readAsStringSync();
+        expect(terms, contains('HyperTech Labs'));
+        final manual =
+            File('lib/widgets/user_manual_sheet.dart').readAsStringSync();
+        expect(manual, contains('Select video (no sign-in)'));
+        expect(manual, contains('lock screen'));
+        expect(manual, contains('Google Drive sign-in'));
+        expect(File('docs/privacy.html').readAsStringSync(),
+            contains('file picker'));
+      });
+    });
   });
 }

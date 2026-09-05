@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.app.RemoteAction
 import android.content.BroadcastReceiver
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -52,6 +53,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
@@ -134,11 +136,16 @@ class MainActivity : FlutterActivity() {
         private const val REQ_CONFIRM_CREDENTIAL = 44
         private const val REQ_NOTIF_PERMISSION = 45
         private const val REQ_VOICE_SEARCH = 46
+        private const val REQ_SAF_PICK = 47
         private val STREAM_SCHEMES = setOf("http", "https", "rtsp", "rtmp", "mms")
     }
 
     private var inAppSpeechRecognizer: SpeechRecognizer? = null
     private var pendingVoiceSearchResult: MethodChannel.Result? = null
+
+    // v110: system document picker (SAF) round-trip in flight. One pending
+    // Dart result, same pattern as the voice search / credential prompts.
+    private var pendingSafPickResult: MethodChannel.Result? = null
 
     private fun startInAppSpeech(result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -857,6 +864,48 @@ class MainActivity : FlutterActivity() {
                     stopInAppSpeech()
                     result.success(true)
                 }
+                "pickVideoDocument" -> {
+                    // v110 "The Easy Way": Android's built-in document picker
+                    // (Storage Access Framework). It lists device storage AND
+                    // every installed provider app - including Google Drive -
+                    // with no Google sign-in and no Drive-API verification.
+                    if (pendingSafPickResult != null) {
+                        result.error("busy", "a pick is already in progress", null)
+                    } else {
+                        pendingSafPickResult = result
+                        try {
+                            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "video/*"
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                            }
+                            startActivityForResult(intent, REQ_SAF_PICK)
+                        } catch (e: Exception) {
+                            pendingSafPickResult = null
+                            result.success(null)
+                        }
+                    }
+                }
+                "saveDocumentToDevice" -> {
+                    val sourceUri = call.argument<String>("sourceUri")
+                    val cachePath = call.argument<String>("cachePath")
+                    val rawName = call.argument<String>("name") ?: "video"
+                    if (sourceUri.isNullOrEmpty() && cachePath.isNullOrEmpty()) {
+                        result.error("bad_args", "sourceUri or cachePath is required", null)
+                    } else {
+                        executor.execute {
+                            val saved = saveDocumentToDevice(sourceUri, cachePath, rawName)
+                            mainHandler.post {
+                                if (saved != null) {
+                                    result.success(saved)
+                                } else {
+                                    result.error("save_failed", "could not write the file", null)
+                                }
+                            }
+                        }
+                    }
+                }
                 "nowPlayingShow" -> {
                     val title = call.argument<String>("title") ?: "Max Player"
                     val subtitle = call.argument<String>("subtitle") ?: ""
@@ -1103,6 +1152,191 @@ class MainActivity : FlutterActivity() {
             return clip.getItemAt(0).uri
         }
         return null
+    }
+
+    /**
+     * v110: answer for the ACTION_OPEN_DOCUMENT pick. Local device files
+     * resolve to a real path (instant, zero copy); cloud/provider documents
+     * (Google Drive & friends) are stream-copied into the app cache first so
+     * libmpv can open them. The original content:// URI is kept in the
+     * result so Dart can offer "Save to device" afterwards.
+     */
+    private fun finishSafPick(resultCode: Int, data: Intent?) {
+        val pending = pendingSafPickResult
+        pendingSafPickResult = null
+        if (pending == null) return
+        val uri = if (resultCode == RESULT_OK) data?.data else null
+        if (uri == null) {
+            pending.success(null)
+            return
+        }
+        // A durable read grant lets "Save to device" re-pull the original
+        // bytes later (Drive-style providers support persistable grants).
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: Exception) {}
+        executor.execute {
+            val name = queryDisplayName(uri) ?: "video"
+            var resolved = resolveVideoPath(uri)
+            var cached = false
+            if (resolved == null) {
+                resolved = copyContentToCache(uri)
+                cached = resolved != null
+            }
+            val path = resolved
+            mainHandler.post {
+                if (path == null) {
+                    pending.success(null)
+                } else {
+                    val map = HashMap<String, Any?>()
+                    map["path"] = path
+                    map["name"] = name
+                    map["cached"] = cached
+                    map["sourceUri"] = uri.toString()
+                    map["sizeBytes"] = try { File(path).length() } catch (_: Exception) { 0L }
+                    pending.success(map)
+                }
+            }
+        }
+    }
+
+    /** Readable byte stream for a picked document: its SAF grant first,
+     * then the on-device/cache copy as fallback. */
+    private fun openDocumentInput(
+        sourceUri: String?,
+        cachePath: String?
+    ): java.io.InputStream? {
+        if (!sourceUri.isNullOrEmpty()) {
+            try {
+                contentResolver.openInputStream(Uri.parse(sourceUri))
+                    ?.let { return it }
+            } catch (_: Exception) {}
+        }
+        if (!cachePath.isNullOrEmpty()) {
+            try {
+                val f = File(cachePath)
+                if (f.exists()) return FileInputStream(f)
+            } catch (_: Exception) {}
+        }
+        return null
+    }
+
+    /**
+     * v110: permanent copy of a picked cloud video into
+     * Movies/Max Player. API 29+ goes through MediaStore (no permission
+     * needed for our own insert); older versions write the public Movies
+     * directory directly (we hold legacy storage permission there) and ping
+     * the media scanner so gallery apps see it at once.
+     */
+    private fun saveDocumentToDevice(
+        sourceUri: String?,
+        cachePath: String?,
+        rawName: String
+    ): HashMap<String, Any?>? {
+        return try {
+            var name = rawName.ifEmpty { "video.mp4" }
+            name = name.replace(Regex("[^A-Za-z0-9._ -]"), "_")
+            if (!name.contains('.')) name += ".mp4"
+            val input = openDocumentInput(sourceUri, cachePath) ?: return null
+            val out = HashMap<String, Any?>()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Video.Media.DISPLAY_NAME, name)
+                    put(MediaStore.Video.Media.MIME_TYPE, guessVideoMime(name))
+                    put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Max Player")
+                    put(MediaStore.Video.Media.IS_PENDING, 1)
+                }
+                val collection = MediaStore.Video.Media.getContentUri(
+                    MediaStore.VOLUME_EXTERNAL_PRIMARY
+                )
+                val outUri = contentResolver.insert(collection, values)
+                if (outUri == null) {
+                    try { input.close() } catch (_: Exception) {}
+                    return null
+                }
+                var ok = false
+                try {
+                    contentResolver.openOutputStream(outUri, "w")?.use { output ->
+                        input.use { it.copyTo(output) }
+                    }
+                    ok = true
+                } catch (_: Exception) {}
+                if (!ok) {
+                    try { contentResolver.delete(outUri, null, null) } catch (_: Exception) {}
+                    return null
+                }
+                val done = ContentValues().apply {
+                    put(MediaStore.Video.Media.IS_PENDING, 0)
+                }
+                try { contentResolver.update(outUri, done, null, null) } catch (_: Exception) {}
+                out["path"] = queryDataColumn(outUri)
+                out["location"] = "Movies/Max Player/$name"
+                out["name"] = name
+                out
+            } else {
+                val dir = File(
+                    Environment.getExternalStoragePublicDirectory(
+                        Environment.DIRECTORY_MOVIES
+                    ),
+                    "Max Player"
+                )
+                if (!dir.exists()) dir.mkdirs()
+                val outFile = File(dir, name)
+                var ok = false
+                try {
+                    FileOutputStream(outFile).use { output ->
+                        input.use { it.copyTo(output) }
+                    }
+                    ok = outFile.length() > 0
+                } catch (_: Exception) {}
+                if (!ok) {
+                    try { outFile.delete() } catch (_: Exception) {}
+                    return null
+                }
+                try {
+                    MediaScannerConnection.scanFile(
+                        this,
+                        arrayOf(outFile.absolutePath),
+                        arrayOf(guessVideoMime(name)),
+                        null
+                    )
+                } catch (_: Exception) {}
+                out["path"] = outFile.absolutePath
+                out["location"] = "Movies/Max Player/$name"
+                out["name"] = name
+                out
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** _data column for a MediaStore row we just wrote (null on stricter builds). */
+    private fun queryDataColumn(uri: Uri): String? {
+        return try {
+            contentResolver.query(
+                uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null
+            )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun guessVideoMime(name: String): String {
+        return when (name.substringAfterLast('.', "").lowercase()) {
+            "webm" -> "video/webm"
+            "mkv" -> "video/x-matroska"
+            "avi" -> "video/x-msvideo"
+            "mov" -> "video/quicktime"
+            "wmv" -> "video/x-ms-wmv"
+            "flv" -> "video/x-flv"
+            "ts", "mts", "m2ts" -> "video/mp2t"
+            "3gp", "3gpp" -> "video/3gpp"
+            "mpg", "mpeg" -> "video/mpeg"
+            else -> "video/mp4"
+        }
     }
 
     /**
@@ -2457,7 +2691,9 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_CONFIRM_CREDENTIAL) {
+        if (requestCode == REQ_SAF_PICK) {
+            finishSafPick(resultCode, data)
+        } else if (requestCode == REQ_CONFIRM_CREDENTIAL) {
             finishCredentialPrompt(resultCode == RESULT_OK)
         } else if (requestCode == REQ_VOICE_SEARCH) {
             val pending = pendingVoiceSearchResult

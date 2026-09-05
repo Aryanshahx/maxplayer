@@ -546,6 +546,16 @@ const List<_Item> _smartItems = [
         'the same sheet.',
   ),
   _Item(
+    Icons.folder_open_outlined,
+    'Select video (no sign-in)',
+    'Library → Cloud Storage → Select video: Android\'s own file picker '
+        'opens with this device, your Google Drive app, and any other '
+        'storage app side by side - no Google account needed. Cloud videos '
+        'are copied into Max Player first (large ones take a moment); after '
+        'picking, choose "Save to device" to keep a permanent copy in '
+        'Movies/Max Player.',
+  ),
+  _Item(
     Icons.volume_up,
     'Volume boost up to 200%',
     'ON by default: the volume swipe simply continues past 100% up to 200% for '
@@ -589,6 +599,18 @@ const List<_Item> _smartItems = [
 ];
 
 const List<_Item> _tipItems = [
+  _Item(
+    Icons.notifications_active_outlined,
+    'Playback controls missing on the lock screen?',
+    'Keep the app updated, then check: (1) Android Settings → Apps → Max '
+        'Player → Notifications is allowed; (2) your phone\'s lock-screen '
+        'setting shows notifications - on Xiaomi/Redmi/Poco open Settings → '
+        'Notifications → "Notifications on lock screen", on Samsung open '
+        'Settings → Lock screen → Notifications; (3) battery saving or '
+        'background restrictions are off for Max Player. The media panel '
+        'with play/pause & seek appears whenever a video is playing or '
+        'paused in the background.',
+  ),
   _Item(
     Icons.info_outline,
     'A new video does not appear in the library?',
