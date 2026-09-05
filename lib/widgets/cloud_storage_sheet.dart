@@ -84,12 +84,10 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
     // Sign-In button.
     if (email == null || email.isEmpty) return;
     try {
+      // v107: stay signed in once signed in - a dead grant just retries
+      // silently next open (never prompts); only Disconnect clears it.
       final account = await GDriveAuth.signInSilently();
-      if (!mounted || account == null) {
-        // Grant gone (revoked) - stop trying on future opens too.
-        NativeBridge.saveSetting(_kDriveUserKey, '');
-        return;
-      }
+      if (!mounted || account == null) return;
       final headers = await GDriveAuth.authHeadersOf(account);
       if (!mounted || headers == null) return;
       _email = account.email;

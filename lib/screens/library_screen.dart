@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:in_app_update/in_app_update.dart';
 import 'package:flutter/services.dart';
 
 import '../app_info.dart';
@@ -82,7 +83,23 @@ class _LibraryScreenState extends State<LibraryScreen> {
       CrashLog.takeLastIncludingNative().then((report) {
         if (report != null && mounted) _showCrashReport(report);
       });
+      _checkPlayUpdate();
     });
+  }
+
+  /// v107: forced Play update - when the Play build is newer, the
+  /// full-screen immediate flow blocks until the user updates. Silent
+  /// everywhere else (sideloaded/debug builds are not Play-managed, and
+  /// iOS has no such API - both throw and land in the catch).
+  Future<void> _checkPlayUpdate() async {
+    try {
+      final info = await InAppUpdate.checkForUpdate();
+      if (!mounted) return;
+      if (info.updateAvailability == UpdateAvailability.updateAvailable &&
+          info.immediateUpdateAllowed) {
+        await InAppUpdate.performImmediateUpdate();
+      }
+    } catch (_) {}
   }
 
   void _showCrashReport(String report) {

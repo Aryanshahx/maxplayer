@@ -1,7 +1,7 @@
 name: maxplayer
 description: "Max Player - a local video library & player."
 publish_to: 'none'
-version: 1.0.0+106
+version: 1.0.0+107
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -25,6 +25,9 @@ dependencies:
   # v106: native Google Sign-In for Drive (no google-services.json - the
   # SHA-1-registered OAuth client resolves via Play Services at runtime).
   google_sign_in: ^7.2.0
+
+  # v107: forced Play Store updates (immediate in-app update flow).
+  in_app_update: ^5.0.0
 
   path: ^1.9.0
   intl: ^0.19.0

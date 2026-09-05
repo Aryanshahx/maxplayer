@@ -489,6 +489,36 @@ void main() {
       expect(sheet, contains('wait for the button'));
     });
 
+    test('v107 forced updates, sticky sign-in, branding docs', () {
+      final pub = File('pubspec.yaml').readAsStringSync();
+      expect(pub, contains('in_app_update'));
+      final lib = File('lib/screens/library_screen.dart').readAsStringSync();
+      for (final k in [
+        'InAppUpdate.checkForUpdate',
+        'performImmediateUpdate',
+        'UpdateAvailability.updateAvailable',
+      ]) {
+        expect(lib, contains(k));
+      }
+      final sheet =
+          File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
+      // Silent auth still gated on a past sign-in, but a dead grant no
+      // longer wipes the email - the session stays sticky.
+      expect(sheet, contains('email == null || email.isEmpty'));
+      expect(sheet.contains('stop trying on future opens'), isFalse);
+      for (final f in [
+        'docs/index.html',
+        'docs/privacy.html',
+        'docs/terms.html',
+      ]) {
+        expect(File(f).existsSync(), isTrue);
+      }
+      final privacy = File('docs/privacy.html').readAsStringSync();
+      expect(privacy, contains('Drive'));
+      final terms = File('docs/terms.html').readAsStringSync();
+      expect(terms, contains('as is'));
+    });
+
     });
   });
 }
