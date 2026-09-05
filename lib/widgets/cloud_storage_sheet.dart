@@ -83,6 +83,15 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
     // this device signed in before (email saved); otherwise wait for the
     // Sign-In button.
     if (email == null || email.isEmpty) return;
+    // v108: reuse this launch's silent session - repeat opens never prompt.
+    final memHeaders = GDriveAuth.recall();
+    if (memHeaders != null) {
+      _email = email;
+      _headers = memHeaders;
+      if (mounted) setState(() => _isConnected = true);
+      _fetchAllVideos();
+      return;
+    }
     try {
       // v107: stay signed in once signed in - a dead grant just retries
       // silently next open (never prompts); only Disconnect clears it.
@@ -92,6 +101,7 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
       if (!mounted || headers == null) return;
       _email = account.email;
       _headers = headers;
+      GDriveAuth.remember(headers);
       setState(() => _isConnected = true);
       _fetchAllVideos();
     } catch (_) {}
@@ -116,6 +126,7 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
       _email = account.email;
       NativeBridge.saveSetting(_kDriveUserKey, _email);
       _headers = headers;
+      GDriveAuth.remember(headers);
       setState(() {
         _signingIn = false;
         _isConnected = true;
@@ -151,6 +162,7 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
     if (!mounted) return;
     if (items == null) {
       // 401/403: the grant expired or was revoked - ask for sign-in again.
+      GDriveAuth.forget();
       setState(() {
         _loading = false;
         _isConnected = false;
@@ -178,6 +190,7 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
 
   Future<void> _disconnect() async {
     await GDriveAuth.signOut();
+    GDriveAuth.forget();
     NativeBridge.saveSetting(_kDriveUserKey, '');
     NativeBridge.saveSetting(_kDriveVideosCacheKey, '');
     if (!mounted) return;

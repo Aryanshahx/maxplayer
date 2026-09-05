@@ -127,7 +127,7 @@ class _OpenStreamSheetState extends State<OpenStreamSheet> {
                     Icon(Icons.link, color: accent, size: 22),
                     const SizedBox(width: 10),
                     const Text(
-                      'Open Network Stream',
+                      'Open Stream(iptv)',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 17,

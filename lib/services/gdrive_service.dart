@@ -72,6 +72,14 @@ class GDriveAuth {
     }
   }
 
+  /// Session cache: one silent auth per app launch, reused on every sheet
+  /// open - the account picker never pops twice in a row. Cleared on
+  /// sign-out and on 401/403.
+  static Map<String, String>? _memHeaders;
+  static void remember(Map<String, String> headers) => _memHeaders = headers;
+  static Map<String, String>? recall() => _memHeaders;
+  static void forget() => _memHeaders = null;
+
   /// Revokes the grant and signs out (matches the sheet's Disconnect button).
   static Future<void> signOut() async {
     try {

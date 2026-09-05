@@ -303,26 +303,37 @@ class PlayerControlsOverlay extends StatelessWidget {
                     );
                 },
               ),
-              ListTile(
-                leading: Icon(
-                  karaokeOn
-                      ? Icons.closed_caption
-                      : Icons.closed_caption_off_outlined,
-                  color: karaokeOn ? themeState.accent : Colors.white70,
-                ),
-                title: Text(
-                  karaokeOn ? 'Karaoke subtitles (on)' : 'Karaoke subtitles',
-                  style: TextStyle(
-                      color:
-                          karaokeOn ? themeState.accent : Colors.white),
-                ),
-                subtitle: const Text(
-                  'Words light up - other subtitles hide while on',
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  onToggleKaraoke();
+              StatefulBuilder(
+                builder: (sbCtx, setSb) {
+                  return SwitchListTile(
+                    dense: true,
+                    secondary: Icon(
+                      karaokeOn
+                          ? Icons.closed_caption
+                          : Icons.closed_caption_off_outlined,
+                      color: karaokeOn ? themeState.accent : Colors.white70,
+                    ),
+                    title: Text(
+                      karaokeOn
+                          ? 'Karaoke subtitles (on)'
+                          : 'Karaoke subtitles',
+                      style: TextStyle(
+                          color: karaokeOn
+                              ? themeState.accent
+                              : Colors.white),
+                    ),
+                    subtitle: const Text(
+                      'Words light up - other subtitles hide while on',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                    value: karaokeOn,
+                    activeThumbColor: themeState.accent,
+                    onChanged: (v) {
+                      onToggleKaraoke();
+                      setSb(() {});
+                      onInteract();
+                    },
+                  );
                 },
               ),
               // v105: picture rows live here now (were Settings > Picture).

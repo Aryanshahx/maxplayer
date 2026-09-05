@@ -534,7 +534,31 @@ const List<_Item> _smartItems = [
         'track / A-B loop) → Karaoke subtitles: words '
         'light up one by one as they '
         'are spoken. Works with ANY subtitle - AI captions, the video\'s own '
-        '.srt file, or subtitles embedded in the video.',
+        '.srt file, or subtitles embedded in the video. Flip the on/off '
+        'switch right in the tune sheet - it stays live like the other switches.',
+  ),
+  _Item(
+    Icons.cloud_done_outlined,
+    'Google Drive sign-in',
+    'Library → Cloud Storage → Sign in with Google: your Drive videos list '
+        'up, tap any video to stream it in Max Player. Sign in once - the '
+        'session is quietly reused on later opens. Disconnect anytime from '
+        'the same sheet.',
+  ),
+  _Item(
+    Icons.system_update_outlined,
+    'Automatic app updates',
+    'Play Store builds check for a newer release every launch and install '
+        'it full-screen when one is available. Sideloaded copies skip the '
+        'check.',
+  ),
+  _Item(
+    Icons.image_not_supported_outlined,
+    'Some thumbnails missing?',
+    'Tiles come from the Android built-in extractor while VLC ships its own '
+        'decoders, so a few files show no tile here yet play fine. Play '
+        'such a video once - the player captures its thumbnail and the '
+        'tile appears without a rescan.',
   ),
   _Item(
     Icons.volume_up,

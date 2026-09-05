@@ -897,7 +897,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
 /// v28/v87: Two slideable 2x2 grids with 2 dots page indicator.
 /// Page 1: Private Space, Playlists, Folders, Cloud Storage
-/// Page 2: Network Storage, File Manager, Open Stream, Cleaner
+/// Page 2: Network Storage, File Manager, Open Stream(iptv), Cleaner
 class _QuickTiles extends StatefulWidget {
   final Color accent;
   final VoidCallback onPrivate;
@@ -999,7 +999,7 @@ class _QuickTilesState extends State<_QuickTiles> {
                   ],
                 ),
 
-                // Page 2 (2x2 Grid): Network Storage, File Manager, Open Stream, Cleaner
+                // Page 2 (2x2 Grid): Network Storage, File Manager, Open Stream(iptv), Cleaner
                 Column(
                   children: [
                     Row(
@@ -1029,7 +1029,7 @@ class _QuickTilesState extends State<_QuickTiles> {
                         Expanded(
                           child: _Tile(
                             Icons.link,
-                            'Open Stream',
+                            'Open Stream(iptv)',
                             accent,
                             widget.onOpenStream,
                           ),

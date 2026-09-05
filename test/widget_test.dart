@@ -212,7 +212,7 @@ void main() {
       expect(
           lib,
           contains(
-              'Page 2: Network Storage, File Manager, Open Stream, Cleaner'));
+              'Page 2: Network Storage, File Manager, Open Stream(iptv), Cleaner'));
     });
 
     test('indicator content cross-fades on every change', () {
@@ -519,6 +519,45 @@ void main() {
       expect(terms, contains('as is'));
     });
 
+
+    });
+
+    test('v108 karaoke switch, iptv label, docs, sticky session', () {
+      final overlay =
+          File('lib/widgets/player_controls_overlay.dart').readAsStringSync();
+      final karaokeStart = overlay.indexOf('Karaoke subtitles');
+      final karaokeEnd = overlay.indexOf('HDR tone-mapping', karaokeStart);
+      final karaokeRow = overlay.substring(karaokeStart, karaokeEnd);
+      expect(karaokeRow, contains('SwitchListTile'));
+      expect(karaokeRow, contains('onToggleKaraoke'));
+      expect(karaokeRow.contains('Navigator.of(sheetContext).pop'), isFalse);
+      final lib = File('lib/screens/library_screen.dart').readAsStringSync();
+      expect(lib, contains("'Open Stream(iptv)'"));
+      final streamSheet =
+          File('lib/widgets/open_stream_sheet.dart').readAsStringSync();
+      expect(streamSheet, contains('Open Stream(iptv)'));
+      expect(File('TERMS_OF_SERVICE.md').existsSync(), isTrue);
+      final termsMd = File('TERMS_OF_SERVICE.md').readAsStringSync();
+      expect(termsMd, contains('HyperTech Labs'));
+      final manual =
+          File('lib/widgets/user_manual_sheet.dart').readAsStringSync();
+      for (final k in [
+        'on/off ',
+        'Google Drive sign-in',
+        'Automatic app updates',
+        'Some thumbnails missing?',
+      ]) {
+        expect(manual, contains(k));
+      }
+      final svc =
+          File('lib/services/gdrive_service.dart').readAsStringSync();
+      expect(svc, contains('recall()'));
+      final sheet =
+          File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
+      expect(sheet, contains('GDriveAuth.remember'));
+      final md = File('PRIVACY_POLICY.md').readAsStringSync();
+      expect(md, contains('Google Drive'));
+      expect(md, contains('5 September 2026'));
     });
   });
 }

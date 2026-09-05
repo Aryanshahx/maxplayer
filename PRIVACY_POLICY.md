@@ -1,6 +1,6 @@
 # Privacy Policy — Max Player
 
-**Effective date:** 13 August 2026
+**Effective date:** 5 September 2026
 **Developer:** Hyper Tech Labs (Aryan Shah)
 **Contact:** https://github.com/Aryanshahx/maxplayer (see the repository profile for contact details)
 
@@ -18,9 +18,12 @@ Max Player is a local video player. **It does not collect, store, transmit, or s
 
 ## What the app does NOT do
 - No analytics, no tracking, no advertising, no third-party SDKs that collect data
-- No accounts, no sign-in, no device identifiers collected
+- No Max Player accounts and no device identifiers collected (the optional Google Drive sign-in below is strictly between you and Google)
 - No collection of your video library content, file names, or history — all of it stays in the app's local storage on your device
 - No crash reporting service (crash reports are shown **to you** inside the app, and are only shared if **you** copy and send them)
+
+## Google Drive (optional)
+Tapping "Sign in with Google" in Library → Cloud Storage uses Google OAuth on your device to list the video files in your own Drive and stream the ones you tap. The app requests read-only access; file names, thumbnails and streams travel only between your phone and Google, and the access token never leaves your device. Sign in once — the session is quietly reused. Disconnect anytime from the same sheet, or revoke access from your Google Account's third-party access page.
 
 ## AI subtitles
 Subtitle generation runs entirely **on your device** using the open-source whisper.cpp engine. Your audio never leaves your phone. The only network access is the one-time model file download from Hugging Face (ggerganov/whisper.cpp), which you trigger and can delete afterwards. Translating subtitles to English uses the same fully on-device engine — no audio or text is sent anywhere.
@@ -40,7 +43,7 @@ The app collects no data from anyone, including children.
 This section matches the app's Play Console Data Safety form:
 - **Data collected:** none — there is nothing to list per category
 - **Data shared with third parties:** none
-- **Data sent off the device:** none (AI subtitle generation, history, bookmarks and settings are all local-only)
+- **Data sent off the device:** only what you trigger — Drive file listings and streams travel between your phone and Google while you use Cloud Storage; everything else (AI subtitles, history, bookmarks, settings) is local-only
 - Because no data leaves the device, "encryption in transit" and "account/data deletion requests" are **not applicable** — nothing is transmitted and there is nothing on any server to delete.
 
 ## Changes
