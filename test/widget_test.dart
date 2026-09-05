@@ -544,8 +544,6 @@ void main() {
       for (final k in [
         'on/off ',
         'Google Drive sign-in',
-        'Automatic app updates',
-        'Some thumbnails missing?',
       ]) {
         expect(manual, contains(k));
       }
@@ -559,5 +557,28 @@ void main() {
       expect(md, contains('Google Drive'));
       expect(md, contains('5 September 2026'));
     });
+    test('v109 instant karaoke, manual trim, sticky sign-in kept', () {
+      final overlay =
+          File('lib/widgets/player_controls_overlay.dart').readAsStringSync();
+      // Switch reads LIVE player state -> flips the instant it is tapped.
+      expect(overlay, contains('value: player.karaokeMode'));
+      // No '(on)' label anymore - fixed text in both states.
+      expect(overlay.contains('Karaoke subtitles (on)'), isFalse);
+      expect(overlay, contains("'Karaoke subtitles'"));
+      final manual =
+          File('lib/widgets/user_manual_sheet.dart').readAsStringSync();
+      expect(manual.contains('Automatic app updates'), isFalse);
+      expect(manual.contains('Some thumbnails missing?'), isFalse);
+      // Kept: Drive manual entry + sticky Drive session after reopen.
+      expect(manual, contains('Google Drive sign-in'));
+      final sheet =
+          File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
+      expect(sheet, contains('GDriveAuth.recall()'));
+      expect(sheet, contains('GDriveAuth.remember'));
+      final svc =
+          File('lib/services/gdrive_service.dart').readAsStringSync();
+      expect(svc, contains('static Map<String, String>? _memHeaders'));
+    });
+
   });
 }

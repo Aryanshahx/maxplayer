@@ -308,17 +308,18 @@ class PlayerControlsOverlay extends StatelessWidget {
                   return SwitchListTile(
                     dense: true,
                     secondary: Icon(
-                      karaokeOn
+                      player.karaokeMode
                           ? Icons.closed_caption
                           : Icons.closed_caption_off_outlined,
-                      color: karaokeOn ? themeState.accent : Colors.white70,
+                      color: player.karaokeMode ? themeState.accent : Colors.white70,
                     ),
+                    // v109: fixed label (no '(on)' suffix); value below
+                    // reads the LIVE player state, not the sheet-open
+                    // snapshot, so the switch flips the instant it is tapped.
                     title: Text(
-                      karaokeOn
-                          ? 'Karaoke subtitles (on)'
-                          : 'Karaoke subtitles',
+                      'Karaoke subtitles',
                       style: TextStyle(
-                          color: karaokeOn
+                          color: player.karaokeMode
                               ? themeState.accent
                               : Colors.white),
                     ),
@@ -326,7 +327,7 @@ class PlayerControlsOverlay extends StatelessWidget {
                       'Words light up - other subtitles hide while on',
                       style: TextStyle(color: Colors.white54, fontSize: 12),
                     ),
-                    value: karaokeOn,
+                    value: player.karaokeMode,
                     activeThumbColor: themeState.accent,
                     onChanged: (v) {
                       onToggleKaraoke();
