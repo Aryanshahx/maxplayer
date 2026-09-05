@@ -3,8 +3,10 @@ package com.hypertechlabs.maxplayer
 import android.app.KeyguardManager
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
+import android.app.RecoverableSecurityException
 import android.app.RemoteAction
 import android.content.BroadcastReceiver
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -137,6 +139,7 @@ class MainActivity : FlutterActivity() {
         private const val REQ_NOTIF_PERMISSION = 45
         private const val REQ_VOICE_SEARCH = 46
         private const val REQ_SAF_PICK = 47
+        private const val REQ_MEDIA_DELETE = 48
         private val STREAM_SCHEMES = setOf("http", "https", "rtsp", "rtmp", "mms")
     }
 
@@ -151,6 +154,12 @@ class MainActivity : FlutterActivity() {
     // the streaming copy loop polls it between chunks.
     @Volatile
     private var safCopyAborted = false
+
+    // v112: system delete-consent round trip (vault hide flow). API 30+
+    // needs no retry list (createDeleteRequest handles the whole batch);
+    // API 29 consents per file, so remember what is left to delete.
+    private var pendingMediaDeleteResult: MethodChannel.Result? = null
+    private var pendingMediaDeletePaths: ArrayList<String>? = null
 
     private fun startInAppSpeech(result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -896,11 +905,13 @@ class MainActivity : FlutterActivity() {
                     val sourceUri = call.argument<String>("sourceUri")
                     val cachePath = call.argument<String>("cachePath")
                     val rawName = call.argument<String>("name") ?: "video"
+                    val relPath = call.argument<String>("relativePath")
+                        ?: "Movies/Max Player"
                     if (sourceUri.isNullOrEmpty() && cachePath.isNullOrEmpty()) {
                         result.error("bad_args", "sourceUri or cachePath is required", null)
                     } else {
                         executor.execute {
-                            val saved = saveDocumentToDevice(sourceUri, cachePath, rawName)
+                            val saved = saveDocumentToDevice(sourceUri, cachePath, rawName, relPath)
                             mainHandler.post {
                                 if (saved != null) {
                                     result.success(saved)
@@ -917,6 +928,83 @@ class MainActivity : FlutterActivity() {
                     // partial cache file.
                     safCopyAborted = true
                     result.success(true)
+                }
+                "listMediaStoreVideos" -> {
+                    executor.execute {
+                        val paths = queryMediaStoreVideoPaths()
+                        mainHandler.post { result.success(paths) }
+                    }
+                }
+                "requestMediaDelete" -> {
+                    val paths = call.argument<ArrayList<String>>("paths")
+                        ?: arrayListOf()
+                    if (paths.isEmpty()) {
+                        result.success(true)
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        // API 30+: one batch system dialog for every file.
+                        val uris = ArrayList<Uri>()
+                        for (path in paths) {
+                            resolveVideoUri(path)?.let { uris.add(it) }
+                        }
+                        if (uris.isEmpty()) {
+                            result.success(false)
+                        } else {
+                            try {
+                                val pi = MediaStore.createDeleteRequest(
+                                    contentResolver, uris
+                                )
+                                pendingMediaDeleteResult = result
+                                startIntentSenderForResult(
+                                    pi.intentSender, REQ_MEDIA_DELETE,
+                                    null, 0, 0, 0
+                                )
+                            } catch (_: Exception) {
+                                pendingMediaDeleteResult = null
+                                result.success(false)
+                            }
+                        }
+                    } else {
+                        // API 29: direct delete; the user's consent arrives
+                        // wrapped in a RecoverableSecurityException.
+                        executor.execute {
+                            var consent: RecoverableSecurityException? = null
+                            val remaining = ArrayList<String>()
+                            for (path in paths) {
+                                val uri = resolveVideoUri(path) ?: continue
+                                try {
+                                    contentResolver.delete(uri, null, null)
+                                } catch (e: RecoverableSecurityException) {
+                                    if (consent == null) consent = e
+                                    remaining.add(path)
+                                } catch (_: Exception) {
+                                    remaining.add(path)
+                                }
+                            }
+                            val request = consent
+                            mainHandler.post {
+                                when {
+                                    remaining.isEmpty() -> result.success(true)
+                                    request == null -> result.success(false)
+                                    else -> {
+                                        try {
+                                            pendingMediaDeleteResult = result
+                                            pendingMediaDeletePaths = remaining
+                                            startIntentSenderForResult(
+                                                request.userAction.actionIntent
+                                                    .intentSender,
+                                                REQ_MEDIA_DELETE,
+                                                null, 0, 0, 0
+                                            )
+                                        } catch (_: Exception) {
+                                            pendingMediaDeleteResult = null
+                                            pendingMediaDeletePaths = null
+                                            result.success(false)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 "nowPlayingShow" -> {
                     val title = call.argument<String>("title") ?: "Max Player"
@@ -1247,16 +1335,99 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
+     * v112: real paths of every MediaStore-indexed video across all shared
+     * volumes (internal + SD card). Replaces the v40 filesystem walk that
+     * needed all-files access, which Play rejected as non-core.
+     */
+    private fun queryMediaStoreVideoPaths(): ArrayList<String> {
+        val out = ArrayList<String>()
+        try {
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            else
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            contentResolver.query(
+                collection, arrayOf(MediaStore.MediaColumns.DATA),
+                null, null, null
+            )?.use { c ->
+                val col = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+                while (c.moveToNext()) {
+                    val path = c.getString(col)
+                    if (!path.isNullOrEmpty()) out.add(path)
+                }
+            }
+        } catch (_: Exception) {}
+        return out
+    }
+
+    /** v112: content:// Uri of an indexed video by its filesystem path. */
+    private fun resolveVideoUri(path: String): Uri? {
+        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        else
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        return try {
+            contentResolver.query(
+                collection,
+                arrayOf(MediaStore.Video.Media._ID),
+                MediaStore.MediaColumns.DATA + "=?",
+                arrayOf(path),
+                null
+            )?.use { c ->
+                if (c.moveToFirst())
+                    ContentUris.withAppendedId(collection, c.getLong(0))
+                else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * v112: completes the delete-consent flow (REQ_MEDIA_DELETE). API 30+
+     * deleted everything inside createDeleteRequest itself; API 29 granted
+     * one file's consent, so the pending list is retried once here.
+     */
+    private fun finishMediaDelete(granted: Boolean) {
+        val pending = pendingMediaDeleteResult
+        val paths = pendingMediaDeletePaths
+        pendingMediaDeleteResult = null
+        pendingMediaDeletePaths = null
+        if (pending == null) return
+        if (!granted || Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ||
+            paths.isNullOrEmpty()
+        ) {
+            pending.success(granted)
+            return
+        }
+        executor.execute {
+            var ok = true
+            for (path in paths) {
+                val uri = resolveVideoUri(path) ?: continue
+                try {
+                    contentResolver.delete(uri, null, null)
+                } catch (_: Exception) {
+                    ok = false
+                }
+            }
+            mainHandler.post { pending.success(ok) }
+        }
+    }
+
+    /**
      * v110: permanent copy of a picked cloud video into
      * Movies/Max Player. API 29+ goes through MediaStore (no permission
      * needed for our own insert); older versions write the public Movies
      * directory directly (we hold legacy storage permission there) and ping
      * the media scanner so gallery apps see it at once.
+     * v112: destination folder is a parameter now (Private folder's unhide
+     * exports to plain Movies/).
      */
     private fun saveDocumentToDevice(
         sourceUri: String?,
         cachePath: String?,
-        rawName: String
+        rawName: String,
+        relativePath: String
     ): HashMap<String, Any?>? {
         return try {
             var name = rawName.ifEmpty { "video.mp4" }
@@ -1268,7 +1439,7 @@ class MainActivity : FlutterActivity() {
                 val values = ContentValues().apply {
                     put(MediaStore.Video.Media.DISPLAY_NAME, name)
                     put(MediaStore.Video.Media.MIME_TYPE, guessVideoMime(name))
-                    put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Max Player")
+                    put(MediaStore.Video.Media.RELATIVE_PATH, relativePath)
                     put(MediaStore.Video.Media.IS_PENDING, 1)
                 }
                 val collection = MediaStore.Video.Media.getContentUri(
@@ -1295,7 +1466,7 @@ class MainActivity : FlutterActivity() {
                 }
                 try { contentResolver.update(outUri, done, null, null) } catch (_: Exception) {}
                 out["path"] = queryDataColumn(outUri)
-                out["location"] = "Movies/Max Player/$name"
+                out["location"] = "$relativePath/$name"
                 out["name"] = name
                 out
             } else {
@@ -2766,6 +2937,8 @@ class MainActivity : FlutterActivity() {
             finishSafPick(resultCode, data)
         } else if (requestCode == REQ_CONFIRM_CREDENTIAL) {
             finishCredentialPrompt(resultCode == RESULT_OK)
+        } else if (requestCode == REQ_MEDIA_DELETE) {
+            finishMediaDelete(resultCode == RESULT_OK)
         } else if (requestCode == REQ_VOICE_SEARCH) {
             val pending = pendingVoiceSearchResult
             pendingVoiceSearchResult = null

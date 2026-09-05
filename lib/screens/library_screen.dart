@@ -187,7 +187,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     // v22: moving a file out of public storage needs the same grant the
     // scanner uses. Ask up-front instead of letting the move fail with a
     // cryptic snackbar. v40: version-aware via the shared helper - asking
-    // ONLY "All files access" resolved denied FOREVER on Android 10 and
+    // ONLY the legacy ask resolved denied FOREVER on Android 10 and
     // older, so those phones kept re-asking a permission already granted.
     if (!await ensureStorageAccess()) {
       if (!mounted) return;

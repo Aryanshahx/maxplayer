@@ -351,37 +351,34 @@ class VideoLibraryState extends ChangeNotifier {
   // Scanning
   // ---------------------------------------------------------------------------
 
-  /// Requests "All files access" (Android 11+) or the classic Storage
-  /// runtime permission (Android 10 and older), then scans the whole of
-  /// internal storage for videos. Call again any time to retry after a
-  /// denial.
+  /// v112 (Play policy): all-files access is gone - the library asks the
+  /// version-correct scoped permission and lists videos through MediaStore
+  /// (covers internal + SD card) on Android 10+; Android 9 and older keep
+  /// the classic Storage permission + filesystem walk. Call again any time
+  /// to retry after a denial.
   Future<void> scanAllStorage() async {
     if (isScanning) return;
     permissionDenied = false;
     notifyListeners();
     unawaited(NativeBridge.crumb('scan_start'));
 
+    final sdk = await NativeBridge.sdkInt();
     PermissionStatus status;
     try {
-      status = await Permission.manageExternalStorage.request();
+      // API 33+: the Videos media permission gates MediaStore reads.
+      // API 29-32: READ_EXTERNAL_STORAGE. API <= 28: the same classic
+      // runtime permission, granted as a broad legacy read.
+      status = sdk >= 33
+          ? await Permission.videos.request()
+          : await Permission.storage.request();
     } catch (_) {
-      // v37: some skins/builds (Tecno/Infinix/MIUI, Go editions) lack the
-      // "All files access" settings screen entirely, and the request can
-      // blow up instead of returning 'denied'. Never die at app start:
-      // fall back to the existing denied-state UI with a retry button.
+      // v37: some skins/builds (Tecno/Infinix/MIUI, Go editions) can throw
+      // instead of returning denied. Never die at app start: fall back to
+      // the existing denied-state UI with a retry button.
       unawaited(NativeBridge.crumb('scan_permission_threw'));
       permissionDenied = true;
       notifyListeners();
       return;
-    }
-    if (!status.isGranted && (await NativeBridge.sdkInt()) < 30) {
-      // v38: Android 10 and older (API < 30) have no "All files access" at
-      // all - the request above resolves to denied FOREVER there (the real
-      // API 27 log: scan_start twice, never scan_granted, even after the
-      // user granted Storage manually). The classic Storage runtime
-      // permission is the correct ask on those versions.
-      unawaited(NativeBridge.crumb('scan_legacy_perm'));
-      status = await Permission.storage.request();
     }
     if (!status.isGranted) {
       permissionDenied = true;
@@ -391,13 +388,57 @@ class VideoLibraryState extends ChangeNotifier {
 
     unawaited(NativeBridge.crumb('scan_granted'));
     folderName = 'Device storage';
-    // v40: scan EVERY mounted storage volume (internal + SD card, e.g.
-    // "/storage/1C4B-9A2F"). The old code walked only
-    // "/storage/emulated/0/", so videos on SD cards never appeared
-    // ("does not show external storage added on phone like sd cards").
-    await _scanDirectories(
-      normalizeStorageRoots(await NativeBridge.storageRoots()),
-    );
+    if (sdk >= 29) {
+      await _scanMediaStore();
+    } else {
+      // v40: scan EVERY mounted storage volume (internal + SD card, e.g.
+      // "/storage/1C4B-9A2F"). The old code walked only
+      // "/storage/emulated/0/", so videos on SD cards never appeared
+      // ("does not show external storage added on phone like sd cards").
+      await _scanDirectories(
+        normalizeStorageRoots(await NativeBridge.storageRoots()),
+      );
+    }
+  }
+
+  /// v112: MediaStore listing (scoped-storage safe) feeding the same track
+  /// pipeline the filesystem walk uses below. Covers internal + SD card
+  /// volumes via VOLUME_EXTERNAL; [seenPaths] dedupes paths that surface
+  /// twice on quirky builds.
+  Future<void> _scanMediaStore() async {
+    isScanning = true;
+    _videos = [];
+    scanProgress = const ScanProgress();
+    notifyListeners();
+
+    final seenPaths = <String>{};
+    final foundPaths = <String>[];
+    for (final path in await NativeBridge.listMediaStoreVideos()) {
+      if (seenPaths.add(path)) foundPaths.add(path);
+    }
+
+    scanProgress =
+        ScanProgress(found: foundPaths.length, total: foundPaths.length);
+    notifyListeners();
+
+    final allVideos = <VideoTrack>[];
+    // Process in small batches so the UI can show progress incrementally.
+    const batchSize = 8;
+    for (var i = 0; i < foundPaths.length; i += batchSize) {
+      final batch = foundPaths.skip(i).take(batchSize);
+      final tracks = await Future.wait(batch.map(_buildTrack));
+      allVideos.addAll(tracks.whereType<VideoTrack>());
+      _videos = [...allVideos];
+      scanProgress = ScanProgress(
+        found: foundPaths.length,
+        processed: (i + batchSize).clamp(0, foundPaths.length),
+        total: foundPaths.length,
+      );
+      notifyListeners();
+    }
+
+    isScanning = false;
+    notifyListeners();
   }
 
   Future<void> rescan() => scanAllStorage();

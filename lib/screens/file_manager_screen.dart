@@ -97,9 +97,11 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     _bootstrap();
   }
 
-  /// v95: ask for "All files access" ONCE up front, then list. Without
-  /// this the shortcut tiles (WhatsApp especially) silently showed nothing
-  /// on Android 11+. Re-used by the in-list "Grant access" button.
+  /// v95: ask for storage access ONCE up front, then list. Without this
+  /// the shortcut tiles (WhatsApp especially) silently showed nothing on
+  /// Android 11+. v112: the broad all-files grant was rejected by Play as
+  /// non-core and is gone - the ask is the scoped media permission now.
+  /// Re-used by the in-list "Grant access" button.
   Future<void> _bootstrap() async {
     final granted = await ensureStorageAccess();
     if (!mounted) return;
@@ -149,7 +151,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
           _entries = [];
           _loading = false;
           _errorMsg = _permissionDenied
-              ? 'Max Player needs "All files access" to read this folder.'
+              ? 'Max Player needs media storage permission to read this folder.'
               : 'Android blocked access to this folder.';
         });
       }

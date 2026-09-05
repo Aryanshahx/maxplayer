@@ -55,15 +55,14 @@ Both files are git-ignored. **Back up the .jks + passwords somewhere safe
 - **Target audience:** 13+ (it's a media player, not child-directed).
 - **Content rating questionnaire:** answer honestly — app plays user content,
   no generated/social content features → low ratings everywhere.
-- **MANAGE_EXTERNAL_STORAGE declaration:** Play asks for justification since
-  the app uses all-files access. Justification: *"Core functionality: the
-  app's primary purpose is playing video files stored anywhere on the device,
-  including external SD cards and USB-OTG; MediaStore/scoped storage cannot
-  enumerate all video files (e.g. .mkv/.ts on SD cards). Screenshots and AI
-  subtitle files are written next to the source videos."* — this is the
-  standard media-player justification and is routinely accepted **for apps
-  whose main function is media playback**. Record the short screen-video they
-  ask for showing: scanning the library + playing a video.
+- **Permissions declaration:** v112 removed all-files access entirely (Play
+  rejected the justification as non-core). The app uses scoped media access
+  only: the library scans through MediaStore, cloud imports arrive via
+  Android's file picker (SAF), and the Private folder deletes originals
+  through the per-file system consent dialog. If the Console still shows an
+  old **All files access** declaration from a previous release, open that
+  form and state the permission is no longer used before resubmitting - a
+  stale form keeps failing review even with the manifest cleaned.
 - **Ads declaration:** No ads.
 - **News apps / COVID etc.:** all No.
 

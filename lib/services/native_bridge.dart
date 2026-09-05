@@ -707,11 +707,17 @@ class NativeBridge {
     String? sourceUri,
     String? cachePath,
     required String name,
+    String? relativePath,
   }) async {
     try {
       final res = await _channel.invokeMethod<Map<Object?, Object?>>(
         'saveDocumentToDevice',
-        {'sourceUri': sourceUri, 'cachePath': cachePath, 'name': name},
+        {
+          'sourceUri': sourceUri,
+          'cachePath': cachePath,
+          'name': name,
+          'relativePath': relativePath,
+        },
       );
       if (res == null) return null;
       return {
@@ -720,6 +726,35 @@ class NativeBridge {
       };
     } catch (_) {
       return null;
+    }
+  }
+
+  /// v112: real filesystem paths of every MediaStore-indexed video across
+  /// all shared volumes (internal + SD card). Replaces the filesystem walk
+  /// that needed all-files access. Empty when the media read permission is
+  /// missing or nothing is indexed yet.
+  static Future<List<String>> listMediaStoreVideos() async {
+    try {
+      final res =
+          await _channel.invokeMethod<List<Object?>>('listMediaStoreVideos');
+      if (res == null) return const [];
+      return [for (final e in res) if (e != null) e.toString()];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// v112: the system consent dialog to delete shared-storage videos
+  /// (Private folder's hide flow, called once the vault copy is safe).
+  /// API 30+ shows one batch dialog; API 29 asks per file. True when the
+  /// originals are gone; false when the user declines or deletion fails.
+  static Future<bool> requestMediaDelete(List<String> paths) async {
+    try {
+      final res = await _channel
+          .invokeMethod<bool>('requestMediaDelete', {'paths': paths});
+      return res ?? false;
+    } catch (_) {
+      return false;
     }
   }
 

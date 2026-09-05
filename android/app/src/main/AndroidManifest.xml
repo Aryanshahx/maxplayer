@@ -4,8 +4,9 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
-        tools:ignore="ScopedStorage" />
+    <!-- v112: All-files access removed. Play rejected it as non-core; the
+         library scans via MediaStore, saving uses MediaStore inserts, and
+         vault deletions use the system per-file consent dialog. -->
 
     <!-- v51: release builds were seen merging the signature-level DUMP
          permission from a bundled library; a third-party app can never

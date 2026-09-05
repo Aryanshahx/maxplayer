@@ -680,5 +680,56 @@ void main() {
         expect(manual.contains('Google Drive sign-in'), isFalse);
       });
     });
+
+    group('v112 Play policy: MANAGE_EXTERNAL_STORAGE removed', () {
+      test('no all-files permission survives anywhere user-facing', () {
+        final manifest = File('android/app/src/main/AndroidManifest.xml')
+            .readAsStringSync();
+        expect(manifest.contains('MANAGE_EXTERNAL_STORAGE'), isFalse);
+        expect(manifest, contains('v112: All-files access removed'));
+        final storage =
+            File('lib/utils/storage_permission.dart').readAsStringSync();
+        expect(storage.contains('manageExternalStorage'), isFalse);
+        final vault = File('lib/state/private_vault.dart').readAsStringSync();
+        expect(vault.contains('All files access'), isFalse);
+        final fm =
+            File('lib/screens/file_manager_screen.dart').readAsStringSync();
+        expect(fm.contains('All files access'), isFalse);
+        expect(fm, contains('media storage permission'));
+        final guide = File('PLAY_STORE_GUIDE.md').readAsStringSync();
+        expect(guide.contains('MANAGE_EXTERNAL_STORAGE'), isFalse);
+        final privacy = File('docs/privacy.html').readAsStringSync();
+        expect(privacy.contains('All files access'), isFalse);
+        expect(privacy, contains('MediaStore'));
+        final pubspec = File('pubspec.yaml').readAsStringSync();
+        expect(pubspec, contains('version: 1.0.0+112'));
+      });
+
+      test('scoped replacements are wired end-to-end', () {
+        final state = File('lib/state/video_library_state.dart')
+            .readAsStringSync();
+        expect(state.contains('manageExternalStorage'), isFalse);
+        expect(state, contains('_scanMediaStore'));
+        expect(state, contains('listMediaStoreVideos'));
+        final bridge =
+            File('lib/services/native_bridge.dart').readAsStringSync();
+        expect(bridge, contains('listMediaStoreVideos'));
+        expect(bridge, contains('requestMediaDelete'));
+        expect(bridge, contains('relativePath'));
+        final mainKt = File(
+                'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt')
+            .readAsStringSync();
+        expect(mainKt, contains('queryMediaStoreVideoPaths'));
+        expect(mainKt, contains('resolveVideoUri'));
+        expect(mainKt, contains('createDeleteRequest'));
+        expect(mainKt, contains('RecoverableSecurityException'));
+        expect(mainKt, contains('REQ_MEDIA_DELETE'));
+        expect(mainKt, contains('finishMediaDelete'));
+        expect(mainKt, contains('pendingMediaDeleteResult'));
+        final vault = File('lib/state/private_vault.dart').readAsStringSync();
+        expect(vault, contains('requestMediaDelete'));
+        expect(vault, contains("relativePath: 'Movies'"));
+      });
+    });
   });
 }

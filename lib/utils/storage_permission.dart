@@ -2,40 +2,38 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../services/native_bridge.dart';
 
-/// v40: THE one place that asks for storage read access. Two other spots
-/// (the Private folder's "+" flow and the library's long-press "hide" flow)
-/// asked ONLY for "All files access", which resolves denied FOREVER on
-/// Android 10 and older (vivo 1908, API 27) - those phones kept "asking
-/// storage permission even though it is enabled", exactly like the library
-/// scanner did before v38.
+/// v112 (Play policy): all-files access (MANAGE_EXTERNAL_STORAGE) is GONE -
+/// Google rejected it as non-core, and scoped storage covers the app's real
+/// needs. This one helper still asks for media-read access with the
+/// version-correct permission set:
 ///
-/// Android 11+ (API 30+): request "All files access".
-/// Android 10 and older: that concept does not exist - the classic Storage
-/// runtime permission is the correct ask there.
+/// Android 13+ (API 33+): videos/photos/audio are separate runtime grants
+/// that gate MediaStore reads.
+/// Android 10-12 (API 29-32): READ_EXTERNAL_STORAGE grants media reads.
+/// Android 9 and older: the classic Storage permission.
 ///
-/// Returns true when reading storage is allowed (calling request() when
-/// already granted resolves granted without showing any dialog).
+/// Returns true when reading videos is allowed (calling request() when
+/// already granted resolves granted without showing any dialog). v40 note:
+/// the Private folder's "+" flow and the library's long-press "hide" flow
+/// route through here too - keep it that way.
 Future<bool> ensureStorageAccess() async {
+  final sdk = await NativeBridge.sdkInt();
   PermissionStatus status;
   try {
-    status = await Permission.manageExternalStorage.request();
+    if (sdk >= 33) {
+      status = await Permission.videos.request();
+      // v106-fix: Android 13+ lists Photos / Music separately in App info -
+      // ask alongside so nothing reads as "Not allowed". The video grant is
+      // what this helper reports; either subset granted is fine.
+      await Permission.photos.request();
+      await Permission.audio.request();
+    } else {
+      status = await Permission.storage.request();
+    }
   } catch (_) {
-    // Some skins/Go builds lack the "All files access" screen entirely and
-    // the request can throw instead of returning denied.
+    // Some skins/Go builds lack a permission screen entirely and the
+    // request can throw instead of returning denied.
     status = PermissionStatus.denied;
-  }
-  if (!status.isGranted && (await NativeBridge.sdkInt()) < 30) {
-    status = await Permission.storage.request();
-  }
-  if ((await NativeBridge.sdkInt()) >= 33) {
-    // v106-fix: Android 13+ lists Photos / Videos / Music separately in App
-    // info and gates MediaStore reads on them - ask even when All-files is
-    // granted, so nothing shows "Not allowed".
-    final videos = await Permission.videos.request();
-    await Permission.photos.request();
-    await Permission.audio.request();
-    // All-files denied but videos granted: MediaStore still serves videos.
-    if (!status.isGranted && videos.isGranted) return true;
   }
   return status.isGranted;
 }

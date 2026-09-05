@@ -106,7 +106,7 @@ class PrivateVault {
         await d.create(recursive: true);
       } catch (_) {
         throw const FileSystemException(
-          'Vault storage is not available - allow "All files access" for '
+          'Vault storage is not available - allow storage permission for '
           'Max Player and try again',
         );
       }
@@ -148,15 +148,30 @@ class PrivateVault {
     return files;
   }
 
-  /// Moves [srcPath] into the vault and returns the new file. Same-filesystem
-  /// rename is instant; a cross-device fallback copies then deletes.
+  /// Moves [srcPath] into the vault and returns the new file. API <= 28
+  /// renames instantly; on scoped storage (API 29+) we may READ the video
+  /// with the media permission but deleting the original needs the system's
+  /// consent dialog (v112), which shows once the copy is safely inside.
   Future<File> hide(String srcPath) async {
     final src = File(srcPath);
     if (!src.existsSync()) {
       throw const FileSystemException('Video file not found');
     }
     final target = await _uniqueIn(await _dir(), srcPath);
-    final moved = await _move(src, target);
+    final File moved;
+    if ((await NativeBridge.sdkInt()) >= 29) {
+      moved = await src.copy(target);
+      final deleted = await NativeBridge.requestMediaDelete([srcPath]);
+      if (!deleted) {
+        // Roll back so a declined delete never leaves a silent duplicate.
+        try {
+          await moved.delete();
+        } catch (_) {}
+        throw const FileSystemException('Delete of the original was declined');
+      }
+    } else {
+      moved = await _move(src, target);
+    }
     revision++; // v26: vault contents changed
     // Refresh the gallery scan for the OLD location so it disappears.
     // v22: best-effort only - a failed rescan must NOT undo a good move.
@@ -171,6 +186,26 @@ class PrivateVault {
     final src = File(hiddenPath);
     if (!src.existsSync()) {
       throw const FileSystemException('Hidden video not found');
+    }
+    if ((await NativeBridge.sdkInt()) >= 29) {
+      // v112 / scoped storage: export through MediaStore into the public
+      // Movies folder (auto-indexed - no rescan needed), then drop the
+      // vault copy, which lives in our own app directory.
+      final name = hiddenPath.split('/').last;
+      final saved = await NativeBridge.savePickedVideoToDevice(
+        cachePath: hiddenPath,
+        name: name,
+        relativePath: 'Movies',
+      );
+      if (saved == null) {
+        throw const FileSystemException('Could not export the video');
+      }
+      await src.delete();
+      revision++;
+      final outPath = saved['path']?.toString();
+      return File(
+        outPath != null && outPath.isNotEmpty ? outPath : '$unhideDirPath/$name',
+      );
     }
     final destDir = Directory(unhideDirPath);
     if (!destDir.existsSync()) await destDir.create(recursive: true);
@@ -213,7 +248,7 @@ class PrivateVault {
           await copied.delete();
         } catch (_) {}
         throw const FileSystemException(
-          'Could not remove the original file - allow "All files access" '
+          'Could not remove the original file - allow storage permission '
           'for Max Player and try again',
         );
       }
