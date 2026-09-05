@@ -90,6 +90,11 @@ class NativeBridge {
   /// v70 C4: media notification seekbar / smartwatch scrub tapped.
   static void Function(Duration position)? _onMediaSeek;
 
+  /// v111: progress while a picked cloud video is being copied into the
+  /// app (bytesDone, bytesTotal; total 0 = provider reported no size). The
+  /// Cloud Storage sheet installs a listener for the pick's duration.
+  static void Function(int doneBytes, int totalBytes)? pickProgressListener;
+
   /// v70: custom in-app microphone speech recognition callbacks.
   static void Function(String state)? _onVoiceState;
   static void Function(double rms)? _onVoiceRms;
@@ -173,6 +178,14 @@ class NativeBridge {
             '${m['stage']}',
             (m['percent'] as num?)?.toInt() ?? 0,
           );
+        }
+        break;
+      case 'onPickProgress':
+        final m = call.arguments as Map?;
+        if (m != null) {
+          final d = (m['done'] as num?)?.toInt() ?? 0;
+          final t = (m['total'] as num?)?.toInt() ?? 0;
+          pickProgressListener?.call(d, t);
         }
         break;
       case 'onAiSubtitleDone':
@@ -708,6 +721,14 @@ class NativeBridge {
     } catch (_) {
       return null;
     }
+  }
+
+  /// v111: aborts the in-flight cloud copy started by pickVideoDocument;
+  /// the partial cache file is discarded natively. Safe to call anytime.
+  static Future<void> abortPickCopy() async {
+    try {
+      await _channel.invokeMethod('abortPickCopy');
+    } catch (_) {}
   }
 
   // ---------------------------------------------------------------------------

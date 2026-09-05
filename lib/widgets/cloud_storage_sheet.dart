@@ -1,13 +1,17 @@
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'dart:async';
 
-import '../services/gdrive_service.dart';
+import 'package:flutter/material.dart';
+
 import '../services/native_bridge.dart';
 import '../state/theme_state.dart';
 import '../utils/formatters.dart';
 
-/// v86: Dedicated Cloud Storage (Google Drive) manager with automatic video fetching.
+/// v111: Cloud Storage is IMPORT-ONLY now. "The Easy Way" taken all the way:
+/// the Google Sign-In / Drive-API path is gone completely - Android's own
+/// document picker lists every installed storage provider app (Google Drive,
+/// Dropbox, OneDrive, ...) plus this device, videos only. The picked file is
+/// copied into the app with a live progress bar; cloud imports can then be
+/// kept permanently with "Save to device" (Movies/Max Player).
 class CloudStorageSheet extends StatefulWidget {
   final Future<void> Function(String url, String title,
       [Map<String, String>? httpHeaders]) onPlay;
@@ -36,221 +40,82 @@ class CloudStorageSheet extends StatefulWidget {
 }
 
 class _CloudStorageSheetState extends State<CloudStorageSheet> {
-  final TextEditingController _searchCtrl = TextEditingController();
-
-  bool _isConnected = false;
-  bool _loading = false;
-  bool _signingIn = false;
-  bool _picking = false; // v110: Android system picker round-trip in progress
-  String _error = '';
-  String _email = '';
-  Map<String, String>? _headers;
-  List<GDriveItem> _driveVideos = [];
-  String _searchFilter = '';
-
-  static const String _kDriveUserKey = 'gdrive.user_email';
-  static const String _kDriveVideosCacheKey = 'gdrive.videos_cache';
+  bool _importing = false;
+  bool _progressVisible = false;
+  final ValueNotifier<int> _progDone = ValueNotifier<int>(0);
+  final ValueNotifier<int> _progTotal = ValueNotifier<int>(0);
+  Timer? _progressTimer;
 
   @override
-  void initState() {
-    super.initState();
-    _loadStoredSession();
+  void dispose() {
+    _progressTimer?.cancel();
+    NativeBridge.pickProgressListener = null;
+    _progDone.dispose();
+    _progTotal.dispose();
+    super.dispose();
   }
 
-  Future<void> _loadStoredSession() async {
-    // Instant UI from the last cached list, then a silent Google session.
-    final s = await NativeBridge.loadSettings();
-    final email = s[_kDriveUserKey];
-    final cachedJson = s[_kDriveVideosCacheKey];
-    if (cachedJson != null && cachedJson.isNotEmpty) {
-      try {
-        final list = jsonDecode(cachedJson) as List;
-        if (mounted) {
-          setState(() {
-            _driveVideos = list
-                .map((e) => GDriveItem(
-                      id: '${e['id']}',
-                      name: '${e['name']}',
-                      mimeType: '${e['mimeType']}',
-                      sizeBytes: int.tryParse('${e['sizeBytes']}') ?? 0,
-                      thumbnailLink: e['thumbnailLink']?.toString(),
-                    ))
-                .toList();
-          });
-        }
-      } catch (_) {}
-    }
-    // v106-fix2: never prompt on open - silent re-auth runs only when
-    // this device signed in before (email saved); otherwise wait for the
-    // Sign-In button.
-    if (email == null || email.isEmpty) return;
-    // v108: reuse this launch's silent session - repeat opens never prompt.
-    final memHeaders = GDriveAuth.recall();
-    if (memHeaders != null) {
-      _email = email;
-      _headers = memHeaders;
-      if (mounted) setState(() => _isConnected = true);
-      _fetchAllVideos();
-      return;
-    }
+  /// The one action of this sheet: open Android's picker, copy the chosen
+  /// video in (progress bar), then play it or save a permanent copy.
+  Future<void> _importVideo() async {
+    if (_importing) return;
+    setState(() => _importing = true);
+    _progDone.value = 0;
+    _progTotal.value = 0;
+    // Copy progress streams in while a cloud file imports; a device file
+    // resolves silently without any events.
+    NativeBridge.pickProgressListener = (done, total) {
+      if (!mounted) return;
+      _progDone.value = done;
+      _progTotal.value = total;
+      if (!_progressVisible) _showImportProgress();
+    };
+    // Unknown-size copies emit their first event late; open the bar after a
+    // grace delay so big imports never look frozen.
+    _progressTimer?.cancel();
+    _progressTimer = Timer(const Duration(milliseconds: 600), () {
+      if (mounted && _importing && !_progressVisible) _showImportProgress();
+    });
+
+    Map<String, dynamic>? picked;
     try {
-      // v107: stay signed in once signed in - a dead grant just retries
-      // silently next open (never prompts); only Disconnect clears it.
-      final account = await GDriveAuth.signInSilently();
-      if (!mounted || account == null) return;
-      final headers = await GDriveAuth.authHeadersOf(account);
-      if (!mounted || headers == null) return;
-      _email = account.email;
-      _headers = headers;
-      GDriveAuth.remember(headers);
-      setState(() => _isConnected = true);
-      _fetchAllVideos();
-    } catch (_) {}
-  }
-
-  Future<void> _signIn() async {
-    setState(() {
-      _signingIn = true;
-      _error = '';
-    });
-    try {
-      final account = await GDriveAuth.signIn();
-      final headers = await GDriveAuth.authHeadersOf(account);
-      if (!mounted) return;
-      if (headers == null) {
-        setState(() {
-          _signingIn = false;
-          _error = 'Drive permission was not granted.';
-        });
-        return;
-      }
-      _email = account.email;
-      NativeBridge.saveSetting(_kDriveUserKey, _email);
-      _headers = headers;
-      GDriveAuth.remember(headers);
-      setState(() {
-        _signingIn = false;
-        _isConnected = true;
-      });
-      _fetchAllVideos();
-    } on GoogleSignInException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _signingIn = false;
-        _error = e.code == GoogleSignInExceptionCode.canceled
-            ? 'Sign in canceled.'
-            : 'Sign in failed (${e.code}): ${e.description ?? 'no details'}. '
-                'If this persists, the app SHA-1 may not match the Cloud '
-                'Console OAuth client.';
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _signingIn = false;
-        _error = 'Sign in failed: $e';
-      });
+      picked = await NativeBridge.pickVideoDocument();
+    } finally {
+      _progressTimer?.cancel();
+      NativeBridge.pickProgressListener = null;
     }
-  }
-
-  Future<void> _fetchAllVideos() async {
-    final headers = _headers;
-    if (headers == null) return;
-    setState(() {
-      _loading = true;
-      _error = '';
-    });
-    final items = await GDriveService.listDriveFiles(headers: headers);
     if (!mounted) return;
-    if (items == null) {
-      // 401/403: the grant expired or was revoked - ask for sign-in again.
-      GDriveAuth.forget();
-      setState(() {
-        _loading = false;
-        _isConnected = false;
-        _error = 'Session expired - please sign in again.';
-      });
-      return;
+    if (_progressVisible) {
+      // showDialog defaults to the root navigator; pop only that dialog,
+      // not this bottom sheet.
+      Navigator.of(context, rootNavigator: true).pop();
+      _progressVisible = false;
     }
-    setState(() {
-      _driveVideos = items;
-      _loading = false;
-      _isConnected = true;
-    });
+    setState(() => _importing = false);
+    if (picked == null) return; // picker canceled, or copy aborted
 
-    final cacheData = jsonEncode(items
-        .map((i) => {
-              'id': i.id,
-              'name': i.name,
-              'mimeType': i.mimeType,
-              'sizeBytes': i.sizeBytes,
-              'thumbnailLink': i.thumbnailLink,
-            })
-        .toList());
-    NativeBridge.saveSetting(_kDriveVideosCacheKey, cacheData);
-  }
-
-  Future<void> _disconnect() async {
-    await GDriveAuth.signOut();
-    GDriveAuth.forget();
-    NativeBridge.saveSetting(_kDriveUserKey, '');
-    NativeBridge.saveSetting(_kDriveVideosCacheKey, '');
-    if (!mounted) return;
-    setState(() {
-      _isConnected = false;
-      _driveVideos = [];
-      _headers = null;
-      _email = '';
-      _error = '';
-    });
-  }
-
-  void _playVideo(GDriveItem item) {
-    Navigator.of(context).pop();
-    widget.onPlay(item.streamUrl, item.name, _headers);
-  }
-
-  // v110 "The Easy Way": Android's built-in file picker lists this device
-  // AND the user's installed storage apps (Google Drive included) - no
-  // Google sign-in, no OAuth verification. Local files play straight from
-  // their path; cloud files arrive as a temporary copy, so the user is
-  // offered a permanent "Save to device" copy in Movies/Max Player.
-  Future<void> _pickViaAndroidPicker() async {
-    if (_picking) return;
-    setState(() => _picking = true);
-    final picked = await NativeBridge.pickVideoDocument();
-    if (!mounted) return;
-    setState(() => _picking = false);
-    if (picked == null) return; // user canceled the picker
     final messenger = ScaffoldMessenger.maybeOf(context);
     final path = picked['path']?.toString() ?? '';
     final name = picked['name']?.toString() ?? 'video';
     if (path.isEmpty) {
-      showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF1b1b24),
-          title: const Text("Couldn't open that file",
-              style: TextStyle(color: Colors.white, fontSize: 17)),
-          content: const Text(
-            'The selected video could not be read. Try another file, or '
-            'sign in to Google Drive instead.',
-            style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
+      _showInfoDialog(
+        "Couldn't import that file",
+        'The selected video could not be read. Try another one.',
       );
       return;
     }
     if (picked['cached'] != true) {
-      // Plain local file: already on the device, nothing to save.
+      // A plain local file: already on the device, import is unnecessary.
       _playPicked(path, name);
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text('Already on this device - opening it'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
       return;
     }
+
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -290,24 +155,10 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
     );
     if (!mounted) return;
     if (saved == null) {
-      showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF1b1b24),
-          title: const Text("Couldn't save",
-              style: TextStyle(color: Colors.white, fontSize: 17)),
-          content: const Text(
-            'The copy could not be written to Movies/Max Player. Playing '
-            'the temporary copy is still possible.',
-            style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
+      _showInfoDialog(
+        "Couldn't save",
+        'The copy could not be written to Movies/Max Player. Playing the '
+            'temporary copy is still possible.',
       );
       return;
     }
@@ -324,317 +175,194 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
 
   void _playPicked(String path, String name) {
     Navigator.of(context).pop();
-    // Same onPlay pipeline the Drive list uses: libmpv opens local absolute
-    // paths exactly like stream URLs.
+    // Same onPlay pipeline other local files use: libmpv opens local
+    // absolute paths exactly like stream URLs.
     widget.onPlay(path, name);
   }
 
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
+  void _showImportProgress() {
+    _progressVisible = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1b1b24),
+        title: const Text('Importing video…',
+            style: TextStyle(color: Colors.white, fontSize: 17)),
+        content: AnimatedBuilder(
+          animation: Listenable.merge([_progDone, _progTotal]),
+          builder: (_, __) {
+            final done = _progDone.value;
+            final total = _progTotal.value;
+            final double? pct =
+                total > 0 ? (done / total).clamp(0.0, 1.0) : null;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LinearProgressIndicator(
+                  value: pct,
+                  minHeight: 6,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  total > 0
+                      ? '${formatFileSize(done)} of ${formatFileSize(total)}'
+                      : '${formatFileSize(done)} copied…',
+                  style:
+                      const TextStyle(color: Colors.white70, fontSize: 12.5),
+                ),
+                const Text(
+                  'The video is being copied from the storage app.',
+                  style: TextStyle(color: Colors.white38, fontSize: 11.5),
+                ),
+              ],
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              NativeBridge.abortPickCopy();
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    ).then((_) => _progressVisible = false);
+  }
+
+  void _showInfoDialog(String title, String body) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1b1b24),
+        title: Text(title,
+            style: const TextStyle(color: Colors.white, fontSize: 17)),
+        content: Text(
+          body,
+          style:
+              const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final accent = themeState.accent;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final visibleVideos = _driveVideos.where((v) {
-      if (_searchFilter.isEmpty) return true;
-      return v.name.toLowerCase().contains(_searchFilter.toLowerCase());
-    }).toList();
-
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.only(bottom: bottomInset),
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.8,
-          child: Column(
-            children: [
-              const SizedBox(height: 10),
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
-                child: Row(
-                  children: [
-                    Icon(Icons.cloud_queue, color: accent, size: 24),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: Text(
-                        'Google Drive Cloud Storage',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                        ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.cloud_download_outlined, color: accent, size: 24),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Import from cloud storage',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    if (_isConnected)
-                      IconButton(
-                        icon: const Icon(Icons.logout, color: Colors.white54, size: 20),
-                        tooltip: 'Disconnect Account',
-                        onPressed: _disconnect,
-                      ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const Divider(height: 1, color: Colors.white12),
-              Expanded(
-                child: !_isConnected
-                    ? Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 72,
-                                height: 72,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.white.withValues(alpha: 0.05),
-                                ),
-                                child: Icon(Icons.cloud_sync, size: 38, color: accent),
-                              ),
-                              const SizedBox(height: 16),
-                              const Text(
-                                'Fetch & Stream Drive Videos',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'Sign in to automatically fetch all video files from your Google Drive and stream them directly in Max Player.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.4),
-                              ),
-                              const SizedBox(height: 24),
-                              if (_error.isNotEmpty) ...[
-                                Text(
-                                  _error,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                      color: Colors.redAccent,
-                                      fontSize: 12.5,
-                                      height: 1.4),
-                                ),
-                                const SizedBox(height: 12),
-                              ],
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: accent,
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  ),
-                                  icon: const Icon(Icons.login),
-                                  label: Text(
-                                    _signingIn
-                                        ? 'Signing in…'
-                                        : 'Sign in with Google',
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14.5),
-                                  ),
-                                  onPressed: _signingIn ? null : _signIn,
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              const Text(
-                                'or',
-                                style: TextStyle(
-                                    color: Colors.white24, fontSize: 12),
-                              ),
-                              const SizedBox(height: 12),
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.white,
-                                    side:
-                                        const BorderSide(color: Colors.white24),
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 13),
-                                    shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(12)),
-                                  ),
-                                  icon: const Icon(
-                                      Icons.folder_open_outlined),
-                                  label: Text(
-                                    _picking
-                                        ? 'Opening picker…'
-                                        : 'Select video (no sign-in)',
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14),
-                                  ),
-                                  onPressed:
-                                      _picking ? null : _pickViaAndroidPicker,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              const Text(
-                                "Opens Android's file picker: choose a video "
-                                'from this device, your Google Drive app, or '
-                                'any storage app. Cloud files are copied '
-                                'first, so big ones take a moment - then you '
-                                'can keep them with Save to device.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    color: Colors.white38,
-                                    fontSize: 11.5,
-                                    height: 1.35),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : Column(
-                        children: [
-                          if (_email.isNotEmpty)
-                            Padding(
-                              padding:
-                                  const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  _email,
-                                  style: const TextStyle(
-                                      color: Colors.white38, fontSize: 11.5),
-                                ),
-                              ),
-                            ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.white,
-                                  side: const BorderSide(
-                                      color: Colors.white24),
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 11),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(12)),
-                                ),
-                                icon: const Icon(
-                                    Icons.folder_open_outlined,
-                                    size: 20),
-                                label: Text(
-                                  _picking
-                                      ? 'Opening picker…'
-                                      : 'Select video via Android picker '
-                                          '(device / Drive app)',
-                                  style: const TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w500),
-                                ),
-                                onPressed: _picking
-                                    ? null
-                                    : _pickViaAndroidPicker,
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.06),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: TextField(
-                                      controller: _searchCtrl,
-                                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                                      onChanged: (v) => setState(() => _searchFilter = v),
-                                      decoration: const InputDecoration(
-                                        hintText: 'Search Drive videos…',
-                                        hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
-                                        icon: Icon(Icons.search, size: 18, color: Colors.white38),
-                                        border: InputBorder.none,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  icon: const Icon(Icons.refresh,
-                                      color: Colors.white70),
-                                  onPressed: _fetchAllVideos,
-                                ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            child: _loading
-                                ? const Center(child: CircularProgressIndicator())
-                                : visibleVideos.isEmpty
-                                    ? const Center(
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.video_library_outlined, size: 48, color: Colors.white24),
-                                            SizedBox(height: 10),
-                                            Text(
-                                              'No videos found on your Google Drive',
-                                              style: TextStyle(color: Colors.white54, fontSize: 14),
-                                            ),
-                                          ],
-                                        ),
-                                      )
-                                    : ListView.separated(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                        itemCount: visibleVideos.length,
-                                        separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
-                                        itemBuilder: (context, i) {
-                                          final vid = visibleVideos[i];
-                                          return ListTile(
-                                            contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                                            leading: CircleAvatar(
-                                              backgroundColor: accent.withValues(alpha: 0.18),
-                                              child: Icon(Icons.movie, color: accent, size: 20),
-                                            ),
-                                            title: Text(
-                                              vid.name,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w500),
-                                            ),
-                                            subtitle: Text(
-                                              formatFileSize(vid.sizeBytes),
-                                              style: const TextStyle(color: Colors.white38, fontSize: 11.5),
-                                            ),
-                                            trailing: IconButton(
-                                              icon: Icon(Icons.play_circle_fill, color: accent, size: 28),
-                                              onPressed: () => _playVideo(vid),
-                                            ),
-                                            onTap: () => _playVideo(vid),
-                                          );
-                                        },
-                                      ),
-                          ),
-                        ],
+            ),
+            const Divider(height: 1, color: Colors.white12),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.05),
+                    ),
+                    child: Icon(Icons.drive_folder_upload_outlined,
+                        size: 38, color: accent),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Import a video',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    "Android's file picker opens with Google Drive, Dropbox, "
+                    'OneDrive or any storage app you use - videos only. The '
+                    'picked file is copied into Max Player with a live '
+                    'progress bar; keep it forever with Save to device.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: Colors.white54, fontSize: 13, height: 1.4),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: themeState.onAccent,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
+                      icon: const Icon(Icons.file_open_outlined),
+                      label: Text(
+                        _importing
+                            ? 'Importing…'
+                            : 'Choose a video to import',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14.5),
+                      ),
+                      onPressed: _importing ? null : _importVideo,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'No sign-in at all - the picker hands Max Player one '
+                    'file at a time, read-only.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: Colors.white38, fontSize: 11.5, height: 1.35),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

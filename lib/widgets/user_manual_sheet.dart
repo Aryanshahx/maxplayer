@@ -538,22 +538,14 @@ const List<_Item> _smartItems = [
         'switch right in the tune sheet - it stays live like the other switches.',
   ),
   _Item(
-    Icons.cloud_done_outlined,
-    'Google Drive sign-in',
-    'Library → Cloud Storage → Sign in with Google: your Drive videos list '
-        'up, tap any video to stream it in Max Player. Sign in once - the '
-        'session is quietly reused on later opens. Disconnect anytime from '
-        'the same sheet.',
-  ),
-  _Item(
-    Icons.folder_open_outlined,
-    'Select video (no sign-in)',
-    'Library → Cloud Storage → Select video: Android\'s own file picker '
-        'opens with this device, your Google Drive app, and any other '
-        'storage app side by side - no Google account needed. Cloud videos '
-        'are copied into Max Player first (large ones take a moment); after '
-        'picking, choose "Save to device" to keep a permanent copy in '
-        'Movies/Max Player.',
+    Icons.cloud_download_outlined,
+    'Import from cloud storage',
+    'Library → Cloud Storage → Choose a video to import: Android\'s own '
+        'file picker opens with Google Drive, Dropbox, OneDrive or any '
+        'storage app - no sign-in at all. The video copies in with a live '
+        'progress bar (big files on slow networks take a while; Cancel '
+        'stops the copy); then choose "Save to device" for a permanent '
+        'copy in Movies/Max Player.',
   ),
   _Item(
     Icons.volume_up,

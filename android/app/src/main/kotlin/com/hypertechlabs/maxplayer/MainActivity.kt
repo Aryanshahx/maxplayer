@@ -147,6 +147,11 @@ class MainActivity : FlutterActivity() {
     // Dart result, same pattern as the voice search / credential prompts.
     private var pendingSafPickResult: MethodChannel.Result? = null
 
+    // v111: flipped by the "abortPickCopy" call (progress dialog's Cancel);
+    // the streaming copy loop polls it between chunks.
+    @Volatile
+    private var safCopyAborted = false
+
     private fun startInAppSpeech(result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=
@@ -906,6 +911,13 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "abortPickCopy" -> {
+                    // v111: Cancel on the import progress dialog. The copy
+                    // loop sees the flag, stops early and deletes the
+                    // partial cache file.
+                    safCopyAborted = true
+                    result.success(true)
+                }
                 "nowPlayingShow" -> {
                     val title = call.argument<String>("title") ?: "Max Player"
                     val subtitle = call.argument<String>("subtitle") ?: ""
@@ -1165,6 +1177,7 @@ class MainActivity : FlutterActivity() {
         val pending = pendingSafPickResult
         pendingSafPickResult = null
         if (pending == null) return
+        safCopyAborted = false
         val uri = if (resultCode == RESULT_OK) data?.data else null
         if (uri == null) {
             pending.success(null)
@@ -1182,7 +1195,16 @@ class MainActivity : FlutterActivity() {
             var resolved = resolveVideoPath(uri)
             var cached = false
             if (resolved == null) {
-                resolved = copyContentToCache(uri)
+                // v111: stream with progress events for the sheet's import
+                // bar, honoring the dialog's Cancel via the abort flag.
+                resolved = copyContentToCache(uri) { done, total ->
+                    mainHandler.post {
+                        channel?.invokeMethod(
+                            "onPickProgress",
+                            hashMapOf("done" to done, "total" to total)
+                        )
+                    }
+                }
                 cached = resolved != null
             }
             val path = resolved
@@ -1202,22 +1224,23 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /** Readable byte stream for a picked document: its SAF grant first,
-     * then the on-device/cache copy as fallback. */
+    /** Readable byte stream for a picked document: the on-device/cache copy
+     * first (it was just imported - no second cloud download), then the SAF
+     * grant as fallback. */
     private fun openDocumentInput(
         sourceUri: String?,
         cachePath: String?
     ): java.io.InputStream? {
-        if (!sourceUri.isNullOrEmpty()) {
-            try {
-                contentResolver.openInputStream(Uri.parse(sourceUri))
-                    ?.let { return it }
-            } catch (_: Exception) {}
-        }
         if (!cachePath.isNullOrEmpty()) {
             try {
                 val f = File(cachePath)
                 if (f.exists()) return FileInputStream(f)
+            } catch (_: Exception) {}
+        }
+        if (!sourceUri.isNullOrEmpty()) {
+            try {
+                contentResolver.openInputStream(Uri.parse(sourceUri))
+                    ?.let { return it }
             } catch (_: Exception) {}
         }
         return null
@@ -1389,6 +1412,20 @@ class MainActivity : FlutterActivity() {
      * grow unboundedly.
      */
     private fun copyContentToCache(uri: Uri): String? {
+        return copyContentToCache(uri, null)
+    }
+
+    /**
+     * v111: progress + abortable variant. [onProgress] gets
+     * (bytesDone, bytesTotal) about every 100 ms while streaming; the total
+     * is 0 when the provider does not report a size. Only this pick-driven
+     * path honors the abort flag; the share-intent path above copies
+     * uninterrupted.
+     */
+    private fun copyContentToCache(
+        uri: Uri,
+        onProgress: ((Long, Long) -> Unit)?
+    ): String? {
         return try {
             var name = queryDisplayName(uri) ?: "video.mp4"
             name = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
@@ -1400,10 +1437,33 @@ class MainActivity : FlutterActivity() {
                 dir.mkdirs()
             }
             val out = File(dir, name)
+            val total = queryDocumentSize(uri)
             contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(out).use { output -> input.copyTo(output) }
+                FileOutputStream(out).use { output ->
+                    if (onProgress == null) {
+                        input.copyTo(output)
+                    } else {
+                        val buf = ByteArray(128 * 1024)
+                        var doneBytes = 0L
+                        var lastEmit = 0L
+                        while (true) {
+                            if (safCopyAborted) break
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            output.write(buf, 0, n)
+                            doneBytes += n
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            if (now - lastEmit >= 100) {
+                                lastEmit = now
+                                onProgress.invoke(doneBytes, total)
+                            }
+                        }
+                        onProgress.invoke(doneBytes, total)
+                    }
+                }
             } ?: return null
-            if (out.length() <= 0) {
+            val aborted = onProgress != null && safCopyAborted
+            if (aborted || out.length() <= 0) {
                 out.delete()
                 null
             } else {
@@ -1411,6 +1471,17 @@ class MainActivity : FlutterActivity() {
             }
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /** v111: provider-reported size of a document in bytes (0 = unknown). */
+    private fun queryDocumentSize(uri: Uri): Long {
+        return try {
+            contentResolver.query(
+                uri, arrayOf(OpenableColumns.SIZE), null, null, null
+            )?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else 0L } ?: 0L
+        } catch (e: Exception) {
+            0L
         }
     }
 

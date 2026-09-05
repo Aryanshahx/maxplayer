@@ -418,30 +418,17 @@ void main() {
     });
 
     test('v106 Google Sign-In powers Drive', () {
+      // v111: the Google Sign-In / Drive-API path was REMOVED (developer
+      // request: "remove sign in with google from cloud storage"); import
+      // runs fully through the SAF picker. These pins flipped to absence.
       final pub = File('pubspec.yaml').readAsStringSync();
-      expect(pub, contains('google_sign_in'));
-      final gradle =
-          File('android/app/build.gradle.kts').readAsStringSync();
-      expect(gradle, contains('minSdk = 24'));
-      final svc =
-          File('lib/services/gdrive_service.dart').readAsStringSync();
-      for (final k in [
-        'GoogleSignIn.instance.initialize',
-        'serverClientId',
-        'drive.readonly',
-        'authorizationHeaders',
-        'attemptLightweightAuthentication',
-        'authenticate()',
-        'disconnect()',
-        'alt=media',
-      ]) {
-        expect(svc, contains(k));
-      }
-      // No pasted tokens, no shipped API key.
-      expect(svc.contains('AIza'), isFalse);
+      expect(pub.contains('google_sign_in'), isFalse);
+      expect(File('lib/services/gdrive_service.dart').existsSync(), isFalse);
       final sheet =
           File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
-      expect(sheet, contains('Sign in with Google'));
+      expect(sheet.contains('Sign in with Google'), isFalse);
+      expect(sheet.contains('GDriveAuth'), isFalse);
+      expect(sheet.contains('google_sign_in'), isFalse);
       expect(sheet.contains('Access Key'), isFalse);
       expect(sheet.contains('gdrive.access_token'), isFalse);
       // Authed playback path: headers ride the track into mpv.
@@ -474,7 +461,8 @@ void main() {
       }
       final sheet =
           File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
-      expect(sheet, contains('e.description'));
+      // v111: sign-in error reporting is gone with the sign-in screen.
+      expect(sheet.contains('GoogleSignInException'), isFalse);
     });
 
     test('v106-fix2 sleep scrolls, silent sign-in gated', () {
@@ -487,8 +475,9 @@ void main() {
       expect(sleepSheet, contains('SingleChildScrollView'));
       final sheet =
           File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
-      expect(sheet, contains('email == null || email.isEmpty'));
-      expect(sheet, contains('Sign-In button'));
+      // v111: the import-only sheet has no sessions left to gate.
+      expect(sheet, contains('_importVideo'));
+      expect(sheet.contains('email == null || email.isEmpty'), isFalse);
     });
 
     test('v107 forced updates, sticky sign-in, branding docs', () {
@@ -504,9 +493,8 @@ void main() {
       }
       final sheet =
           File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
-      // Silent auth still gated on a past sign-in, but a dead grant no
-      // longer wipes the email - the session stays sticky.
-      expect(sheet, contains('email == null || email.isEmpty'));
+      // v111: picker-only - none of the sticky sign-in machinery remains.
+      expect(sheet.contains('email == null || email.isEmpty'), isFalse);
       expect(sheet.contains('stop trying on future opens'), isFalse);
       for (final f in [
         'docs/index.html',
@@ -542,16 +530,15 @@ void main() {
           File('lib/widgets/user_manual_sheet.dart').readAsStringSync();
       for (final k in [
         'on/off ',
-        'Google Drive sign-in',
+        'Import from cloud storage',
       ]) {
         expect(manual, contains(k));
       }
-      final svc =
-          File('lib/services/gdrive_service.dart').readAsStringSync();
-      expect(svc, contains('recall()'));
+      // v111: gdrive_service.dart was deleted along with the sign-in flow.
+      expect(File('lib/services/gdrive_service.dart').existsSync(), isFalse);
       final sheet =
           File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
-      expect(sheet, contains('GDriveAuth.remember'));
+      expect(sheet.contains('GDriveAuth.remember'), isFalse);
       final md = File('PRIVACY_POLICY.md').readAsStringSync();
       expect(md, contains('Google Drive'));
       expect(md, contains('5 September 2026'));
@@ -568,21 +555,20 @@ void main() {
           File('lib/widgets/user_manual_sheet.dart').readAsStringSync();
       expect(manual.contains('Automatic app updates'), isFalse);
       expect(manual.contains('Some thumbnails missing?'), isFalse);
-      // Kept: Drive manual entry + sticky Drive session after reopen.
-      expect(manual, contains('Google Drive sign-in'));
+      // v111: sign-in manual entry replaced by the import-only entry.
+      expect(manual.contains('Google Drive sign-in'), isFalse);
+      expect(manual, contains('Import from cloud storage'));
       final sheet =
           File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
-      expect(sheet, contains('GDriveAuth.recall()'));
-      expect(sheet, contains('GDriveAuth.remember'));
-      final svc =
-          File('lib/services/gdrive_service.dart').readAsStringSync();
-      expect(svc, contains('static Map<String, String>? _memHeaders'));
+      expect(sheet.contains('GDriveAuth.recall()'), isFalse);
+      expect(sheet.contains('GDriveAuth.remember'), isFalse);
+      expect(File('lib/services/gdrive_service.dart').existsSync(), isFalse);
     });
 
     group('v110 SAF picker, lock-screen media notification, docs', () {
       test('system file picker is wired end-to-end', () {
         final pub = File('pubspec.yaml').readAsStringSync();
-        expect(pub, contains('1.0.0+110'));
+        expect(pub, contains('version: 1.0.0+'));
         final bridge =
             File('lib/services/native_bridge.dart').readAsStringSync();
         for (final k in [
@@ -594,8 +580,8 @@ void main() {
         }
         final sheet =
             File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
-        expect(sheet, contains('Select video (no sign-in)'));
-        expect(sheet, contains('_pickViaAndroidPicker'));
+        expect(sheet, contains('Import from cloud storage'));
+        expect(sheet, contains('_importVideo'));
         expect(sheet, contains('Save to device'));
         final mainKt = File(
                 'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt')
@@ -634,20 +620,64 @@ void main() {
       test('v110 docs updated; older pinned strings still intact', () {
         final md = File('PRIVACY_POLICY.md').readAsStringSync();
         expect(md, contains('5 September 2026'));
-        expect(md, contains('system file picker'));
+        expect(md, contains('file picker'));
         expect(md, contains('Movies/Max Player'));
         final inApp =
             File('lib/utils/privacy_policy.dart').readAsStringSync();
-        expect(inApp, contains('SELECT VIDEO (ANDROID FILE PICKER)'));
+        expect(inApp, contains('CLOUD STORAGE IMPORT (ANDROID FILE PICKER)'));
         final terms = File('TERMS_OF_SERVICE.md').readAsStringSync();
         expect(terms, contains('HyperTech Labs'));
         final manual =
             File('lib/widgets/user_manual_sheet.dart').readAsStringSync();
-        expect(manual, contains('Select video (no sign-in)'));
+        expect(manual, contains('Import from cloud storage'));
         expect(manual, contains('lock screen'));
-        expect(manual, contains('Google Drive sign-in'));
+        expect(manual.contains('Google Drive sign-in'), isFalse);
         expect(File('docs/privacy.html').readAsStringSync(),
             contains('file picker'));
+      });
+    });
+
+    group('v111 import-only Cloud Storage with copy progress', () {
+      test('sheet imports via picker with a cancellable progress bar', () {
+        final sheet =
+            File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
+        expect(sheet, contains('Import from cloud storage'));
+        expect(sheet, contains('_importVideo'));
+        expect(sheet, contains('LinearProgressIndicator'));
+        expect(sheet, contains('pickProgressListener'));
+        expect(sheet, contains('abortPickCopy'));
+        expect(sheet, contains('Save to device'));
+        expect(sheet.contains('Sign in with Google'), isFalse);
+        final bridge =
+            File('lib/services/native_bridge.dart').readAsStringSync();
+        expect(bridge, contains('pickProgressListener'));
+        expect(bridge, contains("case 'onPickProgress'"));
+        expect(bridge, contains('abortPickCopy'));
+        final mainKt = File(
+                'android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt')
+            .readAsStringSync();
+        expect(mainKt, contains('onPickProgress'));
+        expect(mainKt, contains('queryDocumentSize'));
+        expect(mainKt, contains('safCopyAborted'));
+        expect(mainKt, contains('"abortPickCopy"'));
+      });
+
+      test('sign-in docs are gone; import docs stay', () {
+        final md = File('PRIVACY_POLICY.md').readAsStringSync();
+        expect(md.contains('Sign in with Google'), isFalse);
+        expect(md, contains('file picker'));
+        expect(md, contains('Google Drive'));
+        final inApp =
+            File('lib/utils/privacy_policy.dart').readAsStringSync();
+        expect(inApp.contains('Sign in with Google'), isFalse);
+        expect(inApp, contains('CLOUD STORAGE IMPORT'));
+        final terms = File('TERMS_OF_SERVICE.md').readAsStringSync();
+        expect(terms.contains('Google OAuth'), isFalse);
+        expect(terms, contains('file picker'));
+        final manual =
+            File('lib/widgets/user_manual_sheet.dart').readAsStringSync();
+        expect(manual, contains('Import from cloud storage'));
+        expect(manual.contains('Google Drive sign-in'), isFalse);
       });
     });
   });

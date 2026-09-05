@@ -15,13 +15,13 @@ You are responsible for the files you play. Use the app only with content you
 own or are entitled to watch, and only in ways that comply with the law and
 with the terms of any service you connect (Google Drive, stream providers).
 
-## Google Drive
-Cloud Storage uses Google OAuth on your device with read-only access to list
-and stream your own Drive videos; alternatively, "Select video" uses
-Android's built-in file picker (no sign-in) to open files offered by the
-Drive app on your device. File names, thumbnails and streams travel only
-between your phone and Google. Drive features are additionally subject to
-Google's Terms of Service and API policies.
+## Cloud storage
+Cloud Storage opens Android's built-in file picker: videos offered by the
+storage apps on your device (Google Drive, Dropbox, and others) are copied
+in, one file at a time, with read-only access granted to just the file you
+pick. There is no sign-in or OAuth inside the app. Connected services
+remain subject to their own terms; Drive files remain subject to Google's
+Terms of Service.
 
 ## Updates
 Builds installed from Google Play check for newer releases on launch and may

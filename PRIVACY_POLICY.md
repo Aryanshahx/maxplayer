@@ -13,20 +13,17 @@ Max Player is a local video player. **It does not collect, store, transmit, or s
 |---|---|---|
 | **Storage (videos / all files)** | To find and play the videos stored on your device, play videos you pick in Android's file picker, save screenshots to *Pictures/Max Player*, save picked videos to *Movies/Max Player* (only when you tap Save), and write AI subtitle files next to your videos | Never leaves your device |
 | **Microphone (audio)** | Only for voice search when you tap the mic icon in Discover or Library | Audio is transcribed in real time and is never recorded, stored, or sent to external servers |
-| **Internet** | Only for things you trigger yourself: legal TMDB movie discovery, stream URLs you open, and optional one-time AI subtitle model download | Nothing personal about you goes out |
+| **Internet** | Only for things you trigger yourself: legal TMDB movie discovery, stream URLs you open, cloud videos you import, and optional one-time AI subtitle model download | Nothing personal about you goes out |
 | **Local network (multicast/Wi-Fi)** | Only when you tap "Cast to TV" or use Wi-Fi Resume-Sync between your devices | Your local Wi-Fi only; no external server is involved |
 
 ## What the app does NOT do
 - No analytics, no tracking, no advertising, no third-party SDKs that collect data
-- No Max Player accounts and no device identifiers collected (the optional Google Drive sign-in below is strictly between you and Google)
+- No Max Player accounts and no device identifiers collected (cloud video imports go through Android's own file picker — strictly between you and the storage app)
 - No collection of your video library content, file names, or history — all of it stays in the app's local storage on your device
 - No crash reporting service (crash reports are shown **to you** inside the app, and are only shared if **you** copy and send them)
 
-## Google Drive (optional)
-Tapping "Sign in with Google" in Library → Cloud Storage uses Google OAuth on your device to list the video files in your own Drive and stream the ones you tap. The app requests read-only access; file names, thumbnails and streams travel only between your phone and Google, and the access token never leaves your device. Sign in once — the session is quietly reused. Disconnect anytime from the same sheet, or revoke access from your Google Account's third-party access page.
-
-### The system file picker ("Select video")
-Library → Cloud Storage also offers **Select video (no sign-in)**: it opens Android's built-in file picker, which lists this device **and** the storage apps installed on it — including your Google Drive app. No account, password, or Google sign-in is involved, and the app never sees your Drive file list; the system hands Max Player a one-time, read-only grant for just the file you choose. If the file lives in a cloud app, its bytes are streamed once into the app's private cache purely so it can be played, and the copy is discarded when replaced or cleared. Tapping **Save to device** stores a permanent copy in *Movies/Max Player* — nothing is uploaded anywhere; the bytes travel only from the provider app (e.g. Google) to your own phone, exactly like a download in your browser.
+## Cloud storage — Android's file picker
+Library → Cloud Storage opens **Android's built-in file picker**, which lists the storage apps installed on your device — your Google Drive app, Dropbox, OneDrive, and others. There is no sign-in, account, or OAuth of any kind inside Max Player, and the app never sees your cloud file list; the system hands Max Player a one-time, read-only grant for just the one video file you choose. While the file imports, a progress bar shows the copy in real time. The imported bytes live in the app's private cache purely so the video can play, and the copy is discarded when replaced or cleared. Tapping **Save to device** stores a permanent copy in *Movies/Max Player* — nothing is uploaded anywhere; the bytes travel only from the storage app (e.g. Google) to your own phone, exactly like a download in your browser.
 
 ## AI subtitles
 Subtitle generation runs entirely **on your device** using the open-source whisper.cpp engine. Your audio never leaves your phone. The only network access is the one-time model file download from Hugging Face (ggerganov/whisper.cpp), which you trigger and can delete afterwards. Translating subtitles to English uses the same fully on-device engine — no audio or text is sent anywhere.
@@ -46,7 +43,7 @@ The app collects no data from anyone, including children.
 This section matches the app's Play Console Data Safety form:
 - **Data collected:** none — there is nothing to list per category
 - **Data shared with third parties:** none
-- **Data sent off the device:** only what you trigger — Drive file listings and streams (or a picked cloud file's bytes, via the provider app) travel between your phone and Google while you use Cloud Storage or the system file picker; everything else (AI subtitles, history, bookmarks, settings) is local-only
+- **Data sent off the device:** only what you trigger — a picked cloud video's bytes travel from the storage app (e.g. Google Drive) to your phone while you import it; everything else (AI subtitles, history, bookmarks, settings) is local-only
 - Because no data leaves the device, "encryption in transit" and "account/data deletion requests" are **not applicable** — nothing is transmitted and there is nothing on any server to delete.
 
 ## Changes
