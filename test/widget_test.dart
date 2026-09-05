@@ -453,6 +453,28 @@ void main() {
       expect(state, contains('httpHeaders: httpHeaders'));
     });
 
+    test('v106 fix: mic prompt, media permissions, sign-in details', () {
+      final discover =
+          File('lib/screens/discover_screen.dart').readAsStringSync();
+      expect(discover, contains('Permission.microphone.request'));
+      expect(discover, contains('Microphone needed for voice search'));
+      final delegate =
+          File('lib/widgets/video_search_delegate.dart').readAsStringSync();
+      expect(delegate, contains('Permission.microphone.request'));
+      final storage =
+          File('lib/utils/storage_permission.dart').readAsStringSync();
+      for (final k in [
+        'Permission.videos.request',
+        'Permission.photos.request',
+        'Permission.audio.request',
+      ]) {
+        expect(storage, contains(k));
+      }
+      final sheet =
+          File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
+      expect(sheet, contains('e.description'));
+    });
+
     });
   });
 }

@@ -27,5 +27,15 @@ Future<bool> ensureStorageAccess() async {
   if (!status.isGranted && (await NativeBridge.sdkInt()) < 30) {
     status = await Permission.storage.request();
   }
+  if ((await NativeBridge.sdkInt()) >= 33) {
+    // v106-fix: Android 13+ lists Photos / Videos / Music separately in App
+    // info and gates MediaStore reads on them - ask even when All-files is
+    // granted, so nothing shows "Not allowed".
+    final videos = await Permission.videos.request();
+    await Permission.photos.request();
+    await Permission.audio.request();
+    // All-files denied but videos granted: MediaStore still serves videos.
+    if (!status.isGranted && videos.isGranted) return true;
+  }
   return status.isGranted;
 }

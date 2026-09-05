@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../models/video_track.dart';
 import '../services/native_bridge.dart';
@@ -62,6 +63,19 @@ class VideoSearchDelegate extends SearchDelegate<void> {
             icon: const Icon(Icons.mic_none_outlined, color: Colors.white70),
             tooltip: 'Voice search',
             onPressed: () async {
+              final mic = await Permission.microphone.request();
+              if (!mic.isGranted) {
+                // ignore: use_build_context_synchronously
+                ScaffoldMessenger.of(context)
+                  ..clearSnackBars()
+                  ..showSnackBar(
+                    const SnackBar(
+                      content: Text('Microphone needed for voice search'),
+                      duration: Duration(milliseconds: 1800),
+                    ),
+                  );
+                return;
+              }
               final res = await NativeBridge.launchSystemVoiceSearch();
               if (res != null && res.trim().isNotEmpty) {
                 query = res.trim();

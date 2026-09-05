@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../models/history_entry.dart';
 import '../services/native_bridge.dart';
@@ -345,9 +346,23 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     _openMovie(pick);
   }
 
-  /// Voice search - launches native Google speech recognition dialogue and
-  /// populates the search bar.
+  /// Voice search - the app asks for the microphone first (so it also
+  /// shows in App info), then launches native Google speech recognition
+  /// dialogue and populates the search bar.
   Future<void> _startVoiceSearch() async {
+    final mic = await Permission.microphone.request();
+    if (!mounted) return;
+    if (!mic.isGranted) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Microphone needed for voice search'),
+            duration: Duration(milliseconds: 1800),
+          ),
+        );
+      return;
+    }
     final query = await NativeBridge.launchSystemVoiceSearch();
     if (!mounted || query == null || query.isEmpty) return;
     _searchCtrl.text = query;

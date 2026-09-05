@@ -120,8 +120,9 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
         _signingIn = false;
         _error = e.code == GoogleSignInExceptionCode.canceled
             ? 'Sign in canceled.'
-            : 'Sign in failed (${e.code}). If this persists, the app '
-                'SHA-1 may not match the Cloud Console OAuth client.';
+            : 'Sign in failed (${e.code}): ${e.description ?? 'no details'}. '
+                'If this persists, the app SHA-1 may not match the Cloud '
+                'Console OAuth client.';
       });
     } catch (e) {
       if (!mounted) return;
