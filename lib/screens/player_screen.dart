@@ -657,6 +657,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final player = widget.player;
     showModalBottomSheet<void>(
       context: context,
+      // v106-fix2: full-height scrollable sheet (landscape never clips).
+      isScrollControlled: true,
       backgroundColor: const Color(0xFF1a1a24),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -702,8 +704,11 @@ class _PlayerScreenState extends State<PlayerScreen>
             animation: player,
             builder: (context, _) {
               final label = player.sleepTimerLabel;
-              return Column(
-                mainAxisSize: MainAxisSize.min,
+              // v106-fix2: scrollable so a short (landscape) screen never
+              // clips the rows - same bug class as the v35 tracks sheet.
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                 children: [
                   const SizedBox(height: 10),
                   Container(
@@ -744,6 +749,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   item(Icons.close, 'Off', onTap: player.cancelSleepTimer),
                   const SizedBox(height: 8),
                 ],
+                ),
               );
             },
           ),

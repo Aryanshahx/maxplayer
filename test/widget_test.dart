@@ -475,6 +475,20 @@ void main() {
       expect(sheet, contains('e.description'));
     });
 
+    test('v106-fix2 sleep scrolls, silent sign-in gated', () {
+      final ps = File('lib/screens/player_screen.dart').readAsStringSync();
+      final sleepStart = ps.indexOf('void _showSleepSheet()');
+      final sleepEnd =
+          ps.indexOf('Widget build(BuildContext context)', sleepStart);
+      final sleepSheet = ps.substring(sleepStart, sleepEnd);
+      expect(sleepSheet, contains('isScrollControlled: true'));
+      expect(sleepSheet, contains('SingleChildScrollView'));
+      final sheet =
+          File('lib/widgets/cloud_storage_sheet.dart').readAsStringSync();
+      expect(sheet, contains('email == null || email.isEmpty'));
+      expect(sheet, contains('wait for the button'));
+    });
+
     });
   });
 }

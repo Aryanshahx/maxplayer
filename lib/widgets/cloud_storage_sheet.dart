@@ -59,6 +59,7 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
   Future<void> _loadStoredSession() async {
     // Instant UI from the last cached list, then a silent Google session.
     final s = await NativeBridge.loadSettings();
+    final email = s[_kDriveUserKey];
     final cachedJson = s[_kDriveVideosCacheKey];
     if (cachedJson != null && cachedJson.isNotEmpty) {
       try {
@@ -78,9 +79,17 @@ class _CloudStorageSheetState extends State<CloudStorageSheet> {
         }
       } catch (_) {}
     }
+    // v106-fix2: never prompt on open - silent re-auth runs only when
+    // this device signed in before (email saved); otherwise wait for the
+    // Sign-In button.
+    if (email == null || email.isEmpty) return;
     try {
       final account = await GDriveAuth.signInSilently();
-      if (!mounted || account == null) return;
+      if (!mounted || account == null) {
+        // Grant gone (revoked) - stop trying on future opens too.
+        NativeBridge.saveSetting(_kDriveUserKey, '');
+        return;
+      }
       final headers = await GDriveAuth.authHeadersOf(account);
       if (!mounted || headers == null) return;
       _email = account.email;
