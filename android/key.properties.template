@@ -1,0 +1,16 @@
+# ============================================================
+#  LOCAL SIGNING CONFIG  —  copy this file to  android/key.properties
+#  and fill in YOUR real values. key.properties is gitignored.
+#  NEVER commit the real file or the .jks to git.
+#
+#  In CI (Codemagic) these same four values come from the
+#  environment group "keystore_credentials":
+#    CM_KEYSTORE_PASSWORD  -> storePassword
+#    CM_KEY_ALIAS          -> keyAlias
+#    CM_KEY_ALIAS_PASSWORD -> keyPassword
+#    CM_KEYSTORE           -> base64 of the .jks (decoded by CI to storeFile)
+# ============================================================
+storePassword=YOUR_STORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=YOUR_KEY_ALIAS
+storeFile=upload-keystore.jks
