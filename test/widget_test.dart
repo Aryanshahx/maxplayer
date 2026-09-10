@@ -258,6 +258,67 @@ plain-list-url.mp4
     });
   });
 
+  group('TMDB v0.9 deep parsers', () {
+    test('parseMovieDetail maps all fields + runtime label', () {
+      const d = '''
+      {"id":1,"title":"Spider","original_title":"The Spider",
+       "release_date":"2026-07-29","vote_average":7.9,"vote_count":2555,
+       "runtime":145,"overview":"A tale.","tagline":"A day.",
+       "poster_path":"/p.jpg","backdrop_path":"/b.jpg",
+       "budget":225000000,"revenue":2408062495,
+       "production_companies":[{"name":"Marvel"},{"name":"Pascal"}],
+       "production_countries":[{"name":"United States"}],
+       "spoken_languages":[{"english_name":"English"},{"english_name":"Hindi"}],
+       "genres":[{"name":"Action"},{"name":"Adventure"}]}''';
+      final m = parseMovieDetail(d)!;
+      expect(m.title, 'Spider');
+      expect(m.year, '2026');
+      expect(m.runtimeLabel, '2h 25m');
+      expect(m.studios, 'Marvel · Pascal');
+      expect(m.languages, 'English, Hindi');
+      expect(m.backdropUrl, 'https://image.tmdb.org/t/p/w780/b.jpg');
+      expect(m.genres.length, 2);
+    });
+
+    test('parseCredits finds director + cast photo urls', () {
+      const c = '''
+      {"cast":[{"name":"Tom","character":"Peter","profile_path":"/t.jpg"}],
+       "crew":[{"job":"Writer","name":"X"},{"job":"Director","name":"Destin"}]}''';
+      final out = parseCredits(c);
+      expect(out.director, 'Destin');
+      expect(out.cast.single.photoUrl,
+          'https://image.tmdb.org/t/p/w185/t.jpg');
+    });
+
+    test('parseTrailerKey prefers Trailer over teaser', () {
+      const v = '{"results":['
+          '{"site":"YouTube","type":"Teaser","key":"aaa"},'
+          '{"site":"YouTube","type":"Trailer","key":"bbb"}]}';
+      expect(parseTrailerKey(v), 'bbb');
+    });
+
+    test('parseReviews takes rating when present', () {
+      const r = '{"results":[{"author":"Manuel",'
+          '"author_details":{"rating":9.0},"content":"Great!"}]}';
+      final list = parseReviews(r);
+      expect(list.single.ratingText, '9.0 / 10');
+      expect(list.single.author, 'Manuel');
+    });
+
+    test('parseBackdrops caps at 3 w780 urls', () {
+      const i = '{"backdrops":[{"file_path":"/1.jpg"},'
+          '{"file_path":"/2.jpg"},{"file_path":"/3.jpg"},'
+          '{"file_path":"/4.jpg"}]}';
+      final list = parseBackdrops(i);
+      expect(list.length, 3);
+      expect(list.first, 'https://image.tmdb.org/t/p/w780/1.jpg');
+    });
+
+    test('parseTotalResults reads total_results', () {
+      expect(parseTotalResults('{"total_results":48212}'), 48212);
+    });
+  });
+
   group('SavedLink round-trip (v0.7)', () {
     test('json round trip', () {
       const l = SavedLink(name: 'NAS', url: 'smb://192.168.1.5/vids');

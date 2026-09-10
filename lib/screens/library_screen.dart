@@ -209,7 +209,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         showAboutDialog(
           context: context,
           applicationName: 'Max Player',
-          applicationVersion: '0.8.0',
+          applicationVersion: '0.9.0',
           applicationLegalese:
               'Local-first. Ad-free. Proudly Developed in India.',
           children: const [

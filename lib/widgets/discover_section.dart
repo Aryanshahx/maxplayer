@@ -76,7 +76,7 @@ class _DiscoverSectionState extends State<DiscoverSection> {
               InkWell(
                 borderRadius: BorderRadius.circular(24),
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => DiscoverScreen(movies: movies))),
+                    builder: (_) => const DiscoverScreen())),
                 child: Container(
                   width: 40,
                   height: 40,
