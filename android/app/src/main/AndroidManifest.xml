@@ -1,8 +1,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- ===== Media permissions (must be DECLARED or the system dialog
+         never appears and access is refused silently) ===== -->
+    <!-- Android 13 (API 33+) granular media permission -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!-- Thumbnails on some Android 13+ builds touch the images bucket -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Android 10–12L (API 29–32) -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <!-- Android 9 (API 28) and below: legacy write for deletes -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <application
-        android:label="maxplayer"
+        android:label="Max Player"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
