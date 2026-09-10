@@ -13,6 +13,8 @@
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+    <!-- Device-lock verification for Private Space PIN recovery -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
     <application
         android:label="Max Player"

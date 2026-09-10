@@ -62,7 +62,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           'Playlists': playlists.length,
           'Items in playlists': playlistItems,
           'History entries': recent,
-          'App version': '0.5.0+6',
+          'App version': '0.6.0+7',
           'Engine': 'MPV (libmpv + FFmpeg)',
         };
       });

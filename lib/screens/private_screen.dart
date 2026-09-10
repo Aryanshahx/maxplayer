@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../theme.dart';
@@ -6,8 +7,9 @@ import '../utils/crash_log.dart';
 import '../utils/local_store.dart';
 import '../widgets/video_grid.dart';
 
-/// PIN-gated Private Space. Videos marked private are hidden from the
-/// main grid and folder views; they only appear here after the PIN.
+/// PIN-gated Private Space, with device-password recovery:
+/// "Forgot PIN?" verifies the system lock (biometric/PIN/pattern)
+/// via local_auth, then lets the user set a new PIN.
 class PrivateScreen extends StatefulWidget {
   const PrivateScreen({super.key});
 
@@ -41,7 +43,12 @@ class _PrivateScreenState extends State<PrivateScreen> {
       CrashLog.crumb('private.pin_created');
       _unlock();
     } else {
-      final entered = await _askPin(title: 'Enter PIN', hint: 'PIN');
+      final entered = await _askPin(
+          title: 'Enter PIN', hint: 'PIN', allowForgot: true);
+      if (entered == _kForgot) {
+        await _recoverWithDeviceLock(); // device lock -> set new PIN
+        return;
+      }
       if (entered == pin) {
         CrashLog.crumb('private.unlocked');
         _unlock();
@@ -56,7 +63,10 @@ class _PrivateScreenState extends State<PrivateScreen> {
     }
   }
 
-  Future<String?> _askPin({required String title, required String hint}) {
+  static const _kForgot = '__forgot__';
+
+  Future<String?> _askPin(
+      {required String title, required String hint, bool allowForgot = false}) {
     final ctrl = TextEditingController();
     return showDialog<String>(
       context: context,
@@ -84,24 +94,82 @@ class _PrivateScreenState extends State<PrivateScreen> {
           ),
           onSubmitted: (v) => Navigator.of(context).pop(v.trim()),
         ),
+        actionsAlignment: MainAxisAlignment.spaceBetween,
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.accent,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+          if (allowForgot)
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(_kForgot),
+              child: Text('Forgot PIN?',
+                  style: TextStyle(color: AppColors.accent, fontSize: 13)),
+            )
+          else
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppColors.textSecondary)),
             ),
-            onPressed: () => Navigator.of(context).pop(ctrl.text.trim()),
-            child: const Text('Unlock'),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (allowForgot)
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel',
+                      style: TextStyle(color: AppColors.textSecondary)),
+                ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () =>
+                    Navigator.of(context).pop(ctrl.text.trim()),
+                child: const Text('Unlock'),
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  /// Device-lock verified PIN reset (biometric / system PIN / pattern).
+  Future<void> _recoverWithDeviceLock() async {
+    try {
+      final auth = LocalAuthentication();
+      final supported = await auth.isDeviceSupported();
+      if (!supported) {
+        CrashLog.crumb('private.recovery_unsupported');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                  'No device lock found — set a screen lock in Android settings first')));
+          Navigator.of(context).maybePop();
+        }
+        return;
+      }
+      final ok = await auth.authenticate(
+        localizedReason:
+            'Verify your device identity to reset the Private Space PIN',
+        biometricOnly: false, // device PIN/pattern allowed, not just biometrics
+      );
+      if (!mounted) return;
+      if (ok) {
+        await _store.clearPin();
+        CrashLog.crumb('private.pin_reset');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Verified! Now set a new PIN.')));
+        _gate(); // falls into "create PIN" path
+      } else {
+        CrashLog.crumb('private.recovery_cancelled');
+        Navigator.of(context).maybePop();
+      }
+    } catch (e) {
+      CrashLog.error('private.recovery_failed', e);
+      if (mounted) Navigator.of(context).maybePop();
+    }
   }
 
   Future<void> _unlock() async {
@@ -129,12 +197,11 @@ class _PrivateScreenState extends State<PrivateScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Private Space')),
       body: _checking
-          ? Center(
-              child: CircularProgressIndicator(color: AppColors.accent))
+          ? Center(child: CircularProgressIndicator(color: AppColors.accent))
           : !_unlocked
               ? const SizedBox.shrink()
               : _videos.isEmpty
-                  ? Center(
+                  ? const Center(
                       child: Padding(
                         padding: EdgeInsets.all(32),
                         child: Text(
@@ -150,4 +217,5 @@ class _PrivateScreenState extends State<PrivateScreen> {
                     }),
     );
   }
+
 }

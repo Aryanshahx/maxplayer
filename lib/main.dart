@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'screens/library_screen.dart';
@@ -8,6 +9,8 @@ import 'utils/settings.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // v0.6: the whole app rotates — library included (tablet landscape).
+  SystemChrome.setPreferredOrientations(DeviceOrientation.values);
   MediaKit.ensureInitialized(); // MPV core
   await CrashLog.init(); // forensics armed before first frame
   await AppSettings.instance.load(); // display settings + accent

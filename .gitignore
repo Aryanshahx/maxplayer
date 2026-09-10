@@ -47,3 +47,7 @@ android/key.properties
 **/*.jks
 **/*.keystore
 .env
+
+# chat-generated local update scripts (never commit - they may embed full code copies)
+update_v*.sh
+repo_fix_keys.sh

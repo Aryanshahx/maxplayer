@@ -433,8 +433,8 @@ class _VideoRow extends StatelessWidget {
             child: FutureBuilder<Uint8List?>(
               future: asset.thumbnailDataWithSize(
                   const ThumbnailSize(160, 110)),
-              builder: (context, t) => t.data == null
-                  ? const ColoredBox(color: AppColors.surfaceAlt)
+              builder: (context, t) => t.hasError || t.data == null
+                  ? const _ThumbFallback()
                   : Image.memory(t.data!, fit: BoxFit.cover),
             ),
           ),
@@ -494,9 +494,10 @@ class _VideoCard extends StatelessWidget {
                   FutureBuilder<Uint8List?>(
                     future: asset.thumbnailDataWithSize(
                         const ThumbnailSize(480, 480)),
-                    builder: (context, snap) => snap.data == null
-                        ? const ColoredBox(color: AppColors.surfaceAlt)
-                        : Image.memory(snap.data!, fit: BoxFit.cover),
+                    builder: (context, snap) =>
+                        snap.hasError || snap.data == null
+                            ? const _ThumbFallback()
+                            : Image.memory(snap.data!, fit: BoxFit.cover),
                   ),
                   Positioned(
                     left: 8,
@@ -586,6 +587,23 @@ class _Pill extends StatelessWidget {
       child: Text(text,
           style: TextStyle(
               fontSize: 11, color: textColor, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+
+/// Shown when MediaStore can't render a thumbnail (huge 4K/HEVC files).
+class _ThumbFallback extends StatelessWidget {
+  const _ThumbFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: AppColors.surfaceAlt,
+      child: Center(
+        child: Icon(Icons.videocam_outlined,
+            color: AppColors.textSecondary, size: 34),
+      ),
     );
   }
 }

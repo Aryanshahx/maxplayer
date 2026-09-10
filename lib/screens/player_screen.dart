@@ -157,6 +157,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       await _resume.clear(_currentPath);
       _currentPath = file.path;
+      _swFallbackTried = false; // fresh file = fresh fallback chance
       CrashLog.crumb('queue.next', {'id': id});
       setState(() => _title = asset!.title ?? 'Video');
       await _player.open(Media(file.path), play: true);
@@ -246,8 +247,31 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  bool _swFallbackTried = false;
+
+  /// 4K/HEVC/AV1 can fail on hardware decoders. Before declaring failure,
+  /// retry once with software decode (hwdec=no) — MPV/ffmpeg eats it.
   void _onError(Object e) {
     if (_failed) return;
+    unawaited(_recoverOrFail(e));
+  }
+
+  Future<void> _recoverOrFail(Object e) async {
+    if (!_swFallbackTried) {
+      _swFallbackTried = true;
+      try {
+        final platform = _player.platform;
+        if (platform != null) {
+          await (platform as dynamic).setProperty('hwdec', 'no');
+        }
+        CrashLog.crumb('player.hwdec_no_retry');
+        await _player.open(Media(_currentPath), play: true);
+        if (mounted) setState(() => _ready = true);
+        return; // recovered via software decode
+      } catch (e2) {
+        CrashLog.error('player.sw_fallback_failed', e2);
+      }
+    }
     _failed = true;
     CrashLog.error('player.open_failed', e, {'path': _currentPath});
     if (!mounted) return;
@@ -272,7 +296,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     CrashLog.crumb('player.close', {'path': _currentPath});
     unawaited(_player.dispose());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 

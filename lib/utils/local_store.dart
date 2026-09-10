@@ -105,6 +105,10 @@ class LocalStore {
   Future<void> setPin(String pin) async =>
       (await SharedPreferences.getInstance()).setString(_kPin, pin);
 
+  /// Used by the device-password recovery flow (local_auth).
+  Future<void> clearPin() async =>
+      (await SharedPreferences.getInstance()).remove(_kPin);
+
   // ---------------- playlists ----------------
 
   Future<Map<String, List<String>>> playlists() async {

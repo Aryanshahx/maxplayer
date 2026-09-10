@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../theme.dart';
+import '../utils/collections.dart';
 import '../utils/crash_log.dart';
 import '../utils/local_store.dart';
 import '../utils/settings.dart';
 import '../utils/sort.dart';
+import '../widgets/discover_section.dart';
 import '../widgets/video_grid.dart';
 import 'display_settings_screen.dart';
 import 'folders_screen.dart';
@@ -15,11 +17,12 @@ import 'history_screen.dart';
 import 'info_screens.dart';
 import 'playlists_screen.dart';
 import 'private_screen.dart';
+import 'search_screen.dart';
 import 'statistics_screen.dart';
 
-/// Home — gradient header + tagline, tool tiles (Folders / Playlists /
-/// Private Space / History), searchable grid-or-list controlled entirely
-/// from Display Settings (sort, view mode, grouping, favourites-only).
+/// Home — compact gradient header, tool tiles, Discover (TMDB), and the
+/// full library grid/list. Pull down anywhere to rescan the WHOLE device
+/// (all folders), with duplicate guards and background page draining.
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
 
@@ -28,20 +31,20 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
-  static const _pageSize = 60;
+  static const _pageSize = 100;
 
   final _store = LocalStore();
-  final _searchCtrl = TextEditingController();
 
   bool _loading = true;
   bool _denied = false;
-  bool _searching = false;
-  String _query = '';
 
   final List<AssetEntity> _videos = [];
   AssetPathEntity? _allPath;
   int _page = 0;
   bool _exhausted = false;
+  bool _loadingMore = false;
+  bool _draining = false;
+  int _scanToken = 0; // cancels stale background drains on rescan
 
   Set<String> _favs = {};
   Set<String> _priv = {};
@@ -56,7 +59,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   void dispose() {
     AppSettings.instance.removeListener(_onSettings);
-    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -68,12 +70,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _ensureSizes() async {
-    // fill the shared cache for what's loaded so size-sort is meaningful
     await Future.wait(_videos.map(videoSize));
     if (mounted) setState(() {});
   }
 
   Future<void> _load() async {
+    final token = ++_scanToken;
     setState(() {
       _loading = true;
       _denied = false;
@@ -82,10 +84,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
       final ps = await PhotoManager.requestPermissionExtend();
       if (!ps.isAuth && !ps.hasAccess) {
         CrashLog.crumb('library.permission_denied');
-        setState(() {
-          _loading = false;
-          _denied = true;
-        });
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _denied = true;
+          });
+        }
         return;
       }
       final paths = await PhotoManager.getAssetPathList(
@@ -97,6 +101,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       await _loadMore();
       await _loadMeta();
       CrashLog.crumb('library.scanned', {'count': _videos.length});
+      unawaited(_drainAll(token)); // background: fill in everything
     } catch (e) {
       CrashLog.error('library.scan_failed', e);
       if (mounted) {
@@ -121,26 +126,51 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Future<void> _loadMore() async {
     final path = _allPath;
-    if (path == null || _exhausted) return;
-    final batch = await path.getAssetListPaged(page: _page, size: _pageSize);
-    if (batch.length < _pageSize) _exhausted = true;
-    _page++;
-    _videos.addAll(batch.where((a) => a.type == AssetType.video));
-    if (mounted) setState(() {});
+    if (path == null || _exhausted || _loadingMore) return;
+    _loadingMore = true;
+    try {
+      final batch =
+          await path.getAssetListPaged(page: _page, size: _pageSize);
+      if (batch.length < _pageSize) _exhausted = true;
+      _page++;
+      final vids = batch.where((a) => a.type == AssetType.video).toList();
+      final merged = appendUnique(_videos, vids, (a) => a.id);
+      if (merged.length != _videos.length) {
+        _videos
+          ..clear()
+          ..addAll(merged);
+      }
+      if (mounted) setState(() {});
+    } finally {
+      _loadingMore = false;
+    }
+  }
+
+  /// Background drain: after the first page is on screen, keep paging
+  /// until EVERY video on the device is visible/counted.
+  Future<void> _drainAll(int token) async {
+    if (_draining) return;
+    _draining = true;
+    try {
+      while (mounted && !_exhausted && token == _scanToken) {
+        await _loadMore();
+        await Future.delayed(const Duration(milliseconds: 40));
+      }
+      if (token == _scanToken) {
+        CrashLog.crumb('library.drained', {'count': _videos.length});
+      }
+    } finally {
+      _draining = false;
+    }
   }
 
   List<AssetEntity> get _visibleVideos {
     final s = AppSettings.instance;
-    final q = _query.trim().toLowerCase();
     final list = _videos.where((a) {
       if (_priv.contains(a.id)) return false;
       if (s.onlyFavs && !_favs.contains(a.id)) return false;
-      if (q.isNotEmpty && !(a.title ?? '').toLowerCase().contains(q)) {
-        return false;
-      }
       return true;
     }).toList();
-
     list.sort((x, y) {
       switch (s.sortField) {
         case SortField.name:
@@ -174,7 +204,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         showAboutDialog(
           context: context,
           applicationName: 'Max Player',
-          applicationVersion: '0.5.0',
+          applicationVersion: '0.6.0',
           applicationLegalese:
               'Local-first. Ad-free. Proudly Developed in India.',
           children: const [
@@ -184,7 +214,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
         );
         return;
     }
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page!));
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => page!))
+        .then((_) => _refresh());
+  }
+
+  Future<void> _refresh() async {
+    await _loadMeta();
+    if (mounted) setState(() {});
   }
 
   @override
@@ -204,52 +241,56 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget _buildHome() {
     final videos = _visibleVideos;
     final s = AppSettings.instance;
+    final content = videos.isEmpty
+        ? ListView(
+            // keeps pull-to-refresh usable on empty state
+            children: const [
+              SizedBox(height: 140),
+              _EmptyHint(),
+            ],
+          )
+        : s.groupBy == GroupBy.folder
+            ? _GroupedView(
+                videos: videos,
+                listMode: s.viewMode == ViewMode.list,
+                onChanged: _refresh,
+              )
+            : VideoGrid(
+                key: ValueKey('${s.viewMode}_${videos.length}'),
+                videos: videos,
+                listMode: s.viewMode == ViewMode.list,
+                onChanged: _refresh,
+              );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildHeader(),
-        if (_searching) _buildSearchBar(),
         _buildTiles(),
-        const SizedBox(height: 6),
+        const DiscoverSection(),
+        const SizedBox(height: 4),
         Expanded(
-          child: videos.isEmpty
-              ? const _EmptyHint()
-              : NotificationListener<ScrollNotification>(
-                  onNotification: (n) {
-                    if (n.metrics.pixels > n.metrics.maxScrollExtent - 600) {
-                      _loadMore();
-                    }
-                    return false;
-                  },
-                  child: s.groupBy == GroupBy.folder
-                      ? _GroupedView(
-                          videos: videos,
-                          listMode: s.viewMode == ViewMode.list,
-                          onChanged: _refresh,
-                        )
-                      : VideoGrid(
-                          key: ValueKey(
-                              '${s.viewMode}_${videos.length}_$_query'),
-                          videos: videos,
-                          listMode: s.viewMode == ViewMode.list,
-                          onChanged: _refresh,
-                        ),
-                ),
+          child: RefreshIndicator(
+            color: AppColors.accent,
+            backgroundColor: AppColors.surface,
+            onRefresh: _load, // slide down = full device rescan
+            child: content,
+          ),
         ),
       ],
     );
   }
 
-  Future<void> _refresh() async {
-    await _loadMeta();
-    if (mounted) setState(() {});
-  }
-
   // ---------------- header ----------------
 
   Widget _buildHeader() {
+    final accent = AppColors.accent;
+    final hsl = HSLColor.fromColor(accent);
+    final g1 = hsl.withHue((hsl.hue + 40) % 360).toColor();
+    final g3 =
+        hsl.withLightness((hsl.lightness + 0.18).clamp(0.0, 1.0)).toColor();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 4, 4),
+      padding: const EdgeInsets.fromLTRB(18, 12, 2, 2),
       child: Row(
         children: [
           Expanded(
@@ -257,57 +298,42 @@ class _LibraryScreenState extends State<LibraryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ShaderMask(
-                  shaderCallback: (r) => const LinearGradient(
-                    colors: [
-                      Color(0xFF8B5CF6),
-                      Color(0xFF3D6BFF),
-                      Color(0xFF22D3EE)
-                    ],
-                  ).createShader(r),
+                  shaderCallback: (r) =>
+                      LinearGradient(colors: [g1, accent, g3]).createShader(r),
                   child: const Text(
                     'Max Player',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 28,
+                      fontSize: 21,
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
-                      letterSpacing: 0.3,
+                      letterSpacing: 0.2,
                     ),
                   ),
                 ),
                 const Text(
                   'Proudly Developed in India 🇮🇳',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style:
-                      TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      TextStyle(fontSize: 10.5, color: AppColors.textSecondary),
                 ),
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'Search',
-            icon:
-                const Icon(Icons.search_rounded, color: AppColors.textPrimary),
-            onPressed: () => setState(() {
-              _searching = !_searching;
-              if (!_searching) {
-                _query = '';
-                _searchCtrl.clear();
-              }
-            }),
-          ),
-          IconButton(
-            tooltip: 'Refresh',
-            icon:
-                const Icon(Icons.refresh_rounded, color: AppColors.textPrimary),
-            onPressed: _load,
-          ),
-          IconButton(
-            tooltip: 'History',
-            icon:
-                const Icon(Icons.history_rounded, color: AppColors.textPrimary),
-            onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const HistoryScreen())),
-          ),
+          _headIcon(Icons.search_rounded, 'Search', () => Navigator.of(context)
+              .push(
+                  MaterialPageRoute(builder: (_) => const SearchScreen()))),
+          _headIcon(Icons.refresh_rounded, 'Refresh', _load),
+          _headIcon(Icons.history_rounded, 'History', () =>
+              Navigator.of(context)
+                  .push(MaterialPageRoute(
+                      builder: (_) => const HistoryScreen()))
+                  .then((_) => _refresh())),
           PopupMenuButton<_MenuAction>(
+            iconSize: 21,
+            padding: EdgeInsets.zero,
             icon: const Icon(Icons.more_vert_rounded,
                 color: AppColors.textPrimary),
             color: AppColors.surface,
@@ -323,16 +349,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       icon: Icons.tune_rounded, label: 'Display settings')),
               PopupMenuItem(
                   value: _MenuAction.stats,
-                  child:
-                      _MenuRow(icon: Icons.bar_chart_rounded, label: 'Statistics')),
+                  child: _MenuRow(
+                      icon: Icons.bar_chart_rounded, label: 'Statistics')),
               PopupMenuItem(
                   value: _MenuAction.manual,
                   child: _MenuRow(
                       icon: Icons.menu_book_outlined, label: 'User manual')),
               PopupMenuItem(
                   value: _MenuAction.about,
-                  child:
-                      _MenuRow(icon: Icons.info_outline_rounded, label: 'About')),
+                  child: _MenuRow(
+                      icon: Icons.info_outline_rounded, label: 'About')),
               PopupMenuItem(
                   value: _MenuAction.privacy,
                   child: _MenuRow(
@@ -345,77 +371,90 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      child: TextField(
-        controller: _searchCtrl,
-        autofocus: true,
-        onChanged: (v) => setState(() => _query = v),
-        style: const TextStyle(color: AppColors.textPrimary),
-        decoration: InputDecoration(
-          hintText: 'Search videos…',
-          hintStyle: const TextStyle(color: AppColors.textSecondary),
-          prefixIcon:
-              const Icon(Icons.search_rounded, color: AppColors.textSecondary),
-          filled: true,
-          fillColor: AppColors.surface,
-          contentPadding: const EdgeInsets.symmetric(vertical: 0),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(color: AppColors.accent),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _headIcon(IconData icon, String tip, VoidCallback onTap) =>
+      IconButton(
+        tooltip: tip,
+        iconSize: 20,
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.all(6),
+        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+        icon: Icon(icon, color: AppColors.textPrimary),
+        onPressed: onTap,
+      );
 
-  // ---------------- tiles ----------------
+  // ---------------- tiles (fixed height, horizontal growth only) ----------------
 
   Widget _buildTiles() {
+    Widget tile(IconData icon, String label, VoidCallback onTap) => SizedBox(
+          height: 56,
+          child: Card(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: onTap,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, color: AppColors.accent, size: 19),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+    void push(Widget page) => Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => page))
+        .then((_) => _refresh());
+
+    final tiles = [
+      (Icons.folder_outlined, 'Folders', () => push(const FoldersScreen())),
+      (Icons.playlist_play_rounded, 'Playlists',
+          () => push(const PlaylistsScreen())),
+      (Icons.lock_outline_rounded, 'Private Space',
+          () => push(const PrivateScreen())),
+      (Icons.history_rounded, 'History', () => push(const HistoryScreen())),
+    ];
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-      child: GridView.count(
-        crossAxisCount: 2,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 3.1,
-        children: [
-          _Tile(
-            icon: Icons.folder_outlined,
-            label: 'Folders',
-            onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const FoldersScreen())),
-          ),
-          _Tile(
-            icon: Icons.playlist_play_rounded,
-            label: 'Playlists',
-            onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PlaylistsScreen())),
-          ),
-          _Tile(
-            icon: Icons.lock_outline_rounded,
-            label: 'Private Space',
-            onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PrivateScreen())),
-          ),
-          _Tile(
-            icon: Icons.history_rounded,
-            label: 'History',
-            onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const HistoryScreen())),
-          ),
-        ],
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          if (c.maxWidth >= 640) {
+            // wide screens: one row of four, same height
+            return Row(
+              children: [
+                for (var i = 0; i < tiles.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  Expanded(child: tile(tiles[i].$1, tiles[i].$2, tiles[i].$3)),
+                ],
+              ],
+            );
+          }
+          return Column(
+            children: [
+              Row(children: [
+                Expanded(child: tile(tiles[0].$1, tiles[0].$2, tiles[0].$3)),
+                const SizedBox(width: 10),
+                Expanded(child: tile(tiles[1].$1, tiles[1].$2, tiles[1].$3)),
+              ]),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(child: tile(tiles[2].$1, tiles[2].$2, tiles[2].$3)),
+                const SizedBox(width: 10),
+                Expanded(child: tile(tiles[3].$1, tiles[3].$2, tiles[3].$3)),
+              ]),
+            ],
+          );
+        },
       ),
     );
   }
@@ -492,36 +531,6 @@ class _GroupedView extends StatelessWidget {
   }
 }
 
-class _Tile extends StatelessWidget {
-  const _Tile({required this.icon, required this.label, required this.onTap});
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: AppColors.accent, size: 20),
-            const SizedBox(width: 10),
-            Text(label,
-                style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _PermissionHint extends StatelessWidget {
   const _PermissionHint({required this.onRetry});
 
@@ -571,7 +580,7 @@ class _EmptyHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Center(
-      child: Text('No videos match.',
+      child: Text('No videos found. Pull down to rescan.',
           style: TextStyle(color: AppColors.textSecondary)),
     );
   }

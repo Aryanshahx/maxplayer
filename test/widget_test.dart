@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maxplayer/theme.dart';
 import 'package:maxplayer/utils/badges.dart';
+import 'package:maxplayer/utils/collections.dart';
 import 'package:maxplayer/utils/format.dart';
 import 'package:maxplayer/utils/local_store.dart';
 import 'package:maxplayer/utils/resume.dart';
 import 'package:maxplayer/utils/sort.dart';
+import 'package:maxplayer/utils/tmdb.dart';
 
 void main() {
   group('formatDuration', () {
@@ -132,6 +134,46 @@ void main() {
       expect(sortDirectionLabel(SortField.dateAdded, false), 'Newest first');
       expect(sortDirectionLabel(SortField.size, true), 'Smallest first');
       expect(sortDirectionLabel(SortField.length, true), 'Shortest first');
+    });
+  });
+
+  group('appendUnique (v0.6 duplicate guard)', () {
+    test('skips already-present ids', () {
+      final out = appendUnique(['a', 'b'], ['b', 'c'], (e) => e);
+      expect(out, ['a', 'b', 'c']);
+    });
+    test('empty batch is identity', () {
+      expect(appendUnique(['a'], <String>[], (e) => e), ['a']);
+    });
+    test('batch dups within itself collapse', () {
+      final out = appendUnique(<String>[], ['x', 'x'], (e) => e);
+      expect(out, ['x']);
+    });
+  });
+
+  group('parseTrending (v0.6 TMDB)', () {
+    const sample = '''
+    {"results":[
+      {"id":101,"title":"Cool Movie","release_date":"2026-03-01",
+       "vote_average":8.4,"overview":"A tale.","poster_path":"/abc.jpg"},
+      {"id":102,"name":"Show Only Name","vote_average":7,"poster_path":null}
+    ]}''';
+
+    test('parses movies with posters', () {
+      final movies = parseTrending(sample);
+      expect(movies.length, 2);
+      expect(movies[0].title, 'Cool Movie');
+      expect(movies[0].year, '2026');
+      expect(movies[0].rating, 8.4);
+      expect(movies[0].posterUrl,
+          'https://image.tmdb.org/t/p/w342/abc.jpg');
+    });
+
+    test('falls back to name, empty poster ok', () {
+      final movies = parseTrending(sample);
+      expect(movies[1].title, 'Show Only Name');
+      expect(movies[1].posterUrl, '');
+      expect(movies[1].year, '');
     });
   });
 

@@ -1,5 +1,7 @@
 package com.maxplayer.maxplayer
 
-import io.flutter.embedding.android.FlutterActivity
+// FlutterFragmentActivity is required by local_auth (device-password
+// verification used for Private Space PIN recovery).
+import io.flutter.embedding.android.FlutterFragmentActivity
 
-class MainActivity : FlutterActivity()
+class MainActivity : FlutterFragmentActivity()
