@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maxplayer/theme.dart';
+import 'package:maxplayer/utils/badges.dart';
 import 'package:maxplayer/utils/format.dart';
+import 'package:maxplayer/utils/local_store.dart';
 import 'package:maxplayer/utils/resume.dart';
 
 void main() {
@@ -60,6 +62,56 @@ void main() {
     });
     test('unknown duration -> not finished', () {
       expect(isFinishedMs(999999, 0), isFalse);
+    });
+  });
+
+  group('qualityBadge (v0.4)', () {
+    test('4K landscape', () => expect(qualityBadge(3840, 2160), '4K'));
+    test('2K', () => expect(qualityBadge(2560, 1440), '2K'));
+    test('1080p landscape', () => expect(qualityBadge(1920, 1080), '1080p'));
+    test('1080p portrait (short side rules)', () {
+      expect(qualityBadge(1080, 1920), '1080p');
+    });
+    test('720p', () => expect(qualityBadge(1280, 720), '720p'));
+    test('480p', () => expect(qualityBadge(854, 480), '480p'));
+    test('SD', () => expect(qualityBadge(320, 240), 'SD'));
+  });
+
+  group('upsertRecent (v0.4 history)', () {
+    RecentItem it(String id, int ts) =>
+        RecentItem(id: id, title: 't$id', path: '/$id', ts: ts);
+
+    test('newest first', () {
+      final out = upsertRecent([it('a', 1)], it('b', 2));
+      expect(out.map((e) => e.id).toList(), ['b', 'a']);
+    });
+    test('dedupes by id, moves to front', () {
+      final out = upsertRecent([it('a', 1), it('b', 2)], it('a', 3));
+      expect(out.map((e) => e.id).toList(), ['a', 'b']);
+      expect(out.first.ts, 3);
+    });
+    test('caps at 25', () {
+      var list = <RecentItem>[];
+      for (var i = 0; i < 30; i++) {
+        list = upsertRecent(list, it('$i', i));
+      }
+      expect(list.length, 25);
+      expect(list.first.id, '29'); // newest kept
+      expect(list.last.id, '5'); // oldest dropped
+    });
+  });
+
+  group('toggleId (v0.4 playlists)', () {
+    test('adds when missing', () {
+      expect(toggleId(['a'], 'b'), ['a', 'b']);
+    });
+    test('removes when present', () {
+      expect(toggleId(['a', 'b'], 'b'), ['a']);
+    });
+    test('does not mutate input', () {
+      final input = ['a'];
+      toggleId(input, 'x');
+      expect(input, ['a']);
     });
   });
 
