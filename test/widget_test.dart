@@ -5,6 +5,8 @@ import 'package:maxplayer/utils/badges.dart';
 import 'package:maxplayer/utils/collections.dart';
 import 'package:maxplayer/utils/format.dart';
 import 'package:maxplayer/utils/m3u.dart';
+import 'package:maxplayer/utils/ab_loop.dart';
+import 'package:maxplayer/utils/mpv_filters.dart';
 import 'package:maxplayer/utils/local_store.dart';
 import 'package:maxplayer/utils/resume.dart';
 import 'package:maxplayer/utils/settings.dart' show accentPalette, defaultAccentIndex;
@@ -203,6 +205,56 @@ plain-list-url.mp4
 
     test('CRLF tolerated', () {
       expect(parseM3u('#EXTM3U\r\n#EXTINF:-1,A\r\nhttp://a/b\r\n').length, 1);
+    });
+  });
+
+  group('mpv filter builders (v0.8)', () {
+    test('flat EQ produces no filter', () {
+      expect(buildEqualizerFilter(const [0, 0, 0, 0, 0]), '');
+    });
+    test('non-zero bands build an equalizer chain', () {
+      final f = buildEqualizerFilter(const [6, 0, -3, 0, 5]);
+      expect(f.startsWith('lavfi=['), isTrue);
+      expect(f.contains('f=60'), isTrue);
+      expect(f.contains('f=910'), isTrue);
+      expect(f.contains('f=230'), isFalse); // zero band skipped
+      expect(f.endsWith(']'), isTrue);
+    });
+    test('dialogue boost combines with EQ', () {
+      final f = combineAudioFilters(const [0, 0, 0, 0, 0],
+          dialogueBoost: true);
+      expect(f.contains('f=1200'), isTrue);
+      expect(f.contains('f=3200'), isTrue);
+    });
+    test('wrong band count throws', () {
+      expect(() => buildEqualizerFilter(const [1, 2]),
+          throwsArgumentError);
+    });
+  });
+
+  group('A-B loop state machine (v0.8)', () {
+    test('off -> aSet -> abSet -> off', () {
+      var s = AbState.off;
+      expect(s.phase, AbPhase.off);
+      s = s.advance(5000);
+      expect(s.phase, AbPhase.aSet);
+      expect(s.aMs, 5000);
+      s = s.advance(12000);
+      expect(s.phase, AbPhase.abSet);
+      expect(s.aMs, 5000);
+      expect(s.bMs, 12000);
+      s = s.advance(13000);
+      expect(s.phase, AbPhase.off);
+    });
+    test('B before A shifts B to A+1s', () {
+      final s = AbState.off.advance(10000).advance(3000);
+      expect(s.bMs, 11000);
+    });
+    test('labels describe phases', () {
+      expect(AbState.off.describe(), contains('mark point A'));
+      expect(AbState.off.advance(1).describe(), contains('mark B'));
+      expect(AbState.off.advance(1).advance(2).describe(),
+          contains('Looping A → B'));
     });
   });
 

@@ -1,8 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
+
+import '../utils/ab_loop.dart';
+import '../utils/mpv_filters.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:screen_brightness/screen_brightness.dart';
@@ -64,6 +68,8 @@ class PlayerScreen extends StatefulWidget {
 
 enum _DragMode { none, brightness, volume, seek, zoom }
 
+enum _PlayerMenuAction { info, eq, screenshot, cast, pip, sleep }
+
 class _PlayerScreenState extends State<PlayerScreen>
     with WidgetsBindingObserver {
   static const _seekStepSecs = 10;
@@ -101,6 +107,151 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _seekFlashLeft = false;
 
   StreamSubscription<bool>? _bufferingSub;
+
+  // ---- v0.8: MX-parity extras ----
+  static const _native = MethodChannel('maxplayer/native');
+
+  AbState _ab = AbState.off; // A-B loop (mpv native props)
+  final List<double> _bands =
+      List<double>.from(equalizerPresets['Flat']!); // 5-band EQ
+  bool _dialogueBoost = false;
+  bool _enhance = false;
+  bool _karaoke = false;
+  String _toneMapping = 'auto';
+  Timer? _sleepTimer;
+  int _sleepMinutesLeft = 0;
+
+  // live scrubbing state
+  Duration _scrubStart = Duration.zero;
+  Duration _lastAppliedSeek = Duration.zero;
+  DateTime _lastLiveSeek = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Best-effort MPV property set (noop if the native player isn't up).
+  Future<void> _mpvSet(String key, String value) async {
+    try {
+      final platform = _player.platform;
+      if (platform != null) await (platform as dynamic).setProperty(key, value);
+    } catch (_) {/* prop unsupported on this build */}
+  }
+
+  Future<void> _mpvSetMany(Map<String, String> props) async {
+    for (final e in props.entries) {
+      await _mpvSet(e.key, e.value);
+    }
+  }
+
+  // ---------------- A-B loop ----------------
+
+  void _cycleAbLoop() {
+    _ab = _ab.advance(_player.state.position.inMilliseconds);
+    CrashLog.crumb('ab.loop', {'phase': _ab.phase.name});
+    switch (_ab.phase) {
+      case AbPhase.off:
+        unawaited(_mpvSet('ab-loop-a', 'no'));
+        unawaited(_mpvSet('ab-loop-b', 'no'));
+        break;
+      case AbPhase.aSet:
+        unawaited(_mpvSetMany({
+          'ab-loop-a': '${_ab.aMs! / 1000}',
+          'ab-loop-b': 'no',
+        }));
+        break;
+      case AbPhase.abSet:
+        unawaited(_mpvSetMany({
+          'ab-loop-a': '${_ab.aMs! / 1000}',
+          'ab-loop-b': '${_ab.bMs! / 1000}',
+        }));
+        break;
+    }
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(_ab.describe())),
+    );
+  }
+
+  void _cancelAbLoop() {
+    if (_ab.phase == AbPhase.off) return;
+    _ab = AbState.off;
+    unawaited(_mpvSet('ab-loop-a', 'no'));
+    unawaited(_mpvSet('ab-loop-b', 'no'));
+    setState(() {});
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('A-B loop off')));
+  }
+
+  // ---------------- audio FX (EQ + dialogue boost) ----------------
+
+  Future<void> _applyAudioFilters() async {
+    CrashLog.crumb('eq.apply', {'bands': _bands.join('/')});
+    await _mpvSet(
+        'af', combineAudioFilters(_bands, dialogueBoost: _dialogueBoost));
+  }
+
+  void _setBand(int i, double g) {
+    _bands[i] = g;
+    setState(() {});
+    unawaited(_applyAudioFilters());
+  }
+
+  void _emitSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  // ---------------- video FX (enhance / HDR tone-mapping) ----------------
+
+  Future<void> _toggleEnhance(bool on) async {
+    _enhance = on;
+    CrashLog.crumb('enhance.$on');
+    setState(() {});
+    if (on) {
+      await _mpvSetMany({
+        'contrast': '14',
+        'saturation': '12',
+        'gamma': '2',
+        'vf': buildEnhanceFilter(),
+      });
+      _emitSnack('Enhance on — GPU sharpen + contrast boost');
+    } else {
+      await _mpvSetMany(
+          {'contrast': '0', 'saturation': '0', 'gamma': '0', 'vf': ''});
+    }
+  }
+
+  Future<void> _setToneMapping(String mode) async {
+    _toneMapping = mode;
+    CrashLog.crumb('tone_map.$mode');
+    setState(() {});
+    await _mpvSet('tone-mapping', mode);
+  }
+
+  // ---------------- karaoke subtitles (ASS preferred) ----------------
+
+  Future<void> _toggleKaraoke(bool on) async {
+    _karaoke = on;
+    setState(() {});
+    CrashLog.crumb('karaoke.$on');
+    if (on) {
+      final subs = _player.state.tracks.subtitle;
+      dynamic ass;
+      for (final s in subs) {
+        if ('${(s as dynamic).codec}' == 'ass') {
+          ass = s;
+          break;
+        }
+      }
+      if (ass != null) {
+        await _player.setSubtitleTrack(ass as SubtitleTrack);
+        _emitSnack('Karaoke subtitles on');
+      } else {
+        _karaoke = false;
+        setState(() {});
+        _emitSnack('No karaoke (ASS) subtitles inside this video');
+      }
+    } else {
+      await _player.setSubtitleTrack(SubtitleTrack.no());
+    }
+  }
 
   // ---------------- lifecycle ----------------
 
@@ -389,6 +540,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   void dispose() {
+    _sleepTimer?.cancel();
     _hideTimer?.cancel();
     _flashTimer?.cancel();
     _saveTimer?.cancel();
@@ -469,7 +621,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       final w = MediaQuery.of(context).size.width;
       if (delta.dx.abs() > delta.dy.abs() * 1.5) {
         _drag = _DragMode.seek;
-        _seekPreview = _player.state.position;
+        _scrubStart = _player.state.position;
+        _lastAppliedSeek = _scrubStart;
+        _seekPreview = _scrubStart;
       } else {
         _drag = _dragStart.dx < w / 2 ? _DragMode.brightness : _DragMode.volume;
         // capture starting level
@@ -499,9 +653,20 @@ class _PlayerScreenState extends State<PlayerScreen>
       final dur = _player.state.duration;
       if (dur <= Duration.zero) return;
       final frac = d.focalPoint.dx / w; // 0..1 across screen
-      var target =
-          Duration(milliseconds: (frac.clamp(0.0, 1.0) * dur.inMilliseconds).round());
+      final target = Duration(
+          milliseconds:
+              (frac.clamp(0.0, 1.0) * dur.inMilliseconds).round());
       setState(() => _seekPreview = target);
+      // PREVIEW WHILE SLIDING: the video itself scrubs under the finger
+      // (MPV seeks locally in ~10-30 ms). Throttled to ~8 seeks/s and
+      // skips sub-second jitters so 4K decode isn't overwhelmed.
+      final now = DateTime.now();
+      if (now.difference(_lastLiveSeek).inMilliseconds > 120 &&
+          (target - _lastAppliedSeek).abs().inMilliseconds > 800) {
+        _lastLiveSeek = now;
+        _lastAppliedSeek = target;
+        unawaited(_player.seek(target));
+      }
     }
   }
 
@@ -529,6 +694,463 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (_drag == _DragMode.seek) _seekPreview = null;
       _drag = _DragMode.none;
     });
+  }
+
+  // ---------------- extras (MX-style sheets) ----------------
+
+  Future<void> _showExtrasSheet() async {
+    final st = _player.state;
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheet) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            children: [
+              _extraAction(
+                icon: Icons.subtitles_rounded,
+                title: st.tracks.subtitle.isEmpty
+                    ? 'Subtitles (none in this video)'
+                    : 'Subtitles (${st.tracks.subtitle.length})',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _showTrackPicker(subtitle: true);
+                },
+              ),
+              _extraAction(
+                icon: Icons.music_note_rounded,
+                title: st.tracks.audio.length <= 1
+                    ? 'Audio track (1 available)'
+                    : 'Audio track (${st.tracks.audio.length} available)',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _showTrackPicker(subtitle: false);
+                },
+              ),
+              _extraAction(
+                icon: Icons.repeat_one_rounded,
+                title: 'A-B loop',
+                subtitle: _ab.describe(),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _cycleAbLoop();
+                },
+                onLongPress: _cancelAbLoop,
+              ),
+              _extraToggle(
+                icon: Icons.album_rounded,
+                title: 'Karaoke subtitles',
+                subtitle:
+                    'Words light up - other subtitles hide while on',
+                value: _karaoke,
+                onChanged: (v) {
+                  setSheet(() => _karaoke = v);
+                  unawaited(_toggleKaraoke(v));
+                },
+              ),
+              _extraToggle(
+                icon: Icons.auto_fix_high_rounded,
+                title: 'Enhance video',
+                subtitle: 'GPU sharpen + contrast + colour boost',
+                value: _enhance,
+                onChanged: (v) {
+                  setSheet(() => _enhance = v);
+                  unawaited(_toggleEnhance(v));
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  width: 30,
+                  alignment: Alignment.center,
+                  child: Text('HDR',
+                      style: TextStyle(
+                          color: AppColors.accent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800)),
+                ),
+                title: const Text('HDR tone-mapping',
+                    style: TextStyle(color: AppColors.textPrimary)),
+                subtitle: const Text(
+                    'How HDR10/Dolby sources fit your screen',
+                    style: TextStyle(color: AppColors.textSecondary)),
+                trailing: DropdownButton<String>(
+                  value: _toneMapping,
+                  dropdownColor: AppColors.surfaceAlt,
+                  underline: const SizedBox.shrink(),
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  items: const [
+                    DropdownMenuItem(value: 'auto', child: Text('Auto')),
+                    DropdownMenuItem(value: 'clip', child: Text('Clip')),
+                    DropdownMenuItem(
+                        value: 'mobius', child: Text('Mobius')),
+                    DropdownMenuItem(
+                        value: 'reinhard', child: Text('Reinhard')),
+                    DropdownMenuItem(value: 'hable', child: Text('Hable')),
+                    DropdownMenuItem(value: 'gamma', child: Text('Gamma')),
+                    DropdownMenuItem(
+                        value: 'linear', child: Text('Linear')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) {
+                      setSheet(() => _toneMapping = v);
+                      unawaited(_setToneMapping(v));
+                    }
+                  },
+                ),
+              ),
+              _extraToggle(
+                icon: Icons.record_voice_over_rounded,
+                title: 'Dialogue boost',
+                subtitle:
+                    'Lifts quiet speech (1-4 kHz). Off by default.',
+                value: _dialogueBoost,
+                onChanged: (v) {
+                  setSheet(() => _dialogueBoost = v);
+                  unawaited(_applyAudioFilters());
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  ListTile _extraAction({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required VoidCallback onTap,
+    VoidCallback? onLongPress,
+  }) =>
+      ListTile(
+        dense: true,
+        leading: Icon(icon, color: AppColors.accent, size: 21),
+        title: Text(title,
+            style: const TextStyle(color: AppColors.textPrimary)),
+        subtitle: subtitle == null
+            ? null
+            : Text(subtitle,
+                style: const TextStyle(color: AppColors.textSecondary)),
+        onTap: onTap,
+        onLongPress: onLongPress,
+      );
+
+  Widget _extraToggle({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) =>
+      ListTile(
+        dense: true,
+        leading: Icon(icon, color: AppColors.accent, size: 21),
+        title: Text(title,
+            style: const TextStyle(color: AppColors.textPrimary)),
+        subtitle: Text(subtitle,
+            style: const TextStyle(color: AppColors.textSecondary)),
+        trailing: Switch(value: value, onChanged: onChanged),
+        onTap: () => onChanged(!value),
+      );
+
+  void _showTrackPicker({required bool subtitle}) {
+    final st = _player.state;
+    final tracks = subtitle ? st.tracks.subtitle : st.tracks.audio;
+    final selected = subtitle ? st.track.subtitle : st.track.audio;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 6),
+              child: Text(subtitle ? 'Subtitles' : 'Audio track',
+                  style: TextStyle(
+                      color: AppColors.accent,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700)),
+            ),
+            if (subtitle)
+              _trackRow(
+                name: 'Off',
+                sel: (selected as dynamic).id == 'no',
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  await _player.setSubtitleTrack(SubtitleTrack.no());
+                },
+              ),
+            for (final tr in tracks)
+              _trackRow(
+                name: _trackLabel(tr),
+                sel: (selected as dynamic).id == (tr as dynamic).id,
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  if (subtitle) {
+                    await _player.setSubtitleTrack(tr as SubtitleTrack);
+                  } else {
+                    await _player.setAudioTrack(tr as AudioTrack);
+                  }
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _trackLabel(dynamic tr) {
+    final parts = <String>[
+      if ('${tr.title}' != 'null' && '${tr.title}'.isNotEmpty)
+        '${tr.title}',
+      if ('${tr.language}' != 'null' && '${tr.language}'.isNotEmpty)
+        '${tr.language}'.toUpperCase(),
+      if ('${tr.codec}' != 'null' && '${tr.codec}'.isNotEmpty) '${tr.codec}',
+    ];
+    return parts.isEmpty ? 'Track ${tr.id}' : parts.join(' • ');
+  }
+
+  Widget _trackRow(
+      {required String name,
+      required bool sel,
+      required Future<void> Function() onTap}) {
+    return ListTile(
+      title: Text(name,
+          style: const TextStyle(color: AppColors.textPrimary)),
+      trailing: sel
+          ? Icon(Icons.check_circle_rounded, color: AppColors.accent)
+          : const Icon(Icons.radio_button_off_rounded,
+              color: AppColors.textSecondary),
+      onTap: () => unawaited(onTap()),
+    );
+  }
+
+  // ---------------- top-more menu actions ----------------
+
+  Future<void> _showEqualizerSheet() async {
+    const labels = ['60 Hz', '230 Hz', '910 Hz', '3.6 kHz', '14 kHz'];
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheet) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(16),
+            children: [
+              Text('Equalizer & Audio FX',
+                  style: TextStyle(
+                      color: AppColors.accent,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final name in equalizerPresets.keys)
+                    ChoiceChip(
+                      label: Text(name),
+                      selected: listEquals(
+                          _bands, equalizerPresets[name]!),
+                      onSelected: (_) {
+                        for (var i = 0; i < _bands.length; i++) {
+                          _setBand(i, equalizerPresets[name]![i]);
+                        }
+                        setSheet(() {});
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              for (var i = 0; i < labels.length; i++)
+                Row(
+                  children: [
+                    SizedBox(
+                        width: 56,
+                        child: Text(labels[i],
+                            style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12))),
+                    Expanded(
+                      child: Slider(
+                        value: _bands[i],
+                        min: -12,
+                        max: 12,
+                        divisions: 24,
+                        onChanged: (v) {
+                          _setBand(i, v);
+                          setSheet(() {});
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 44,
+                      child: Text(
+                          '${_bands[i] >= 0 ? '+' : ''}'
+                          '${_bands[i].toStringAsFixed(0)} dB',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12)),
+                    ),
+                  ],
+                ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Dialogue boost',
+                    style: TextStyle(color: AppColors.textPrimary)),
+                subtitle: const Text('Lifts quiet speech (1-4 kHz)',
+                    style:
+                        TextStyle(color: AppColors.textSecondary)),
+                value: _dialogueBoost,
+                onChanged: (v) {
+                  setSheet(() => _dialogueBoost = v);
+                  unawaited(_applyAudioFilters());
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _captureScreenshot() async {
+    CrashLog.crumb('player.screenshot');
+    try {
+      final bytes = await _player.screenshot();
+      if (bytes == null || bytes.isEmpty) {
+        _emitSnack('Screenshot failed — video not ready yet');
+        return;
+      }
+      await PhotoManager.editor.saveImage(
+        bytes,
+        filename: 'maxplayer_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        relativePath: 'Pictures/MaxPlayer',
+        title: 'MaxPlayer',
+      );
+      _emitSnack('Saved to Gallery (MaxPlayer album)');
+    } catch (e) {
+      CrashLog.error('screenshot.failed', e);
+      _emitSnack('Screenshot failed');
+    }
+  }
+
+  Future<void> _enterPip() async {
+    CrashLog.crumb('player.pip');
+    final vp = _player.state.videoParams;
+    final w = vp.dw ?? 16;
+    final h = vp.dh ?? 9;
+    try {
+      final ok = await _native
+          .invokeMethod<bool>('enterPip', {'w': w, 'h': h});
+      if (ok != true) _emitSnack('Picture-in-Picture not available');
+    } catch (e) {
+      CrashLog.error('pip.failed', e);
+      _emitSnack('Picture-in-Picture not supported on this device');
+    }
+  }
+
+  Future<void> _openCastSettings() async {
+    CrashLog.crumb('player.cast_settings');
+    try {
+      await _native.invokeMethod<bool>('openCastSettings');
+      _emitSnack(
+          'Pick your TV on the system screen-mirroring page');
+    } catch (_) {
+      _emitSnack(
+          'Open Android Settings → Connected devices → Cast');
+    }
+  }
+
+  Future<void> _showSleepTimerSheet() async {
+    const mins = [0, 10, 15, 30, 45, 60];
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Text('Sleep timer',
+                  style: TextStyle(
+                      color: AppColors.accent,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700)),
+            ),
+            for (final m in mins)
+              ListTile(
+                title: Text(
+                    m == 0
+                        ? (_sleepTimer == null
+                            ? 'Off'
+                            : 'Cancel timer ($_sleepMinutesLeft min)')
+                        : '$m minutes',
+                    style: const TextStyle(color: AppColors.textPrimary)),
+                onTap: () => Navigator.of(context).pop(m),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) return;
+    _sleepTimer?.cancel();
+    if (picked > 0) {
+      _sleepMinutesLeft = picked;
+      CrashLog.crumb('sleep_armed', {'min': picked});
+      _sleepTimer = Timer(Duration(minutes: picked), () {
+        _player.pause();
+        CrashLog.crumb('sleep_fired');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Sleep timer — playback paused. Good night')));
+        }
+      });
+      _emitSnack('Sleeping in $picked minutes');
+    } else {
+      _emitSnack('Sleep timer off');
+    }
+  }
+
+  Future<void> _onMenuAction(_PlayerMenuAction a) async {
+    switch (a) {
+      case _PlayerMenuAction.info:
+        _showVideoInfo();
+        break;
+      case _PlayerMenuAction.eq:
+        await _showEqualizerSheet();
+        break;
+      case _PlayerMenuAction.screenshot:
+        await _captureScreenshot();
+        break;
+      case _PlayerMenuAction.cast:
+        await _openCastSettings();
+        break;
+      case _PlayerMenuAction.pip:
+        await _enterPip();
+        break;
+      case _PlayerMenuAction.sleep:
+        await _showSleepTimerSheet();
+        break;
+    }
   }
 
   // ---------------- controls visibility ----------------
@@ -596,14 +1218,17 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ),
               ),
 
-            // scrub preview
+            // scrub preview bubble
             if (_seekPreview != null)
               Align(
                 alignment: const Alignment(0, -0.35),
                 child: _InfoPill(
                   icon: Icons.swap_horizontal_circle_outlined,
                   text:
-                      '${formatDuration(_seekPreview!)} / ${formatDuration(_player.state.duration)}',
+                      '${formatDuration(_seekPreview!)}  '
+                      '${(_seekPreview! - _scrubStart) >= Duration.zero ? '+' : '-'}'
+                      '${formatDuration((_seekPreview! - _scrubStart).abs())}  '
+                      '|  ${formatDuration(_player.state.duration)}',
                 ),
               ),
 
@@ -646,7 +1271,12 @@ class _PlayerScreenState extends State<PlayerScreen>
               const Align(alignment: Alignment(0, -0.55), child: _SpeedBadge()),
 
             if (_controlsVisible) ...[
-              _TopBar(title: _title, onInfo: _showVideoInfo),
+              _TopBar(
+                title: _title,
+                onInfo: _showVideoInfo,
+                onExtras: _showExtrasSheet,
+                onMenu: (a) => unawaited(_onMenuAction(a)),
+              ),
               _BottomBar(player: _player),
               _CenterControls(player: _player),
             ],
@@ -791,9 +1421,16 @@ class _SpeedBadge extends StatelessWidget {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, required this.onInfo});
+  const _TopBar({
+    required this.title,
+    required this.onInfo,
+    required this.onExtras,
+    required this.onMenu,
+  });
 
   final VoidCallback onInfo;
+  final VoidCallback onExtras;
+  final void Function(_PlayerMenuAction) onMenu;
 
   final String title;
 
@@ -836,14 +1473,82 @@ class _TopBar extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: 'Video info',
-              icon: const Icon(Icons.info_outline_rounded,
+              tooltip: 'Player settings',
+              icon: const Icon(Icons.settings_outlined,
                   color: Colors.white, size: 21),
-              onPressed: onInfo,
+              onPressed: onExtras,
+            ),
+            PopupMenuButton<_PlayerMenuAction>(
+              tooltip: 'More',
+              padding: EdgeInsets.zero,
+              iconSize: 21,
+              icon: const Icon(Icons.more_vert_rounded,
+                  color: Colors.white),
+              color: AppColors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: const BorderSide(color: AppColors.border),
+              ),
+              onSelected: onMenu,
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: _PlayerMenuAction.info,
+                  child: _MoreRow(
+                      icon: Icons.info_outline_rounded,
+                      label: 'Video info'),
+                ),
+                PopupMenuItem(
+                  value: _PlayerMenuAction.eq,
+                  child: _MoreRow(
+                      icon: Icons.graphic_eq_rounded,
+                      label: 'Equalizer & Audio FX'),
+                ),
+                PopupMenuItem(
+                  value: _PlayerMenuAction.screenshot,
+                  child: _MoreRow(
+                      icon: Icons.photo_camera_outlined,
+                      label: 'Screenshot'),
+                ),
+                PopupMenuItem(
+                  value: _PlayerMenuAction.cast,
+                  child: _MoreRow(
+                      icon: Icons.cast_rounded, label: 'Cast to TV'),
+                ),
+                PopupMenuItem(
+                  value: _PlayerMenuAction.pip,
+                  child: _MoreRow(
+                      icon: Icons.picture_in_picture_alt_rounded,
+                      label: 'Picture-in-Picture'),
+                ),
+                PopupMenuItem(
+                  value: _PlayerMenuAction.sleep,
+                  child: _MoreRow(
+                      icon: Icons.nightlight_round,
+                      label: 'Sleep timer'),
+                ),
+              ],
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MoreRow extends StatelessWidget {
+  const _MoreRow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 19, color: AppColors.accent),
+        const SizedBox(width: 12),
+        Text(label, style: const TextStyle(color: AppColors.textPrimary)),
+      ],
     );
   }
 }
@@ -875,10 +1580,32 @@ class _CenterControls extends StatelessWidget {
   }
 }
 
-class _BottomBar extends StatelessWidget {
+class _BottomBar extends StatefulWidget {
   const _BottomBar({required this.player});
 
   final Player player;
+
+  @override
+  State<_BottomBar> createState() => _BottomBarState();
+}
+
+class _BottomBarState extends State<_BottomBar> {
+  /// While the user drags, the slider tracks the FINGER (not the position
+  /// stream) and live MPV seeks preview frames continuously — that is the
+  /// "preview when sliding" and the buttery-smooth scrub.
+  double? _dragMs;
+  DateTime _lastLiveSeek = DateTime.fromMillisecondsSinceEpoch(0);
+  Duration _lastSent = Duration.zero;
+
+  void _liveSeek(Duration target) {
+    final now = DateTime.now();
+    if (now.difference(_lastLiveSeek).inMilliseconds > 120 &&
+        (target - _lastSent).abs().inMilliseconds > 800) {
+      _lastLiveSeek = now;
+      _lastSent = target;
+      widget.player.seek(target);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -901,18 +1628,25 @@ class _BottomBar extends StatelessWidget {
           ),
         ),
         child: StreamBuilder<Duration>(
-          stream: player.stream.position,
-          initialData: player.state.position,
+          stream: widget.player.stream.position,
+          initialData: widget.player.state.position,
           builder: (context, posSnap) {
             final position = posSnap.data ?? Duration.zero;
             return StreamBuilder<Duration>(
-              stream: player.stream.duration,
-              initialData: player.state.duration,
+              stream: widget.player.stream.duration,
+              initialData: widget.player.state.duration,
               builder: (context, durSnap) {
                 final duration = durSnap.data ?? Duration.zero;
-                final maxMs =
-                    duration.inMilliseconds > 0 ? duration.inMilliseconds : 1;
-                final valueMs = position.inMilliseconds.clamp(0, maxMs);
+                final maxMs = duration.inMilliseconds > 0
+                    ? duration.inMilliseconds.toDouble()
+                    : 1.0;
+                final shownMs = (_dragMs ??
+                        position.inMilliseconds.clamp(0, maxMs.toInt()))
+                    .clamp(0.0, maxMs)
+                    .toDouble();
+                final shownDuration = _dragMs == null
+                    ? position
+                    : Duration(milliseconds: shownMs.round());
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -927,18 +1661,29 @@ class _BottomBar extends StatelessWidget {
                         overlayShape: SliderComponentShape.noOverlay,
                       ),
                       child: Slider(
-                        value: valueMs.toDouble(),
-                        max: maxMs.toDouble(),
-                        onChanged: (ms) => player
-                            .seek(Duration(milliseconds: ms.round())),
+                        value: shownMs,
+                        max: maxMs,
+                        onChangeStart: (ms) =>
+                            setState(() => _dragMs = ms),
+                        onChanged: (ms) {
+                          setState(() => _dragMs = ms);
+                          _liveSeek(Duration(milliseconds: ms.round()));
+                        },
+                        onChangeEnd: (ms) {
+                          widget.player
+                              .seek(Duration(milliseconds: ms.round()));
+                          setState(() => _dragMs = null);
+                        },
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 4),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        mainAxisAlignment:
+                            MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(formatDuration(position),
+                          Text(formatDuration(shownDuration),
                               style: const TextStyle(
                                   color: Colors.white70, fontSize: 12)),
                           Text(formatDuration(duration),

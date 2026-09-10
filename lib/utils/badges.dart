@@ -1,12 +1,17 @@
 /// Pure quality-badge mapping (unit-tested): from video dimensions to a
-/// short label shown on cards. Uses the SHORT side so portrait 1080x1920
-/// and landscape 1920x1080 both read "1080p".
+/// short label shown on cards. Uses the LONG side so BOTH a landscape
+/// 3840x2160 and a portrait 2160x3840 read "4K" — matching how YouTube/
+/// MX label them. (v0.8 fix: some devices reported rotated dimensions.)
 String qualityBadge(int width, int height) {
-  final s = width < height ? width : height;
-  if (s >= 2160) return '4K';
-  if (s >= 1440) return '2K';
-  if (s >= 1080) return '1080p';
-  if (s >= 720) return '720p';
-  if (s >= 480) return '480p';
+  final s = width > height ? width : height;
+  if (s >= 3400) return '4K';
+  if (s >= 2560) return '2K';
+  if (s >= 1920) return '1080p';
+  if (s >= 1280) return '720p';
+  if (s >= 854) return '480p';
   return 'SD';
 }
+
+/// "1920×1080 · 1080p" — the display line used in rows/properties.
+String resolutionLabel(int width, int height) =>
+    '$width×$height · ${qualityBadge(width, height)}';
