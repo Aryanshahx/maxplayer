@@ -4,8 +4,10 @@ import 'package:maxplayer/theme.dart';
 import 'package:maxplayer/utils/badges.dart';
 import 'package:maxplayer/utils/collections.dart';
 import 'package:maxplayer/utils/format.dart';
+import 'package:maxplayer/utils/m3u.dart';
 import 'package:maxplayer/utils/local_store.dart';
 import 'package:maxplayer/utils/resume.dart';
+import 'package:maxplayer/utils/settings.dart' show accentPalette, defaultAccentIndex;
 import 'package:maxplayer/utils/sort.dart';
 import 'package:maxplayer/utils/tmdb.dart';
 
@@ -174,6 +176,51 @@ void main() {
       expect(movies[1].title, 'Show Only Name');
       expect(movies[1].posterUrl, '');
       expect(movies[1].year, '');
+    });
+  });
+
+  group('parseM3u (v0.7 IPTV)', () {
+    const list = '''
+#EXTM3U
+#EXTINF:-1 tvg-logo="https://x/logo.png" group-title="News",DD National
+https://cdn.tv/dd.m3u8
+
+#EXTINF:-1,Star Sports
+http://streams.tv/star.ts
+plain-list-url.mp4
+''';
+
+    test('names + urls + logos', () {
+      final chans = parseM3u(list);
+      expect(chans.length, 3);
+      expect(chans[0].name, 'DD National');
+      expect(chans[0].logo, 'https://x/logo.png');
+      expect(chans[0].url, 'https://cdn.tv/dd.m3u8');
+      expect(chans[1].name, 'Star Sports');
+      expect(chans[1].logo, isNull);
+      expect(chans[2].name, 'Channel'); // url without EXTINF
+    });
+
+    test('CRLF tolerated', () {
+      expect(parseM3u('#EXTM3U\r\n#EXTINF:-1,A\r\nhttp://a/b\r\n').length, 1);
+    });
+  });
+
+  group('SavedLink round-trip (v0.7)', () {
+    test('json round trip', () {
+      const l = SavedLink(name: 'NAS', url: 'smb://192.168.1.5/vids');
+      final back = SavedLink.fromJson(l.toJson());
+      expect(back.name, 'NAS');
+      expect(back.url, 'smb://192.168.1.5/vids');
+    });
+  });
+
+  group('v0.7 theme palette', () {
+    test('white accent is default, surfaces are true black', () {
+      expect(accentPalette[defaultAccentIndex], const Color(0xFFFFFFFF));
+      expect(AppColors.accent.toARGB32(), 0xFFFFFFFF);
+      expect((AppColors.background.r * 255).round() <= (AppColors.background.b * 255).round(), isTrue);
+      expect(AppColors.onAccent, const Color(0xFF0B0B0E));
     });
   });
 

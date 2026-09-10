@@ -64,6 +64,15 @@ class VideoGrid extends StatefulWidget {
             title: asset.title ?? 'Video',
             queueIds: queueIds,
             queueStart: start,
+            meta: {
+              'File': file.path,
+              'Size': formatBytes(file.lengthSync()),
+              'Resolution':
+                  '${asset.width} × ${asset.height} (${qualityBadge(asset.width, asset.height)})',
+              'Duration (MediaStore)':
+                  formatDuration(Duration(seconds: asset.duration)),
+              if (asset.mimeType != null) 'MIME': asset.mimeType!,
+            },
           ),
         ),
       );
@@ -244,7 +253,18 @@ class _VideoGridState extends State<VideoGrid> {
     widget.onChanged();
   }
 
-  void _properties(AssetEntity a) {
+  Future<void> _properties(AssetEntity a) async {
+    final file = await a.file;
+    final size = file != null && file.existsSync() ? file.lengthSync() : 0;
+    final latlng = await a.latlngAsync();
+    String fmtDate(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} '
+        '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    final ext = (a.title ?? '').contains('.')
+        ? a.title!.split('.').last.toUpperCase()
+        : 'MP4/MKV';
+    final mp = (a.width * a.height / 1e6);
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -256,17 +276,40 @@ class _VideoGridState extends State<VideoGrid> {
         title: Text(a.title ?? 'Video',
             style:
                 const TextStyle(color: AppColors.textPrimary, fontSize: 15)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _prop('Resolution',
-                '${a.width}×${a.height} (${qualityBadge(a.width, a.height)})'),
-            _prop('Duration',
-                formatDuration(Duration(seconds: a.duration))),
-            _prop('Modified',
-                '${a.modifiedDateTime.year}-${a.modifiedDateTime.month.toString().padLeft(2, '0')}-${a.modifiedDateTime.day.toString().padLeft(2, '0')}'),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _prop('Resolution',
+                  '${a.width} × ${a.height} (${qualityBadge(a.width, a.height)})'),
+              _prop('Megapixels', '${mp.toStringAsFixed(1)} MP/video-frame'),
+              _prop('Duration',
+                  formatDuration(Duration(seconds: a.duration))),
+              _prop('Format', ext),
+              if (a.mimeType != null) _prop('MIME', a.mimeType!),
+              _prop('Size', formatBytes(size)),
+              if (size > 0 && a.duration > 0)
+                _prop('Average bit rate',
+                    '${((size * 8) / a.duration / 1000).toStringAsFixed(0)} kbit/s'),
+              _prop('Location on device',
+                  file?.path ?? a.relativePath ?? 'unknown'),
+              _prop('Created', fmtDate(a.createDateTime)),
+              _prop('Modified', fmtDate(a.modifiedDateTime)),
+              if (latlng != null)
+                _prop('GPS', '${latlng.latitude}, ${latlng.longitude}'),
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Text(
+                  'Codec / frame-rate / track details: open the video and '
+                  'tap the (i) button — the player reads them live from MPV.',
+                  style: TextStyle(
+                      color: AppColors.textSecondary, fontSize: 11.5,
+                      height: 1.4),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -319,7 +362,7 @@ class _VideoGridState extends State<VideoGrid> {
             ),
             _sheetAction(Icons.info_outline_rounded, 'Properties', () {
               Navigator.of(context).pop();
-              _properties(a);
+              unawaited(_properties(a));
             }),
             _sheetAction(Icons.delete_outline_rounded, 'Delete', () {
               Navigator.of(context).pop();
@@ -401,6 +444,27 @@ final Map<String, Future<int>> videoSizeCache = {};
 Future<int> videoSize(AssetEntity asset) => videoSizeCache.putIfAbsent(
     asset.id, () async => (await asset.file)?.length() ?? 0);
 
+/// Memoized thumbnail futures — MediaStore gets asked ONCE per asset, and
+/// a failed sized render falls back to an unscaled decode before giving
+/// up (common on huge 4K/HEVC files and some SD cards).
+final Map<String, Future<Uint8List?>> videoThumbCache = {};
+
+Future<Uint8List?> videoThumb(AssetEntity asset, ThumbnailSize size) =>
+    videoThumbCache.putIfAbsent('${asset.id}@${size.width}', () async {
+      try {
+        final t = await asset.thumbnailDataWithSize(size);
+        if (t != null) return t;
+      } catch (_) {/* fall through */}
+      try {
+        return await asset.thumbnailDataWithOption(
+          ThumbnailOption(
+              size: size, format: ThumbnailFormat.jpeg, quality: 90),
+        );
+      } catch (_) {
+        return null;
+      }
+    });
+
 class _VideoRow extends StatelessWidget {
   const _VideoRow({
     required this.asset,
@@ -431,8 +495,7 @@ class _VideoRow extends StatelessWidget {
             width: 72,
             height: 48,
             child: FutureBuilder<Uint8List?>(
-              future: asset.thumbnailDataWithSize(
-                  const ThumbnailSize(160, 110)),
+              future: videoThumb(asset, const ThumbnailSize(160, 110)),
               builder: (context, t) => t.hasError || t.data == null
                   ? const _ThumbFallback()
                   : Image.memory(t.data!, fit: BoxFit.cover),
@@ -492,12 +555,11 @@ class _VideoCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   FutureBuilder<Uint8List?>(
-                    future: asset.thumbnailDataWithSize(
-                        const ThumbnailSize(480, 480)),
+                    future: videoThumb(asset, const ThumbnailSize(480, 480)),
                     builder: (context, snap) =>
                         snap.hasError || snap.data == null
                             ? const _ThumbFallback()
-                            : Image.memory(snap.data!, fit: BoxFit.cover),
+                            : Image.memory(snap.data!, fit: BoxFit.cover, gaplessPlayback: true),
                   ),
                   Positioned(
                     left: 8,

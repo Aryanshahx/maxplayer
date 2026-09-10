@@ -35,12 +35,28 @@ class PlayerScreen extends StatefulWidget {
     required this.title,
     this.queueIds = const [],
     this.queueStart = 0,
+    this.isStream = false,
+    this.meta = const {},
   });
+
+  /// Network source (IPTV / cloud / LAN) — no queue, no resume.
+  const PlayerScreen.stream({
+    super.key,
+    required this.path,
+    required this.title,
+  })  : queueIds = const [],
+        queueStart = 0,
+        isStream = true,
+        meta = const {};
 
   final String path;
   final String title;
   final List<String> queueIds;
   final int queueStart;
+  final bool isStream;
+
+  /// Deep-details metadata handed in from the library (size, width...).
+  final Map<String, String> meta;
 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
@@ -133,7 +149,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       await _player.open(Media(path), play: true);
       _player.stream.error.listen(_onError);
       if (mounted) setState(() => _ready = true);
-      if (offerResume) unawaited(_offerResume());
+      if (offerResume && !widget.isStream) unawaited(_offerResume());
     } catch (e) {
       _onError(e);
     }
@@ -173,6 +189,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   // ---------------- resume ----------------
 
   Future<void> _offerResume() async {
+    if (widget.isStream) return; // no resume bookkeeping for network sources
     try {
       final saved = await _resume.readMs(_currentPath);
       if (saved == null || !mounted) return;
@@ -232,6 +249,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _savePosition() async {
+    if (widget.isStream) return;
     if (!_ready || _failed) return;
     try {
       final pos = _player.state.position;
@@ -248,6 +266,94 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   bool _swFallbackTried = false;
+
+  /// Deep technical card: source metadata (from the library) + live MPV
+  /// decode/track parameters, shown from the top-bar (i) button.
+  void _showVideoInfo() {
+    final s = _player.state;
+    final rows = <MapEntry<String, String>>[
+      ...widget.meta.entries,
+      MapEntry('Source', widget.isStream ? 'Network stream' : _currentPath),
+      MapEntry('Position',
+          '${formatDuration(s.position)} / ${formatDuration(s.duration)}'),
+      MapEntry('Remaining', formatDuration(s.duration - s.position)),
+      MapEntry('Playback speed', '${s.rate}x'),
+      MapEntry('Video encoder params', s.videoParams.toString()),
+      MapEntry('Audio decoder params', s.audioParams.toString()),
+      if (s.audioBitrate != null)
+        MapEntry('Audio bitrate', '${s.audioBitrate} bit/s'),
+    ];
+    final trackLines = <String>[
+      for (final t in s.tracks.video) 'Video:  $t',
+      for (final t in s.tracks.audio) 'Audio:  $t',
+      for (final t in s.tracks.subtitle) 'Subtitle:  $t',
+    ];
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.border),
+        ),
+        title: Text(_title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style:
+                const TextStyle(color: AppColors.textPrimary, fontSize: 15)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final r in rows)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(r.key,
+                          style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 11.5)),
+                      const SizedBox(height: 2),
+                      Text(r.value,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 12.5)),
+                    ],
+                  ),
+                ),
+              if (trackLines.isNotEmpty) ...[
+                const Divider(color: AppColors.border, height: 18),
+                const Text('Tracks (MPV)',
+                    style: TextStyle(
+                        color: AppColors.textSecondary, fontSize: 11.5)),
+                const SizedBox(height: 4),
+                for (final l in trackLines)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(l,
+                        style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 11,
+                            height: 1.4)),
+                  ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child:
+                Text('Close', style: TextStyle(color: AppColors.accent)),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   /// 4K/HEVC/AV1 can fail on hardware decoders. Before declaring failure,
   /// retry once with software decode (hwdec=no) — MPV/ffmpeg eats it.
@@ -540,7 +646,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               const Align(alignment: Alignment(0, -0.55), child: _SpeedBadge()),
 
             if (_controlsVisible) ...[
-              _TopBar(title: _title),
+              _TopBar(title: _title, onInfo: _showVideoInfo),
               _BottomBar(player: _player),
               _CenterControls(player: _player),
             ],
@@ -685,7 +791,9 @@ class _SpeedBadge extends StatelessWidget {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title});
+  const _TopBar({required this.title, required this.onInfo});
+
+  final VoidCallback onInfo;
 
   final String title;
 
@@ -726,6 +834,12 @@ class _TopBar extends StatelessWidget {
                     fontSize: 15,
                     fontWeight: FontWeight.w600),
               ),
+            ),
+            IconButton(
+              tooltip: 'Video info',
+              icon: const Icon(Icons.info_outline_rounded,
+                  color: Colors.white, size: 21),
+              onPressed: onInfo,
             ),
           ],
         ),

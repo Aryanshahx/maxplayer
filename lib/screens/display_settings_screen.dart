@@ -353,7 +353,12 @@ class _AccentDot extends StatelessWidget {
           color: color,
           shape: BoxShape.circle,
           border: selected
-              ? Border.all(color: Colors.white, width: 3)
+              ? Border.all(
+                      color: ThemeData.estimateBrightnessForColor(color) ==
+                              Brightness.light
+                          ? Colors.black
+                          : Colors.white,
+                      width: 3)
               : Border.all(color: Colors.transparent, width: 3),
           boxShadow: const [
             BoxShadow(
@@ -361,7 +366,12 @@ class _AccentDot extends StatelessWidget {
           ],
         ),
         child: selected
-            ? const Icon(Icons.check_rounded, color: Colors.white, size: 22)
+            ? Icon(Icons.check_rounded,
+                color: ThemeData.estimateBrightnessForColor(color) ==
+                        Brightness.light
+                    ? Colors.black
+                    : Colors.white,
+                size: 22)
             : null,
       ),
     );

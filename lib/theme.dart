@@ -1,24 +1,35 @@
 import 'package:flutter/material.dart';
 
-/// MaxPlayer dark design language — near-black slate surfaces,
-/// hairline borders, cool blue accent. Dark-first, no light mode for v0.
+/// MaxPlayer dark design language — true-black neutral surfaces (no blue
+/// tint), hairline borders, themable accent with automatic on-accent
+/// contrast. Dark-first, no light mode for v0.
 class AppColors {
   AppColors._();
 
-  static const background = Color(0xFF0B0E14); // app canvas
-  static const surface = Color(0xFF131826); // cards / inputs
-  static const surfaceAlt = Color(0xFF181E2E); // raised elements
-  static const border = Color(0xFF262E42); // 1px hairlines
-  static const textPrimary = Color(0xFFF2F5FA);
-  static const textSecondary = Color(0xFF8B94A7);
+  static const background = Color(0xFF060608); // app canvas — true black
+  static const surface = Color(0xFF101013); // cards / inputs
+  static const surfaceAlt = Color(0xFF18181C); // raised elements
+  static const border = Color(0xFF26262C); // 1px hairlines
+  static const textPrimary = Color(0xFFF5F6F8);
+  static const textSecondary = Color(0xFF9296A0);
+
   /// Mutable — set from Display Settings accent wheel (AppSettings).
-  static Color accent = const Color(0xFF3D6BFF); // default blue
-  static const accentSoft = Color(0xFF2A3CFF);
+  static Color accent = const Color(0xFFFFFFFF); // default: white
   static const danger = Color(0xFFE5484D);
+
+  /// Text/icon colour that stays readable ON TOP of [accent]
+  /// (black for the white accent, white for colours).
+  static Color get onAccent =>
+      ThemeData.estimateBrightnessForColor(accent) == Brightness.light
+          ? const Color(0xFF0B0B0E)
+          : Colors.white;
 }
 
 ThemeData buildAppTheme({Color? accent}) {
   final ac = accent ?? AppColors.accent;
+  final onAc = ThemeData.estimateBrightnessForColor(ac) == Brightness.light
+      ? const Color(0xFF0B0B0E)
+      : Colors.white;
   const radius = Radius.circular(16);
   return ThemeData(
     useMaterial3: true,
@@ -27,7 +38,7 @@ ThemeData buildAppTheme({Color? accent}) {
     colorScheme: ColorScheme.dark(
       surface: AppColors.surface,
       primary: ac,
-      onPrimary: Colors.white,
+      onPrimary: onAc,
       onSurface: AppColors.textPrimary,
       error: AppColors.danger,
     ),

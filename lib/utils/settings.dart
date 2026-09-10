@@ -11,15 +11,16 @@ enum GroupBy { none, folder }
 
 /// Accent palette shown in Display Settings (order matches the design).
 const accentPalette = <Color>[
+  Color(0xFFFFFFFF), // white (default)
   Color(0xFF8B5CF6), // purple
   Color(0xFF22D3EE), // cyan
   Color(0xFF34D399), // green
   Color(0xFFFB923C), // orange
   Color(0xFFF472B6), // pink
-  Color(0xFF3D6BFF), // blue (default)
+  Color(0xFF3D6BFF), // blue
 ];
 
-const defaultAccentIndex = 5;
+const defaultAccentIndex = 0;
 
 class AppSettings extends ChangeNotifier {
   AppSettings._();

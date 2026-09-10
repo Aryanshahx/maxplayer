@@ -11,12 +11,17 @@ import '../utils/settings.dart';
 import '../utils/sort.dart';
 import '../widgets/discover_section.dart';
 import '../widgets/video_grid.dart';
+import 'cloud_storage_screen.dart';
 import 'display_settings_screen.dart';
+import 'file_manager_screen.dart';
 import 'folders_screen.dart';
 import 'history_screen.dart';
 import 'info_screens.dart';
+import 'network_storage_screen.dart';
+import 'open_stream_screen.dart';
 import 'playlists_screen.dart';
 import 'private_screen.dart';
+import 'quick_share_screen.dart';
 import 'search_screen.dart';
 import 'statistics_screen.dart';
 
@@ -284,11 +289,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
   // ---------------- header ----------------
 
   Widget _buildHeader() {
-    final accent = AppColors.accent;
-    final hsl = HSLColor.fromColor(accent);
-    final g1 = hsl.withHue((hsl.hue + 40) % 360).toColor();
-    final g3 =
-        hsl.withLightness((hsl.lightness + 0.18).clamp(0.0, 1.0)).toColor();
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 12, 2, 2),
       child: Row(
@@ -297,19 +297,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ShaderMask(
-                  shaderCallback: (r) =>
-                      LinearGradient(colors: [g1, accent, g3]).createShader(r),
-                  child: const Text(
-                    'Max Player',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      letterSpacing: 0.2,
-                    ),
+                const Text(
+                  'Max Player',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white, // fixed brand white (never themes)
+                    letterSpacing: 0.2,
                   ),
                 ),
                 const Text(
@@ -415,49 +411,105 @@ class _LibraryScreenState extends State<LibraryScreen> {
         .push(MaterialPageRoute(builder: (_) => page))
         .then((_) => _refresh());
 
-    final tiles = [
-      (Icons.folder_outlined, 'Folders', () => push(const FoldersScreen())),
-      (Icons.playlist_play_rounded, 'Playlists',
-          () => push(const PlaylistsScreen())),
+    final page1 = [
       (Icons.lock_outline_rounded, 'Private Space',
           () => push(const PrivateScreen())),
-      (Icons.history_rounded, 'History', () => push(const HistoryScreen())),
+      (Icons.playlist_play_rounded, 'Playlists',
+          () => push(const PlaylistsScreen())),
+      (Icons.folder_outlined, 'Folders', () => push(const FoldersScreen())),
+      (Icons.cloud_outlined, 'Cloud Storage',
+          () => push(const CloudStorageScreen())),
+    ];
+    final page2 = [
+      (Icons.dns_outlined, 'Network Storage',
+          () => push(const NetworkStorageScreen())),
+      (Icons.folder_copy_outlined, 'File Manager',
+          () => push(const FileManagerScreen())),
+      (Icons.live_tv_rounded, 'Open Stream (IPTV)',
+          () => push(const OpenStreamScreen())),
+      (Icons.ios_share_rounded, 'Quick Share',
+          () => push(const QuickShareScreen())),
     ];
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: LayoutBuilder(
         builder: (context, c) {
-          if (c.maxWidth >= 640) {
-            // wide screens: one row of four, same height
-            return Row(
-              children: [
-                for (var i = 0; i < tiles.length; i++) ...[
+          final wide = c.maxWidth >= 640;
+          // Page 1: every-day vault tools. Page 2 (slide →): network/IPTV.
+          Widget tilePage(List<(IconData, String, void Function())> items) {
+            if (wide) {
+              return Row(children: [
+                for (var i = 0; i < items.length; i++) ...[
                   if (i > 0) const SizedBox(width: 10),
-                  Expanded(child: tile(tiles[i].$1, tiles[i].$2, tiles[i].$3)),
+                  Expanded(
+                      child: tile(
+                          items[i].$1, items[i].$2, items[i].$3)),
                 ],
-              ],
-            );
-          }
-          return Column(
-            children: [
+              ]);
+            }
+            return Column(children: [
               Row(children: [
-                Expanded(child: tile(tiles[0].$1, tiles[0].$2, tiles[0].$3)),
+                Expanded(
+                    child: tile(items[0].$1, items[0].$2, items[0].$3)),
                 const SizedBox(width: 10),
-                Expanded(child: tile(tiles[1].$1, tiles[1].$2, tiles[1].$3)),
+                Expanded(
+                    child: tile(items[1].$1, items[1].$2, items[1].$3)),
               ]),
               const SizedBox(height: 10),
               Row(children: [
-                Expanded(child: tile(tiles[2].$1, tiles[2].$2, tiles[2].$3)),
+                Expanded(
+                    child: tile(items[2].$1, items[2].$2, items[2].$3)),
                 const SizedBox(width: 10),
-                Expanded(child: tile(tiles[3].$1, tiles[3].$2, tiles[3].$3)),
+                Expanded(
+                    child: tile(items[3].$1, items[3].$2, items[3].$3)),
               ]),
-            ],
-          );
+            ]);
+          }
+
+          return Column(children: [
+            SizedBox(
+              height: wide ? 56 : 122, // fixed: horizontal swipe only
+              child: PageView(
+                controller: _tilePager,
+                onPageChanged: (i) => setState(() => _tilePage = i),
+                children: [
+                  Padding(
+                      padding: const EdgeInsets.only(right: 2),
+                      child: tilePage(page1)),
+                  Padding(
+                      padding: const EdgeInsets.only(left: 2),
+                      child: tilePage(page2)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (var i = 0; i < 2; i++)
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: _tilePage == i ? 16 : 6,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: _tilePage == i
+                          ? AppColors.textPrimary
+                          : AppColors.border,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+              ],
+            ),
+          ]);
         },
       ),
     );
   }
+
+  final PageController _tilePager = PageController();
+  int _tilePage = 0;
 }
 
 enum _MenuAction { display, stats, manual, about, privacy }

@@ -46,6 +46,19 @@ List<String> toggleId(List<String> ids, String id) {
 
 String _join(Set<String> s) => jsonEncode(s.toList());
 
+/// A named remote link (network share / cloud direct-link / stream URL).
+class SavedLink {
+  const SavedLink({required this.name, required this.url});
+
+  final String name;
+  final String url;
+
+  Map<String, dynamic> toJson() => {'name': name, 'url': url};
+
+  factory SavedLink.fromJson(Map<String, dynamic> m) => SavedLink(
+      name: (m['name'] ?? 'Link') as String, url: (m['url'] ?? '') as String);
+}
+
 class LocalStore {
   static const _kFavorites = 'favorites.v1';
   static const _kPrivate = 'private.ids.v1';
@@ -175,6 +188,64 @@ class LocalStore {
 
   Future<void> clearRecent() async =>
       (await SharedPreferences.getInstance()).remove(_kRecent);
+
+  // -------- saved links (Network Storage / Cloud Storage) --------
+
+  static const _kNetworkLinks = 'network.links.v1';
+  static const _kCloudLinks = 'cloud.links.v1';
+  static const _kRecentStreams = 'streams.recent.v1';
+
+  Future<List<SavedLink>> _links(String key) async {
+    final raw =
+        (await SharedPreferences.getInstance()).getString(key);
+    if (raw == null) return [];
+    try {
+      return (jsonDecode(raw) as List)
+          .map((e) => SavedLink.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _saveLinks(String key, List<SavedLink> links) async =>
+      (await SharedPreferences.getInstance())
+          .setString(key, jsonEncode(links.map((e) => e.toJson()).toList()));
+
+  Future<List<SavedLink>> networkLinks() => _links(_kNetworkLinks);
+  Future<List<SavedLink>> cloudLinks() => _links(_kCloudLinks);
+
+  Future<void> saveNetworkLink(SavedLink link) async {
+    final list = await networkLinks()
+      ..removeWhere((e) => e.url == link.url);
+    await _saveLinks(_kNetworkLinks, [link, ...list]);
+  }
+
+  Future<void> saveCloudLink(SavedLink link) async {
+    final list = await cloudLinks()
+      ..removeWhere((e) => e.url == link.url);
+    await _saveLinks(_kCloudLinks, [link, ...list]);
+  }
+
+  Future<void> deleteNetworkLink(String url) async {
+    final list = await networkLinks()
+      ..removeWhere((e) => e.url == url);
+    await _saveLinks(_kNetworkLinks, list);
+  }
+
+  Future<void> deleteCloudLink(String url) async {
+    final list = await cloudLinks()..removeWhere((e) => e.url == url);
+    await _saveLinks(_kCloudLinks, list);
+  }
+
+  /// Recent direct-stream URLs (Open Stream / IPTV), newest first, max 20.
+  Future<List<SavedLink>> recentStreams() => _links(_kRecentStreams);
+
+  Future<void> addRecentStream(SavedLink link) async {
+    final list = (await recentStreams()
+      ..removeWhere((e) => e.url == link.url));
+    await _saveLinks(_kRecentStreams, [link, ...list].take(20).toList());
+  }
 
   /// Remove an id from everywhere (used after system-consent delete).
   Future<void> scrubId(String id) async {
