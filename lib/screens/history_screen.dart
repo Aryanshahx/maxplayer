@@ -82,7 +82,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     subtitle: Text(_when(item.ts),
                         style: const TextStyle(
                             color: AppColors.textSecondary, fontSize: 12)),
-                    trailing: const Icon(Icons.play_circle_outline_rounded,
+                    trailing: Icon(Icons.play_circle_outline_rounded,
                         color: AppColors.accent),
                     onTap: () async {
                       final asset = await AssetEntity.fromId(item.id);

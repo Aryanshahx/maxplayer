@@ -11,20 +11,22 @@ class AppColors {
   static const border = Color(0xFF262E42); // 1px hairlines
   static const textPrimary = Color(0xFFF2F5FA);
   static const textSecondary = Color(0xFF8B94A7);
-  static const accent = Color(0xFF3D6BFF); // primary blue
+  /// Mutable — set from Display Settings accent wheel (AppSettings).
+  static Color accent = const Color(0xFF3D6BFF); // default blue
   static const accentSoft = Color(0xFF2A3CFF);
   static const danger = Color(0xFFE5484D);
 }
 
-ThemeData buildAppTheme() {
+ThemeData buildAppTheme({Color? accent}) {
+  final ac = accent ?? AppColors.accent;
   const radius = Radius.circular(16);
   return ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
     scaffoldBackgroundColor: AppColors.background,
-    colorScheme: const ColorScheme.dark(
+    colorScheme: ColorScheme.dark(
       surface: AppColors.surface,
-      primary: AppColors.accent,
+      primary: ac,
       onPrimary: Colors.white,
       onSurface: AppColors.textPrimary,
       error: AppColors.danger,

@@ -49,7 +49,7 @@ class _FoldersScreenState extends State<FoldersScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Folders')),
       body: _paths.isEmpty
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(color: AppColors.accent))
           : ListView.separated(
               padding: const EdgeInsets.all(16),
@@ -59,7 +59,7 @@ class _FoldersScreenState extends State<FoldersScreen> {
                 final p = _paths[i];
                 return Card(
                   child: ListTile(
-                    leading: const Icon(Icons.folder_rounded,
+                    leading: Icon(Icons.folder_rounded,
                         color: AppColors.accent, size: 30),
                     title: Text(p.name,
                         maxLines: 1,
@@ -123,7 +123,7 @@ class _FolderVideosScreenState extends State<FolderVideosScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(widget.path.name)),
       body: visible.isEmpty
-          ? const Center(
+          ? Center(
               child: Text('Empty folder',
                   style: TextStyle(color: AppColors.textSecondary)))
           : NotificationListener<ScrollNotification>(

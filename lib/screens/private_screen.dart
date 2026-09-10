@@ -129,12 +129,12 @@ class _PrivateScreenState extends State<PrivateScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Private Space')),
       body: _checking
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(color: AppColors.accent))
           : !_unlocked
               ? const SizedBox.shrink()
               : _videos.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Padding(
                         padding: EdgeInsets.all(32),
                         child: Text(

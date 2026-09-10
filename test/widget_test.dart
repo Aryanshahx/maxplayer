@@ -5,6 +5,7 @@ import 'package:maxplayer/utils/badges.dart';
 import 'package:maxplayer/utils/format.dart';
 import 'package:maxplayer/utils/local_store.dart';
 import 'package:maxplayer/utils/resume.dart';
+import 'package:maxplayer/utils/sort.dart';
 
 void main() {
   group('formatDuration', () {
@@ -112,6 +113,25 @@ void main() {
       final input = ['a'];
       toggleId(input, 'x');
       expect(input, ['a']);
+    });
+  });
+
+  group('sort comparators (v0.5)', () {
+    test('cmpNum asc/desc', () {
+      expect(cmpNum(1, 2, true) < 0, isTrue);
+      expect(cmpNum(1, 2, false) > 0, isTrue);
+      expect(cmpNum(7, 7, true), 0);
+    });
+    test('cmpStr case-insensitive asc/desc', () {
+      expect(cmpStr('Alpha', 'beta', true) < 0, isTrue);
+      expect(cmpStr('Alpha', 'beta', false) > 0, isTrue);
+    });
+    test('direction labels match design', () {
+      expect(sortDirectionLabel(SortField.name, true), 'A → Z');
+      expect(sortDirectionLabel(SortField.name, false), 'Z → A');
+      expect(sortDirectionLabel(SortField.dateAdded, false), 'Newest first');
+      expect(sortDirectionLabel(SortField.size, true), 'Smallest first');
+      expect(sortDirectionLabel(SortField.length, true), 'Shortest first');
     });
   });
 

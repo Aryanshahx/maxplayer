@@ -92,7 +92,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
         onPressed: _create,
       ),
       body: names.isEmpty
-          ? const Center(
+          ? Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
                 child: Text(
@@ -110,7 +110,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                 final name = names[i];
                 return Card(
                   child: ListTile(
-                    leading: const Icon(Icons.playlist_play_rounded,
+                    leading: Icon(Icons.playlist_play_rounded,
                         color: AppColors.accent, size: 30),
                     title: Text(name,
                         maxLines: 1,
@@ -182,10 +182,10 @@ class _PlaylistVideosScreenState extends State<PlaylistVideosScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(widget.name)),
       body: _loading
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(color: AppColors.accent))
           : _videos.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text('Empty playlist',
                       style: TextStyle(color: AppColors.textSecondary)))
               : VideoGrid(videos: _videos, onChanged: _resolve),

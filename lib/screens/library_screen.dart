@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -7,16 +6,20 @@ import 'package:photo_manager/photo_manager.dart';
 import '../theme.dart';
 import '../utils/crash_log.dart';
 import '../utils/local_store.dart';
-import '../utils/resume.dart';
+import '../utils/settings.dart';
+import '../utils/sort.dart';
 import '../widgets/video_grid.dart';
+import 'display_settings_screen.dart';
 import 'folders_screen.dart';
 import 'history_screen.dart';
+import 'info_screens.dart';
 import 'playlists_screen.dart';
 import 'private_screen.dart';
+import 'statistics_screen.dart';
 
-/// Home — the Max Player face: gradient header + tagline, tool tiles
-/// (Folders / Playlists / Private Space / History), Continue Watching row,
-/// searchable, favorite-filterable video grid.
+/// Home — gradient header + tagline, tool tiles (Folders / Playlists /
+/// Private Space / History), searchable grid-or-list controlled entirely
+/// from Display Settings (sort, view mode, grouping, favourites-only).
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
 
@@ -24,20 +27,16 @@ class LibraryScreen extends StatefulWidget {
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-enum _Filter { all, favorites }
-
 class _LibraryScreenState extends State<LibraryScreen> {
   static const _pageSize = 60;
 
   final _store = LocalStore();
-  final _resume = ResumeStore();
   final _searchCtrl = TextEditingController();
 
   bool _loading = true;
   bool _denied = false;
   bool _searching = false;
   String _query = '';
-  _Filter _filter = _Filter.all;
 
   final List<AssetEntity> _videos = [];
   AssetPathEntity? _allPath;
@@ -46,19 +45,32 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Set<String> _favs = {};
   Set<String> _priv = {};
-  List<RecentItem> _recent = [];
-  Map<String, int> _resumePoints = {};
 
   @override
   void initState() {
     super.initState();
     _load();
+    AppSettings.instance.addListener(_onSettings);
   }
 
   @override
   void dispose() {
+    AppSettings.instance.removeListener(_onSettings);
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  void _onSettings() {
+    if (AppSettings.instance.sortField == SortField.size) {
+      unawaited(_ensureSizes());
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _ensureSizes() async {
+    // fill the shared cache for what's loaded so size-sort is meaningful
+    await Future.wait(_videos.map(videoSize));
+    if (mounted) setState(() {});
   }
 
   Future<void> _load() async {
@@ -99,19 +111,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Future<void> _loadMeta() async {
     final favs = await _store.favorites();
     final priv = await _store.privateIds();
-    final recent = await _store.recent();
-    // resume points for the continue-watching row
-    final points = <String, int>{};
-    for (final r in recent) {
-      final ms = await _resume.readMs(r.path);
-      if (ms != null && ms >= minPromptMs) points[r.id] = ms;
-    }
     if (mounted) {
       setState(() {
         _favs = favs;
         _priv = priv;
-        _recent = recent;
-        _resumePoints = points;
       });
     }
   }
@@ -127,31 +130,61 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   List<AssetEntity> get _visibleVideos {
+    final s = AppSettings.instance;
     final q = _query.trim().toLowerCase();
-    return _videos.where((a) {
-      if (_priv.contains(a.id)) return false; // hidden in main grid
-      if (_filter == _Filter.favorites && !_favs.contains(a.id)) return false;
+    final list = _videos.where((a) {
+      if (_priv.contains(a.id)) return false;
+      if (s.onlyFavs && !_favs.contains(a.id)) return false;
       if (q.isNotEmpty && !(a.title ?? '').toLowerCase().contains(q)) {
         return false;
       }
       return true;
     }).toList();
+
+    list.sort((x, y) {
+      switch (s.sortField) {
+        case SortField.name:
+          return cmpStr(x.title ?? '', y.title ?? '', s.sortAsc);
+        case SortField.dateAdded:
+          return cmpNum(x.modifiedDateTime.millisecondsSinceEpoch,
+              y.modifiedDateTime.millisecondsSinceEpoch, s.sortAsc);
+        case SortField.length:
+          return cmpNum(x.duration, y.duration, s.sortAsc);
+        case SortField.size:
+          final sx = videoSizeCache[x.id];
+          final sy = videoSizeCache[y.id];
+          return cmpNum(sx == null ? 0 : 1, sy == null ? 0 : 1, s.sortAsc);
+      }
+    });
+    return list;
   }
 
-  List<RecentItem> get _continueWatching =>
-      _recent.where((r) => _resumePoints.containsKey(r.id)).take(10).toList();
-
-  void _openAbout() {
-    showAboutDialog(
-      context: context,
-      applicationName: 'Max Player',
-      applicationVersion: '0.4.0',
-      applicationLegalese: 'Local-first. Ad-free. Proudly Developed in India.',
-      children: const [
-        Text('MPV (libmpv + FFmpeg) engine.\nNo accounts. No tracking.',
-            style: TextStyle(color: AppColors.textSecondary)),
-      ],
-    );
+  void _openMenu(_MenuAction a) {
+    Widget? page;
+    switch (a) {
+      case _MenuAction.display:
+        page = const DisplaySettingsScreen();
+      case _MenuAction.stats:
+        page = const StatisticsScreen();
+      case _MenuAction.manual:
+        page = const UserManualScreen();
+      case _MenuAction.privacy:
+        page = const PrivacyPolicyScreen();
+      case _MenuAction.about:
+        showAboutDialog(
+          context: context,
+          applicationName: 'Max Player',
+          applicationVersion: '0.5.0',
+          applicationLegalese:
+              'Local-first. Ad-free. Proudly Developed in India.',
+          children: const [
+            Text('MPV (libmpv + FFmpeg) engine.\nNo accounts. No tracking.',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ],
+        );
+        return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page!));
   }
 
   @override
@@ -159,7 +192,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return Scaffold(
       body: SafeArea(
         child: _loading
-            ? const Center(
+            ? Center(
                 child: CircularProgressIndicator(color: AppColors.accent))
             : _denied
                 ? _PermissionHint(onRetry: _load)
@@ -169,17 +202,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Widget _buildHome() {
+    final videos = _visibleVideos;
+    final s = AppSettings.instance;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildHeader(),
         if (_searching) _buildSearchBar(),
         _buildTiles(),
-        if (_continueWatching.isNotEmpty && !_searching)
-          _buildContinueWatching(),
-        _buildFilterRow(),
+        const SizedBox(height: 6),
         Expanded(
-          child: _visibleVideos.isEmpty
+          child: videos.isEmpty
               ? const _EmptyHint()
               : NotificationListener<ScrollNotification>(
                   onNotification: (n) {
@@ -188,25 +221,35 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     }
                     return false;
                   },
-                  child: VideoGrid(
-                    key: ValueKey('${_filter}_${_query}_${_videos.length}'),
-                    videos: _visibleVideos,
-                    onChanged: () async {
-                      await _loadMeta();
-                      setState(() {});
-                    },
-                  ),
+                  child: s.groupBy == GroupBy.folder
+                      ? _GroupedView(
+                          videos: videos,
+                          listMode: s.viewMode == ViewMode.list,
+                          onChanged: _refresh,
+                        )
+                      : VideoGrid(
+                          key: ValueKey(
+                              '${s.viewMode}_${videos.length}_$_query'),
+                          videos: videos,
+                          listMode: s.viewMode == ViewMode.list,
+                          onChanged: _refresh,
+                        ),
                 ),
         ),
       ],
     );
   }
 
+  Future<void> _refresh() async {
+    await _loadMeta();
+    if (mounted) setState(() {});
+  }
+
   // ---------------- header ----------------
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 8, 4),
+      padding: const EdgeInsets.fromLTRB(20, 14, 4, 4),
       child: Row(
         children: [
           Expanded(
@@ -215,7 +258,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
               children: [
                 ShaderMask(
                   shaderCallback: (r) => const LinearGradient(
-                    colors: [Color(0xFF8B5CF6), Color(0xFF3D6BFF), Color(0xFF22D3EE)],
+                    colors: [
+                      Color(0xFF8B5CF6),
+                      Color(0xFF3D6BFF),
+                      Color(0xFF22D3EE)
+                    ],
                   ).createShader(r),
                   child: const Text(
                     'Max Player',
@@ -235,31 +282,68 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ],
             ),
           ),
-          _headIcon(Icons.search_rounded, 'Search', () {
-            setState(() {
+          IconButton(
+            tooltip: 'Search',
+            icon:
+                const Icon(Icons.search_rounded, color: AppColors.textPrimary),
+            onPressed: () => setState(() {
               _searching = !_searching;
               if (!_searching) {
                 _query = '';
                 _searchCtrl.clear();
               }
-            });
-          }),
-          _headIcon(Icons.refresh_rounded, 'Refresh', _load),
-          _headIcon(Icons.history_rounded, 'History', () =>
-              Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => const HistoryScreen()))),
-          _headIcon(Icons.more_vert_rounded, 'About', _openAbout),
+            }),
+          ),
+          IconButton(
+            tooltip: 'Refresh',
+            icon:
+                const Icon(Icons.refresh_rounded, color: AppColors.textPrimary),
+            onPressed: _load,
+          ),
+          IconButton(
+            tooltip: 'History',
+            icon:
+                const Icon(Icons.history_rounded, color: AppColors.textPrimary),
+            onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HistoryScreen())),
+          ),
+          PopupMenuButton<_MenuAction>(
+            icon: const Icon(Icons.more_vert_rounded,
+                color: AppColors.textPrimary),
+            color: AppColors.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: const BorderSide(color: AppColors.border),
+            ),
+            onSelected: _openMenu,
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                  value: _MenuAction.display,
+                  child: _MenuRow(
+                      icon: Icons.tune_rounded, label: 'Display settings')),
+              PopupMenuItem(
+                  value: _MenuAction.stats,
+                  child:
+                      _MenuRow(icon: Icons.bar_chart_rounded, label: 'Statistics')),
+              PopupMenuItem(
+                  value: _MenuAction.manual,
+                  child: _MenuRow(
+                      icon: Icons.menu_book_outlined, label: 'User manual')),
+              PopupMenuItem(
+                  value: _MenuAction.about,
+                  child:
+                      _MenuRow(icon: Icons.info_outline_rounded, label: 'About')),
+              PopupMenuItem(
+                  value: _MenuAction.privacy,
+                  child: _MenuRow(
+                      icon: Icons.privacy_tip_outlined,
+                      label: 'Privacy policy')),
+            ],
+          ),
         ],
       ),
     );
   }
-
-  Widget _headIcon(IconData icon, String tip, VoidCallback onTap) =>
-      IconButton(
-        tooltip: tip,
-        icon: Icon(icon, color: AppColors.textPrimary, size: 22),
-        onPressed: onTap,
-      );
 
   Widget _buildSearchBar() {
     return Padding(
@@ -287,7 +371,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.accent),
+            borderSide: BorderSide(color: AppColors.accent),
           ),
         ),
       ),
@@ -335,65 +419,75 @@ class _LibraryScreenState extends State<LibraryScreen> {
       ),
     );
   }
+}
 
-  // ---------------- continue watching ----------------
+enum _MenuAction { display, stats, manual, about, privacy }
 
-  Widget _buildContinueWatching() {
-    final items = _continueWatching;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(20, 8, 20, 8),
-          child: Text('Continue Watching',
-              style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700)),
-        ),
-        SizedBox(
-          height: 96,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (context, i) =>
-                _ContinueCard(item: items[i], resumeMs: _resumePoints[items[i].id]!),
-          ),
-        ),
+        Icon(icon, size: 19, color: AppColors.accent),
+        const SizedBox(width: 12),
+        Text(label, style: const TextStyle(color: AppColors.textPrimary)),
       ],
     );
   }
+}
 
-  // ---------------- filter row ----------------
+class _GroupedView extends StatelessWidget {
+  const _GroupedView(
+      {required this.videos, required this.listMode, required this.onChanged});
 
-  Widget _buildFilterRow() {
-    ChoiceChip chip(String label, bool sel, VoidCallback onTap) => ChoiceChip(
-          label: Text(label),
-          selected: sel,
-          onSelected: (_) => onTap(),
-          backgroundColor: AppColors.surface,
-          selectedColor: AppColors.accent.withValues(alpha: 0.25),
-          labelStyle: TextStyle(
-              color: sel ? AppColors.accent : AppColors.textSecondary,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600),
-          side: BorderSide(color: sel ? AppColors.accent : AppColors.border),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+  final List<AssetEntity> videos;
+  final bool listMode;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = <String, List<AssetEntity>>{};
+    for (final a in videos) {
+      final rp = a.relativePath ?? 'Other';
+      final parts = rp.split('/').where((e) => e.isNotEmpty).toList();
+      groups.putIfAbsent(parts.isEmpty ? 'Other' : parts.last, () => []).add(a);
+    }
+    final names = groups.keys.toList()..sort();
+    return ListView.builder(
+      itemCount: names.length,
+      itemBuilder: (context, i) {
+        final name = names[i];
+        final items = groups[name]!;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 2),
+              child: Text('$name  ·  ${items.length}',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.4)),
+            ),
+            SizedBox(
+              height: listMode
+                  ? items.length * 68.0
+                  : ((items.length + 1) ~/ 2) * 270.0,
+              child: VideoGrid(
+                videos: items,
+                listMode: listMode,
+                onChanged: onChanged,
+              ),
+            ),
+          ],
         );
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
-      child: Row(
-        children: [
-          chip('All videos', _filter == _Filter.all,
-              () => setState(() => _filter = _Filter.all)),
-          const SizedBox(width: 8),
-          chip('♥ Favorites', _filter == _Filter.favorites,
-              () => setState(() => _filter = _Filter.favorites)),
-        ],
-      ),
+      },
     );
   }
 }
@@ -424,81 +518,6 @@ class _Tile extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ContinueCard extends StatelessWidget {
-  const _ContinueCard({required this.item, required this.resumeMs});
-
-  final RecentItem item;
-  final int resumeMs;
-
-  Future<AssetEntity?> _entity() => AssetEntity.fromId(item.id);
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<AssetEntity?>(
-      future: _entity(),
-      builder: (context, snap) {
-        final asset = snap.data;
-        return Card(
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: asset == null
-                ? null
-                : () => VideoGrid.openVideo(context, asset),
-            child: SizedBox(
-              width: 150,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (asset != null)
-                    FutureBuilder<Uint8List?>(
-                      future: asset.thumbnailDataWithSize(
-                          const ThumbnailSize(320, 200)),
-                      builder: (context, t) => t.data == null
-                          ? const ColoredBox(color: AppColors.surfaceAlt)
-                          : Image.memory(t.data!, fit: BoxFit.cover),
-                    )
-                  else
-                    const ColoredBox(color: AppColors.surfaceAlt),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [
-                          Colors.black.withValues(alpha: 0.75),
-                          Colors.transparent,
-                        ],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 8,
-                    right: 8,
-                    bottom: 6,
-                    child: Text(
-                      item.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  const Center(
-                    child: Icon(Icons.play_circle_fill_rounded,
-                        color: Colors.white70, size: 30),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }

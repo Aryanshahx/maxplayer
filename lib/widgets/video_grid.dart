@@ -11,31 +11,30 @@ import '../utils/crash_log.dart';
 import '../utils/format.dart';
 import '../utils/local_store.dart';
 import '../utils/resume.dart';
+import '../utils/settings.dart';
 
-/// Shared 2-column video card grid used by Home, Folders, Playlists,
-/// Private Space and History. Cards carry: thumbnail, quality badge,
-/// duration, favorite heart, delete bin, title, size.
+/// Shared video card grid + compact list used by Home, Folders, Playlists,
+/// Private Space and History. Responsive: column count adapts to width.
 class VideoGrid extends StatefulWidget {
   const VideoGrid({
     super.key,
     required this.videos,
     required this.onChanged,
     this.onOpen,
+    this.listMode = false,
   });
 
   final List<AssetEntity> videos;
-
-  /// Called after any mutating action (fav/private/delete) so parents can
-  /// re-filter/refresh.
   final VoidCallback onChanged;
-
-  /// Optional custom tap handler (defaults to guarded play).
   final void Function(AssetEntity asset)? onOpen;
 
-  /// Guarded open used everywhere a video starts (non-negotiable #2):
-  /// resolves the file, records history, navigates — or says why not.
+  /// Compact rows instead of visual cards (Display Settings → List View).
+  final bool listMode;
+
+  /// Guarded open used everywhere a video starts (non-negotiable #2).
+  /// Records history, hands off the queue when "Queue All" is enabled.
   static Future<void> openVideo(BuildContext context, AssetEntity asset,
-      {LocalStore? store, ResumeStore? resumeStore}) async {
+      {LocalStore? store, List<AssetEntity>? queue}) async {
     CrashLog.crumb('video.tap', {'id': asset.id, 'title': asset.title});
     try {
       final file = await asset.file;
@@ -49,10 +48,23 @@ class VideoGrid extends StatefulWidget {
         path: file.path,
         ts: DateTime.now().millisecondsSinceEpoch,
       )));
+      List<String> queueIds = const [];
+      var start = 0;
+      if (AppSettings.instance.queueAll &&
+          queue != null &&
+          queue.isNotEmpty) {
+        queueIds = queue.map((e) => e.id).toList();
+        start = queueIds.indexOf(asset.id);
+        if (start < 0) start = 0;
+      }
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => PlayerScreen(
-              path: file.path, title: asset.title ?? 'Video'),
+            path: file.path,
+            title: asset.title ?? 'Video',
+            queueIds: queueIds,
+            queueStart: start,
+          ),
         ),
       );
     } catch (e) {
@@ -122,7 +134,9 @@ class _VideoGridState extends State<VideoGrid> {
     final nowPrivate = await _store.togglePrivate(a.id);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(nowPrivate ? 'Moved to Private Space' : 'Removed from Private Space'),
+        content: Text(nowPrivate
+            ? 'Moved to Private Space'
+            : 'Removed from Private Space'),
       ));
     }
     await _loadFlags();
@@ -178,7 +192,8 @@ class _VideoGridState extends State<VideoGrid> {
     if (!mounted) return;
     if (pls.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No playlists yet — create one from the Playlists tile')));
+          content:
+              Text('No playlists yet — create one from the Playlists tile')));
       return;
     }
     final chosen = await showModalBottomSheet<String>(
@@ -190,17 +205,17 @@ class _VideoGridState extends State<VideoGrid> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
+            Padding(
+              padding: const EdgeInsets.all(16),
               child: Text('Add to playlist',
                   style: TextStyle(
-                      color: AppColors.textPrimary,
+                      color: AppColors.accent,
                       fontSize: 16,
                       fontWeight: FontWeight.w700)),
             ),
             for (final name in pls.keys)
               ListTile(
-                leading: const Icon(Icons.playlist_play_rounded,
+                leading: Icon(Icons.playlist_play_rounded,
                     color: AppColors.accent),
                 title: Text(name,
                     style: const TextStyle(color: AppColors.textPrimary)),
@@ -223,9 +238,8 @@ class _VideoGridState extends State<VideoGrid> {
     final added = await _store.toggleInPlaylist(chosen, a.id);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(added
-              ? 'Added to "$chosen"'
-              : 'Removed from "$chosen"')));
+          content:
+              Text(added ? 'Added to "$chosen"' : 'Removed from "$chosen"')));
     }
     widget.onChanged();
   }
@@ -240,13 +254,16 @@ class _VideoGridState extends State<VideoGrid> {
           side: const BorderSide(color: AppColors.border),
         ),
         title: Text(a.title ?? 'Video',
-            style: const TextStyle(color: AppColors.textPrimary, fontSize: 15)),
+            style:
+                const TextStyle(color: AppColors.textPrimary, fontSize: 15)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _prop('Resolution', '${a.width}×${a.height} (${qualityBadge(a.width, a.height)})'),
-            _prop('Duration', formatDuration(Duration(seconds: a.duration))),
+            _prop('Resolution',
+                '${a.width}×${a.height} (${qualityBadge(a.width, a.height)})'),
+            _prop('Duration',
+                formatDuration(Duration(seconds: a.duration))),
             _prop('Modified',
                 '${a.modifiedDateTime.year}-${a.modifiedDateTime.month.toString().padLeft(2, '0')}-${a.modifiedDateTime.day.toString().padLeft(2, '0')}'),
           ],
@@ -254,7 +271,7 @@ class _VideoGridState extends State<VideoGrid> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close', style: TextStyle(color: AppColors.accent)),
+            child: Text('Close', style: TextStyle(color: AppColors.accent)),
           ),
         ],
       ),
@@ -264,7 +281,8 @@ class _VideoGridState extends State<VideoGrid> {
   Widget _prop(String k, String v) => Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: Text('$k:  $v',
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+            style: const TextStyle(
+                color: AppColors.textSecondary, fontSize: 13)),
       );
 
   void _showActions(AssetEntity a) {
@@ -317,35 +335,129 @@ class _VideoGridState extends State<VideoGrid> {
   ListTile _sheetAction(IconData icon, String label, VoidCallback onTap,
           {bool danger = false}) =>
       ListTile(
-        leading: Icon(icon, color: danger ? AppColors.danger : AppColors.accent),
+        leading:
+            Icon(icon, color: danger ? AppColors.danger : AppColors.accent),
         title: Text(label,
             style: TextStyle(
                 color: danger ? AppColors.danger : AppColors.textPrimary)),
         onTap: onTap,
       );
 
+  void _open(AssetEntity a) => (widget.onOpen ??
+      (x) => VideoGrid.openVideo(context, x,
+          store: _store, queue: widget.videos))(a);
+
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 14,
-        crossAxisSpacing: 14,
-        childAspectRatio: 0.78,
-      ),
-      itemCount: widget.videos.length,
-      itemBuilder: (context, i) {
-        final a = widget.videos[i];
-        return _VideoCard(
-          asset: a,
-          isFav: _favs.contains(a.id),
-          onTap: () => (widget.onOpen ?? (x) => VideoGrid.openVideo(context, x, store: _store))(a),
-          onLongPress: () => _showActions(a),
-          onToggleFav: () => _toggleFav(a),
-          onDelete: () => _confirmDelete(a),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Responsive: ~190dp per column — phones 2, tablets/foldables 4-6.
+        final cols = (constraints.maxWidth / 190).floor().clamp(2, 6);
+        if (widget.listMode) {
+          return ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: widget.videos.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (context, i) {
+              final a = widget.videos[i];
+              return _VideoRow(
+                asset: a,
+                isFav: _favs.contains(a.id),
+                onTap: () => _open(a),
+                onLongPress: () => _showActions(a),
+                onToggleFav: () => _toggleFav(a),
+              );
+            },
+          );
+        }
+        return GridView.builder(
+          padding: const EdgeInsets.all(16),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cols,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 14,
+            childAspectRatio: 0.78,
+          ),
+          itemCount: widget.videos.length,
+          itemBuilder: (context, i) {
+            final a = widget.videos[i];
+            return _VideoCard(
+              asset: a,
+              isFav: _favs.contains(a.id),
+              onTap: () => _open(a),
+              onLongPress: () => _showActions(a),
+              onToggleFav: () => _toggleFav(a),
+            );
+          },
         );
       },
+    );
+  }
+}
+
+/// Static async size cache shared by cards and rows.
+final Map<String, Future<int>> videoSizeCache = {};
+
+Future<int> videoSize(AssetEntity asset) => videoSizeCache.putIfAbsent(
+    asset.id, () async => (await asset.file)?.length() ?? 0);
+
+class _VideoRow extends StatelessWidget {
+  const _VideoRow({
+    required this.asset,
+    required this.isFav,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onToggleFav,
+  });
+
+  final AssetEntity asset;
+  final bool isFav;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final VoidCallback onToggleFav;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: 72,
+            height: 48,
+            child: FutureBuilder<Uint8List?>(
+              future: asset.thumbnailDataWithSize(
+                  const ThumbnailSize(160, 110)),
+              builder: (context, t) => t.data == null
+                  ? const ColoredBox(color: AppColors.surfaceAlt)
+                  : Image.memory(t.data!, fit: BoxFit.cover),
+            ),
+          ),
+        ),
+        title: Text(asset.title ?? 'Untitled',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style:
+                const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+        subtitle: Text(
+          '${qualityBadge(asset.width, asset.height)} · ${formatDuration(Duration(seconds: asset.duration))}',
+          style:
+              const TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
+        ),
+        trailing: IconButton(
+          icon: Icon(
+            isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            color: isFav ? AppColors.danger : AppColors.textSecondary,
+            size: 20,
+          ),
+          onPressed: onToggleFav,
+        ),
+      ),
     );
   }
 }
@@ -357,20 +469,13 @@ class _VideoCard extends StatelessWidget {
     required this.onTap,
     required this.onLongPress,
     required this.onToggleFav,
-    required this.onDelete,
   });
-
-  static final Map<String, Future<int>> _sizeCache = {};
 
   final AssetEntity asset;
   final bool isFav;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final VoidCallback onToggleFav;
-  final VoidCallback onDelete;
-
-  Future<int> _sizeBytes() => _sizeCache.putIfAbsent(
-      asset.id, () async => (await asset.file)?.length() ?? 0);
 
   @override
   Widget build(BuildContext context) {
@@ -393,7 +498,6 @@ class _VideoCard extends StatelessWidget {
                         ? const ColoredBox(color: AppColors.surfaceAlt)
                         : Image.memory(snap.data!, fit: BoxFit.cover),
                   ),
-                  // quality badge
                   Positioned(
                     left: 8,
                     top: 8,
@@ -403,7 +507,6 @@ class _VideoCard extends StatelessWidget {
                       textColor: AppColors.textPrimary,
                     ),
                   ),
-                  // duration
                   Positioned(
                     right: 8,
                     bottom: 8,
@@ -413,29 +516,19 @@ class _VideoCard extends StatelessWidget {
                       textColor: AppColors.textPrimary,
                     ),
                   ),
-                  // favorite
                   Positioned(
                     right: 4,
                     top: 4,
                     child: IconButton(
                       visualDensity: VisualDensity.compact,
                       icon: Icon(
-                        isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                        isFav
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
                         color: isFav ? AppColors.danger : Colors.white,
                         size: 20,
                       ),
                       onPressed: onToggleFav,
-                    ),
-                  ),
-                  // delete
-                  Positioned(
-                    left: 4,
-                    bottom: 4,
-                    child: IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.delete_outline_rounded,
-                          color: Colors.white, size: 20),
-                      onPressed: onDelete,
                     ),
                   ),
                 ],
@@ -457,7 +550,7 @@ class _VideoCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   FutureBuilder<int>(
-                    future: _sizeBytes(),
+                    future: videoSize(asset),
                     builder: (context, snap) => Text(
                       snap.hasData && snap.data! > 0
                           ? formatBytes(snap.data!)
@@ -488,10 +581,8 @@ class _Pill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration:
+          BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
       child: Text(text,
           style: TextStyle(
               fontSize: 11, color: textColor, fontWeight: FontWeight.w600)),
