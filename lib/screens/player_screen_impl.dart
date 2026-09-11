@@ -380,6 +380,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _onScaleUpdate(ScaleUpdateDetails d) async {
+    final screenSize = MediaQuery.of(context).size;
     if (_locked) return;
     if (_drag == _DragMode.zoom) {
       setState(() => _zoom = (_zoomStart * d.scale).clamp(1.0, 4.0));
@@ -408,8 +409,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     }
 
-    final height = MediaQuery.of(context).size.height;
-    final width = MediaQuery.of(context).size.width;
+    final height = screenSize.height;
+    final width = screenSize.width;
     if (_drag == _DragMode.brightness || _drag == _DragMode.volume) {
       final change = -(d.focalPoint.dy - _dragStart.dy) / (height * .5);
       final v = (_levelValue + change).clamp(0.0, 1.0);
@@ -521,7 +522,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 },
               ),
               ListTile(
-                leading: const SizedBox(
+                leading: SizedBox(
                   width: 30,
                   child: Center(
                     child: Text('HDR',
@@ -692,7 +693,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       title: Text(name,
           style: const TextStyle(color: AppColors.textPrimary, fontSize: 16)),
       trailing: selected
-          ? const Icon(Icons.check_circle_rounded, color: AppColors.accent)
+          ? Icon(Icons.check_circle_rounded, color: AppColors.accent)
           : const Icon(Icons.radio_button_off_rounded,
               color: AppColors.textSecondary),
       onTap: () => unawaited(onTap()),
@@ -736,7 +737,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     SubtitleTrack? ass;
     for (final track in _player.state.tracks.subtitle) {
       if ('${(track as dynamic).codec}'.toLowerCase() == 'ass') {
-        ass = track as SubtitleTrack;
+        ass = track;
         break;
       }
     }

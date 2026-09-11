@@ -140,7 +140,7 @@ class PlayerSettingsScreen extends StatelessWidget {
 
   Future<void> _pickSeekStep(BuildContext context, PlayerSettings s) async {
     final value = await _pick<int>(
-      context,
+      context: context,
       title: 'Seek amount',
       values: PlayerSettings.seekSteps,
       selected: s.seekStep,
@@ -151,7 +151,7 @@ class PlayerSettingsScreen extends StatelessWidget {
 
   Future<void> _pickSpeed(BuildContext context, PlayerSettings s) async {
     final value = await _pick<double>(
-      context,
+      context: context,
       title: 'Long-press speed',
       values: PlayerSettings.speedRates,
       selected: s.longPressRate,
@@ -162,7 +162,7 @@ class PlayerSettingsScreen extends StatelessWidget {
 
   Future<void> _pickAutoHide(BuildContext context, PlayerSettings s) async {
     final value = await _pick<int>(
-      context,
+      context: context,
       title: 'Auto-hide delay',
       values: PlayerSettings.autoHideSeconds,
       selected: s.autoHideDelay,
@@ -209,7 +209,7 @@ class PlayerSettingsScreen extends StatelessWidget {
                   style: const TextStyle(color: AppColors.textPrimary),
                 ),
                 trailing: value == selected
-                    ? const Icon(Icons.check_rounded, color: AppColors.accent)
+                    ? Icon(Icons.check_rounded, color: AppColors.accent)
                     : null,
                 onTap: () => Navigator.of(context).pop(value),
               ),
@@ -321,11 +321,12 @@ class _ToggleRow extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (trailing != null) trailing!,
+                    if (trailing != null) SizedBox(child: trailing),
                     const SizedBox(width: 2),
                     Switch.adaptive(
                       value: value,
-                      activeColor: AppColors.accent,
+                      activeThumbColor: AppColors.accent,
+                      activeTrackColor: AppColors.accent.withValues(alpha: 0.45),
                       onChanged: onChanged,
                     ),
                   ],
