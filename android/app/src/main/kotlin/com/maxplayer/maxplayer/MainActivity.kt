@@ -8,16 +8,13 @@ import android.graphics.Rect
 import android.os.Build
 import android.provider.Settings
 import android.util.Rational
-import android.view.OrientationEventListener
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterFragmentActivity() {
 
-    private var orientationListener: OrientationEventListener? = null
-    private var autoRotateEnabled = false
-    private var lastOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    private var rotationLocked = false
 
     private val pipSupported: Boolean
         get() = packageManager.hasSystemFeature(
@@ -32,22 +29,14 @@ class MainActivity : FlutterFragmentActivity() {
             "maxplayer/native",
         ).setMethodCallHandler { call, result ->
             when (call.method) {
+                "toggleRotationLock" -> result.success(toggleRotationLock())
+
                 "enterPip" -> {
                     enterPip(
                         call.argument<Int>("w"),
                         call.argument<Int>("h"),
                         result,
                     )
-                }
-
-                "startAutoRotate" -> {
-                    startAutoRotate()
-                    result.success(true)
-                }
-
-                "stopAutoRotate" -> {
-                    stopAutoRotate()
-                    result.success(true)
                 }
 
                 "openCastSettings" -> {
@@ -69,52 +58,26 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
-    /**
-     * App-controlled rotation. This does not depend on Android's global
-     * auto-rotate setting while the player has enabled this mode.
+    /*
+     * Do not translate raw sensor degrees to LANDSCAPE/REVERSE_LANDSCAPE.
+     * Android SENSOR mode handles the physical orientation correctly.
      */
-    private fun startAutoRotate() {
-        if (autoRotateEnabled) return
-
-        autoRotateEnabled = true
-
-        if (orientationListener == null) {
-            orientationListener = object : OrientationEventListener(this) {
-                override fun onOrientationChanged(orientation: Int) {
-                    if (!autoRotateEnabled || orientation == ORIENTATION_UNKNOWN) {
-                        return
-                    }
-
-                    val target = when {
-                        orientation >= 315 || orientation < 45 ->
-                            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-
-                        orientation >= 45 && orientation < 135 ->
-                            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-
-                        orientation >= 135 && orientation < 225 ->
-                            ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
-
-                        else ->
-                            ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-                    }
-
-                    if (lastOrientation != target) {
-                        lastOrientation = target
-                        requestedOrientation = target
-                    }
-                }
+    private fun toggleRotationLock(): Boolean {
+        if (!rotationLocked) {
+            val current = resources.configuration.orientation
+            requestedOrientation = if (
+                current == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            ) {
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
+            rotationLocked = true
+        } else {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+            rotationLocked = false
         }
-
-        orientationListener?.enable()
-    }
-
-    private fun stopAutoRotate() {
-        autoRotateEnabled = false
-        orientationListener?.disable()
-        lastOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        return rotationLocked
     }
 
     private fun enterPip(
@@ -135,10 +98,7 @@ class MainActivity : FlutterFragmentActivity() {
 
             val builder = PictureInPictureParams.Builder()
                 .setAspectRatio(
-                    Rational(
-                        (ratio * 1000).toInt(),
-                        1000,
-                    ),
+                    Rational((ratio * 1000).toInt(), 1000),
                 )
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -158,16 +118,15 @@ class MainActivity : FlutterFragmentActivity() {
                 )
             }
 
-            val entered = enterPictureInPictureMode(builder.build())
-            result.success(entered)
+            result.success(enterPictureInPictureMode(builder.build()))
         } catch (_: Exception) {
             result.success(false)
         }
     }
 
     override fun onDestroy() {
-        stopAutoRotate()
-        orientationListener = null
+        rotationLocked = false
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         super.onDestroy()
     }
 }

@@ -10,7 +10,7 @@ class PlayerSettings extends ChangeNotifier {
   static final PlayerSettings instance = PlayerSettings._();
 
   static const seekSteps = <int>[5, 10, 15, 30, 60];
-  static const speedRates = <double>[1.25, 1.5, 2.0, 2.5, 3.0];
+  static const speedRates = <double>[1.25, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0];
   static const autoHideSeconds = <int>[2, 3, 4, 5, 8, 10];
 
   static const _kDoubleTapSides = 'player.doubleTapSides';
@@ -110,11 +110,6 @@ class PlayerSettings extends ChangeNotifier {
     await _saveBool(_kPinchZoom, v);
   }
 
-  Future<void> setAutoRotate(bool v) async {
-    autoRotate = v;
-    await _saveBool(_kAutoRotate, v);
-  }
-
   Future<void> setLongPressSpeed(bool v) async {
     longPressSpeed = v;
     await _saveBool(_kLongPressSpeed, v);
@@ -155,11 +150,6 @@ class PlayerSettings extends ChangeNotifier {
   Future<void> setBackgroundAudio(bool v) async {
     backgroundAudio = v;
     await _saveBool(_kBackgroundAudio, v);
-  }
-
-  Future<void> setPerformanceMode(bool v) async {
-    performanceMode = v;
-    await _saveBool(_kPerformanceMode, v);
   }
 
   Future<void> _saveBool(String key, bool value) async {

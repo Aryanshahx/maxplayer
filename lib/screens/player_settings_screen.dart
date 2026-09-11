@@ -68,13 +68,6 @@ class PlayerSettingsScreen extends StatelessWidget {
               onChanged: s.setHorizontalSeek,
             ),
             _ToggleRow(
-              icon: Icons.screen_rotation_alt_rounded,
-              title: 'Auto rotate player',
-              subtitle: 'Allow portrait and landscape automatically',
-              value: s.autoRotate,
-              onChanged: s.setAutoRotate,
-            ),
-            _ToggleRow(
               icon: Icons.zoom_out_map_outlined,
               title: 'Two-finger pinch to zoom',
               subtitle:
@@ -134,13 +127,6 @@ class PlayerSettingsScreen extends StatelessWidget {
               subtitle: 'Keep playing audio when screen is turned off or app is in background',
               value: s.backgroundAudio,
               onChanged: s.setBackgroundAudio,
-            ),
-            _ToggleRow(
-              icon: Icons.speed_rounded,
-              title: 'Performance mode (low-end)',
-              subtitle: 'Drops late frames instead of lagging, auto-detects low-RAM phones when left enabled',
-              value: s.performanceMode,
-              onChanged: s.setPerformanceMode,
             ),
           ],
         ),
