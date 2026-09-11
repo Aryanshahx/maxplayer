@@ -8,9 +8,8 @@ import '../utils/crash_log.dart';
 import '../utils/tmdb.dart';
 import 'movie_card.dart';
 
-/// Home "Discover movies" section: a 2-column grid of landscape movie cards
-/// with gold ★ rating badges, straight from TMDB trending. Hidden entirely
-/// when offline or on error (home never breaks).
+/// Home "Discover movies" banner: trending posters from TMDB.
+/// Hidden entirely when offline or on error (home never breaks).
 class DiscoverSection extends StatefulWidget {
   const DiscoverSection({super.key});
 
@@ -52,12 +51,11 @@ class _DiscoverSectionState extends State<DiscoverSection> {
     if (_failed || movies == null || movies.isEmpty) {
       return const SizedBox.shrink(); // invisible until we have posters
     }
-    final grid = movies.length > 4 ? movies.sublist(0, 4) : movies;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
+          padding: const EdgeInsets.fromLTRB(20, 10, 12, 8),
           child: Row(
             children: [
               Expanded(
@@ -94,17 +92,15 @@ class _DiscoverSectionState extends State<DiscoverSection> {
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-          child: GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            // 16:9 image + title/rating lines ≈ 1.3 width:height.
-            childAspectRatio: 1.3,
-            children: [for (final m in grid) DiscoverMovieCard(movie: m)],
+        SizedBox(
+          height: 168,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: movies.length > 12 ? 12 : movies.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, i) =>
+                MoviePosterCard(movie: movies[i], compact: true),
           ),
         ),
       ],

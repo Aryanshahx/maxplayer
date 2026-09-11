@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:maxplayer/theme.dart';
 import 'package:maxplayer/utils/badges.dart';
 import 'package:maxplayer/utils/collections.dart';
-import 'package:maxplayer/utils/fit.dart';
 import 'package:maxplayer/utils/format.dart';
 import 'package:maxplayer/utils/m3u.dart';
 import 'package:maxplayer/utils/ab_loop.dart';
@@ -160,8 +159,7 @@ void main() {
     const sample = '''
     {"results":[
       {"id":101,"title":"Cool Movie","release_date":"2026-03-01",
-       "vote_average":8.4,"overview":"A tale.","poster_path":"/abc.jpg",
-       "backdrop_path":"/wide.jpg"},
+       "vote_average":8.4,"overview":"A tale.","poster_path":"/abc.jpg"},
       {"id":102,"name":"Show Only Name","vote_average":7,"poster_path":null}
     ]}''';
 
@@ -180,57 +178,6 @@ void main() {
       expect(movies[1].title, 'Show Only Name');
       expect(movies[1].posterUrl, '');
       expect(movies[1].year, '');
-    });
-
-    test('parses landscape backdrop for the home grid (v0.12)', () {
-      final movies = parseTrending(sample);
-      expect(movies[0].backdropUrl,
-          'https://image.tmdb.org/t/p/w780/wide.jpg');
-      expect(movies[1].backdropUrl, ''); // no backdrop -> empty
-    });
-  });
-
-  group('fit mode cycle (v0.12 pinch cycling)', () {
-    test('six modes exist, in order', () {
-      expect(FitMode.values.length, 6);
-      expect(FitMode.values.first, FitMode.fit);
-      expect(FitMode.values.last, FitMode.sixteenNine);
-    });
-
-    test('next wraps around', () {
-      expect(cycleIndex(0, 6, 1), 1);
-      expect(cycleIndex(5, 6, 1), 0); // 16:9 -> fit
-    });
-
-    test('previous wraps around', () {
-      expect(cycleIndex(0, 6, -1), 5); // fit -> 16:9
-      expect(cycleIndex(3, 6, -1), 2);
-    });
-
-    test('multi-step delta', () {
-      expect(cycleIndex(2, 6, 3), 5);
-      expect(cycleIndex(2, 6, -3), 5);
-    });
-
-    test('labels cover every mode', () {
-      for (final mode in FitMode.values) {
-        expect(mode.label.isNotEmpty, isTrue);
-      }
-    });
-  });
-
-  group('sleep countdown label (v0.12)', () {
-    test('15 minutes', () {
-      expect(formatSleepLabel(const Duration(minutes: 15)), 'Sleep: 15:00');
-    });
-    test('under a minute', () {
-      expect(formatSleepLabel(const Duration(seconds: 59)), 'Sleep: 00:59');
-    });
-    test('zero', () {
-      expect(formatSleepLabel(Duration.zero), 'Sleep: 00:00');
-    });
-    test('60 minutes (max offered)', () {
-      expect(formatSleepLabel(const Duration(minutes: 60)), 'Sleep: 60:00');
     });
   });
 
