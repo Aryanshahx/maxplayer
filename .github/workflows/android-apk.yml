@@ -34,7 +34,10 @@ jobs:
       # Signed with the debug-key fallback for now (installable on your
       # phone for testing). Real Play signing arrives when we wire the
       # keystore secrets in the v1.0 release phase.
-      - run: flutter build apk --release
+      - run: >-
+          flutter build apk --release
+          --dart-define=TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}
+          --dart-define=OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
 
       - uses: actions/upload-artifact@v4
         with:
