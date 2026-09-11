@@ -209,7 +209,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         showAboutDialog(
           context: context,
           applicationName: 'Max Player',
-          applicationVersion: '0.9.0',
+          applicationVersion: '0.12.0',
           applicationLegalese:
               'Local-first. Ad-free. Proudly Developed in India.',
           children: const [
@@ -297,16 +297,35 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Max Player',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white, // fixed brand white (never themes)
-                    letterSpacing: 0.2,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Max Player',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800,
+                        color:
+                            Colors.white, // fixed brand white (never themes)
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Blue circular brand mark (white play glyph), per the
+                    // home screenshot.
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFF0166FF),
+                      ),
+                      child: const Icon(Icons.play_arrow_rounded,
+                          color: Colors.white, size: 15),
+                    ),
+                  ],
                 ),
                 const Text(
                   'Proudly Developed in India 🇮🇳',

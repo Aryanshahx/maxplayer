@@ -3,23 +3,26 @@ package com.maxplayer.maxplayer
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import io.flutter.plugin.common.MethodChannel
 
+/**
+ * Receives the Picture-in-Picture play/pause action broadcast and toggles
+ * playback directly through the Flutter method channel. Launching the
+ * activity here is deliberately avoided — that would bring the app back to
+ * fullscreen, which is exactly the bug this class exists to fix.
+ */
 class PipActionReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_TOGGLE = "com.maxplayer.maxplayer.PIP_TOGGLE"
-        const val ACTION_PIP_TOGGLE_ACTIVITY =
-            "com.maxplayer.maxplayer.PIP_TOGGLE_ACTIVITY"
+
+        // Set by MainActivity.configureFlutterEngine, cleared on destroy.
+        @Volatile
+        var channel: MethodChannel? = null
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != ACTION_TOGGLE) return
-
-        val activityIntent = Intent(context, MainActivity::class.java).apply {
-            action = ACTION_PIP_TOGGLE_ACTIVITY
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_NEW_TASK
+        if (intent.action == ACTION_TOGGLE) {
+            channel?.invokeMethod("pipToggle", null)
         }
-        context.startActivity(activityIntent)
     }
 }

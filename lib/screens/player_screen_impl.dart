@@ -12,6 +12,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../theme.dart';
 import '../utils/ab_loop.dart';
 import '../utils/crash_log.dart';
+import '../utils/fit.dart';
 import '../utils/format.dart';
 import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
@@ -50,27 +51,6 @@ class PlayerScreen extends StatefulWidget {
 }
 
 enum _DragMode { none, brightness, volume, seek, zoom }
-enum _FitMode { fit, crop, stretch, fitWidth, fitHeight, sixteenNine }
-
-extension on _FitMode {
-  BoxFit get boxFit => switch (this) {
-        _FitMode.fit => BoxFit.contain,
-        _FitMode.crop => BoxFit.cover,
-        _FitMode.stretch => BoxFit.fill,
-        _FitMode.fitWidth => BoxFit.fitWidth,
-        _FitMode.fitHeight => BoxFit.fitHeight,
-        _FitMode.sixteenNine => BoxFit.contain,
-      };
-
-  String get label => switch (this) {
-        _FitMode.fit => 'Fit',
-        _FitMode.crop => 'Crop',
-        _FitMode.stretch => 'Stretch',
-        _FitMode.fitWidth => 'Fit width',
-        _FitMode.fitHeight => 'Fit height',
-        _FitMode.sixteenNine => '16:9',
-      };
-}
 
 enum _PlayerMenuAction { info, eq, screenshot, cast, pip, sleep }
 
@@ -117,7 +97,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _locked = false;
   bool _muted = false;
   double _volumePercent = 100;
-  _FitMode _fitMode = _FitMode.fit;
+  FitMode _fitMode = FitMode.fit;
 
   _DragMode _drag = _DragMode.none;
   Offset _dragStart = Offset.zero;
@@ -544,19 +524,24 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
 
+  /// Advances the fit mode by [delta] (+1 next, -1 previous) and resets any
+  /// manual pinch-zoom. Shared by the fit button and the pinch-cycle gesture.
+  void _cycleFit(int delta) {
+    final values = FitMode.values;
+    setState(() {
+      _fitMode = values[cycleIndex(_fitMode.index, values.length, delta)];
+      _zoom = 1;
+    });
+    _emitGesture(Icons.fit_screen_rounded, _fitMode.label);
+  }
+
   void _showFitMenu() {
     if (!_settings.pinchZoom) {
-      final values = _FitMode.values;
-      final next = values[(_fitMode.index + 1) % values.length];
-      setState(() {
-        _fitMode = next;
-        _zoom = 1;
-      });
-      _emitGesture(Icons.fit_screen_rounded, next.label);
+      _cycleFit(1);
       return;
     }
 
-    showModalBottomSheet<_FitMode>(
+    showModalBottomSheet<FitMode>(
       context: context,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
@@ -571,10 +556,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                   color: AppColors.textPrimary, fontSize: 18,
                   fontWeight: FontWeight.w700)),
             ),
-            for (final mode in _FitMode.values)
+            for (final mode in FitMode.values)
               ListTile(
                 leading: Icon(
-                  mode == _FitMode.fit ? Icons.fit_screen_rounded : Icons.crop_rounded,
+                  mode == FitMode.fit ? Icons.fit_screen_rounded : Icons.crop_rounded,
                   color: AppColors.accent),
                 title: Text(mode.label,
                     style: const TextStyle(color: AppColors.textPrimary)),
@@ -622,16 +607,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (_locked) return;
 
     if (_twoFingerFitGesture) {
-      if ((d.scale > 1.06 || d.scale < 0.94) &&
-          !_twoFingerFitDidCycle) {
-        _twoFingerFitDidCycle = true;
-        final values = _FitMode.values;
-        final next = values[(_fitMode.index + 1) % values.length];
-        setState(() {
-          _fitMode = next;
-          _zoom = 1;
-        });
-        _emitGesture(Icons.fit_screen_rounded, next.label);
+      // Pinch-zoom is OFF: expanding two fingers cycles to the NEXT fit
+      // mode, closing them cycles to the PREVIOUS one. Fire once per
+      // gesture (scale keeps changing while fingers move).
+      if (!_twoFingerFitDidCycle) {
+        if (d.scale > 1.06) {
+          _twoFingerFitDidCycle = true;
+          _cycleFit(1);
+        } else if (d.scale < 0.94) {
+          _twoFingerFitDidCycle = true;
+          _cycleFit(-1);
+        }
       }
       return;
     }
@@ -766,7 +752,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (drag == _DragMode.zoom && _zoom < .9) {
       setState(() {
         _zoom = 1;
-        _fitMode = _FitMode.fit;
+        _fitMode = FitMode.fit;
       });
     }
 
@@ -789,11 +775,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (deadline == null) return null;
     final remaining = deadline.difference(DateTime.now());
     if (remaining <= Duration.zero) return null;
-
-    final total = remaining.inSeconds;
-    final minutes = total ~/ 60;
-    final seconds = total % 60;
-    return 'Sleep: ${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    return formatSleepLabel(remaining);
   }
 
   Future<void> _showPlayerSettings() async {
@@ -1466,13 +1448,21 @@ class _PlayerScreenState extends State<PlayerScreen>
         break;
       case _SleepChoiceKind.minutes:
         final minutes = picked.minutes!;
-        _sleepTimer = Timer(Duration(minutes: minutes), () {
-          _player.pause();
-          if (mounted) {
-            setState(() {
-              _sleepTimer = null;
-            });
+        _sleepDeadline = DateTime.now().add(Duration(minutes: minutes));
+        // Tick every second so the countdown under the title counts
+        // down live (mm:ss) and pauses exactly at zero.
+        _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (!mounted) return;
+          if (_sleepDeadline != null &&
+              _sleepDeadline!.isAfter(DateTime.now())) {
+            setState(() {});
+            return;
           }
+          _sleepTimer?.cancel();
+          _sleepTimer = null;
+          _sleepDeadline = null;
+          _player.pause();
+          if (mounted) setState(() {});
           _emitSnack('Sleep timer — playback paused');
         });
         _emitSnack('Sleeping in $minutes minutes');
@@ -1648,7 +1638,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   child: Video(
                     controller: _controller,
                     fit: _fitMode.boxFit,
-                    aspectRatio: _fitMode == _FitMode.sixteenNine ? 16 / 9 : null,
+                    aspectRatio: _fitMode == FitMode.sixteenNine ? 16 / 9 : null,
                     controls: NoVideoControls,
                   ),
                 ),

@@ -9,6 +9,16 @@ String formatDuration(Duration d) {
   return h > 0 ? '$h:$m:$s' : '${int.parse(m)}:$s';
 }
 
+/// "Sleep: 15:00" style countdown label for the sleep timer (unit-tested).
+/// 15 min -> "Sleep: 15:00", 59 s -> "Sleep: 00:59".
+String formatSleepLabel(Duration remaining) {
+  if (remaining.isNegative) remaining = Duration.zero;
+  final total = remaining.inSeconds;
+  final minutes = (total ~/ 60).toString().padLeft(2, '0');
+  final seconds = (total % 60).toString().padLeft(2, '0');
+  return 'Sleep: $minutes:$seconds';
+}
+
 /// 1536 -> "1.5 KB", 734003200 -> "700.0 MB"
 String formatBytes(int bytes) {
   if (bytes < 0) bytes = 0;

@@ -8,8 +8,9 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Rect
 import android.graphics.drawable.Icon
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.os.Build
-import android.os.Bundle
 import android.provider.Settings
 import android.util.Rational
 import io.flutter.embedding.android.FlutterFragmentActivity
@@ -25,17 +26,12 @@ class MainActivity : FlutterFragmentActivity() {
     private var rotationLocked = false
     private var pipPlaying = true
     private var methodChannel: MethodChannel? = null
+    private var mediaSession: MediaSession? = null
 
     private val pipSupported: Boolean
         get() = packageManager.hasSystemFeature(
             PackageManager.FEATURE_PICTURE_IN_PICTURE,
         )
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        requestedOrientation =
-            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
-    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -44,6 +40,10 @@ class MainActivity : FlutterFragmentActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             CHANNEL,
         )
+        // The PiP play/pause broadcast toggles playback directly through
+        // this channel instead of relaunching the activity (which was the
+        // "PiP play button reopens fullscreen" bug).
+        PipActionReceiver.channel = methodChannel
 
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -60,6 +60,7 @@ class MainActivity : FlutterFragmentActivity() {
                 "updatePipPlaying" -> {
                     pipPlaying = call.argument<Boolean>("playing") ?: true
                     updatePipParams()
+                    updateMediaSession(pipPlaying)
                     result.success(true)
                 }
 
@@ -88,14 +89,55 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        setupMediaSession()
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        if (intent.action == PipActionReceiver.ACTION_PIP_TOGGLE_ACTIVITY) {
-            methodChannel?.invokeMethod("pipToggle", null)
-        }
+    /*
+     * MediaSession so Android's Picture-in-Picture play/pause control routes
+     * to the app instead of reopening it fullscreen. Without a session the
+     * system PiP play button has no transport target and expands the
+     * activity. Framework MediaSession is used to avoid a new dependency.
+     */
+    @Suppress("DEPRECATION")
+    private fun setupMediaSession() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
+        val session = MediaSession(this, "MaxPlayer")
+        session.setFlags(
+            MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or
+                MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS,
+        )
+        session.setCallback(object : MediaSession.Callback() {
+            override fun onPlay() {
+                methodChannel?.invokeMethod("pipToggle", null)
+            }
+
+            override fun onPause() {
+                methodChannel?.invokeMethod("pipToggle", null)
+            }
+        })
+        mediaSession = session
+    }
+
+    @Suppress("DEPRECATION")
+    private fun updateMediaSession(playing: Boolean) {
+        val session = mediaSession ?: return
+        session.isActive = true
+        session.setPlaybackState(
+            PlaybackState.Builder()
+                .setActions(
+                    PlaybackState.ACTION_PLAY or
+                        PlaybackState.ACTION_PAUSE or
+                        PlaybackState.ACTION_PLAY_PAUSE,
+                )
+                .setState(
+                    if (playing) PlaybackState.STATE_PLAYING
+                    else PlaybackState.STATE_PAUSED,
+                    PlaybackState.PLAYBACK_POSITION_UNKNOWN,
+                    1.0f,
+                )
+                .build(),
+        )
     }
 
     private fun toggleRotationLock(): Boolean {
@@ -103,7 +145,11 @@ class MainActivity : FlutterFragmentActivity() {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
             rotationLocked = true
         } else {
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+            // UNSPECIFIED returns control to the system setting. FULL_SENSOR
+            // (previous) force-enables auto-rotate even when the user has it
+            // switched off in system settings — the "lock then auto-rotate
+            // starts working" glitch.
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             rotationLocked = false
         }
         return rotationLocked
@@ -178,6 +224,7 @@ class MainActivity : FlutterFragmentActivity() {
             return
         }
         try {
+            mediaSession?.isActive = true
             result.success(
                 enterPictureInPictureMode(pipBuilder(width, height).build()),
             )
@@ -199,8 +246,12 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onDestroy() {
         rotationLocked = false
         methodChannel = null
+        PipActionReceiver.channel = null
         requestedOrientation =
             ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        @Suppress("DEPRECATION")
+        mediaSession?.release()
+        mediaSession = null
         super.onDestroy()
     }
 }

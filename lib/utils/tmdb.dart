@@ -14,6 +14,7 @@ class TmdbMovie {
     required this.year,
     required this.rating,
     required this.posterUrl,
+    this.backdropUrl = '',
     this.overview = '',
   });
 
@@ -22,6 +23,10 @@ class TmdbMovie {
   final String year;
   final double rating;
   final String posterUrl;
+
+  /// w780 landscape backdrop, used by the home Discover grid; '' when
+  /// the title has no backdrop (the UI falls back to the poster).
+  final String backdropUrl;
   final String overview;
 }
 
@@ -133,6 +138,7 @@ List<TmdbMovie> parseTrending(String body) {
           rating: ((m['vote_average'] as num?) ?? 0).toDouble(),
           overview: (m['overview'] ?? '') as String,
           posterUrl: _poster(m['poster_path']),
+          backdropUrl: _poster(m['backdrop_path'], size: 'w780'),
         ),
     ];
   } catch (_) {

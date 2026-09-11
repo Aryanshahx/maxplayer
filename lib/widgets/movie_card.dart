@@ -92,3 +92,94 @@ class _PosterFallback extends StatelessWidget {
   }
 }
 
+/// Landscape movie card for the home Discover grid: 16:9 backdrop (falls
+/// back to the poster, then an icon), gold ★ rating badge top-left, and
+/// title + year below — matching the home Discover Movies section.
+class DiscoverMovieCard extends StatelessWidget {
+  const DiscoverMovieCard({super.key, required this.movie});
+
+  final TmdbMovie movie;
+
+  void _open(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => MovieDetailScreen(movieId: movie.id)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final image =
+        movie.backdropUrl.isNotEmpty ? movie.backdropUrl : movie.posterUrl;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => _open(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  image.isEmpty
+                      ? const _PosterFallback()
+                      : Image.network(
+                          image,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const _PosterFallback(),
+                          loadingBuilder: (context, child, progress) =>
+                              progress == null
+                                  ? child
+                                  : const ColoredBox(
+                                      color: AppColors.surfaceAlt),
+                        ),
+                  if (movie.rating > 0)
+                    Positioned(
+                      left: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.72),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.star_rounded,
+                                color: Color(0xFFFACC15), size: 14),
+                            const SizedBox(width: 3),
+                            Text(movie.rating.toStringAsFixed(1),
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            movie.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 2),
+          Text(movie.year.isEmpty ? '—' : movie.year,
+              style:
+                  const TextStyle(color: AppColors.textSecondary, fontSize: 11.5)),
+        ],
+      ),
+    );
+  }
+}
+
