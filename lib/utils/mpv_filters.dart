@@ -12,7 +12,7 @@ String buildEqualizerFilter(List<double> gainsDb) {
     final g = gainsDb[i];
     if (g.abs() < 0.05) continue;
     parts.add(
-        'equalizer=f=${freqs[i]}:t=q:w=1.0:g=${g.toStringAsFixed(1)}');
+        'equalizer=f=${freqs[i]}:t=h:w=2.0:g=${g.toStringAsFixed(1)}');
   }
   if (parts.isEmpty) return '';
   return 'lavfi=[${parts.join(',')}]';

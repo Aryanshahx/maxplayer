@@ -129,8 +129,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _gestureActive = false;
   bool _lockedHintVisible = false;
   bool _rotationLocked = false;
-  bool _twoFingerFitGesture = false;
-  bool _twoFingerFitDidCycle = false;
   IconData _gestureIcon = Icons.touch_app_rounded;
   String _gestureLabel = '';
   Duration? _seekPreview;
@@ -146,7 +144,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _enhance = false;
   bool _karaoke = false;
   String _toneMapping = 'auto';
-  DateTime? _sleepDeadline;
+  int _sleepMinutesLeft = 0;
   bool _sleepUntilEnd = false;
   bool _softwareDecodeRetried = false;
 
@@ -194,17 +192,14 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (mounted) setState(() => _buffering = b);
     });
     _completedSub = _player.stream.completed.listen((done) {
-      if (!done) return;
-      if (_sleepUntilEnd) {
-        _sleepUntilEnd = false;
-        _sleepTimer?.cancel();
-        _sleepTimer = null;
-        _sleepDeadline = null;
-        if (mounted) setState(() {});
-        _emitSnack('Sleep timer — video ended');
-        return;
+      if (done) {
+        if (_sleepUntilEnd) {
+          _sleepUntilEnd = false;
+          if (mounted) setState(() {});
+          _emitSnack('Sleep timer — video ended');
+        }
+        unawaited(_playNext());
       }
-      unawaited(_playNext());
     });
     _errorSub = _player.stream.error.listen((e) {
       _onError(e);
@@ -599,7 +594,6 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _onScaleStart(ScaleStartDetails d) {
     if (_locked) return;
-
     _dragStart = d.focalPoint;
     _zoomStart = _zoom;
     _volumeStart = _volumePercent;
@@ -607,41 +601,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     _gestureActive = false;
     _gestureLabel = '';
     _seekPreview = null;
-
-    _twoFingerFitGesture =
-        d.pointerCount >= 2 && !_settings.pinchZoom;
-    _twoFingerFitDidCycle = false;
-
     _drag = d.pointerCount >= 2 && _settings.pinchZoom
         ? _DragMode.zoom
         : _DragMode.none;
   }
 
-
   Future<void> _onScaleUpdate(ScaleUpdateDetails d) async {
     if (_locked) return;
-
-    if (_twoFingerFitGesture) {
-      if ((d.scale > 1.06 || d.scale < 0.94) &&
-          !_twoFingerFitDidCycle) {
-        _twoFingerFitDidCycle = true;
-        final values = _FitMode.values;
-        final next = values[(_fitMode.index + 1) % values.length];
-        setState(() {
-          _fitMode = next;
-          _zoom = 1;
-        });
-        _emitGesture(Icons.fit_screen_rounded, next.label);
-      }
-      return;
-    }
-
     final screenSize = MediaQuery.of(context).size;
-
     if (_drag == _DragMode.zoom) {
       final scale = d.scale;
-      final nextZoom =
-          (_zoomStart * scale).clamp(.75, 4.0).toDouble();
+      final nextZoom = (_zoomStart * scale).clamp(.75, 4.0).toDouble();
       if (scale > 1.08 || scale < .92) {
         setState(() {
           _zoom = nextZoom;
@@ -650,7 +620,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       return;
     }
-
     final delta = d.focalPoint - _dragStart;
     if (_drag == _DragMode.none && delta.distance >= 14) {
       final width = screenSize.width;
@@ -661,15 +630,12 @@ class _PlayerScreenState extends State<PlayerScreen>
         _lastSentSeek = _scrubStart;
         _seekPreview = _scrubStart;
       } else if (delta.dy.abs() >= delta.dx.abs()) {
-        if (_dragStart.dx < width / 2 &&
-            _settings.swipeBrightness) {
+        if (_dragStart.dx < width / 2 && _settings.swipeBrightness) {
           _drag = _DragMode.brightness;
-          _levelValue =
-              await ScreenBrightness.instance.application;
+          _levelValue = await ScreenBrightness.instance.application;
           _brightnessStart = _levelValue;
           _dragStart = d.focalPoint;
-        } else if (_dragStart.dx >= width / 2 &&
-            _settings.swipeVolume) {
+        } else if (_dragStart.dx >= width / 2 && _settings.swipeVolume) {
           _drag = _DragMode.volume;
           _volumeStart = _volumePercent;
           _dragStart = d.focalPoint;
@@ -679,48 +645,35 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     final height = screenSize.height;
     final width = screenSize.width;
-
     if (_drag == _DragMode.brightness) {
-      final change =
-          -(d.focalPoint.dy - _dragStart.dy) / (height * .5);
-      final v =
-          (_brightnessStart + change).clamp(0.0, 1.0).toDouble();
-      await ScreenBrightness.instance
-          .setApplicationScreenBrightness(v);
+      final change = -(d.focalPoint.dy - _dragStart.dy) / (height * .5);
+      final v = (_brightnessStart + change).clamp(0.0, 1.0).toDouble();
+      await ScreenBrightness.instance.setApplicationScreenBrightness(v);
       _levelValue = v;
-      _emitGesture(
-        Icons.brightness_6_rounded,
-        '${(v * 100).round()}%',
-      );
+      _emitGesture(Icons.brightness_6_rounded, '${(v * 100).round()}%');
     } else if (_drag == _DragMode.volume) {
-      final change =
-          -(d.focalPoint.dy - _dragStart.dy) /
-              (height * .5) * 100;
-      final maxVolume =
-          _settings.volumeBoost ? 200.0 : 100.0;
-      final v =
-          (_volumeStart + change).clamp(0.0, maxVolume).toDouble();
+      final change = -(d.focalPoint.dy - _dragStart.dy) / (height * .5) * 100;
+      final maxVolume = _settings.volumeBoost ? 200.0 : 100.0;
+      final v = (_volumeStart + change).clamp(0.0, maxVolume).toDouble();
       await _setVolumePercent(v);
-      _emitGesture(Icons.volume_up_rounded, '${v.round()}%');
+      _emitGesture(v <= 100 ? Icons.volume_up_rounded : Icons.volume_up_rounded,
+          '${v.round()}%');
     } else if (_drag == _DragMode.seek) {
       final duration = _player.state.duration;
       if (duration <= Duration.zero) return;
-
+      // Seek relative to the exact point where the finger touched.
+      // One screen width corresponds to +/-90 seconds.
       const secondsPerScreen = 90.0;
       final offsetSeconds =
-          (d.focalPoint.dx - _dragStart.dx) /
-              width * secondsPerScreen;
+          (d.focalPoint.dx - _dragStart.dx) / width * secondsPerScreen;
       var targetMs =
-          _scrubStart.inMilliseconds +
-              (offsetSeconds * 1000).round();
+          _scrubStart.inMilliseconds + (offsetSeconds * 1000).round();
       targetMs = targetMs.clamp(0, duration.inMilliseconds);
       final target = Duration(milliseconds: targetMs);
-
       setState(() {
         _seekPreview = target;
         _gestureActive = true;
       });
-
       final now = DateTime.now();
       if (now.difference(_lastLiveSeek).inMilliseconds > 120 &&
           (target - _lastSentSeek).abs().inMilliseconds > 800) {
@@ -730,7 +683,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     }
   }
-
 
   void _emitGesture(IconData icon, String label) {
     if (!mounted) return;
@@ -747,14 +699,6 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _onScaleEnd(ScaleEndDetails _) {
     if (_locked) return;
-
-    if (_twoFingerFitGesture) {
-      _twoFingerFitGesture = false;
-      _twoFingerFitDidCycle = false;
-      _gestureActive = false;
-      _gestureLabel = '';
-      return;
-    }
 
     final drag = _drag;
     final preview = _seekPreview;
@@ -781,19 +725,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-
   String? get _sleepLabel {
     if (_sleepUntilEnd) return 'Sleep: Until end';
-
-    final deadline = _sleepDeadline;
-    if (deadline == null) return null;
-    final remaining = deadline.difference(DateTime.now());
-    if (remaining <= Duration.zero) return null;
-
-    final total = remaining.inSeconds;
-    final minutes = total ~/ 60;
-    final seconds = total % 60;
-    return 'Sleep: ${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    if (_sleepTimer != null && _sleepMinutesLeft > 0) {
+      return 'Sleep: $_sleepMinutesLeft min';
+    }
+    return null;
   }
 
   Future<void> _showPlayerSettings() async {
@@ -1457,7 +1394,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     _sleepTimer?.cancel();
     _sleepTimer = null;
-    _sleepDeadline = null;
+    _sleepMinutesLeft = 0;
     _sleepUntilEnd = false;
 
     switch (picked.kind) {
@@ -1466,11 +1403,13 @@ class _PlayerScreenState extends State<PlayerScreen>
         break;
       case _SleepChoiceKind.minutes:
         final minutes = picked.minutes!;
+        _sleepMinutesLeft = minutes;
         _sleepTimer = Timer(Duration(minutes: minutes), () {
           _player.pause();
           if (mounted) {
             setState(() {
               _sleepTimer = null;
+              _sleepMinutesLeft = 0;
             });
           }
           _emitSnack('Sleep timer — playback paused');
@@ -2164,7 +2103,7 @@ class _BottomBarState extends State<_BottomBar> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 4),
+                        const Spacer(),
                         IconButton(
                           tooltip: 'Track sheet',
                           icon: const Icon(Icons.tune_rounded,
@@ -2172,16 +2111,16 @@ class _BottomBarState extends State<_BottomBar> {
                           onPressed: widget.onTrackSheet,
                         ),
                         IconButton(
-                          tooltip: 'Screen fit',
-                          icon: const Icon(Icons.fit_screen_rounded,
-                              color: Colors.white, size: 27),
-                          onPressed: widget.onFit,
-                        ),
-                        IconButton(
                           tooltip: 'Playlist',
                           icon: const Icon(Icons.playlist_play_rounded,
                               color: Colors.white, size: 28),
                           onPressed: widget.onPlaylist,
+                        ),
+                        IconButton(
+                          tooltip: 'Screen fit',
+                          icon: const Icon(Icons.fit_screen_rounded,
+                              color: Colors.white, size: 27),
+                          onPressed: widget.onFit,
                         ),
                         IconButton(
                           tooltip: widget.rotationLocked
