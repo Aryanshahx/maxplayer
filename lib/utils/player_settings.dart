@@ -20,7 +20,6 @@ class PlayerSettings extends ChangeNotifier {
   static const _kSwipeBrightness = 'player.swipeBrightness';
   static const _kHorizontalSeek = 'player.horizontalSeek';
   static const _kPinchZoom = 'player.pinchZoom.v2';
-  static const _kAutoRotate = 'player.autoRotate';
   static const _kLongPressSpeed = 'player.longPressSpeed';
   static const _kLongPressRate = 'player.longPressRate';
   static const _kAutoHide = 'player.autoHide';
@@ -29,7 +28,6 @@ class PlayerSettings extends ChangeNotifier {
   static const _kScreenLock = 'player.screenLock';
   static const _kVolumeBoost = 'player.volumeBoost';
   static const _kBackgroundAudio = 'player.backgroundAudio';
-  static const _kPerformanceMode = 'player.performanceMode';
 
   bool doubleTapSides = true;
   bool doubleTapMiddle = true;
@@ -38,7 +36,6 @@ class PlayerSettings extends ChangeNotifier {
   bool swipeBrightness = true;
   bool horizontalSeek = true;
   bool pinchZoom = true;
-  bool autoRotate = true;
   bool longPressSpeed = true;
   double longPressRate = 2.0;
   bool autoHide = true;
@@ -47,7 +44,6 @@ class PlayerSettings extends ChangeNotifier {
   bool screenLock = true;
   bool volumeBoost = true;
   bool backgroundAudio = true;
-  bool performanceMode = false;
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
@@ -59,7 +55,6 @@ class PlayerSettings extends ChangeNotifier {
     swipeBrightness = p.getBool(_kSwipeBrightness) ?? true;
     horizontalSeek = p.getBool(_kHorizontalSeek) ?? true;
     pinchZoom = p.getBool(_kPinchZoom) ?? true;
-    autoRotate = p.getBool(_kAutoRotate) ?? true;
     longPressSpeed = p.getBool(_kLongPressSpeed) ?? true;
     final storedRate = p.getDouble(_kLongPressRate);
     longPressRate = speedRates.contains(storedRate) ? storedRate! : 2.0;
@@ -70,7 +65,6 @@ class PlayerSettings extends ChangeNotifier {
     screenLock = p.getBool(_kScreenLock) ?? true;
     volumeBoost = p.getBool(_kVolumeBoost) ?? true;
     backgroundAudio = p.getBool(_kBackgroundAudio) ?? true;
-    performanceMode = p.getBool(_kPerformanceMode) ?? false;
     notifyListeners();
   }
 

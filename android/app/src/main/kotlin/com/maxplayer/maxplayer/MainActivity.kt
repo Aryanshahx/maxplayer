@@ -59,19 +59,14 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     /*
-     * Do not translate raw sensor degrees to LANDSCAPE/REVERSE_LANDSCAPE.
-     * Android SENSOR mode handles the physical orientation correctly.
+     * Rotate button = rotation lock.
+     * Unlocking returns control to Android's sensor orientation handling.
+     * No raw sensor-angle mapping is used, so landscape left/right cannot be
+     * accidentally reversed by the app.
      */
     private fun toggleRotationLock(): Boolean {
         if (!rotationLocked) {
-            val current = resources.configuration.orientation
-            requestedOrientation = if (
-                current == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            ) {
-                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            } else {
-                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            }
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
             rotationLocked = true
         } else {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR

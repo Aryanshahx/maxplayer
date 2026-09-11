@@ -116,6 +116,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   double _brightnessStart = 0;
   bool _gestureActive = false;
   bool _lockedHintVisible = false;
+  bool _rotationLocked = false;
   IconData _gestureIcon = Icons.touch_app_rounded;
   String _gestureLabel = '';
   Duration? _seekPreview;
@@ -139,7 +140,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    unawaited(_native.invokeMethod<bool>('startAutoRotate').catchError((_) => false));
     _title = widget.title;
     _currentPath = widget.path;
     _queueIndex = widget.queueStart;
@@ -153,10 +153,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       } else if (!_settings.autoHide) {
         _hideTimer?.cancel();
       }
-      _applyPerformanceMode();
-      unawaited(_native.invokeMethod<bool>(
-        _settings.autoRotate ? 'startAutoRotate' : 'stopAutoRotate',
-      ).catchError((_) => false));
     };
     _settings.addListener(_settingsListener!);
     unawaited(_settings.load());
@@ -183,7 +179,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       unawaited(_savePosition());
     });
-    _applyPerformanceMode();
   }
 
   Future<void> _open(String path, {required bool offerResume}) async {
@@ -198,17 +193,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     } catch (e) {
       _onError(e);
-    }
-  }
-
-  Future<void> _applyPerformanceMode() async {
-    if (!_ready) return;
-    if (_settings.performanceMode) {
-      await _mpvSet('framedrop', 'vo');
-      await _mpvSet('vd-lavc-fast', 'yes');
-    } else {
-      await _mpvSet('framedrop', 'no');
-      await _mpvSet('vd-lavc-fast', 'no');
     }
   }
 
@@ -315,7 +299,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       _title = asset?.title ?? 'Video';
       if (mounted) setState(() {});
       await _player.open(Media(file.path), play: true);
-      await _applyPerformanceMode();
     } catch (e) {
       CrashLog.error('queue.next_failed', e, {'id': id});
       _emitSnack('Could not play the selected video in queue');
@@ -465,7 +448,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _showSpeedSheet() async {
-    const rates = <double>[0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
+    const rates = <double>[0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0];
     final current = _player.state.rate;
     final picked = await showModalBottomSheet<double>(
       context: context,
@@ -514,6 +497,17 @@ class _PlayerScreenState extends State<PlayerScreen>
 
 
   void _showFitMenu() {
+    if (!_settings.pinchZoom) {
+      final values = _FitMode.values;
+      final next = values[(_fitMode.index + 1) % values.length];
+      setState(() {
+        _fitMode = next;
+        _zoom = 1;
+      });
+      _emitGesture(Icons.fit_screen_rounded, next.label);
+      return;
+    }
+
     showModalBottomSheet<_FitMode>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -562,6 +556,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _volumeStart = _volumePercent;
     _brightnessStart = _levelValue;
     _gestureActive = false;
+    _gestureLabel = '';
+    _seekPreview = null;
     _drag = d.pointerCount >= 2 && _settings.pinchZoom
         ? _DragMode.zoom
         : _DragMode.none;
@@ -584,7 +580,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final delta = d.focalPoint - _dragStart;
     if (_drag == _DragMode.none && delta.distance >= 14) {
       final width = screenSize.width;
-      if (delta.dx.abs() > delta.dy.abs() * 1.5 && _settings.horizontalSeek) {
+      if (delta.dx.abs() > delta.dy.abs() * 1.35 &&
+          _settings.horizontalSeek) {
         _drag = _DragMode.seek;
         _scrubStart = _player.state.position;
         _lastSentSeek = _scrubStart;
@@ -594,11 +591,12 @@ class _PlayerScreenState extends State<PlayerScreen>
           _drag = _DragMode.brightness;
           _levelValue = await ScreenBrightness.instance.application;
           _brightnessStart = _levelValue;
+          _dragStart = d.focalPoint;
         } else if (_dragStart.dx >= width / 2 && _settings.swipeVolume) {
           _drag = _DragMode.volume;
           _volumeStart = _volumePercent;
+          _dragStart = d.focalPoint;
         }
-        _dragStart = d.focalPoint;
       }
     }
 
@@ -620,9 +618,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     } else if (_drag == _DragMode.seek) {
       final duration = _player.state.duration;
       if (duration <= Duration.zero) return;
-      final fraction = (d.focalPoint.dx / width).clamp(0.0, 1.0);
-      final target = Duration(
-          milliseconds: (fraction * duration.inMilliseconds).round());
+      // Seek relative to the exact point where the finger touched.
+      // One screen width corresponds to +/-90 seconds.
+      const secondsPerScreen = 90.0;
+      final offsetSeconds =
+          (d.focalPoint.dx - _dragStart.dx) / width * secondsPerScreen;
+      var targetMs =
+          _scrubStart.inMilliseconds + (offsetSeconds * 1000).round();
+      targetMs = targetMs.clamp(0, duration.inMilliseconds);
+      final target = Duration(milliseconds: targetMs);
       setState(() {
         _seekPreview = target;
         _gestureActive = true;
@@ -652,26 +656,36 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _onScaleEnd(ScaleEndDetails _) {
     if (_locked) return;
-    if (_drag == _DragMode.seek && _seekPreview != null) {
-      _player.seek(_seekPreview!);
+
+    final drag = _drag;
+    final preview = _seekPreview;
+
+    if (drag == _DragMode.seek && preview != null) {
+      unawaited(_player.seek(preview));
     }
-    if (_drag == _DragMode.zoom && _zoom < .9) {
+
+    if (drag == _DragMode.zoom && _zoom < .9) {
       setState(() {
         _zoom = 1;
         _fitMode = _FitMode.fit;
       });
     }
-    setState(() {
-      _drag = _DragMode.none;
-      _seekPreview = null;
-    });
+
+    _flashTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _drag = _DragMode.none;
+        _seekPreview = null;
+        _gestureActive = false;
+        _gestureLabel = '';
+      });
+    }
   }
 
   Future<void> _showPlayerSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerSettingsScreen()),
     );
-    if (mounted) _applyPerformanceMode();
   }
 
   void _showTrackSheet() => _showExtrasSheet();
@@ -1374,17 +1388,21 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Future<void> _rotateOrientation() async {
-    final orientation = MediaQuery.of(context).orientation;
-    if (orientation == Orientation.portrait) {
-      await SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-    } else {
-      await SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.portraitUp,
-      ]);
+  Future<void> _toggleRotationLock() async {
+    try {
+      final locked =
+          await _native.invokeMethod<bool>('toggleRotationLock') ?? false;
+      if (!mounted) return;
+      setState(() => _rotationLocked = locked);
+      _emitGesture(
+        locked
+            ? Icons.screen_lock_rotation_rounded
+            : Icons.screen_rotation_alt_rounded,
+        locked ? 'Rotation locked' : 'Rotation unlocked',
+      );
+    } catch (e) {
+      CrashLog.error('rotation.lock_failed', e);
+      _emitSnack('Rotation lock is not available');
     }
   }
 
@@ -1410,7 +1428,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     unawaited(_savePosition());
     unawaited(_player.dispose());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    unawaited(_native.invokeMethod<bool>('stopAutoRotate').catchError((_) => false));
     super.dispose();
   }
 
@@ -1518,7 +1535,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                 player: _player,
                 onTrackSheet: _showTrackSheet,
                 onPlaylist: _showPlaylistSheet,
-                onRotate: _rotateOrientation,
+                onRotate: _toggleRotationLock,
+                rotationLocked: _rotationLocked,
                 onFit: _showFitMenu,
                 onMute: _toggleMute,
                 onSpeed: _showSpeedSheet,
@@ -1579,13 +1597,7 @@ class _TopBar extends StatelessWidget {
               onPressed: () => Navigator.of(context).maybePop(),
             ),
             Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w600),
-              ),
+              child: _LoopingTitle(title: title),
             ),
             PopupMenuButton<_PlayerMenuAction>(
               tooltip: 'More',
@@ -1631,6 +1643,118 @@ class _TopBar extends StatelessWidget {
   }
 }
 
+class _LoopingTitle extends StatefulWidget {
+  const _LoopingTitle({required this.title});
+
+  final String title;
+
+  @override
+  State<_LoopingTitle> createState() => _LoopingTitleState();
+}
+
+class _LoopingTitleState extends State<_LoopingTitle>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  double _textWidth = 0;
+  bool _scrolling = false;
+
+  static const _style = TextStyle(
+    color: Colors.white,
+    fontSize: 15.5,
+    fontWeight: FontWeight.w600,
+  );
+  static const _gap = 42.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 8),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _LoopingTitle oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.title != widget.title) {
+      _controller.stop();
+      _controller.reset();
+      _scrolling = false;
+      _textWidth = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final painter = TextPainter(
+          text: TextSpan(text: widget.title, style: _style),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+        )..layout();
+
+        final shouldScroll = painter.width > constraints.maxWidth;
+        if (shouldScroll != _scrolling || painter.width != _textWidth) {
+          _textWidth = painter.width;
+          _scrolling = shouldScroll;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (_scrolling) {
+              final distance = _textWidth + _gap;
+              _controller.duration = Duration(
+                milliseconds:
+                    (distance / 34 * 1000).round().clamp(5000, 16000),
+              );
+              if (!_controller.isAnimating) _controller.repeat();
+            } else {
+              _controller.stop();
+              _controller.reset();
+            }
+          });
+        }
+
+        if (!shouldScroll) {
+          return Text(
+            widget.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: _style,
+          );
+        }
+
+        final distance = _textWidth + _gap;
+        return ClipRect(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              final offset = -(_controller.value * distance);
+              return Transform.translate(
+                offset: Offset(offset, 0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(widget.title, style: _style, maxLines: 1),
+                    const SizedBox(width: _gap),
+                    Text(widget.title, style: _style, maxLines: 1),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _MoreRow extends StatelessWidget {
   const _MoreRow({required this.icon, required this.label});
 
@@ -1655,6 +1779,7 @@ class _BottomBar extends StatefulWidget {
     required this.onTrackSheet,
     required this.onPlaylist,
     required this.onRotate,
+    required this.rotationLocked,
     required this.onFit,
     required this.onMute,
     required this.onSpeed,
@@ -1668,6 +1793,7 @@ class _BottomBar extends StatefulWidget {
   final VoidCallback onTrackSheet;
   final VoidCallback onPlaylist;
   final VoidCallback onRotate;
+  final bool rotationLocked;
   final VoidCallback onFit;
   final VoidCallback onMute;
   final VoidCallback onSpeed;
@@ -1836,21 +1962,28 @@ class _BottomBarState extends State<_BottomBar> {
                           onPressed: widget.onTrackSheet,
                         ),
                         IconButton(
-                          tooltip: 'Screen fit',
-                          icon: const Icon(Icons.fit_screen_rounded,
-                              color: Colors.white, size: 27),
-                          onPressed: widget.onFit,
-                        ),
-                        IconButton(
                           tooltip: 'Playlist',
                           icon: const Icon(Icons.playlist_play_rounded,
                               color: Colors.white, size: 28),
                           onPressed: widget.onPlaylist,
                         ),
                         IconButton(
-                          tooltip: 'Rotate',
-                          icon: const Icon(Icons.screen_rotation_alt_rounded,
-                              color: Colors.white, size: 29),
+                          tooltip: 'Screen fit',
+                          icon: const Icon(Icons.fit_screen_rounded,
+                              color: Colors.white, size: 27),
+                          onPressed: widget.onFit,
+                        ),
+                        IconButton(
+                          tooltip: widget.rotationLocked
+                              ? 'Unlock rotation'
+                              : 'Lock rotation',
+                          icon: Icon(
+                            widget.rotationLocked
+                                ? Icons.screen_lock_rotation_rounded
+                                : Icons.screen_rotation_alt_rounded,
+                            color: Colors.white,
+                            size: 29,
+                          ),
                           onPressed: widget.onRotate,
                         ),
                       ],
