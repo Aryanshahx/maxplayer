@@ -1,7 +1,7 @@
 name: maxplayer
 description: "MaxPlayer — local-first MPV video player."
 publish_to: 'none'
-version: 0.10.0+13
+version: 0.10.0+15
 
 environment:
   sdk: ^3.12.0

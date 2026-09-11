@@ -7,7 +7,6 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:screen_brightness/screen_brightness.dart';
-import 'package:volume_controller/volume_controller.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../theme.dart';
@@ -51,6 +50,26 @@ class PlayerScreen extends StatefulWidget {
 }
 
 enum _DragMode { none, brightness, volume, seek, zoom }
+enum _FitMode { fit, crop, stretch, fitWidth, fitHeight }
+
+extension on _FitMode {
+  BoxFit get boxFit => switch (this) {
+        _FitMode.fit => BoxFit.contain,
+        _FitMode.crop => BoxFit.cover,
+        _FitMode.stretch => BoxFit.fill,
+        _FitMode.fitWidth => BoxFit.fitWidth,
+        _FitMode.fitHeight => BoxFit.fitHeight,
+      };
+
+  String get label => switch (this) {
+        _FitMode.fit => 'Fit',
+        _FitMode.crop => 'Crop',
+        _FitMode.stretch => 'Stretch',
+        _FitMode.fitWidth => 'Fit width',
+        _FitMode.fitHeight => 'Fit height',
+      };
+}
+
 enum _PlayerMenuAction { info, eq, screenshot, cast, pip, sleep }
 
 class _PlayerScreenState extends State<PlayerScreen>
@@ -82,18 +101,25 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _boost = false;
   bool _locked = false;
   bool _fullscreen = false;
+  bool _muted = false;
+  double _volumePercent = 100;
+  _FitMode _fitMode = _FitMode.fit;
 
   _DragMode _drag = _DragMode.none;
   Offset _dragStart = Offset.zero;
   double _zoom = 1;
   double _zoomStart = 1;
   double _levelValue = 0;
+  double _volumeStart = 100;
+  double _brightnessStart = 0;
+  bool _gestureActive = false;
+  IconData _gestureIcon = Icons.touch_app_rounded;
+  String _gestureLabel = '';
   Duration? _seekPreview;
   Duration _scrubStart = Duration.zero;
   Duration _lastSentSeek = Duration.zero;
   DateTime _lastLiveSeek = DateTime.fromMillisecondsSinceEpoch(0);
   int? _seekFlash;
-  bool _seekFlashLeft = false;
 
   AbState _ab = AbState.off;
   final List<double> _bands =
@@ -110,6 +136,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     _title = widget.title;
     _currentPath = widget.path;
     _queueIndex = widget.queueStart;
@@ -124,6 +151,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         _hideTimer?.cancel();
       }
       _applyPerformanceMode();
+      if (_settings.autoRotate) {
+        unawaited(SystemChrome.setPreferredOrientations(DeviceOrientation.values));
+      }
     };
     _settings.addListener(_settingsListener!);
     unawaited(_settings.load());
@@ -157,6 +187,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     CrashLog.crumb('player.open', {'path': path});
     try {
       await _player.open(Media(path), play: true);
+      _volumePercent = _player.state.volume.clamp(0.0, 100.0);
+      _muted = _volumePercent <= 0;
       if (mounted) setState(() => _ready = true);
       if (offerResume && _settings.resume && !widget.isStream) {
         unawaited(_offerResume());
@@ -328,7 +360,14 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _onDoubleTap(TapDownDetails details) {
-    if (_locked) return;
+    if (_locked) {
+      setState(() {
+        _locked = false;
+        _controlsVisible = true;
+      });
+      _scheduleHide();
+      return;
+    }
     final width = MediaQuery.of(context).size.width;
     final x = details.globalPosition.dx;
     if (x < width * .35 && _settings.doubleTapSides) {
@@ -347,48 +386,187 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (target < Duration.zero) target = Duration.zero;
     if (duration > Duration.zero && target > duration) target = duration;
     _player.seek(target);
-    _flash(seconds, left);
+    _flash(seconds);
   }
 
-  void _flash(int seconds, bool left) {
+  void _flash(int seconds) {
     _flashTimer?.cancel();
     setState(() {
       _seekFlash = seconds;
-      _seekFlashLeft = left;
       _controlsVisible = true;
+      _gestureActive = true;
     });
     if (_settings.autoHide) _scheduleHide();
     _flashTimer = Timer(const Duration(milliseconds: 650), () {
-      if (mounted) setState(() => _seekFlash = null);
+      if (mounted) {
+        setState(() {
+          _seekFlash = null;
+          _gestureActive = false;
+        });
+      }
     });
+  }
+
+  Future<void> _setVolumePercent(double value) async {
+    final maxVolume = _settings.volumeBoost ? 200.0 : 100.0;
+    final v = value.clamp(0.0, maxVolume).toDouble();
+    _volumePercent = v;
+    _muted = false;
+    if (v <= 100) {
+      await _player.setVolume(v);
+      await _mpvSet('af', combineAudioFilters(_bands,
+          dialogueBoost: _dialogueBoost));
+    } else {
+      await _player.setVolume(100);
+      final gain = v / 100.0;
+      final base = combineAudioFilters(_bands,
+          dialogueBoost: _dialogueBoost);
+      final gainFilter = base.isEmpty ? 'lavfi=[volume=$gain]' : '$base,volume=$gain';
+      await _mpvSet('af', gainFilter);
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _toggleMute() async {
+    if (_muted || _volumePercent <= 0) {
+      final restore = _volumePercent <= 0
+          ? 100.0
+          : _volumePercent;
+      await _setVolumePercent(restore);
+      _muted = false;
+    } else {
+      await _player.setVolume(0);
+      _muted = true;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _showSpeedSheet() async {
+    const rates = <double>[0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
+    final current = _player.state.rate;
+    final picked = await showModalBottomSheet<double>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SheetHandle(),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(18, 4, 18, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Playback speed',
+                    style: TextStyle(color: AppColors.textPrimary,
+                        fontSize: 18, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            for (final rate in rates)
+              ListTile(
+                title: Text('${rate}x',
+                    style: const TextStyle(color: AppColors.textPrimary)),
+                trailing: (rate - current).abs() < .001
+                    ? Icon(Icons.check_rounded, color: AppColors.accent)
+                    : null,
+                onTap: () => Navigator.of(context).pop(rate),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) return;
+    await _player.setRate(picked);
+    if (mounted) setState(() {});
   }
 
   void _setBoost(bool on) {
     if (!_settings.longPressSpeed || _locked) return;
     _boost = on;
-    _player.setRate(on ? _settings.longPressRate : 1.0);
+    unawaited(_player.setRate(on ? _settings.longPressRate : 1.0));
     if (mounted) setState(() {});
+  }
+
+  void _resetFit() {
+    setState(() {
+      _fitMode = _FitMode.fit;
+      _zoom = 1;
+    });
+  }
+
+  void _showFitMenu() {
+    showModalBottomSheet<_FitMode>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SheetHandle(),
+            const ListTile(
+              title: Text('Screen fit', style: TextStyle(
+                  color: AppColors.textPrimary, fontSize: 18,
+                  fontWeight: FontWeight.w700)),
+            ),
+            for (final mode in _FitMode.values)
+              ListTile(
+                leading: Icon(
+                  mode == _FitMode.fit ? Icons.fit_screen_rounded : Icons.crop_rounded,
+                  color: AppColors.accent),
+                title: Text(mode.label,
+                    style: const TextStyle(color: AppColors.textPrimary)),
+                trailing: mode == _fitMode
+                    ? Icon(Icons.check_rounded, color: AppColors.accent)
+                    : null,
+                onTap: () => Navigator.of(context).pop(mode),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    ).then((mode) {
+      if (mode != null) {
+        setState(() {
+          _fitMode = mode;
+          _zoom = 1;
+        });
+      }
+    });
   }
 
   void _onScaleStart(ScaleStartDetails d) {
     if (_locked) return;
     _dragStart = d.focalPoint;
     _zoomStart = _zoom;
+    _volumeStart = _volumePercent;
+    _brightnessStart = _levelValue;
+    _gestureActive = false;
     _drag = d.pointerCount >= 2 && _settings.pinchZoom
         ? _DragMode.zoom
         : _DragMode.none;
   }
 
   Future<void> _onScaleUpdate(ScaleUpdateDetails d) async {
-    final screenSize = MediaQuery.of(context).size;
     if (_locked) return;
+    final screenSize = MediaQuery.of(context).size;
     if (_drag == _DragMode.zoom) {
-      setState(() => _zoom = (_zoomStart * d.scale).clamp(1.0, 4.0));
+      final scale = d.scale;
+      final nextZoom = (_zoomStart * scale).clamp(.75, 4.0).toDouble();
+      if (scale > 1.08 || scale < .92) {
+        setState(() {
+          _zoom = nextZoom;
+          _gestureActive = true;
+        });
+      }
       return;
     }
     final delta = d.focalPoint - _dragStart;
     if (_drag == _DragMode.none && delta.distance >= 14) {
-      final width = MediaQuery.of(context).size.width;
+      final width = screenSize.width;
       if (delta.dx.abs() > delta.dy.abs() * 1.5 && _settings.horizontalSeek) {
         _drag = _DragMode.seek;
         _scrubStart = _player.state.position;
@@ -397,13 +575,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       } else if (delta.dy.abs() >= delta.dx.abs()) {
         if (_dragStart.dx < width / 2 && _settings.swipeBrightness) {
           _drag = _DragMode.brightness;
+          _levelValue = await ScreenBrightness.instance.application;
+          _brightnessStart = _levelValue;
         } else if (_dragStart.dx >= width / 2 && _settings.swipeVolume) {
           _drag = _DragMode.volume;
-        }
-        if (_drag == _DragMode.brightness) {
-          _levelValue = await ScreenBrightness.instance.application;
-        } else if (_drag == _DragMode.volume) {
-          _levelValue = await VolumeController.instance.getVolume();
+          _volumeStart = _volumePercent;
         }
         _dragStart = d.focalPoint;
       }
@@ -411,23 +587,29 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     final height = screenSize.height;
     final width = screenSize.width;
-    if (_drag == _DragMode.brightness || _drag == _DragMode.volume) {
+    if (_drag == _DragMode.brightness) {
       final change = -(d.focalPoint.dy - _dragStart.dy) / (height * .5);
-      final v = (_levelValue + change).clamp(0.0, 1.0);
-      if (_drag == _DragMode.brightness) {
-        await ScreenBrightness.instance.setApplicationScreenBrightness(v);
-      } else {
-        await VolumeController.instance.setVolume(v);
-      }
-      if (mounted) setState(() => _levelValue = v);
+      final v = (_brightnessStart + change).clamp(0.0, 1.0).toDouble();
+      await ScreenBrightness.instance.setApplicationScreenBrightness(v);
+      _levelValue = v;
+      _emitGesture(Icons.brightness_6_rounded, '${(v * 100).round()}%');
+    } else if (_drag == _DragMode.volume) {
+      final change = -(d.focalPoint.dy - _dragStart.dy) / (height * .5) * 100;
+      final maxVolume = _settings.volumeBoost ? 200.0 : 100.0;
+      final v = (_volumeStart + change).clamp(0.0, maxVolume).toDouble();
+      await _setVolumePercent(v);
+      _emitGesture(v <= 100 ? Icons.volume_up_rounded : Icons.volume_up_rounded,
+          '${v.round()}%');
     } else if (_drag == _DragMode.seek) {
       final duration = _player.state.duration;
       if (duration <= Duration.zero) return;
       final fraction = (d.focalPoint.dx / width).clamp(0.0, 1.0);
       final target = Duration(
-        milliseconds: (fraction * duration.inMilliseconds).round(),
-      );
-      setState(() => _seekPreview = target);
+          milliseconds: (fraction * duration.inMilliseconds).round());
+      setState(() {
+        _seekPreview = target;
+        _gestureActive = true;
+      });
       final now = DateTime.now();
       if (now.difference(_lastLiveSeek).inMilliseconds > 120 &&
           (target - _lastSentSeek).abs().inMilliseconds > 800) {
@@ -438,12 +620,27 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  void _emitGesture(IconData icon, String label) {
+    if (!mounted) return;
+    setState(() {
+      _gestureIcon = icon;
+      _gestureLabel = label;
+      _gestureActive = true;
+    });
+    _flashTimer?.cancel();
+    _flashTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() => _gestureActive = false);
+    });
+  }
+
   void _onScaleEnd(ScaleEndDetails _) {
     if (_locked) return;
     if (_drag == _DragMode.seek && _seekPreview != null) {
       _player.seek(_seekPreview!);
     }
-    _flashTimer?.cancel();
+    if (_drag == _DragMode.zoom && _zoom < .9) {
+      _resetFit();
+    }
     setState(() {
       _drag = _DragMode.none;
       _seekPreview = null;
@@ -783,10 +980,13 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _applyAudioFilters() async {
-    await _mpvSet(
-      'af',
-      combineAudioFilters(_bands, dialogueBoost: _dialogueBoost),
-    );
+    final base = combineAudioFilters(_bands, dialogueBoost: _dialogueBoost);
+    if (_volumePercent > 100) {
+      final gain = _volumePercent / 100.0;
+      await _mpvSet('af', base.isEmpty ? 'lavfi=[volume=$gain]' : '$base,volume=$gain');
+    } else {
+      await _mpvSet('af', base);
+    }
     if (mounted) setState(() {});
   }
 
@@ -1085,17 +1285,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     setState(() {});
     if (_fullscreen) {
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      await SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
+      await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     } else {
-      await SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     }
+    _resetFit();
   }
 
   Future<void> _rotateOrientation() async {
@@ -1103,6 +1298,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (orientation == Orientation.portrait) {
       await SystemChrome.setPreferredOrientations(const [
         DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
       ]);
     } else {
       await SystemChrome.setPreferredOrientations(const [
@@ -1166,7 +1362,13 @@ class _PlayerScreenState extends State<PlayerScreen>
               ClipRect(
                 child: Transform.scale(
                   scale: _zoom,
-                  child: Video(controller: _controller, controls: NoVideoControls),
+                  child: Video(
+                    controller: _controller,
+                    fit: _fitMode.boxFit,
+                    aspectRatio: _fitMode == _FitMode.fit ? null :
+                        (_fitMode == _FitMode.stretch ? null : 16 / 9),
+                    controls: NoVideoControls,
+                  ),
                 ),
               )
             else
@@ -1181,13 +1383,13 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
             if (_seekFlash != null)
               Align(
-                alignment: _seekFlashLeft
-                    ? Alignment.centerLeft
-                    : Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 34),
-                  child: _SeekPill(seconds: _seekFlash!),
-                ),
+                alignment: const Alignment(0, -.72),
+                child: _SeekPill(seconds: _seekFlash!),
+              ),
+            if (_gestureActive && _gestureLabel.isNotEmpty)
+              Align(
+                alignment: const Alignment(0, -.72),
+                child: _GesturePill(icon: _gestureIcon, label: _gestureLabel),
               ),
             if (_seekPreview != null)
               Align(
@@ -1201,54 +1403,16 @@ class _PlayerScreenState extends State<PlayerScreen>
                       '${formatDuration(_player.state.duration)}',
                 ),
               ),
-            if (_drag == _DragMode.brightness)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 22),
-                  child: _LevelPill(
-                    icon: Icons.brightness_6_rounded,
-                    value: _levelValue,
-                  ),
-                ),
-              ),
-            if (_drag == _DragMode.volume)
-              Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 22),
-                  child: _LevelPill(
-                    icon: _levelValue == 0
-                        ? Icons.volume_off_rounded
-                        : Icons.volume_up_rounded,
-                    value: _levelValue,
-                  ),
-                ),
-              ),
             if (_boost)
               const Align(alignment: Alignment(0, -.55), child: _SpeedBadge()),
             if (_locked)
-              Center(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: .72),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 14),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.lock_rounded,
-                            color: Colors.white, size: 22),
-                        const SizedBox(width: 10),
-                        TextButton(
-                          onPressed: () => setState(() => _locked = false),
-                          child: const Text('Tap to unlock'),
-                        ),
-                      ],
-                    ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: _EdgeButton(
+                    icon: Icons.lock_rounded,
+                    onTap: () {},
                   ),
                 ),
               ),
@@ -1263,12 +1427,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                 onTrackSheet: _showTrackSheet,
                 onFullscreen: _toggleFullscreen,
                 onRotate: _rotateOrientation,
-                onLock: _settings.screenLock
-                    ? () => setState(() => _locked = true)
-                    : null,
-              ),
-              _CenterControls(
-                player: _player,
+                onFit: _showFitMenu,
+                onMute: _toggleMute,
+                onSpeed: _showSpeedSheet,
+                isMuted: _muted,
                 canSkip: widget.queueIds.length > 1,
                 onPrevious: _playPrevious,
                 onNext: _playNext,
@@ -1401,14 +1563,26 @@ class _BottomBar extends StatefulWidget {
     required this.onTrackSheet,
     required this.onFullscreen,
     required this.onRotate,
-    this.onLock,
+    required this.onFit,
+    required this.onMute,
+    required this.onSpeed,
+    required this.isMuted,
+    required this.canSkip,
+    required this.onPrevious,
+    required this.onNext,
   });
 
   final Player player;
   final VoidCallback onTrackSheet;
   final VoidCallback onFullscreen;
   final VoidCallback onRotate;
-  final VoidCallback? onLock;
+  final VoidCallback onFit;
+  final VoidCallback onMute;
+  final VoidCallback onSpeed;
+  final bool isMuted;
+  final bool canSkip;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
 
   @override
   State<_BottomBar> createState() => _BottomBarState();
@@ -1500,34 +1674,80 @@ class _BottomBarState extends State<_BottomBar> {
                         },
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    StreamBuilder<bool>(
+                      stream: widget.player.stream.playing,
+                      initialData: widget.player.state.playing,
+                      builder: (context, snapshot) {
+                        final playing = snapshot.data ?? false;
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              tooltip: 'Previous',
+                              iconSize: 32,
+                              color: widget.canSkip ? Colors.white : Colors.white38,
+                              onPressed: widget.canSkip ? widget.onPrevious : null,
+                              icon: const Icon(Icons.skip_previous_rounded),
+                            ),
+                            const SizedBox(width: 26),
+                            IconButton(
+                              tooltip: 'Play/Pause',
+                              iconSize: 58,
+                              color: Colors.white,
+                              onPressed: widget.player.playOrPause,
+                              icon: Icon(playing
+                                  ? Icons.pause_circle_filled_rounded
+                                  : Icons.play_circle_filled_rounded),
+                            ),
+                            const SizedBox(width: 26),
+                            IconButton(
+                              tooltip: 'Next',
+                              iconSize: 32,
+                              color: widget.canSkip ? Colors.white : Colors.white38,
+                              onPressed: widget.canSkip ? widget.onNext : null,
+                              icon: const Icon(Icons.skip_next_rounded),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                     const SizedBox(height: 2),
                     Row(
                       children: [
                         IconButton(
-                          tooltip: 'Volume',
-                          icon: const Icon(Icons.volume_up_rounded,
-                              color: Colors.white, size: 27),
-                          onPressed: () {},
+                          tooltip: widget.isMuted ? 'Unmute' : 'Mute',
+                          icon: Icon(
+                            widget.isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                            color: Colors.white, size: 27),
+                          onPressed: widget.onMute,
                         ),
-                        StreamBuilder<double>(
-                          stream: widget.player.stream.rate,
-                          initialData: widget.player.state.rate,
-                          builder: (context, snapshot) => Text(
-                            '${(snapshot.data ?? 1).toStringAsFixed((snapshot.data ?? 1) % 1 == 0 ? 1 : 2)}x',
-                            style: const TextStyle(color: Colors.white, fontSize: 15),
+                        GestureDetector(
+                          onTap: widget.onSpeed,
+                          child: StreamBuilder<double>(
+                            stream: widget.player.stream.rate,
+                            initialData: widget.player.state.rate,
+                            builder: (context, snapshot) => Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
+                                '${(snapshot.data ?? 1).toStringAsFixed((snapshot.data ?? 1) % 1 == 0 ? 1 : 2)}x',
+                                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          tooltip: 'Tracks & video controls',
-                          icon: const Icon(Icons.tune_rounded, color: Colors.white, size: 28),
-                          onPressed: widget.onTrackSheet,
                         ),
                         const Spacer(),
                         IconButton(
-                          tooltip: 'Tracks',
-                          icon: const Icon(Icons.queue_music_rounded,
+                          tooltip: 'Subtitles, audio & video options',
+                          icon: const Icon(Icons.subtitles_rounded,
                               color: Colors.white, size: 28),
                           onPressed: widget.onTrackSheet,
+                        ),
+                        IconButton(
+                          tooltip: 'Screen fit',
+                          icon: const Icon(Icons.fit_screen_rounded,
+                              color: Colors.white, size: 27),
+                          onPressed: widget.onFit,
                         ),
                         IconButton(
                           tooltip: 'Fullscreen',
@@ -1554,63 +1774,6 @@ class _BottomBarState extends State<_BottomBar> {
   }
 }
 
-class _CenterControls extends StatelessWidget {
-  const _CenterControls({
-    required this.player,
-    required this.canSkip,
-    required this.onPrevious,
-    required this.onNext,
-  });
-
-  final Player player;
-  final bool canSkip;
-  final VoidCallback onPrevious;
-  final VoidCallback onNext;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: StreamBuilder<bool>(
-        stream: player.stream.playing,
-        initialData: player.state.playing,
-        builder: (context, snapshot) {
-          final playing = snapshot.data ?? false;
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                tooltip: 'Previous',
-                iconSize: 46,
-                color: Colors.white,
-                onPressed: canSkip ? onPrevious : null,
-                icon: const Icon(Icons.skip_previous_rounded),
-              ),
-              const SizedBox(width: 18),
-              IconButton(
-                tooltip: 'Play/Pause',
-                iconSize: 78,
-                color: Colors.white,
-                onPressed: player.playOrPause,
-                icon: Icon(playing
-                    ? Icons.pause_circle_filled_rounded
-                    : Icons.play_circle_filled_rounded),
-              ),
-              const SizedBox(width: 18),
-              IconButton(
-                tooltip: 'Next',
-                iconSize: 46,
-                color: Colors.white,
-                onPressed: canSkip ? onNext : null,
-                icon: const Icon(Icons.skip_next_rounded),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
 class _EdgeButton extends StatelessWidget {
   const _EdgeButton({required this.icon, required this.onTap});
 
@@ -1625,9 +1788,9 @@ class _EdgeButton extends StatelessWidget {
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onTap,
-        child: const Padding(
-          padding: EdgeInsets.all(17),
-          child: Icon(Icons.lock_outline_rounded, color: Colors.white, size: 28),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Icon(icon, color: Colors.white, size: 20),
         ),
       ),
     );
@@ -1662,6 +1825,32 @@ class _SeekPill extends StatelessWidget {
   }
 }
 
+class _GesturePill extends StatelessWidget {
+  const _GesturePill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: .72),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 21),
+          const SizedBox(width: 8),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}
+
 class _InfoPill extends StatelessWidget {
   const _InfoPill({required this.icon, required this.text});
 
@@ -1689,46 +1878,6 @@ class _InfoPill extends StatelessWidget {
   }
 }
 
-class _LevelPill extends StatelessWidget {
-  const _LevelPill({required this.icon, required this.value});
-
-  final IconData icon;
-  final double value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-      decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: .66),
-          borderRadius: BorderRadius.circular(14)),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.white, size: 24),
-          const SizedBox(height: 7),
-          SizedBox(
-            height: 88,
-            child: RotatedBox(
-              quarterTurns: 3,
-              child: LinearProgressIndicator(
-                value: value,
-                backgroundColor: Colors.white24,
-                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-                minHeight: 4,
-              ),
-            ),
-          ),
-          const SizedBox(height: 7),
-          Text('${(value * 100).round()}%',
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
-        ],
-      ),
-    );
-  }
-}
-
 class _SpeedBadge extends StatelessWidget {
   const _SpeedBadge();
 
@@ -1747,6 +1896,8 @@ class _SpeedBadge extends StatelessWidget {
 }
 
 class _SheetHandle extends StatelessWidget {
+  const _SheetHandle();
+
   @override
   Widget build(BuildContext context) {
     return Center(

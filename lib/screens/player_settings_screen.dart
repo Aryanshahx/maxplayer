@@ -19,7 +19,10 @@ class PlayerSettingsScreen extends StatelessWidget {
       backgroundColor: AppColors.surfaceAlt,
       appBar: AppBar(
         backgroundColor: AppColors.surfaceAlt,
-        title: const Text('Player settings'),
+        toolbarHeight: 62,
+        titleSpacing: 0,
+        title: const Text('Player settings',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
         leading: const BackButton(),
       ),
       body: ListenableBuilder(
@@ -65,10 +68,17 @@ class PlayerSettingsScreen extends StatelessWidget {
               onChanged: s.setHorizontalSeek,
             ),
             _ToggleRow(
+              icon: Icons.screen_rotation_alt_rounded,
+              title: 'Auto rotate player',
+              subtitle: 'Allow portrait and landscape automatically',
+              value: s.autoRotate,
+              onChanged: s.setAutoRotate,
+            ),
+            _ToggleRow(
               icon: Icons.zoom_out_map_outlined,
               title: 'Two-finger pinch to zoom',
               subtitle:
-                  'OFF (default): spread 2 fingers = Fit, Crop, Stretch, 16:9… then keep spreading to zoom in. ON: pinch zooms straight away. 2-finger tap = Fit.',
+                  'Pinch with two fingers to zoom; hold and spread to enlarge. Fullscreen button long-press opens Fit, Crop, Stretch and Fit-width/height.',
               value: s.pinchZoom,
               onChanged: s.setPinchZoom,
             ),
@@ -106,7 +116,7 @@ class PlayerSettingsScreen extends StatelessWidget {
             _ToggleRow(
               icon: Icons.lock_outline_rounded,
               title: 'Screen lock (kids mode)',
-              subtitle: 'Lock button on the video edge locks every touch',
+              subtitle: 'Small edge lock; double-tap the screen to unlock',
               value: s.screenLock,
               onChanged: s.setScreenLock,
             ),
@@ -229,7 +239,7 @@ class _Section extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 18, bottom: 4),
+      padding: const EdgeInsets.only(top: 20, bottom: 7),
       child: Text(
         label,
         style: const TextStyle(
@@ -316,7 +326,7 @@ class _ToggleRow extends StatelessWidget {
                         title,
                         style: const TextStyle(
                           color: AppColors.textPrimary,
-                          fontSize: 17,
+                          fontSize: 15.5,
                           height: 1.2,
                         ),
                       ),
@@ -338,7 +348,7 @@ class _ToggleRow extends StatelessWidget {
                       subtitle!,
                       style: const TextStyle(
                         color: AppColors.textSecondary,
-                        fontSize: 13.5,
+                        fontSize: 12.5,
                         height: 1.25,
                       ),
                     ),

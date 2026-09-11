@@ -19,7 +19,8 @@ class PlayerSettings extends ChangeNotifier {
   static const _kSwipeVolume = 'player.swipeVolume';
   static const _kSwipeBrightness = 'player.swipeBrightness';
   static const _kHorizontalSeek = 'player.horizontalSeek';
-  static const _kPinchZoom = 'player.pinchZoom';
+  static const _kPinchZoom = 'player.pinchZoom.v2';
+  static const _kAutoRotate = 'player.autoRotate';
   static const _kLongPressSpeed = 'player.longPressSpeed';
   static const _kLongPressRate = 'player.longPressRate';
   static const _kAutoHide = 'player.autoHide';
@@ -36,7 +37,8 @@ class PlayerSettings extends ChangeNotifier {
   bool swipeVolume = true;
   bool swipeBrightness = true;
   bool horizontalSeek = true;
-  bool pinchZoom = false;
+  bool pinchZoom = true;
+  bool autoRotate = true;
   bool longPressSpeed = true;
   double longPressRate = 2.0;
   bool autoHide = true;
@@ -56,7 +58,8 @@ class PlayerSettings extends ChangeNotifier {
     swipeVolume = p.getBool(_kSwipeVolume) ?? true;
     swipeBrightness = p.getBool(_kSwipeBrightness) ?? true;
     horizontalSeek = p.getBool(_kHorizontalSeek) ?? true;
-    pinchZoom = p.getBool(_kPinchZoom) ?? false;
+    pinchZoom = p.getBool(_kPinchZoom) ?? true;
+    autoRotate = p.getBool(_kAutoRotate) ?? true;
     longPressSpeed = p.getBool(_kLongPressSpeed) ?? true;
     final storedRate = p.getDouble(_kLongPressRate);
     longPressRate = speedRates.contains(storedRate) ? storedRate! : 2.0;
@@ -105,6 +108,11 @@ class PlayerSettings extends ChangeNotifier {
   Future<void> setPinchZoom(bool v) async {
     pinchZoom = v;
     await _saveBool(_kPinchZoom, v);
+  }
+
+  Future<void> setAutoRotate(bool v) async {
+    autoRotate = v;
+    await _saveBool(_kAutoRotate, v);
   }
 
   Future<void> setLongPressSpeed(bool v) async {
