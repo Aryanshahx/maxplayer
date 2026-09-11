@@ -74,6 +74,18 @@ extension on _FitMode {
 
 enum _PlayerMenuAction { info, eq, screenshot, cast, pip, sleep }
 
+enum _SleepChoiceKind { off, minutes, untilEnd }
+
+class _SleepChoice {
+  const _SleepChoice._(this.kind, [this.minutes]);
+  const _SleepChoice.off() : this._(_SleepChoiceKind.off);
+  const _SleepChoice.untilEnd() : this._(_SleepChoiceKind.untilEnd);
+  const _SleepChoice.minutes(int value) : this._(_SleepChoiceKind.minutes, value);
+
+  final _SleepChoiceKind kind;
+  final int? minutes;
+}
+
 class _PlayerScreenState extends State<PlayerScreen>
     with WidgetsBindingObserver {
   static const _native = MethodChannel('maxplayer/native');
@@ -133,6 +145,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _karaoke = false;
   String _toneMapping = 'auto';
   int _sleepMinutesLeft = 0;
+  bool _sleepUntilEnd = false;
   bool _softwareDecodeRetried = false;
 
   @override
@@ -155,6 +168,12 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     };
     _settings.addListener(_settingsListener!);
+    _native.setMethodCallHandler((call) async {
+      if (call.method == 'pipToggle') {
+        await _player.playOrPause();
+      }
+      return null;
+    });
     unawaited(_settings.load());
     _open(_currentPath, offerResume: true);
     _playingSub = _player.stream.playing.listen((playing) {
@@ -165,13 +184,22 @@ class _PlayerScreenState extends State<PlayerScreen>
         WakelockPlus.disable();
         unawaited(_savePosition());
       }
+      unawaited(_syncBackgroundAudio(playing));
+      unawaited(_native.invokeMethod('updatePipPlaying', {'playing': playing}));
       if (mounted) setState(() {});
     });
     _bufferingSub = _player.stream.buffering.listen((b) {
       if (mounted) setState(() => _buffering = b);
     });
     _completedSub = _player.stream.completed.listen((done) {
-      if (done) unawaited(_playNext());
+      if (done) {
+        if (_sleepUntilEnd) {
+          _sleepUntilEnd = false;
+          if (mounted) setState(() {});
+          _emitSnack('Sleep timer — video ended');
+        }
+        unawaited(_playNext());
+      }
     });
     _errorSub = _player.stream.error.listen((e) {
       _onError(e);
@@ -179,6 +207,21 @@ class _PlayerScreenState extends State<PlayerScreen>
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       unawaited(_savePosition());
     });
+  }
+
+  Future<void> _syncBackgroundAudio(bool playing) async {
+    if (!_settings.backgroundAudio) {
+      try {
+        await _native.invokeMethod('setBackgroundAudio', {'enabled': false});
+      } catch (_) {}
+      return;
+    }
+    try {
+      await _native.invokeMethod('setBackgroundAudio', {
+        'enabled': playing,
+        'title': _title,
+      });
+    } catch (_) {}
   }
 
   Future<void> _open(String path, {required bool offerResume}) async {
@@ -682,6 +725,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  String? get _sleepLabel {
+    if (_sleepUntilEnd) return 'Sleep: Until end';
+    if (_sleepTimer != null && _sleepMinutesLeft > 0) {
+      return 'Sleep: $_sleepMinutesLeft min';
+    }
+    return null;
+  }
+
   Future<void> _showPlayerSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerSettingsScreen()),
@@ -1014,13 +1065,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _applyAudioFilters() async {
-    final base = combineAudioFilters(_bands, dialogueBoost: _dialogueBoost);
-    if (_volumePercent > 100) {
-      final gain = _volumePercent / 100.0;
-      await _mpvSet('af', base.isEmpty ? 'lavfi=[volume=$gain]' : '$base,volume=$gain');
-    } else {
-      await _mpvSet('af', base);
-    }
+    final base = combineAudioFilters(
+      _bands,
+      dialogueBoost: _dialogueBoost,
+    );
+    await _mpvSet('af', base);
     if (mounted) setState(() {});
   }
 
@@ -1100,19 +1149,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ),
                     ],
                   ),
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Dialogue boost',
-                      style: TextStyle(color: AppColors.textPrimary)),
-                  subtitle: const Text('Lifts quiet speech (1-4 kHz)',
-                      style: TextStyle(color: AppColors.textSecondary)),
-                  value: _dialogueBoost,
-                  onChanged: (value) {
-                    _dialogueBoost = value;
-                    unawaited(_applyAudioFilters());
-                    setSheet(() {});
-                  },
-                ),
               ],
             ),
           ),
@@ -1130,67 +1166,125 @@ class _PlayerScreenState extends State<PlayerScreen>
           '${formatDuration(state.position)} / ${formatDuration(state.duration)}'),
       MapEntry('Remaining', formatDuration(state.duration - state.position)),
       MapEntry('Playback speed', '${state.rate}x'),
-      MapEntry('Video encoder params', state.videoParams.toString()),
-      MapEntry('Audio decoder params', state.audioParams.toString()),
+      if (state.videoParams.w != null && state.videoParams.h != null)
+        MapEntry('Resolution',
+            '${state.videoParams.w} × ${state.videoParams.h}'),
       if (state.audioBitrate != null)
         MapEntry('Audio bitrate', '${state.audioBitrate} bit/s'),
     ];
-    showDialog<void>(
+
+    showModalBottomSheet<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.border),
-        ),
-        title: Text(_title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-                color: AppColors.textPrimary, fontSize: 15)),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView(
-            shrinkWrap: true,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (context) => SafeArea(
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: .62,
+          minChildSize: .35,
+          maxChildSize: .92,
+          builder: (context, controller) => Column(
             children: [
-              for (final row in rows)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(row.key,
-                          style: const TextStyle(
-                              color: AppColors.textSecondary, fontSize: 11.5)),
-                      const SizedBox(height: 2),
-                      Text(row.value,
-                          style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 12.5)),
-                    ],
+              _SheetHandle(),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 4, 20, 10),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Video info',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-              const Divider(color: AppColors.border),
-              for (final track in state.tracks.video)
-                Text('Video: $track',
-                    style: const TextStyle(
-                        color: AppColors.textPrimary, fontSize: 11)),
-              for (final track in state.tracks.audio)
-                Text('Audio: $track',
-                    style: const TextStyle(
-                        color: AppColors.textPrimary, fontSize: 11)),
-              for (final track in state.tracks.subtitle)
-                Text('Subtitle: $track',
-                    style: const TextStyle(
-                        color: AppColors.textPrimary, fontSize: 11)),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: controller,
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  children: [
+                    Text(
+                      _title,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    for (final row in rows)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(row.key,
+                                style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 11.5)),
+                            const SizedBox(height: 2),
+                            SelectableText(row.value,
+                                style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 12.5)),
+                          ],
+                        ),
+                      ),
+                    const Divider(color: AppColors.border),
+                    if (state.tracks.video.isNotEmpty)
+                      const Text('Video tracks',
+                          style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w700)),
+                    for (final track in state.tracks.video)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 5),
+                        child: Text(_trackLabel(track),
+                            style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12)),
+                      ),
+                    if (state.tracks.audio.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      const Text('Audio tracks',
+                          style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w700)),
+                    ],
+                    for (final track in state.tracks.audio)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 5),
+                        child: Text(_trackLabel(track),
+                            style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12)),
+                      ),
+                    if (state.tracks.subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      const Text('Subtitle tracks',
+                          style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w700)),
+                    ],
+                    for (final track in state.tracks.subtitle)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 5),
+                        child: Text(_trackLabel(track),
+                            style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12)),
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close')),
-        ],
       ),
     );
   }
@@ -1248,12 +1342,13 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _showSleepTimerSheet() async {
-    const mins = [0, 10, 15, 30, 45, 60];
-    final picked = await showModalBottomSheet<int>(
+    const mins = [10, 15, 30, 45, 60];
+    final picked = await showModalBottomSheet<_SleepChoice>(
       context: context,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1270,34 +1365,63 @@ class _PlayerScreenState extends State<PlayerScreen>
                         fontWeight: FontWeight.w700)),
               ),
             ),
+            if (_sleepTimer != null || _sleepUntilEnd)
+              ListTile(
+                title: const Text('Turn off timer',
+                    style: TextStyle(color: AppColors.textPrimary)),
+                onTap: () => Navigator.of(context).pop(_SleepChoice.off()),
+              ),
             for (final min in mins)
               ListTile(
-                title: Text(
-                  min == 0
-                      ? (_sleepTimer == null
-                          ? 'Off'
-                          : 'Cancel timer ($_sleepMinutesLeft min)')
-                      : '$min minutes',
-                  style: const TextStyle(color: AppColors.textPrimary),
-                ),
-                onTap: () => Navigator.of(context).pop(min),
+                title: Text('$min minutes',
+                    style: const TextStyle(color: AppColors.textPrimary)),
+                onTap: () => Navigator.of(context).pop(_SleepChoice.minutes(min)),
               ),
+            ListTile(
+              title: const Text('Until end',
+                  style: TextStyle(color: AppColors.textPrimary)),
+              subtitle: const Text(
+                  'Pause when this video reaches the end',
+                  style: TextStyle(color: AppColors.textSecondary)),
+              onTap: () =>
+                  Navigator.of(context).pop(_SleepChoice.untilEnd()),
+            ),
           ],
         ),
       ),
     );
     if (picked == null) return;
+
     _sleepTimer?.cancel();
-    _sleepMinutesLeft = picked;
-    if (picked > 0) {
-      _sleepTimer = Timer(Duration(minutes: picked), () {
-        _player.pause();
-        _emitSnack('Sleep timer — playback paused. Good night');
-      });
-      _emitSnack('Sleeping in $picked minutes');
-    } else {
-      _emitSnack('Sleep timer off');
+    _sleepTimer = null;
+    _sleepMinutesLeft = 0;
+    _sleepUntilEnd = false;
+
+    switch (picked.kind) {
+      case _SleepChoiceKind.off:
+        _emitSnack('Sleep timer off');
+        break;
+      case _SleepChoiceKind.minutes:
+        final minutes = picked.minutes!;
+        _sleepMinutesLeft = minutes;
+        _sleepTimer = Timer(Duration(minutes: minutes), () {
+          _player.pause();
+          if (mounted) {
+            setState(() {
+              _sleepTimer = null;
+              _sleepMinutesLeft = 0;
+            });
+          }
+          _emitSnack('Sleep timer — playback paused');
+        });
+        _emitSnack('Sleeping in $minutes minutes');
+        break;
+      case _SleepChoiceKind.untilEnd:
+        _sleepUntilEnd = true;
+        _emitSnack('Sleep timer set until end');
+        break;
     }
+    if (mounted) setState(() {});
   }
 
   Future<void> _onMenuAction(_PlayerMenuAction action) async {
@@ -1528,6 +1652,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             if (_controlsVisible && !_locked) ...[
               _TopBar(
                 title: _title,
+                sleepLabel: _sleepLabel,
                 onSettings: _showPlayerSettings,
                 onMenu: (action) => unawaited(_onMenuAction(action)),
               ),
@@ -1563,9 +1688,15 @@ class _PlayerScreenState extends State<PlayerScreen>
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, required this.onSettings, required this.onMenu});
+  const _TopBar({
+    required this.title,
+    required this.sleepLabel,
+    required this.onSettings,
+    required this.onMenu,
+  });
 
   final String title;
+  final String? sleepLabel;
   final VoidCallback onSettings;
   final ValueChanged<_PlayerMenuAction> onMenu;
 
@@ -1597,7 +1728,25 @@ class _TopBar extends StatelessWidget {
               onPressed: () => Navigator.of(context).maybePop(),
             ),
             Expanded(
-              child: _LoopingTitle(title: title),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _LoopingTitle(title: title),
+                  if (sleepLabel != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        sleepLabel!,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
             PopupMenuButton<_PlayerMenuAction>(
               tooltip: 'More',
