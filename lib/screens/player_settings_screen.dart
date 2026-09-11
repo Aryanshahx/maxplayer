@@ -78,7 +78,7 @@ class PlayerSettingsScreen extends StatelessWidget {
               icon: Icons.zoom_out_map_outlined,
               title: 'Two-finger pinch to zoom',
               subtitle:
-                  'Pinch with two fingers to zoom; hold and spread to enlarge. Fullscreen button long-press opens Fit, Crop, Stretch and Fit-width/height.',
+                  'Pinch with two fingers to zoom and resize the video. Use Screen fit for Fit, Crop, Stretch, Fit width, Fit height and 16:9.',
               value: s.pinchZoom,
               onChanged: s.setPinchZoom,
             ),
@@ -315,14 +315,14 @@ class _ToggleRow extends StatelessWidget {
           ),
           const SizedBox(width: 14),
           Expanded(
-            child: Column(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
                         title,
                         style: const TextStyle(
                           color: AppColors.textPrimary,
@@ -330,29 +330,29 @@ class _ToggleRow extends StatelessWidget {
                           height: 1.2,
                         ),
                       ),
-                    ),
-                    if (trailing != null) SizedBox(child: trailing),
-                    const SizedBox(width: 2),
-                    Switch.adaptive(
-                      value: value,
-                      activeThumbColor: AppColors.accent,
-                      activeTrackColor: AppColors.accent.withValues(alpha: 0.45),
-                      onChanged: onChanged,
-                    ),
-                  ],
-                ),
-                if (subtitle != null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6, top: 2),
-                    child: Text(
-                      subtitle!,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12.5,
-                        height: 1.25,
-                      ),
-                    ),
+                      if (subtitle != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3, right: 4),
+                          child: Text(
+                            subtitle!,
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12.5,
+                              height: 1.25,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
+                ),
+                if (trailing != null) SizedBox(child: trailing),
+                const SizedBox(width: 2),
+                Switch.adaptive(
+                  value: value,
+                  activeThumbColor: AppColors.accent,
+                  activeTrackColor: AppColors.accent.withValues(alpha: 0.45),
+                  onChanged: onChanged,
+                ),
               ],
             ),
           ),

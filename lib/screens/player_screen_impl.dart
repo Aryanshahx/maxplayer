@@ -50,7 +50,7 @@ class PlayerScreen extends StatefulWidget {
 }
 
 enum _DragMode { none, brightness, volume, seek, zoom }
-enum _FitMode { fit, crop, stretch, fitWidth, fitHeight }
+enum _FitMode { fit, crop, stretch, fitWidth, fitHeight, sixteenNine }
 
 extension on _FitMode {
   BoxFit get boxFit => switch (this) {
@@ -59,6 +59,7 @@ extension on _FitMode {
         _FitMode.stretch => BoxFit.fill,
         _FitMode.fitWidth => BoxFit.fitWidth,
         _FitMode.fitHeight => BoxFit.fitHeight,
+        _FitMode.sixteenNine => BoxFit.contain,
       };
 
   String get label => switch (this) {
@@ -67,6 +68,7 @@ extension on _FitMode {
         _FitMode.stretch => 'Stretch',
         _FitMode.fitWidth => 'Fit width',
         _FitMode.fitHeight => 'Fit height',
+        _FitMode.sixteenNine => '16:9',
       };
 }
 
@@ -89,6 +91,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Timer? _saveTimer;
   Timer? _flashTimer;
   Timer? _sleepTimer;
+  Timer? _lockedHintTimer;
   VoidCallback? _settingsListener;
 
   late String _title;
@@ -100,7 +103,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _controlsVisible = true;
   bool _boost = false;
   bool _locked = false;
-  bool _fullscreen = false;
   bool _muted = false;
   double _volumePercent = 100;
   _FitMode _fitMode = _FitMode.fit;
@@ -113,6 +115,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   double _volumeStart = 100;
   double _brightnessStart = 0;
   bool _gestureActive = false;
+  bool _lockedHintVisible = false;
   IconData _gestureIcon = Icons.touch_app_rounded;
   String _gestureLabel = '';
   Duration? _seekPreview;
@@ -136,7 +139,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    unawaited(_native.invokeMethod<bool>('startAutoRotate').catchError((_) => false));
     _title = widget.title;
     _currentPath = widget.path;
     _queueIndex = widget.queueStart;
@@ -151,9 +154,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         _hideTimer?.cancel();
       }
       _applyPerformanceMode();
-      if (_settings.autoRotate) {
-        unawaited(SystemChrome.setPreferredOrientations(DeviceOrientation.values));
-      }
+      unawaited(_native.invokeMethod<bool>(
+        _settings.autoRotate ? 'startAutoRotate' : 'stopAutoRotate',
+      ).catchError((_) => false));
     };
     _settings.addListener(_settingsListener!);
     unawaited(_settings.load());
@@ -359,10 +362,23 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
+  void _onTap() {
+    if (_locked) {
+      _lockedHintTimer?.cancel();
+      setState(() => _lockedHintVisible = true);
+      _lockedHintTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _lockedHintVisible = false);
+      });
+      return;
+    }
+    _toggleControls();
+  }
+
   void _onDoubleTap(TapDownDetails details) {
     if (_locked) {
       setState(() {
         _locked = false;
+        _lockedHintVisible = false;
         _controlsVisible = true;
       });
       _scheduleHide();
@@ -391,6 +407,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _flash(int seconds) {
     _flashTimer?.cancel();
+    _lockedHintTimer?.cancel();
     setState(() {
       _seekFlash = seconds;
       _controlsVisible = true;
@@ -412,17 +429,23 @@ class _PlayerScreenState extends State<PlayerScreen>
     final v = value.clamp(0.0, maxVolume).toDouble();
     _volumePercent = v;
     _muted = false;
-    if (v <= 100) {
-      await _player.setVolume(v);
+    try {
+      // Do not use MPV's audio-filter chain for volume boost. Invalid/unsupported
+      // filter strings can make MPV report that the video cannot be played.
+      // MPV's volume-max property safely allows software volume above 100%.
+      await _mpvSet('volume-max', maxVolume.round().toString());
+      if (v <= 100) {
+        await _player.setVolume(v);
+      } else {
+        await _mpvSet('volume', v.toStringAsFixed(1));
+      }
       await _mpvSet('af', combineAudioFilters(_bands,
           dialogueBoost: _dialogueBoost));
-    } else {
-      await _player.setVolume(100);
-      final gain = v / 100.0;
-      final base = combineAudioFilters(_bands,
-          dialogueBoost: _dialogueBoost);
-      final gainFilter = base.isEmpty ? 'lavfi=[volume=$gain]' : '$base,volume=$gain';
-      await _mpvSet('af', gainFilter);
+    } catch (e) {
+      CrashLog.error('player.volume_failed', e, {'value': v});
+      if (v <= 100) {
+        await _player.setVolume(v);
+      }
     }
     if (mounted) setState(() {});
   }
@@ -489,12 +512,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (mounted) setState(() {});
   }
 
-  void _resetFit() {
-    setState(() {
-      _fitMode = _FitMode.fit;
-      _zoom = 1;
-    });
-  }
 
   void _showFitMenu() {
     showModalBottomSheet<_FitMode>(
@@ -639,7 +656,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       _player.seek(_seekPreview!);
     }
     if (_drag == _DragMode.zoom && _zoom < .9) {
-      _resetFit();
+      setState(() {
+        _zoom = 1;
+        _fitMode = _FitMode.fit;
+      });
     }
     setState(() {
       _drag = _DragMode.none;
@@ -1182,16 +1202,25 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _enterPip() async {
+    if (!_ready || _failed) {
+      _emitSnack('Start the video before using Picture-in-Picture');
+      return;
+    }
     try {
       final video = _player.state.videoParams;
+      setState(() => _controlsVisible = false);
       final ok = await _native.invokeMethod<bool>('enterPip', {
         'w': video.dw ?? 16,
         'h': video.dh ?? 9,
       });
-      if (ok != true) _emitSnack('Picture-in-Picture not available');
+      if (ok != true && mounted) {
+        setState(() => _controlsVisible = true);
+        _emitSnack('Picture-in-Picture is not available on this device');
+      }
     } catch (e) {
       CrashLog.error('pip.failed', e);
-      _emitSnack('Picture-in-Picture not supported on this device');
+      if (mounted) setState(() => _controlsVisible = true);
+      _emitSnack('Picture-in-Picture could not be started');
     }
   }
 
@@ -1280,17 +1309,69 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  Future<void> _toggleFullscreen() async {
-    _fullscreen = !_fullscreen;
-    setState(() {});
-    if (_fullscreen) {
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-    } else {
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+  Future<void> _showPlaylistSheet() async {
+    if (widget.queueIds.isEmpty) {
+      _emitSnack('Playlist is empty');
+      return;
     }
-    _resetFit();
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: .55,
+          minChildSize: .3,
+          maxChildSize: .9,
+          builder: (context, controller) => Column(
+            children: [
+              _SheetHandle(),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(18, 4, 18, 10),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Playlist', style: TextStyle(
+                    color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  controller: controller,
+                  itemCount: widget.queueIds.length,
+                  itemBuilder: (context, index) => ListTile(
+                    leading: CircleAvatar(
+                      radius: 17,
+                      backgroundColor: AppColors.surfaceAlt,
+                      child: Text('${index + 1}', style: const TextStyle(color: AppColors.textSecondary)),
+                    ),
+                    title: FutureBuilder<AssetEntity?>(
+                      future: AssetEntity.fromId(widget.queueIds[index]),
+                      builder: (context, snapshot) => Text(
+                        snapshot.data?.title ?? 'Video ${index + 1}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: AppColors.textPrimary)),
+                    ),
+                    trailing: index == _queueIndex
+                        ? Icon(Icons.play_arrow_rounded, color: AppColors.accent)
+                        : null,
+                    onTap: () async {
+                      Navigator.of(sheetContext).pop();
+                      if (index == _queueIndex) return;
+                      _queueIndex = index;
+                      await _openQueueIndex();
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _rotateOrientation() async {
@@ -1329,7 +1410,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     unawaited(_savePosition());
     unawaited(_player.dispose());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    unawaited(_native.invokeMethod<bool>('stopAutoRotate').catchError((_) => false));
     super.dispose();
   }
 
@@ -1347,7 +1428,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       backgroundColor: Colors.black,
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: _toggleControls,
+        onTap: _onTap,
         onDoubleTapDown: _onDoubleTap,
         onLongPressStart: (_) => _setBoost(true),
         onLongPressEnd: (_) => _setBoost(false),
@@ -1365,8 +1446,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   child: Video(
                     controller: _controller,
                     fit: _fitMode.boxFit,
-                    aspectRatio: _fitMode == _FitMode.fit ? null :
-                        (_fitMode == _FitMode.stretch ? null : 16 / 9),
+                    aspectRatio: _fitMode == _FitMode.sixteenNine ? 16 / 9 : null,
                     controls: NoVideoControls,
                   ),
                 ),
@@ -1404,18 +1484,30 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ),
               ),
             if (_boost)
-              const Align(alignment: Alignment(0, -.55), child: _SpeedBadge()),
-            if (_locked)
               Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: _EdgeButton(
-                    icon: Icons.lock_rounded,
-                    onTap: () {},
-                  ),
+                alignment: const Alignment(0, -.72),
+                child: _GesturePill(
+                  icon: Icons.speed_rounded,
+                  label: '${_settings.longPressRate.toStringAsFixed(2)}x',
                 ),
               ),
+            if (_locked) ...[
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: _EdgeButton(icon: Icons.lock_rounded, onTap: () {}),
+                ),
+              ),
+              if (_lockedHintVisible)
+                const Align(
+                  alignment: Alignment.center,
+                  child: _GesturePill(
+                    icon: Icons.lock_open_rounded,
+                    label: 'Double tap to unlock',
+                  ),
+                ),
+            ],
             if (_controlsVisible && !_locked) ...[
               _TopBar(
                 title: _title,
@@ -1425,7 +1517,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               _BottomBar(
                 player: _player,
                 onTrackSheet: _showTrackSheet,
-                onFullscreen: _toggleFullscreen,
+                onPlaylist: _showPlaylistSheet,
                 onRotate: _rotateOrientation,
                 onFit: _showFitMenu,
                 onMute: _toggleMute,
@@ -1437,7 +1529,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
               if (_settings.screenLock)
                 Positioned(
-                  left: 8,
+                  right: 6,
                   top: MediaQuery.of(context).size.height * .34,
                   child: _EdgeButton(
                     icon: Icons.lock_outline_rounded,
@@ -1561,7 +1653,7 @@ class _BottomBar extends StatefulWidget {
   const _BottomBar({
     required this.player,
     required this.onTrackSheet,
-    required this.onFullscreen,
+    required this.onPlaylist,
     required this.onRotate,
     required this.onFit,
     required this.onMute,
@@ -1574,7 +1666,7 @@ class _BottomBar extends StatefulWidget {
 
   final Player player;
   final VoidCallback onTrackSheet;
-  final VoidCallback onFullscreen;
+  final VoidCallback onPlaylist;
   final VoidCallback onRotate;
   final VoidCallback onFit;
   final VoidCallback onMute;
@@ -1738,8 +1830,8 @@ class _BottomBarState extends State<_BottomBar> {
                         ),
                         const Spacer(),
                         IconButton(
-                          tooltip: 'Subtitles, audio & video options',
-                          icon: const Icon(Icons.subtitles_rounded,
+                          tooltip: 'Track sheet',
+                          icon: const Icon(Icons.tune_rounded,
                               color: Colors.white, size: 28),
                           onPressed: widget.onTrackSheet,
                         ),
@@ -1750,10 +1842,10 @@ class _BottomBarState extends State<_BottomBar> {
                           onPressed: widget.onFit,
                         ),
                         IconButton(
-                          tooltip: 'Fullscreen',
-                          icon: const Icon(Icons.fullscreen_rounded,
-                              color: Colors.white, size: 30),
-                          onPressed: widget.onFullscreen,
+                          tooltip: 'Playlist',
+                          icon: const Icon(Icons.playlist_play_rounded,
+                              color: Colors.white, size: 28),
+                          onPressed: widget.onPlaylist,
                         ),
                         IconButton(
                           tooltip: 'Rotate',
@@ -1874,23 +1966,6 @@ class _InfoPill extends StatelessWidget {
                   color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
         ],
       ),
-    );
-  }
-}
-
-class _SpeedBadge extends StatelessWidget {
-  const _SpeedBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .88),
-          borderRadius: BorderRadius.circular(20)),
-      child: const Text('2×',
-          style: TextStyle(
-              color: Colors.black, fontSize: 16, fontWeight: FontWeight.w800)),
     );
   }
 }
