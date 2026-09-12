@@ -13,6 +13,7 @@ import 'package:maxplayer/utils/resume.dart';
 import 'package:maxplayer/utils/settings.dart' show accentPalette, defaultAccentIndex;
 import 'package:maxplayer/utils/sort.dart';
 import 'package:maxplayer/utils/tmdb.dart';
+import 'package:maxplayer/utils/video_zoom.dart';
 
 void main() {
   group('formatDuration', () {
@@ -103,6 +104,67 @@ void main() {
       }
       expect(m, FitMode.fit);
       expect(seen.length, 6);
+    });
+  });
+
+  group('video_zoom (Drop 2 two-finger gestures)', () {
+    test('clampVideoZoom pins 1.0..4.0', () {
+      expect(clampVideoZoom(0.5), 1.0);
+      expect(clampVideoZoom(1.0), 1.0);
+      expect(clampVideoZoom(4.0), 4.0);
+      expect(clampVideoZoom(9.0), 4.0);
+      expect(clampVideoZoom(2.5), 2.5);
+    });
+
+    test('fit ladder: scale 1.0 keeps the base fit', () {
+      expect(fitLadderPosFor(basePos: 2, scale: 1.0), 2.0);
+    });
+
+    test('fit ladder: one spread step climbs one fit', () {
+      final pos = fitLadderPosFor(basePos: 0, scale: kFitLadderStepScale);
+      expect(wrapFitLadderPos(pos, 6), 1); // Fit -> Crop
+    });
+
+    test('fit ladder: pinch inward climbs down a fit', () {
+      final pos = fitLadderPosFor(basePos: 2, scale: 1 / kFitLadderStepScale);
+      expect(wrapFitLadderPos(pos, 6), 1); // Stretch -> Crop
+    });
+
+    test('wrapFitLadderPos wraps Original -> Fit and Fit -> Original', () {
+      expect(wrapFitLadderPos(5, 6), 5);
+      expect(wrapFitLadderPos(6, 6), 0); // past Original loops to Fit
+      expect(wrapFitLadderPos(7, 6), 1);
+      expect(wrapFitLadderPos(-1, 6), 5); // behind Fit loops to Original
+      expect(wrapFitLadderPos(-6, 6), 0);
+    });
+
+    test('free zoom clamps to 1x..4x', () {
+      expect(freeZoomFor(baseZoom: 1.0, scale: 1.0), 1.0);
+      expect(freeZoomFor(baseZoom: 1.0, scale: 2.0), 2.0);
+      expect(freeZoomFor(baseZoom: 2.0, scale: 3.0), 4.0); // clamped
+      expect(freeZoomFor(baseZoom: 1.0, scale: 0.5), 1.0); // clamped
+    });
+
+    test('two-finger tap reset: quick, no pinch, no travel', () {
+      expect(
+        isTwoFingerTapReset(durationMs: 200, travelPx: 10, scaled: false),
+        isTrue,
+      );
+    });
+
+    test('two-finger tap reset rejects real pinches', () {
+      expect(
+        isTwoFingerTapReset(durationMs: 200, travelPx: 10, scaled: true),
+        isFalse,
+      );
+      expect(
+        isTwoFingerTapReset(durationMs: 900, travelPx: 10, scaled: false),
+        isFalse,
+      );
+      expect(
+        isTwoFingerTapReset(durationMs: 200, travelPx: 60, scaled: false),
+        isFalse,
+      );
     });
   });
 

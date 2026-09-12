@@ -3,361 +3,319 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../utils/player_settings.dart';
 
-String _speedLabel(double rate) =>
-    '${rate.toStringAsFixed(rate % 1 == 0 ? 0 : 2)}x';
+/// "Player settings" sheet - customize every gesture and playback behavior,
+/// ported 1:1 from the old MaxPlayer sheet (sections: Gesture controls,
+/// Playback, Player buttons, Sound & subtitles). Changes save immediately
+/// and are picked up by the open player.
+class PlayerSettingsSheet extends StatefulWidget {
+  const PlayerSettingsSheet({super.key});
 
-/// Full player-behaviour settings page opened by the gear icon in the player.
-/// The layout intentionally follows the compact reference: grouped sections,
-/// muted descriptions, right-side dropdowns and large Material switches.
-class PlayerSettingsScreen extends StatelessWidget {
-  const PlayerSettingsScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final s = PlayerSettings.instance;
-    return Scaffold(
-      backgroundColor: AppColors.surfaceAlt,
-      appBar: AppBar(
-        backgroundColor: AppColors.surfaceAlt,
-        toolbarHeight: 62,
-        titleSpacing: 0,
-        title: const Text('Player settings',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
-        leading: const BackButton(),
-      ),
-      body: ListenableBuilder(
-        listenable: s,
-        builder: (context, _) => ListView(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 36),
-          children: [
-            const _Section('Gesture controls'),
-            _ToggleRow(
-              icon: Icons.touch_app_outlined,
-              title: 'Double-tap sides to seek',
-              subtitle: 'Double-tap left/right edge',
-              value: s.doubleTapSides,
-              trailing: _ChoiceText(
-                text: '${s.seekStep}s',
-                onTap: () => _pickSeekStep(context, s),
-              ),
-              onChanged: s.setDoubleTapSides,
-            ),
-            _ToggleRow(
-              icon: Icons.play_circle_outline_rounded,
-              title: 'Double-tap middle to play/pause',
-              value: s.doubleTapMiddle,
-              onChanged: s.setDoubleTapMiddle,
-            ),
-            _ToggleRow(
-              icon: Icons.volume_up_outlined,
-              title: 'Swipe right side for volume',
-              value: s.swipeVolume,
-              onChanged: s.setSwipeVolume,
-            ),
-            _ToggleRow(
-              icon: Icons.brightness_6_outlined,
-              title: 'Swipe left side for brightness',
-              value: s.swipeBrightness,
-              onChanged: s.setSwipeBrightness,
-            ),
-            _ToggleRow(
-              icon: Icons.swap_horizontal_circle_outlined,
-              title: 'Horizontal swipe to seek',
-              subtitle: 'Drag sideways anywhere to scrub (±90s per screen)',
-              value: s.horizontalSeek,
-              onChanged: s.setHorizontalSeek,
-            ),
-            _ToggleRow(
-              icon: Icons.screen_rotation_alt_rounded,
-              title: 'Auto rotate player',
-              subtitle: 'Allow portrait and landscape automatically',
-              value: s.autoRotate,
-              onChanged: s.setAutoRotate,
-            ),
-            _ToggleRow(
-              icon: Icons.zoom_out_map_outlined,
-              title: 'Two-finger pinch to zoom',
-              subtitle:
-                  'Pinch with two fingers to zoom; hold and spread to enlarge. Fullscreen button long-press opens Fit, Crop, Stretch and Fit-width/height.',
-              value: s.pinchZoom,
-              onChanged: s.setPinchZoom,
-            ),
-            _ToggleRow(
-              icon: Icons.fast_forward_rounded,
-              title: 'Long-press to speed up',
-              subtitle: 'Hold finger on the video',
-              value: s.longPressSpeed,
-              trailing: _ChoiceText(
-                text: _speedLabel(s.longPressRate),
-                onTap: () => _pickSpeed(context, s),
-              ),
-              onChanged: s.setLongPressSpeed,
-            ),
-            const _Section('Playback'),
-            _ToggleRow(
-              icon: Icons.visibility_off_outlined,
-              title: 'Auto-hide controls',
-              subtitle: 'Hide during playback after inactivity',
-              value: s.autoHide,
-              trailing: _ChoiceText(
-                text: '${s.autoHideDelay}s',
-                onTap: () => _pickAutoHide(context, s),
-              ),
-              onChanged: s.setAutoHide,
-            ),
-            _ToggleRow(
-              icon: Icons.history_rounded,
-              title: 'Resume playback',
-              subtitle: 'Continue videos where you left off',
-              value: s.resume,
-              onChanged: s.setResume,
-            ),
-            const _Section('Player buttons'),
-            _ToggleRow(
-              icon: Icons.lock_outline_rounded,
-              title: 'Screen lock (kids mode)',
-              subtitle: 'Small edge lock; double-tap the screen to unlock',
-              value: s.screenLock,
-              onChanged: s.setScreenLock,
-            ),
-            const _Section('Sound & subtitles'),
-            _ToggleRow(
-              icon: Icons.volume_up_rounded,
-              title: 'Volume boost up to 200%',
-              subtitle: 'ON by default - swipe continues past 100% for quiet videos',
-              value: s.volumeBoost,
-              onChanged: s.setVolumeBoost,
-            ),
-            _ToggleRow(
-              icon: Icons.headphones_outlined,
-              title: 'Background audio playback',
-              subtitle: 'Keep playing audio when screen is turned off or app is in background',
-              value: s.backgroundAudio,
-              onChanged: s.setBackgroundAudio,
-            ),
-            _ToggleRow(
-              icon: Icons.speed_rounded,
-              title: 'Performance mode (low-end)',
-              subtitle: 'Drops late frames instead of lagging, auto-detects low-RAM phones when left enabled',
-              value: s.performanceMode,
-              onChanged: s.setPerformanceMode,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pickSeekStep(BuildContext context, PlayerSettings s) async {
-    final value = await _pick<int>(
+  static Future<void> show(BuildContext context) {
+    return showModalBottomSheet<void>(
       context: context,
-      title: 'Seek amount',
-      values: PlayerSettings.seekSteps,
-      selected: s.seekStep,
-      label: (v) => '${v}s',
-    );
-    if (value != null) await s.setSeekStep(value);
-  }
-
-  Future<void> _pickSpeed(BuildContext context, PlayerSettings s) async {
-    final value = await _pick<double>(
-      context: context,
-      title: 'Long-press speed',
-      values: PlayerSettings.speedRates,
-      selected: s.longPressRate,
-      label: _speedLabel,
-    );
-    if (value != null) await s.setLongPressRate(value);
-  }
-
-  Future<void> _pickAutoHide(BuildContext context, PlayerSettings s) async {
-    final value = await _pick<int>(
-      context: context,
-      title: 'Auto-hide delay',
-      values: PlayerSettings.autoHideSeconds,
-      selected: s.autoHideDelay,
-      label: (v) => '${v}s',
-    );
-    if (value != null) await s.setAutoHideDelay(value);
-  }
-
-  Future<T?> _pick<T>({
-    required BuildContext context,
-    required String title,
-    required List<T> values,
-    required T selected,
-    required String Function(T value) label,
-  }) {
-    return showModalBottomSheet<T>(
-      context: context,
+      isScrollControlled: true,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
+      builder: (_) => const PlayerSettingsSheet(),
+    );
+  }
+
+  @override
+  State<PlayerSettingsSheet> createState() => _PlayerSettingsSheetState();
+}
+
+class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final s = PlayerSettings.instance;
+    await s.load();
+    if (!mounted) return;
+    setState(() => _loaded = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = PlayerSettings.instance;
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: ListenableBuilder(
+          listenable: s,
+          builder: (context, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 10),
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
-            ),
-            for (final value in values)
-              ListTile(
-                title: Text(
-                  label(value),
-                  style: const TextStyle(color: AppColors.textPrimary),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+                child: Text(
+                  'Player settings',
+                  style: TextStyle(
+                    color: AppColors.accent,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                trailing: value == selected
-                    ? Icon(Icons.check_rounded, color: AppColors.accent)
-                    : null,
-                onTap: () => Navigator.of(context).pop(value),
               ),
-            const SizedBox(height: 8),
-          ],
+              if (!_loaded)
+                Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppColors.accent),
+                  ),
+                )
+              else ...[
+                const _SectionHeader('Gesture controls'),
+                _SwitchTile(
+                  icon: Icons.touch_app_outlined,
+                  label: 'Double-tap sides to seek',
+                  subtitle: 'Double-tap left/right edge',
+                  value: s.doubleTapSides,
+                  onChanged: s.setDoubleTapSides,
+                  trailing: s.doubleTapSides
+                      ? _MiniDropdown<int>(
+                          value: s.seekStep,
+                          entries: const {5: '5s', 10: '10s', 15: '15s', 30: '30s'},
+                          onChanged: (v) => s.setSeekStep(v ?? 10),
+                        )
+                      : null,
+                ),
+                _SwitchTile(
+                  icon: Icons.play_circle_outline,
+                  label: 'Double-tap middle to play/pause',
+                  value: s.doubleTapMiddle,
+                  onChanged: s.setDoubleTapMiddle,
+                ),
+                _SwitchTile(
+                  icon: Icons.volume_up_outlined,
+                  label: 'Swipe right side for volume',
+                  value: s.swipeVolume,
+                  onChanged: s.setSwipeVolume,
+                ),
+                _SwitchTile(
+                  icon: Icons.brightness_6_outlined,
+                  label: 'Swipe left side for brightness',
+                  value: s.swipeBrightness,
+                  onChanged: s.setSwipeBrightness,
+                ),
+                _SwitchTile(
+                  icon: Icons.swap_horizontal_circle_outlined,
+                  label: 'Horizontal swipe to seek',
+                  subtitle: 'Drag sideways anywhere to scrub (±90s per screen)',
+                  value: s.horizontalSeek,
+                  onChanged: s.setHorizontalSeek,
+                ),
+                _SwitchTile(
+                  icon: Icons.pinch_outlined,
+                  label: 'Two-finger pinch to zoom',
+                  subtitle: 'OFF (default): spread 2 fingers = Fit, Crop, '
+                      'Stretch, 16:9... then keep spreading to zoom in. '
+                      'ON: pinch zooms straight away. 2-finger tap = Fit.',
+                  value: s.pinchZoom,
+                  onChanged: s.setPinchZoom,
+                ),
+                _SwitchTile(
+                  icon: Icons.fast_forward,
+                  label: 'Long-press to speed up',
+                  subtitle: 'Hold finger on the video',
+                  value: s.longPressSpeed,
+                  onChanged: s.setLongPressSpeed,
+                  trailing: s.longPressSpeed
+                      ? _MiniDropdown<double>(
+                          value: s.longPressRate,
+                          entries: {
+                            1.5: '1.5x',
+                            2.0: '2x',
+                            2.5: '2.5x',
+                            3.0: '3x',
+                          },
+                          onChanged: (v) => s.setLongPressRate(v ?? 2.0),
+                        )
+                      : null,
+                ),
+                const _SectionHeader('Playback'),
+                _SwitchTile(
+                  icon: Icons.timer_off_outlined,
+                  label: 'Auto-hide controls',
+                  subtitle: 'Hide during playback after inactivity',
+                  value: s.autoHide,
+                  onChanged: s.setAutoHide,
+                  trailing: s.autoHide
+                      ? _MiniDropdown<int>(
+                          value: s.autoHideDelay,
+                          entries: const {3: '3s', 4: '4s', 5: '5s', 6: '6s'},
+                          onChanged: (v) => s.setAutoHideDelay(v ?? 4),
+                        )
+                      : null,
+                ),
+                _SwitchTile(
+                  icon: Icons.history,
+                  label: 'Resume playback',
+                  subtitle: 'Continue videos where you left off',
+                  value: s.resume,
+                  onChanged: s.setResume,
+                ),
+                const _SectionHeader('Player buttons'),
+                _SwitchTile(
+                  icon: Icons.lock_outline,
+                  label: 'Screen lock (kids mode)',
+                  subtitle: 'Lock button on the video edge locks every touch',
+                  value: s.screenLock,
+                  onChanged: s.setScreenLock,
+                ),
+                const _SectionHeader('Sound & subtitles'),
+                _SwitchTile(
+                  icon: Icons.volume_up,
+                  label: 'Volume boost up to 200%',
+                  subtitle: 'ON by default - the swipe continues past 100% '
+                      'for quiet videos',
+                  value: s.volumeBoost,
+                  onChanged: s.setVolumeBoost,
+                ),
+                _SwitchTile(
+                  icon: Icons.headset_outlined,
+                  label: 'Background audio playback',
+                  subtitle: 'Keep playing audio when screen is turned off '
+                      'or app is in background',
+                  value: s.backgroundAudio,
+                  onChanged: s.setBackgroundAudio,
+                ),
+                _SwitchTile(
+                  icon: Icons.speed_outlined,
+                  label: 'Performance mode (low-end)',
+                  subtitle: 'Drops late frames instead of lagging; '
+                      'auto-detects low-RAM phones when left enabled',
+                  value: s.performanceMode != 'off',
+                  onChanged: (v) => s.setPerformanceMode(v ? 'on' : 'off'),
+                ),
+              ],
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _Section extends StatelessWidget {
-  const _Section(this.label);
-
-  final String label;
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader(this.title);
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 7),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
       child: Text(
-        label,
-        style: const TextStyle(
-          color: AppColors.textPrimary,
-          fontSize: 16,
-          fontWeight: FontWeight.w800,
+        title,
+        style: TextStyle(
+          color: AppColors.accent,
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );
   }
 }
 
-class _ChoiceText extends StatelessWidget {
-  const _ChoiceText({required this.text, required this.onTap});
-
-  final String text;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              text,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(width: 4),
-            const Icon(Icons.arrow_drop_down_rounded,
-                color: AppColors.textSecondary),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ToggleRow extends StatelessWidget {
-  const _ToggleRow({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    this.trailing,
-    required this.value,
-    required this.onChanged,
-  });
-
+class _SwitchTile extends StatelessWidget {
   final IconData icon;
-  final String title;
+  final String label;
   final String? subtitle;
-  final Widget? trailing;
   final bool value;
   final ValueChanged<bool> onChanged;
+  final Widget? trailing;
+
+  const _SwitchTile({
+    required this.icon,
+    required this.label,
+    this.subtitle,
+    required this.value,
+    required this.onChanged,
+    this.trailing,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Icon(icon, color: AppColors.textSecondary, size: 28),
-          ),
-          const SizedBox(width: 14),
+          Icon(icon, color: Colors.white70, size: 22),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 15.5,
-                          height: 1.2,
-                        ),
-                      ),
-                    ),
-                    if (trailing != null) SizedBox(child: trailing),
-                    const SizedBox(width: 2),
-                    Switch.adaptive(
-                      value: value,
-                      activeThumbColor: AppColors.accent,
-                      activeTrackColor: AppColors.accent.withValues(alpha: 0.45),
-                      onChanged: onChanged,
-                    ),
-                  ],
+                Text(
+                  label,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
                 ),
                 if (subtitle != null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6, top: 2),
-                    child: Text(
-                      subtitle!,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12.5,
-                        height: 1.25,
-                      ),
-                    ),
+                  Text(
+                    subtitle!,
+                    style: const TextStyle(color: Colors.white38, fontSize: 12),
                   ),
               ],
             ),
           ),
+          ?trailing,
+          Switch.adaptive(
+            value: value,
+            activeThumbColor: AppColors.accent,
+            onChanged: onChanged,
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _MiniDropdown<T> extends StatelessWidget {
+  final T value;
+  final Map<T, String> entries;
+  final ValueChanged<T?> onChanged;
+
+  const _MiniDropdown({
+    required this.value,
+    required this.entries,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButton<T>(
+      value: value,
+      dropdownColor: const Color(0xFF26262f),
+      underline: const SizedBox.shrink(),
+      isDense: true,
+      style: const TextStyle(color: Colors.white70, fontSize: 13),
+      items: [
+        for (final e in entries.entries)
+          DropdownMenuItem(value: e.key, child: Text(e.value)),
+      ],
+      onChanged: onChanged,
     );
   }
 }

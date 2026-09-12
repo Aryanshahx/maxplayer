@@ -9,9 +9,10 @@ class PlayerSettings extends ChangeNotifier {
 
   static final PlayerSettings instance = PlayerSettings._();
 
-  static const seekSteps = <int>[5, 10, 15, 30, 60];
-  static const speedRates = <double>[1.25, 1.5, 2.0, 2.5, 3.0];
-  static const autoHideSeconds = <int>[2, 3, 4, 5, 8, 10];
+  static const seekSteps = <int>[5, 10, 15, 30];
+  static const speedRates = <double>[1.5, 2.0, 2.5, 3.0];
+  static const autoHideSeconds = <int>[3, 4, 5, 6];
+  static const performanceModes = <String>['auto', 'on', 'off'];
 
   static const _kDoubleTapSides = 'player.doubleTapSides';
   static const _kDoubleTapMiddle = 'player.doubleTapMiddle';
@@ -19,8 +20,8 @@ class PlayerSettings extends ChangeNotifier {
   static const _kSwipeVolume = 'player.swipeVolume';
   static const _kSwipeBrightness = 'player.swipeBrightness';
   static const _kHorizontalSeek = 'player.horizontalSeek';
-  static const _kPinchZoom = 'player.pinchZoom.v2';
-  static const _kAutoRotate = 'player.autoRotate';
+  static const _kPinchZoom = 'player.pinchZoom.v3';
+  static const _kDefaultFit = 'player.defaultFit';
   static const _kLongPressSpeed = 'player.longPressSpeed';
   static const _kLongPressRate = 'player.longPressRate';
   static const _kAutoHide = 'player.autoHide';
@@ -37,8 +38,12 @@ class PlayerSettings extends ChangeNotifier {
   bool swipeVolume = true;
   bool swipeBrightness = true;
   bool horizontalSeek = true;
-  bool pinchZoom = true;
-  bool autoRotate = true;
+  bool pinchZoom = false;
+
+  /// Which of the six fit modes (Fit/Crop/Stretch/16:9/4:3/Original) the
+  /// player starts in, and what a two-finger tap snaps back to. 0 = Fit.
+  int defaultFit = 0;
+
   bool longPressSpeed = true;
   double longPressRate = 2.0;
   bool autoHide = true;
@@ -47,7 +52,9 @@ class PlayerSettings extends ChangeNotifier {
   bool screenLock = true;
   bool volumeBoost = true;
   bool backgroundAudio = true;
-  bool performanceMode = false;
+
+  /// VLC-style low-end profile: 'auto' (default) | 'on' | 'off'.
+  String performanceMode = 'auto';
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
@@ -58,8 +65,9 @@ class PlayerSettings extends ChangeNotifier {
     swipeVolume = p.getBool(_kSwipeVolume) ?? true;
     swipeBrightness = p.getBool(_kSwipeBrightness) ?? true;
     horizontalSeek = p.getBool(_kHorizontalSeek) ?? true;
-    pinchZoom = p.getBool(_kPinchZoom) ?? true;
-    autoRotate = p.getBool(_kAutoRotate) ?? true;
+    pinchZoom = p.getBool(_kPinchZoom) ?? false;
+    final storedFit = p.getInt(_kDefaultFit);
+    defaultFit = storedFit != null ? storedFit.clamp(0, 5) : 0;
     longPressSpeed = p.getBool(_kLongPressSpeed) ?? true;
     final storedRate = p.getDouble(_kLongPressRate);
     longPressRate = speedRates.contains(storedRate) ? storedRate! : 2.0;
@@ -70,7 +78,9 @@ class PlayerSettings extends ChangeNotifier {
     screenLock = p.getBool(_kScreenLock) ?? true;
     volumeBoost = p.getBool(_kVolumeBoost) ?? true;
     backgroundAudio = p.getBool(_kBackgroundAudio) ?? true;
-    performanceMode = p.getBool(_kPerformanceMode) ?? false;
+    final storedPerf = p.getString(_kPerformanceMode);
+    performanceMode =
+        performanceModes.contains(storedPerf) ? storedPerf! : 'auto';
     notifyListeners();
   }
 
@@ -110,9 +120,10 @@ class PlayerSettings extends ChangeNotifier {
     await _saveBool(_kPinchZoom, v);
   }
 
-  Future<void> setAutoRotate(bool v) async {
-    autoRotate = v;
-    await _saveBool(_kAutoRotate, v);
+  Future<void> setDefaultFit(int v) async {
+    defaultFit = v.clamp(0, 5);
+    notifyListeners();
+    await _save((p) => p.setInt(_kDefaultFit, defaultFit));
   }
 
   Future<void> setLongPressSpeed(bool v) async {
@@ -157,9 +168,10 @@ class PlayerSettings extends ChangeNotifier {
     await _saveBool(_kBackgroundAudio, v);
   }
 
-  Future<void> setPerformanceMode(bool v) async {
-    performanceMode = v;
-    await _saveBool(_kPerformanceMode, v);
+  Future<void> setPerformanceMode(String v) async {
+    performanceMode = performanceModes.contains(v) ? v : 'auto';
+    notifyListeners();
+    await _save((p) => p.setString(_kPerformanceMode, performanceMode));
   }
 
   Future<void> _saveBool(String key, bool value) async {
