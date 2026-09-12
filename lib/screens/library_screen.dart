@@ -9,9 +9,10 @@ import '../utils/crash_log.dart';
 import '../utils/local_store.dart';
 import '../utils/settings.dart';
 import '../utils/sort.dart';
-import '../widgets/discover_section.dart';
+import '../widgets/discover_banner.dart';
 import '../widgets/video_grid.dart';
 import 'cloud_storage_screen.dart';
+import 'discover_screen.dart';
 import 'display_settings_screen.dart';
 import 'file_manager_screen.dart';
 import 'folders_screen.dart';
@@ -271,7 +272,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildHeader(),
-        const DiscoverSection(),
+        DiscoverBanner(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => DiscoverScreen(videos: videos),
+            ),
+          ),
+        ),
         _buildTiles(),
         const SizedBox(height: 4),
         Expanded(

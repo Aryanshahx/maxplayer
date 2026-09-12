@@ -13,7 +13,11 @@ import 'package:maxplayer/utils/resume.dart';
 import 'package:maxplayer/utils/settings.dart' show accentPalette, defaultAccentIndex;
 import 'package:maxplayer/utils/sort.dart';
 import 'package:maxplayer/utils/tmdb.dart';
+import 'package:maxplayer/utils/tmdb_image.dart';
 import 'package:maxplayer/utils/video_zoom.dart';
+import 'package:maxplayer/services/recommendations.dart';
+import 'package:maxplayer/services/ai_suggest.dart';
+import 'package:maxplayer/utils/movie_match.dart';
 
 void main() {
   group('formatDuration', () {
@@ -297,17 +301,17 @@ void main() {
       final movies = parseTrending(sample);
       expect(movies.length, 2);
       expect(movies[0].title, 'Cool Movie');
-      expect(movies[0].year, '2026');
+      expect(movies[0].year, 2026);
       expect(movies[0].rating, 8.4);
-      expect(movies[0].posterUrl,
+      expect(tmdbPosterUrl(movies[0].posterPath),
           'https://image.tmdb.org/t/p/w342/abc.jpg');
     });
 
     test('falls back to name, empty poster ok', () {
       final movies = parseTrending(sample);
       expect(movies[1].title, 'Show Only Name');
-      expect(movies[1].posterUrl, '');
-      expect(movies[1].year, '');
+      expect(movies[1].posterPath, isNull);
+      expect(movies[1].year, isNull);
     });
   });
 
@@ -388,66 +392,166 @@ plain-list-url.mp4
     });
   });
 
-  group('TMDB v0.9 deep parsers', () {
-    test('parseMovieDetail maps all fields + runtime label', () {
+  group('TMDB deep parsers (Discover port)', () {
+    test('parseTmdbDetail fills trailer key via pickTrailerKey', () {
+      const d = '{"id":1,"title":"Spider","release_date":"2026-07-29",'
+          '"vote_average":7.9,"videos":{"results":['
+          '{"site":"YouTube","type":"Trailer","official":true,"key":"bbb"},'
+          '{"site":"YouTube","type":"Teaser","key":"aaa"}]}}';
+      final m = parseTmdbDetail(d)!;
+      expect(m.title, 'Spider');
+      expect(m.year, 2026);
+      expect(m.trailerKey, 'bbb');
+      expect(m.kind, 'movie');
+    });
+
+    test('parseTmdbExtras maps director, cast, runtime, genres, money', () {
       const d = '''
-      {"id":1,"title":"Spider","original_title":"The Spider",
-       "release_date":"2026-07-29","vote_average":7.9,"vote_count":2555,
-       "runtime":145,"overview":"A tale.","tagline":"A day.",
-       "poster_path":"/p.jpg","backdrop_path":"/b.jpg",
+      {"runtime":145,"vote_count":2555,"status":"Released",
+       "release_date":"2026-07-29","original_title":"The Spider",
        "budget":225000000,"revenue":2408062495,
        "production_companies":[{"name":"Marvel"},{"name":"Pascal"}],
        "production_countries":[{"name":"United States"}],
-       "spoken_languages":[{"english_name":"English"},{"english_name":"Hindi"}],
-       "genres":[{"name":"Action"},{"name":"Adventure"}]}''';
-      final m = parseMovieDetail(d)!;
-      expect(m.title, 'Spider');
-      expect(m.year, '2026');
-      expect(m.runtimeLabel, '2h 25m');
-      expect(m.studios, 'Marvel · Pascal');
-      expect(m.languages, 'English, Hindi');
-      expect(m.backdropUrl, 'https://image.tmdb.org/t/p/w780/b.jpg');
-      expect(m.genres.length, 2);
+       "spoken_languages":[{"english_name":"English"}],
+       "genres":[{"name":"Action"}],
+       "credits":{"cast":[{"name":"Tom","character":"Peter",
+          "profile_path":"/t.jpg"}],
+        "crew":[{"job":"Director","name":"Destin"}]}}''';
+      final e = parseTmdbExtras(d);
+      expect(e.director, 'Destin');
+      expect(e.castMembers.single.name, 'Tom');
+      expect(e.runtimeMinutes, 145);
+      expect(e.genres.single, 'Action');
+      expect(e.budgetUsd, 225000000);
+      expect(e.companies, ['Marvel', 'Pascal']);
+      expect(formatRuntime(e.runtimeMinutes), '2h 25m');
+      expect(formatVoteCount(e.voteCount), '2,555');
     });
 
-    test('parseCredits finds director + cast photo urls', () {
-      const c = '''
-      {"cast":[{"name":"Tom","character":"Peter","profile_path":"/t.jpg"}],
-       "crew":[{"job":"Writer","name":"X"},{"job":"Director","name":"Destin"}]}''';
-      final out = parseCredits(c);
-      expect(out.director, 'Destin');
-      expect(out.cast.single.photoUrl,
-          'https://image.tmdb.org/t/p/w185/t.jpg');
-    });
-
-    test('parseTrailerKey prefers Trailer over teaser', () {
-      const v = '{"results":['
-          '{"site":"YouTube","type":"Teaser","key":"aaa"},'
-          '{"site":"YouTube","type":"Trailer","key":"bbb"}]}';
-      expect(parseTrailerKey(v), 'bbb');
-    });
-
-    test('parseReviews takes rating when present', () {
-      const r = '{"results":[{"author":"Manuel",'
-          '"author_details":{"rating":9.0},"content":"Great!"}]}';
-      final list = parseReviews(r);
-      expect(list.single.ratingText, '9.0 / 10');
+    test('parseTmdbReviews keeps rating + author', () {
+      final r = '{"reviews":{"results":[{"author":"Manuel",'
+          '"author_details":{"rating":9.0},"content":"Great!"}]}}';
+      final list = parseTmdbReviews(r);
+      expect(list.single.rating, 9.0);
       expect(list.single.author, 'Manuel');
+      expect(tmdbRatingText(list.single.rating!), '9.0');
     });
 
-    test('parseBackdrops caps at 3 w780 urls', () {
-      const i = '{"backdrops":[{"file_path":"/1.jpg"},'
-          '{"file_path":"/2.jpg"},{"file_path":"/3.jpg"},'
-          '{"file_path":"/4.jpg"}]}';
-      final list = parseBackdrops(i);
-      expect(list.length, 3);
-      expect(list.first, 'https://image.tmdb.org/t/p/w780/1.jpg');
+    test('parseTmdbScreenshots builds w500 urls', () {
+      const i = '{"images":{"backdrops":[{"file_path":"/1.jpg"},'
+          '{"file_path":"/2.jpg"}]}}';
+      final list = parseTmdbScreenshots(i);
+      expect(list.length, 2);
+      expect(tmdbScreenshotUrl(list.first),
+          'https://image.tmdb.org/t/p/w500/1.jpg');
+    });
+
+    test('parseTmdbSeasons reads per-season ratings', () {
+      const s = '{"seasons":[{"season_number":1,"name":"Season 1",'
+          '"episode_count":8,"air_date":"2020-01-01","vote_average":8.4},'
+          '{"season_number":0,"episode_count":2}]}';
+      final list = parseTmdbSeasons(s);
+      expect(list.length, 2);
+      expect(list[0].rating, 8.4);
+      expect(list[0].year, 2020);
+      expect(list[1].name, 'Specials');
+    });
+
+    test('parseTmdbSeasonDetail maps episodes', () {
+      const s = '{"name":"Season 1","vote_average":8.1,'
+          '"overview":"About.","episodes":[{"episode_number":1,'
+          '"name":"Pilot","vote_average":7.5,"runtime":48,'
+          '"still_path":"/e.jpg"}]}';
+      final d = parseTmdbSeasonDetail(s, seasonNumber: 1)!;
+      expect(d.name, 'Season 1');
+      expect(d.rating, 8.1);
+      expect(d.episodes.single.name, 'Pilot');
+      expect(d.episodes.single.runtimeMinutes, 48);
+    });
+
+    test('parseTmdbWatchProviders splits stream/rent/buy for IN', () {
+      const w = '{"watch/providers":{"results":{"IN":{'
+          '"flatrate":[{"provider_name":"Netflix"}],'
+          '"rent":[{"provider_name":"Amazon"}],'
+          '"buy":[{"provider_name":"Apple"}]}}}}';
+      final info = parseTmdbWatchProviders(w);
+      expect(info.stream, ['Netflix']);
+      expect(info.rent, ['Amazon']);
+      expect(info.buy, ['Apple']);
+      expect(info.isEmpty, isFalse);
+    });
+
+    test('parseTmdbMultiPage keeps movies+tv, drops people', () {
+      const m = '{"results":[{"media_type":"movie","id":1,"title":"A"},'
+          '{"media_type":"tv","id":2,"name":"B"},'
+          '{"media_type":"person","id":3,"name":"C"}]}';
+      final page = parseTmdbMultiPage(m);
+      expect(page.items.length, 2);
+      expect(page.items[0].kind, 'movie');
+      expect(page.items[1].kind, 'tv');
+    });
+
+    test('discover cache names + endpoints are deterministic', () {
+      expect(discoverCacheName(kDiscoverFilters.first, 1),
+          'tmdb_disc_trending_p1.json');
+      expect(discoverCacheName(kSeriesFilters.first, 2),
+          'tmdb_disc_tv_hindi_tv_p2.json');
+      expect(tmdbEndpointPath(kDiscoverFilters.first),
+          '/3/trending/movie/week');
+      expect(tmdbEndpointPath(kSeriesFilters.last), '/3/discover/tv');
+      expect(tmdbDiscoverQuery(kDiscoverFilters[4], 3),
+          containsPair('with_original_language', 'hi'));
+      expect(tmdbSearchCacheName('Hello World', 1),
+          startsWith('tmdb_search_hello_world_'));
+    });
+
+    test('kAllFilters merges movie + series chips', () {
+      expect(kAllFilters.length,
+          kDiscoverFilters.length + kSeriesFilters.length);
+      expect(kAllFilters.first.key, 'trending');
+      expect(kAllFilters.last.key, 'tv_anime');
     });
 
     test('parseTotalResults reads total_results', () {
       expect(parseTotalResults('{"total_results":48212}'), 48212);
     });
   });
+
+  group('Discover helpers (port)', () {
+    test('normalizeTitle strips rip junk + years + brackets', () {
+      expect(
+          Recommendations.normalizeTitle(
+              'The.Dark.Knight.2008.1080p.BluRay.x265'),
+          'dark knight');
+      expect(Recommendations.normalizeTitle('[YTS] Inception (2010) [1080p]'),
+          'inception');
+    });
+
+    test('parseAiSuggestionJson survives prose + fences', () {
+      const raw = 'Sure! Here you go: ```json [{"title":"3 Idiots",'
+          '"year":2009},{"title":"Dhoom 2","year":2006}] ``` enjoy!';
+      final picks = parseAiSuggestionJson(raw);
+      expect(picks.length, 2);
+      expect(picks.first.title, '3 Idiots');
+      expect(picks.first.year, 2009);
+      expect(parseAiSuggestionJson('no json here'), isEmpty);
+    });
+
+    test('tmdbImageCacheName keeps size folder + real name', () {
+      final name =
+          tmdbImageCacheName('https://image.tmdb.org/t/p/w342/abc.jpg');
+      expect(name, startsWith('tmdb_img_w342_'));
+      expect(name, endsWith('_abc.jpg'));
+      expect(tmdbImageCacheName('https://image.tmdb.org/t/p/w500/abc.jpg'),
+          isNot(equals(name)));
+    });
+
+    test('normalizeMovieTitle strips rip junk', () {
+      expect(normalizeMovieTitle('Interstellar.2014.1080p.BluRay.x265'),
+          'interstellar');
+    });
+  });
+
 
   group('SavedLink round-trip (v0.7)', () {
     test('json round trip', () {

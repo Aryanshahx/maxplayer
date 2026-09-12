@@ -1,0 +1,366 @@
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../theme.dart';
+import '../utils/ai.dart';
+import '../utils/tmdb.dart';
+
+/// One-tap question templates for the Ask AI sheet.
+const List<String> kMovieAiTemplates = [
+  'Is this movie worth watching?',
+  'Explain the story in 3 lines.',
+  'Best movies like this one',
+  'Fun facts about this movie',
+  'Who is the director and main cast?',
+  'What kind of ending does it have?',
+];
+
+/// "Ask with AI" — movie and series intelligent assistant (backed by the
+/// new app's OpenRouter client in `utils/ai.dart`).
+class AskAiSheet extends StatefulWidget {
+  final TmdbMovie movie;
+
+  const AskAiSheet({super.key, required this.movie});
+
+  static Future<void> show(BuildContext context, {required TmdbMovie movie}) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1a1a24),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => Padding(
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(sheetContext).bottom),
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.7,
+          minChildSize: 0.45,
+          maxChildSize: 0.95,
+          builder: (_, controller) => SingleChildScrollView(
+            controller: controller,
+            child: AskAiSheet(movie: movie),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  State<AskAiSheet> createState() => _AskAiSheetState();
+}
+
+class _AskAiSheetState extends State<AskAiSheet> {
+  final _questionCtrl = TextEditingController();
+
+  bool _asking = false;
+  String? _answer;
+  String? _answerModel;
+  String? _error;
+  int _askToken = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _bootCache();
+  }
+
+  Future<void> _bootCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastQ = prefs.getString('movie_ai_${widget.movie.id}_last_q');
+    final lastA = prefs.getString('movie_ai_${widget.movie.id}_last_a');
+    final lastM = prefs.getString('movie_ai_${widget.movie.id}_last_m');
+    if (lastA != null && lastA.isNotEmpty && mounted) {
+      setState(() {
+        if (lastQ != null) _questionCtrl.text = lastQ;
+        _answer = lastA;
+        _answerModel = lastM ?? 'saved';
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _questionCtrl.dispose();
+    super.dispose();
+  }
+
+  String _systemPrompt() => buildMovieSystemPrompt(
+        title: widget.movie.title,
+        year: '${widget.movie.year ?? ''}',
+        rating: widget.movie.rating,
+        overview: widget.movie.overview,
+      );
+
+  Future<void> _ask(String question) async {
+    final q = question.trim();
+    if (q.isEmpty || _asking) return;
+    final token = ++_askToken;
+    setState(() {
+      _asking = true;
+      _answer = null;
+      _answerModel = null;
+      _error = null;
+    });
+    final result = await askMovieAi(systemPrompt: _systemPrompt(), question: q);
+    if (!mounted || token != _askToken) return;
+    setState(() {
+      _asking = false;
+      if (!result.ok) {
+        _error = result.error.startsWith('config')
+            ? 'Add the OpenRouter key (OPENROUTER_API_KEY) to enable Ask AI.'
+            : result.error;
+      } else {
+        _answer = result.text;
+        _answerModel = aiModel;
+        final prefs = SharedPreferences.getInstance();
+        prefs.then((p) {
+          p.setString('movie_ai_${widget.movie.id}_last_q', q);
+          p.setString('movie_ai_${widget.movie.id}_last_a', result.text);
+          p.setString('movie_ai_${widget.movie.id}_last_m', aiModel);
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppColors.accent;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(Icons.auto_awesome, color: accent, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Ask AI about "${widget.movie.title}"',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Ask about the plot, characters, ending, recommendations or trivia.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final t in kMovieAiTemplates)
+                GestureDetector(
+                  onTap: _asking ? null : () => _ask(t),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: accent.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Text(
+                      t,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _questionCtrl,
+                  minLines: 1,
+                  maxLines: 3,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: _ask,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: 'Your own movie question...',
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.06),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: accent,
+                  foregroundColor: AppColors.onAccent,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                ),
+                onPressed: _asking ? null : () => _ask(_questionCtrl.text),
+                child: _asking
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Ask'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (_asking) const _ThinkingAnimation(),
+          if (_error != null)
+            Text(
+              _error!,
+              style: const TextStyle(
+                  color: Colors.orangeAccent, fontSize: 12, height: 1.4),
+            ),
+          if (_answer != null) ...[
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  _answer!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    height: 1.55,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _answerModel == 'saved'
+                  ? 'Saved answer - instant, works offline'
+                  : 'Answer by ${_answerModel!.split('/').last.split(':').first}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.35),
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ThinkingAnimation extends StatefulWidget {
+  const _ThinkingAnimation();
+
+  @override
+  State<_ThinkingAnimation> createState() => _ThinkingAnimationState();
+}
+
+class _ThinkingAnimationState extends State<_ThinkingAnimation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppColors.accent;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.auto_awesome, color: accent, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  'AI is thinking…',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            AnimatedBuilder(
+              animation: _ctrl,
+              builder: (context, _) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(3, (i) {
+                    final delay = i * 0.25;
+                    final val = (_ctrl.value - delay) % 1.0;
+                    final scale =
+                        0.5 + 0.5 * (val < 0.5 ? val * 2 : (1 - val) * 2);
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      width: 8,
+                      height: 8,
+                      transform: Matrix4.diagonal3Values(scale, scale, 1.0),
+                      transformAlignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.3 + 0.7 * scale),
+                        shape: BoxShape.circle,
+                      ),
+                    );
+                  }),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
