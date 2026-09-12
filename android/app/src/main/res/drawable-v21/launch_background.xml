@@ -3,10 +3,10 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="?android:colorBackground" />
 
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+    <!-- v79: logo shown while the app is cold-starting. Kept its own
+         background intact (matches the launcher icon) instead of being
+         cut out onto a separate card. -->
+    <item android:width="200dp" android:height="200dp" android:gravity="center">
+        <bitmap android:gravity="center" android:src="@drawable/splash_logo" />
+    </item>
 </layer-list>

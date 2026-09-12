@@ -10,7 +10,12 @@ class PlayerSettings extends ChangeNotifier {
   static final PlayerSettings instance = PlayerSettings._();
 
   static const seekSteps = <int>[5, 10, 15, 30];
+  /// Long-press speed-boost multipliers (set in player settings).
   static const speedRates = <double>[1.5, 2.0, 2.5, 3.0];
+  /// Constant playback-speed choices, 0.5× .. 4.0×.
+  static const playbackRates = <double>[
+    0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0,
+  ];
   static const autoHideSeconds = <int>[3, 4, 5, 6];
   static const performanceModes = <String>['auto', 'on', 'off'];
 
@@ -184,3 +189,14 @@ class PlayerSettings extends ChangeNotifier {
     await write(await SharedPreferences.getInstance());
   }
 }
+
+/// Snaps a speed value to the nearest 0.25× step inside the 0.5×–4.0×
+/// range (the speed sheet's slider grid). Pure + unit-tested.
+double nearestPlaybackRate(double rate) {
+  const min = 0.5;
+  const max = 4.0;
+  final clamped = rate.clamp(min, max);
+  final steps = ((clamped - min) / 0.25).round();
+  return (min + steps * 0.25).clamp(min, max);
+}
+

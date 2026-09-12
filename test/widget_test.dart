@@ -18,6 +18,8 @@ import 'package:maxplayer/utils/video_zoom.dart';
 import 'package:maxplayer/services/recommendations.dart';
 import 'package:maxplayer/services/ai_suggest.dart';
 import 'package:maxplayer/utils/movie_match.dart';
+import 'package:maxplayer/utils/player_settings.dart';
+import 'package:maxplayer/utils/watch_stats.dart';
 
 void main() {
   group('formatDuration', () {
@@ -568,6 +570,47 @@ plain-list-url.mp4
       expect(AppColors.accent.toARGB32(), 0xFFFFFFFF);
       expect((AppColors.background.r * 255).round() <= (AppColors.background.b * 255).round(), isTrue);
       expect(AppColors.onAccent, const Color(0xFF0B0B0E));
+    });
+  });
+
+  group('Drop 4 helpers', () {
+    test('statsKeyFor buckets a day', () {
+      expect(statsKeyFor(DateTime(2026, 9, 12)), 'stats.20260912');
+      expect(statsKeyFor(DateTime(2026, 1, 5)), 'stats.20260105');
+    });
+
+    test('weekBucketsFor ends today and spans 7 days', () {
+      final now = DateTime(2026, 9, 12);
+      final buckets = weekBucketsFor(now);
+      expect(buckets.length, 7);
+      expect(buckets.first.$2, statsKeyFor(DateTime(2026, 9, 6)));
+      expect(buckets.last.$2, statsKeyFor(DateTime(2026, 9, 12)));
+    });
+
+    test('formatWatchTime is compact', () {
+      expect(formatWatchTime(30), '30s');
+      expect(formatWatchTime(59), '59s');
+      expect(formatWatchTime(60), '1m');
+      expect(formatWatchTime(2700), '45m');
+      expect(formatWatchTime(3600), '1h 0m');
+      expect(formatWatchTime(5400), '1h 30m');
+    });
+
+    test('playbackRates go up to 4x', () {
+      expect(PlayerSettings.playbackRates.first, 0.5);
+      expect(PlayerSettings.playbackRates.last, 4.0);
+      expect(PlayerSettings.playbackRates, containsAll([3.5, 4.0]));
+    });
+
+    test('nearestPlaybackRate snaps to 0.25 steps in range', () {
+      expect(nearestPlaybackRate(1.0), 1.0);
+      expect(nearestPlaybackRate(1.12), 1.0);
+      expect(nearestPlaybackRate(1.13), 1.25);
+      expect(nearestPlaybackRate(3.6), 3.5);
+      expect(nearestPlaybackRate(3.74), 3.75);
+      expect(nearestPlaybackRate(0.1), 0.5); // clamps low
+      expect(nearestPlaybackRate(9.0), 4.0); // clamps high
+      expect(nearestPlaybackRate(2.0), 2.0);
     });
   });
 

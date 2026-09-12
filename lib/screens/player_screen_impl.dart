@@ -19,6 +19,7 @@ import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
 import '../utils/resume.dart';
 import '../utils/video_zoom.dart';
+import '../utils/watch_stats.dart';
 import 'player_settings_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -209,6 +210,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       unawaited(_savePosition());
+      // Watch-time statistics (same 5s tick as the old player): count a
+      // bucket whenever a local video is actually playing.
+      if (_player.state.playing && !widget.isStream) {
+        unawaited(WatchStatsStore.instance
+            .recordPlay(5, path: _currentPath, title: _title));
+      }
     });
   }
 
@@ -1752,8 +1759,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                   child: CircularProgressIndicator(color: Colors.white),
                 ),
               ),
-            Align(
-              alignment: const Alignment(0, -.72),
+            // Transient indicator (seek / volume / brightness / zoom /
+            // resume / fit / play-pause / lock) - the old player's
+            // full-width centred pill at top: 64, popping in with
+            // scale+fade.
+            Positioned(
+              top: 64,
+              left: 0,
+              right: 0,
               child: IgnorePointer(
                 child: Center(
                   child: AnimatedScale(
@@ -1765,7 +1778,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       curve: Curves.easeOutCubic,
                       opacity: _indicatorText != null ? 1.0 : 0.0,
                       child: _IndicatorPill(
-                        icon: _indicatorIcon ?? Icons.touch_app_rounded,
+                        icon: _indicatorIcon,
                         label: _indicatorText ?? '',
                       ),
                     ),
@@ -2298,25 +2311,18 @@ class _BottomBarState extends State<_BottomBar> {
     );
   }
 
-  /// v22-old speed popup: 0.5x .. 3.0x, anchored to the accent-coloured label.
+  /// Modern speed screen: a draggable bottom sheet with a 0.5×–4.0× slider
+  /// (0.25× steps) and quick preset chips. The bottom-bar label stays
+  /// accent-coloured like the old player's "1.0×".
   Widget _speedMenu() {
     return StreamBuilder<double>(
       stream: widget.player.stream.rate,
       initialData: widget.player.state.rate,
       builder: (context, snapshot) {
-        final rate = snapshot.data ?? 1.0;
-        return PopupMenuButton<double>(
-          initialValue: rate,
-          color: const Color(0xFF1a1a24),
-          onSelected: (r) => widget.player.setRate(r),
-          itemBuilder: (context) =>
-              const [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
-                  .map((r) => PopupMenuItem(
-                        value: r,
-                        child: Text('${r}x',
-                            style: const TextStyle(color: Colors.white)),
-                      ))
-                  .toList(),
+        final rate = nearestPlaybackRate(snapshot.data ?? 1.0);
+        return InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: _showSpeedSheet,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
             child: Text('${rate}x',
@@ -2324,6 +2330,125 @@ class _BottomBarState extends State<_BottomBar> {
           ),
         );
       },
+    );
+  }
+
+  void _showSpeedSheet() {
+    final initial = nearestPlaybackRate(widget.player.state.rate);
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF14141c),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          var current = initial;
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _SheetHandle(),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(4, 0, 4, 2),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Playback speed',
+                          style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                  Text(
+                    '${current}x',
+                    style: TextStyle(
+                      color: AppColors.accent,
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Slider(
+                    value: current,
+                    min: 0.5,
+                    max: 4.0,
+                    divisions: 14, // 0.25× steps
+                    activeColor: AppColors.accent,
+                    inactiveColor: Colors.white10,
+                    onChanged: (v) =>
+                        setSheetState(() => current = nearestPlaybackRate(v)),
+                    onChangeEnd: (v) =>
+                        widget.player.setRate(nearestPlaybackRate(v)),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2, bottom: 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('0.5×',
+                            style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11.5)),
+                        Text('4.0×',
+                            style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11.5)),
+                      ],
+                    ),
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      for (final r in const [0.5, 1.0, 1.5, 2.0, 3.0, 4.0])
+                        _speedChip(
+                          rate: r,
+                          active: r == nearestPlaybackRate(current),
+                          onTap: () {
+                            setSheetState(() => current = r);
+                            widget.player.setRate(r);
+                          },
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _speedChip(
+      {required double rate, required bool active, required VoidCallback onTap}) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: active
+              ? AppColors.accent
+              : AppColors.surfaceAlt.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: active ? AppColors.accent : AppColors.border,
+            width: 1,
+          ),
+        ),
+        child: Text(
+          '${rate}x',
+          style: TextStyle(
+            color: active ? AppColors.onAccent : AppColors.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
     );
   }
 
@@ -2573,9 +2698,9 @@ class _NoThumb extends StatelessWidget {
 /// The old player's transient indicator: a pill that pops with scale+fade,
 /// accent icon + accent border, values swap instantly.
 class _IndicatorPill extends StatelessWidget {
-  const _IndicatorPill({required this.icon, required this.label});
+  const _IndicatorPill({this.icon, required this.label});
 
-  final IconData icon;
+  final IconData? icon;
   final String label;
 
   @override
@@ -2600,8 +2725,10 @@ class _IndicatorPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: AppColors.accent, size: 20),
-          const SizedBox(width: 8),
+          if (icon != null) ...[
+            Icon(icon, color: AppColors.accent, size: 20),
+            const SizedBox(width: 8),
+          ],
           Text(
             label,
             style: const TextStyle(

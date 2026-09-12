@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v118: share targets for the system share sheet (Bluetooth etc.).
+     root-path covers removable SD cards too; the rest cover shared
+     storage, app cache (thumbnail strips) and cloud-import copies. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <root-path name="root" path="." />
+    <external-path name="shared" path="." />
+    <external-files-path name="app_ext" path="." />
+    <external-cache-path name="app_ext_cache" path="." />
+    <files-path name="internal" path="." />
+    <cache-path name="internal_cache" path="." />
+</paths>

@@ -22,6 +22,7 @@ class VideoGrid extends StatefulWidget {
     required this.onChanged,
     this.onOpen,
     this.listMode = false,
+    this.controller,
   });
 
   final List<AssetEntity> videos;
@@ -30,6 +31,10 @@ class VideoGrid extends StatefulWidget {
 
   /// Compact rows instead of visual cards (Display Settings → List View).
   final bool listMode;
+
+  /// Optional scroll controller so the home screen can drive the
+  /// hide-on-scroll quick tiles from this grid's offset.
+  final ScrollController? controller;
 
   /// Guarded open used everywhere a video starts (non-negotiable #2).
   /// Records history, hands off the queue when "Queue All" is enabled.
@@ -394,11 +399,10 @@ class _VideoGridState extends State<VideoGrid> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Responsive: ~190dp per column — phones 2, tablets/foldables 4-6.
-        final cols = (constraints.maxWidth / 190).floor().clamp(2, 6);
         if (widget.listMode) {
           return ListView.separated(
-            padding: const EdgeInsets.all(12),
+            controller: widget.controller,
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
             itemCount: widget.videos.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, i) {
@@ -413,13 +417,16 @@ class _VideoGridState extends State<VideoGrid> {
             },
           );
         }
+        // Old-player grid geometry: maxCrossAxisExtent 200, 8px gaps,
+        // 1.18 child aspect ratio.
         return GridView.builder(
-          padding: const EdgeInsets.all(16),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: cols,
-            mainAxisSpacing: 14,
-            crossAxisSpacing: 14,
-            childAspectRatio: 0.78,
+          controller: widget.controller,
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 200,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 1.18,
           ),
           itemCount: widget.videos.length,
           itemBuilder: (context, i) {
@@ -542,15 +549,25 @@ class _VideoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onLongPress,
+    // Old-player tile: 16:9 thumbnail with quality badge (top-left),
+    // favourite toggle (top-right) and duration pill (bottom-right), then
+    // title + file size.
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
+            AspectRatio(
+              aspectRatio: 16 / 9,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -559,46 +576,74 @@ class _VideoCard extends StatelessWidget {
                     builder: (context, snap) =>
                         snap.hasError || snap.data == null
                             ? const _ThumbFallback()
-                            : Image.memory(snap.data!, fit: BoxFit.cover, gaplessPlayback: true),
+                            : Image.memory(snap.data!,
+                                fit: BoxFit.cover, gaplessPlayback: true),
                   ),
+                  // Quality badge (e.g. "1080p"), top-left like VLC.
                   Positioned(
-                    left: 8,
-                    top: 8,
-                    child: _Pill(
-                      text: qualityBadge(asset.width, asset.height),
-                      color: Colors.black.withValues(alpha: 0.65),
-                      textColor: AppColors.textPrimary,
-                    ),
-                  ),
-                  Positioned(
-                    right: 8,
-                    bottom: 8,
-                    child: _Pill(
-                      text: formatDuration(Duration(seconds: asset.duration)),
-                      color: Colors.black.withValues(alpha: 0.65),
-                      textColor: AppColors.textPrimary,
-                    ),
-                  ),
-                  Positioned(
-                    right: 4,
                     top: 4,
-                    child: IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: Icon(
-                        isFav
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        color: isFav ? AppColors.danger : Colors.white,
-                        size: 20,
+                    left: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      onPressed: onToggleFav,
+                      child: Text(
+                        qualityBadge(asset.width, asset.height),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Favourite toggle.
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: onToggleFav,
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          isFav ? Icons.favorite : Icons.favorite_border,
+                          size: 15,
+                          color: isFav ? AppColors.accent : Colors.white70,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Duration pill.
+                  Positioned(
+                    right: 6,
+                    bottom: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        formatDuration(Duration(seconds: asset.duration)),
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.white),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -607,19 +652,20 @@ class _VideoCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: 13.5,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary),
+                        color: Colors.white),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   FutureBuilder<int>(
                     future: videoSize(asset),
                     builder: (context, snap) => Text(
                       snap.hasData && snap.data! > 0
                           ? formatBytes(snap.data!)
                           : ' ',
-                      style: const TextStyle(
-                          fontSize: 11.5, color: AppColors.textSecondary),
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white.withValues(alpha: 0.5)),
                     ),
                   ),
                 ],
@@ -631,28 +677,6 @@ class _VideoCard extends StatelessWidget {
     );
   }
 }
-
-class _Pill extends StatelessWidget {
-  const _Pill(
-      {required this.text, required this.color, required this.textColor});
-
-  final String text;
-  final Color color;
-  final Color textColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration:
-          BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
-      child: Text(text,
-          style: TextStyle(
-              fontSize: 11, color: textColor, fontWeight: FontWeight.w600)),
-    );
-  }
-}
-
 
 /// Shown when MediaStore can't render a thumbnail (huge 4K/HEVC files).
 class _ThumbFallback extends StatelessWidget {
