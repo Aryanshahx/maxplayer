@@ -12,6 +12,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../theme.dart';
 import '../utils/ab_loop.dart';
 import '../utils/crash_log.dart';
+import '../utils/fit.dart';
 import '../utils/format.dart';
 import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
@@ -50,27 +51,6 @@ class PlayerScreen extends StatefulWidget {
 }
 
 enum _DragMode { none, brightness, volume, seek, zoom }
-enum _FitMode { fit, crop, stretch, fitWidth, fitHeight, sixteenNine }
-
-extension on _FitMode {
-  BoxFit get boxFit => switch (this) {
-        _FitMode.fit => BoxFit.contain,
-        _FitMode.crop => BoxFit.cover,
-        _FitMode.stretch => BoxFit.fill,
-        _FitMode.fitWidth => BoxFit.fitWidth,
-        _FitMode.fitHeight => BoxFit.fitHeight,
-        _FitMode.sixteenNine => BoxFit.contain,
-      };
-
-  String get label => switch (this) {
-        _FitMode.fit => 'Fit',
-        _FitMode.crop => 'Crop',
-        _FitMode.stretch => 'Stretch',
-        _FitMode.fitWidth => 'Fit width',
-        _FitMode.fitHeight => 'Fit height',
-        _FitMode.sixteenNine => '16:9',
-      };
-}
 
 enum _PlayerMenuAction { info, eq, screenshot, cast, pip, sleep }
 
@@ -117,7 +97,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _locked = false;
   bool _muted = false;
   double _volumePercent = 100;
-  _FitMode _fitMode = _FitMode.fit;
+  FitMode _fitMode = FitMode.fit;
 
   _DragMode _drag = _DragMode.none;
   Offset _dragStart = Offset.zero;
@@ -388,6 +368,23 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
+  /// While the seek bar is dragged the auto-hide countdown pauses — the
+  /// controls must never fade away mid-scrub (old-player behavior).
+  void _onScrubChanged(bool scrubbing) {
+    if (scrubbing) {
+      _hideTimer?.cancel();
+    } else if (_controlsVisible) {
+      _scheduleHide();
+    }
+  }
+
+  /// Whether the tracks (tune) button should show its "active" chip:
+  /// subtitles on, more than one audio track, or an A-B loop in use.
+  bool get _tracksActive =>
+      _ab != AbState.off ||
+      _player.state.track.subtitle.id != 'no' ||
+      _player.state.tracks.audio.length > 1;
+
   void _onTap() {
     if (_locked) {
       _lockedHintTimer?.cancel();
@@ -490,47 +487,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  Future<void> _showSpeedSheet() async {
-    const rates = <double>[0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0];
-    final current = _player.state.rate;
-    final picked = await showModalBottomSheet<double>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _SheetHandle(),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(18, 4, 18, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Playback speed',
-                    style: TextStyle(color: AppColors.textPrimary,
-                        fontSize: 18, fontWeight: FontWeight.w700)),
-              ),
-            ),
-            for (final rate in rates)
-              ListTile(
-                title: Text('${rate}x',
-                    style: const TextStyle(color: AppColors.textPrimary)),
-                trailing: (rate - current).abs() < .001
-                    ? Icon(Icons.check_rounded, color: AppColors.accent)
-                    : null,
-                onTap: () => Navigator.of(context).pop(rate),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (picked == null) return;
-    await _player.setRate(picked);
-    if (mounted) setState(() {});
-  }
-
   void _setBoost(bool on) {
     if (!_settings.longPressSpeed || _locked) return;
     _boost = on;
@@ -538,58 +494,24 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (mounted) setState(() {});
   }
 
-
-  void _showFitMenu() {
-    if (!_settings.pinchZoom) {
-      final values = _FitMode.values;
-      final next = values[(_fitMode.index + 1) % values.length];
-      setState(() {
-        _fitMode = next;
-        _zoom = 1;
-      });
-      _emitGesture(Icons.fit_screen_rounded, next.label);
-      return;
-    }
-
-    showModalBottomSheet<_FitMode>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _SheetHandle(),
-            const ListTile(
-              title: Text('Screen fit', style: TextStyle(
-                  color: AppColors.textPrimary, fontSize: 18,
-                  fontWeight: FontWeight.w700)),
-            ),
-            for (final mode in _FitMode.values)
-              ListTile(
-                leading: Icon(
-                  mode == _FitMode.fit ? Icons.fit_screen_rounded : Icons.crop_rounded,
-                  color: AppColors.accent),
-                title: Text(mode.label,
-                    style: const TextStyle(color: AppColors.textPrimary)),
-                trailing: mode == _fitMode
-                    ? Icon(Icons.check_rounded, color: AppColors.accent)
-                    : null,
-                onTap: () => Navigator.of(context).pop(mode),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    ).then((mode) {
-      if (mode != null) {
-        setState(() {
-          _fitMode = mode;
-          _zoom = 1;
-        });
-      }
+  /// The old player's fit button: one tap steps to the NEXT fit in the
+  /// six-mode loop (Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original -> Fit).
+  /// No sheet — cycling is the only selection UI, exactly like the old app.
+  void _cycleFit() {
+    setState(() {
+      _fitMode = nextFitMode(_fitMode);
+      _zoom = 1;
     });
+    _emitGesture(_fitMode.icon, 'Fit: ${_fitMode.label}');
+  }
+
+  /// 16:9 / 4:3 force the FRAME inside the screen (Center + AspectRatio,
+  /// engine-independent, identical in landscape and portrait — the old
+  /// player's VLC-style resize). Other fit modes pass straight through.
+  Widget _fitFrame({required Widget child}) {
+    final asp = _fitMode.aspectRatio;
+    if (asp == null) return child;
+    return Center(child: AspectRatio(aspectRatio: asp, child: child));
   }
 
   void _onScaleStart(ScaleStartDetails d) {
@@ -710,7 +632,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (drag == _DragMode.zoom && _zoom < .9) {
       setState(() {
         _zoom = 1;
-        _fitMode = _FitMode.fit;
+        _fitMode = FitMode.fit;
       });
     }
 
@@ -760,17 +682,19 @@ class _PlayerScreenState extends State<PlayerScreen>
               _extraAction(
                 icon: Icons.subtitles_rounded,
                 title: 'Subtitles ${tracks.subtitle.isEmpty ? '(none)' : '(on)'}',
-                onTap: () {
+                onTap: () async {
                   Navigator.of(context).pop();
-                  _showTrackPicker(subtitle: true);
+                  await _showTrackPicker(subtitle: true);
+                  if (mounted) setState(() {});
                 },
               ),
               _extraAction(
                 icon: Icons.music_note_rounded,
                 title: 'Audio track (${tracks.audio.length} available)',
-                onTap: () {
+                onTap: () async {
                   Navigator.of(context).pop();
-                  _showTrackPicker(subtitle: false);
+                  await _showTrackPicker(subtitle: false);
+                  if (mounted) setState(() {});
                 },
               ),
               _extraAction(
@@ -1584,11 +1508,13 @@ class _PlayerScreenState extends State<PlayerScreen>
               ClipRect(
                 child: Transform.scale(
                   scale: _zoom,
-                  child: Video(
-                    controller: _controller,
-                    fit: _fitMode.boxFit,
-                    aspectRatio: _fitMode == _FitMode.sixteenNine ? 16 / 9 : null,
-                    controls: NoVideoControls,
+                  child: _fitFrame(
+                    child: Video(
+                      controller: _controller,
+                      fit: _fitMode.boxFit,
+                      aspectRatio: null,
+                      controls: NoVideoControls,
+                    ),
                   ),
                 ),
               )
@@ -1626,9 +1552,8 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
             if (_boost)
               Align(
-                alignment: const Alignment(0, -.72),
-                child: _GesturePill(
-                  icon: Icons.speed_rounded,
+                alignment: Alignment.center,
+                child: _BoostBadge(
                   label: '${_settings.longPressRate.toStringAsFixed(2)}x',
                 ),
               ),
@@ -1658,14 +1583,15 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
               _BottomBar(
                 player: _player,
+                isMuted: _muted,
+                tracksActive: _tracksActive,
                 onTrackSheet: _showTrackSheet,
-                onPlaylist: _showPlaylistSheet,
+                onQueue: _showPlaylistSheet,
                 onRotate: _toggleRotationLock,
                 rotationLocked: _rotationLocked,
-                onFit: _showFitMenu,
+                onFit: _cycleFit,
                 onMute: _toggleMute,
-                onSpeed: _showSpeedSheet,
-                isMuted: _muted,
+                onScrubbing: _onScrubChanged,
                 canSkip: widget.queueIds.length > 1,
                 onPrevious: _playPrevious,
                 onNext: _playNext,
@@ -1708,23 +1634,26 @@ class _TopBar extends StatelessWidget {
       right: 0,
       child: Container(
         padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top + 6,
-          left: 4,
-          right: 10,
-          bottom: 16,
+          top: MediaQuery.of(context).padding.top + 2,
+          left: 2,
+          right: 2,
+          bottom: 14,
         ),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Colors.black87, Colors.transparent],
+            colors: [
+              Colors.black.withValues(alpha: 0.75),
+              Colors.transparent,
+            ],
           ),
         ),
         child: Row(
           children: [
             IconButton(
-              icon: const Icon(Icons.arrow_back_rounded,
-                  color: Colors.white, size: 31),
+              tooltip: 'Back',
+              icon: Icon(Icons.arrow_back, size: 22, color: AppColors.accent),
               onPressed: () => Navigator.of(context).maybePop(),
             ),
             Expanded(
@@ -1736,57 +1665,80 @@ class _TopBar extends StatelessWidget {
                   if (sleepLabel != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        sleepLabel!,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.bedtime_outlined,
+                              size: 11, color: AppColors.accent),
+                          const SizedBox(width: 4),
+                          Text(
+                            sleepLabel!,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.accent,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                 ],
               ),
             ),
             PopupMenuButton<_PlayerMenuAction>(
-              tooltip: 'More',
-              padding: EdgeInsets.zero,
-              iconSize: 30,
-              icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-              color: AppColors.surface,
+              tooltip: 'More actions',
+              icon: Icon(Icons.more_vert, size: 22, color: AppColors.accent),
+              color: const Color(0xFF1a1a24),
+              elevation: 8,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-                side: const BorderSide(color: AppColors.border),
+                borderRadius: BorderRadius.circular(14),
               ),
               onSelected: onMenu,
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                    value: _PlayerMenuAction.info,
-                    child: _MoreRow(icon: Icons.info_outline_rounded, label: 'Video info')),
-                PopupMenuItem(
-                    value: _PlayerMenuAction.eq,
-                    child: _MoreRow(icon: Icons.graphic_eq_rounded, label: 'Equalizer & Audio FX')),
-                PopupMenuItem(
-                    value: _PlayerMenuAction.screenshot,
-                    child: _MoreRow(icon: Icons.photo_camera_outlined, label: 'Screenshot')),
-                PopupMenuItem(
-                    value: _PlayerMenuAction.cast,
-                    child: _MoreRow(icon: Icons.cast_rounded, label: 'Cast to TV')),
-                PopupMenuItem(
-                    value: _PlayerMenuAction.pip,
-                    child: _MoreRow(icon: Icons.picture_in_picture_alt_rounded, label: 'Picture-in-Picture')),
-                PopupMenuItem(
-                    value: _PlayerMenuAction.sleep,
-                    child: _MoreRow(icon: Icons.nightlight_round, label: 'Sleep timer')),
+              itemBuilder: (context) => [
+                _topMenuItem(_PlayerMenuAction.info,
+                    Icons.info_outline, 'Video info'),
+                _topMenuItem(_PlayerMenuAction.eq,
+                    Icons.graphic_eq, 'Equalizer & Audio FX'),
+                _topMenuItem(_PlayerMenuAction.screenshot,
+                    Icons.camera_alt_outlined, 'Screenshot'),
+                _topMenuItem(
+                    _PlayerMenuAction.cast, Icons.cast_outlined, 'Cast to TV'),
+                _topMenuItem(_PlayerMenuAction.pip,
+                    Icons.picture_in_picture_alt_outlined, 'Picture-in-Picture'),
+                _topMenuItem(
+                    _PlayerMenuAction.sleep, Icons.bedtime_outlined, 'Sleep timer'),
               ],
             ),
             IconButton(
               tooltip: 'Player settings',
-              icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 30),
+              icon: Icon(Icons.settings_outlined,
+                  size: 22, color: AppColors.accent),
               onPressed: onSettings,
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  PopupMenuItem<_PlayerMenuAction> _topMenuItem(
+      _PlayerMenuAction value, IconData icon, String label) {
+    return PopupMenuItem(
+      value: value,
+      height: 44,
+      child: Row(
+        children: [
+          Icon(icon, size: 19, color: AppColors.accent),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1904,49 +1856,33 @@ class _LoopingTitleState extends State<_LoopingTitle>
   }
 }
 
-class _MoreRow extends StatelessWidget {
-  const _MoreRow({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: AppColors.accent),
-        const SizedBox(width: 12),
-        Text(label, style: const TextStyle(color: AppColors.textPrimary)),
-      ],
-    );
-  }
-}
-
 class _BottomBar extends StatefulWidget {
   const _BottomBar({
     required this.player,
+    required this.isMuted,
+    required this.tracksActive,
     required this.onTrackSheet,
-    required this.onPlaylist,
+    required this.onQueue,
     required this.onRotate,
     required this.rotationLocked,
     required this.onFit,
     required this.onMute,
-    required this.onSpeed,
-    required this.isMuted,
+    required this.onScrubbing,
     required this.canSkip,
     required this.onPrevious,
     required this.onNext,
   });
 
   final Player player;
+  final bool isMuted;
+  final bool tracksActive;
   final VoidCallback onTrackSheet;
-  final VoidCallback onPlaylist;
+  final VoidCallback onQueue;
   final VoidCallback onRotate;
   final bool rotationLocked;
   final VoidCallback onFit;
   final VoidCallback onMute;
-  final VoidCallback onSpeed;
-  final bool isMuted;
+  final ValueChanged<bool> onScrubbing;
   final bool canSkip;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
@@ -1956,19 +1892,7 @@ class _BottomBar extends StatefulWidget {
 }
 
 class _BottomBarState extends State<_BottomBar> {
-  double? _dragMs;
-  DateTime _lastLiveSeek = DateTime.fromMillisecondsSinceEpoch(0);
-  Duration _lastSent = Duration.zero;
-
-  void _liveSeek(Duration target) {
-    final now = DateTime.now();
-    if (now.difference(_lastLiveSeek).inMilliseconds > 120 &&
-        (target - _lastSent).abs().inMilliseconds > 800) {
-      _lastLiveSeek = now;
-      _lastSent = target;
-      widget.player.seek(target);
-    }
-  }
+  double? _dragValue; // 0..1 while the user scrubs the seek bar
 
   @override
   Widget build(BuildContext context) {
@@ -1977,175 +1901,297 @@ class _BottomBarState extends State<_BottomBar> {
       right: 0,
       bottom: 0,
       child: Container(
-        padding: EdgeInsets.only(
-          left: 14,
-          right: 14,
-          top: 18,
-          bottom: MediaQuery.of(context).padding.bottom + 10,
-        ),
-        decoration: const BoxDecoration(
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            colors: [Colors.black87, Colors.transparent],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.85),
+            ],
           ),
         ),
-        child: StreamBuilder<Duration>(
-          stream: widget.player.stream.position,
-          initialData: widget.player.state.position,
-          builder: (context, positionSnapshot) {
-            final position = positionSnapshot.data ?? Duration.zero;
-            return StreamBuilder<Duration>(
-              stream: widget.player.stream.duration,
-              initialData: widget.player.state.duration,
-              builder: (context, durationSnapshot) {
-                final duration = durationSnapshot.data ?? Duration.zero;
-                final max = duration.inMilliseconds > 0
-                    ? duration.inMilliseconds.toDouble()
-                    : 1.0;
-                final shown = (_dragMs ?? position.inMilliseconds.toDouble())
-                    .clamp(0.0, max)
-                    .toDouble();
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Text(formatDuration(Duration(milliseconds: shown.round())),
-                            style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                        const Spacer(),
-                        Text(formatDuration(duration),
-                            style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                      ],
-                    ),
-                    SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        activeTrackColor: Colors.white,
-                        inactiveTrackColor: Colors.white24,
-                        thumbColor: Colors.white,
-                        trackHeight: 2.6,
-                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                        overlayShape: SliderComponentShape.noOverlay,
-                      ),
-                      child: Slider(
-                        value: shown,
-                        max: max,
-                        onChangeStart: (value) => setState(() => _dragMs = value),
-                        onChanged: (value) {
-                          setState(() => _dragMs = value);
-                          _liveSeek(Duration(milliseconds: value.round()));
-                        },
-                        onChangeEnd: (value) {
-                          widget.player.seek(Duration(milliseconds: value.round()));
-                          setState(() => _dragMs = null);
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    StreamBuilder<bool>(
-                      stream: widget.player.stream.playing,
-                      initialData: widget.player.state.playing,
-                      builder: (context, snapshot) {
-                        final playing = snapshot.data ?? false;
-                        return Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              tooltip: 'Previous',
-                              iconSize: 32,
-                              color: widget.canSkip ? Colors.white : Colors.white38,
-                              onPressed: widget.canSkip ? widget.onPrevious : null,
-                              icon: const Icon(Icons.skip_previous_rounded),
-                            ),
-                            const SizedBox(width: 26),
-                            IconButton(
-                              tooltip: 'Play/Pause',
-                              iconSize: 58,
-                              color: Colors.white,
-                              onPressed: widget.player.playOrPause,
-                              icon: Icon(playing
-                                  ? Icons.pause_circle_filled_rounded
-                                  : Icons.play_circle_filled_rounded),
-                            ),
-                            const SizedBox(width: 26),
-                            IconButton(
-                              tooltip: 'Next',
-                              iconSize: 32,
-                              color: widget.canSkip ? Colors.white : Colors.white38,
-                              onPressed: widget.canSkip ? widget.onNext : null,
-                              icon: const Icon(Icons.skip_next_rounded),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        IconButton(
-                          tooltip: widget.isMuted ? 'Unmute' : 'Mute',
-                          icon: Icon(
-                            widget.isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                            color: Colors.white, size: 27),
-                          onPressed: widget.onMute,
-                        ),
-                        GestureDetector(
-                          onTap: widget.onSpeed,
-                          child: StreamBuilder<double>(
-                            stream: widget.player.stream.rate,
-                            initialData: widget.player.state.rate,
-                            builder: (context, snapshot) => Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              child: Text(
-                                '${(snapshot.data ?? 1).toStringAsFixed((snapshot.data ?? 1) % 1 == 0 ? 1 : 2)}x',
-                                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'Track sheet',
-                          icon: const Icon(Icons.tune_rounded,
-                              color: Colors.white, size: 28),
-                          onPressed: widget.onTrackSheet,
-                        ),
-                        IconButton(
-                          tooltip: 'Playlist',
-                          icon: const Icon(Icons.playlist_play_rounded,
-                              color: Colors.white, size: 28),
-                          onPressed: widget.onPlaylist,
-                        ),
-                        IconButton(
-                          tooltip: 'Screen fit',
-                          icon: const Icon(Icons.fit_screen_rounded,
-                              color: Colors.white, size: 27),
-                          onPressed: widget.onFit,
-                        ),
-                        IconButton(
-                          tooltip: widget.rotationLocked
-                              ? 'Unlock rotation'
-                              : 'Lock rotation',
-                          icon: Icon(
-                            widget.rotationLocked
-                                ? Icons.screen_lock_rotation_rounded
-                                : Icons.screen_rotation_alt_rounded,
-                            color: Colors.white,
-                            size: 29,
-                          ),
-                          onPressed: widget.onRotate,
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            );
-          },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _progressBar(),
+            // Row 1: previous / play-pause / next — the transport trio. These
+            // three stay white; the theme accent shows only as the press flash
+            // behind them (old-player look).
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _iconBtn(
+                  icon: Icons.skip_previous,
+                  size: 30,
+                  accentPress: true,
+                  tooltip: 'Previous video',
+                  onTap: widget.canSkip ? widget.onPrevious : null,
+                ),
+                const SizedBox(width: 22),
+                _playPause(),
+                const SizedBox(width: 22),
+                _iconBtn(
+                  icon: Icons.skip_next,
+                  size: 30,
+                  accentPress: true,
+                  tooltip: 'Next video',
+                  onTap: widget.canSkip ? widget.onNext : null,
+                ),
+              ],
+            ),
+            // Row 2 (compact): mute speed tracks | queue fit rotate.
+            Row(
+              children: [
+                _iconBtn(
+                  icon: widget.isMuted ? Icons.volume_off : Icons.volume_up,
+                  active: widget.isMuted,
+                  tooltip: 'Mute',
+                  onTap: widget.onMute,
+                  compact: true,
+                ),
+                _speedMenu(),
+                _iconBtn(
+                  tooltip: 'Subtitles, audio tracks, A-B loop, karaoke',
+                  icon: Icons.tune,
+                  active: widget.tracksActive,
+                  onTap: widget.onTrackSheet,
+                  compact: true,
+                ),
+                const Spacer(),
+                _iconBtn(
+                  icon: Icons.queue_music,
+                  tooltip: 'Queue',
+                  onTap: widget.onQueue,
+                  compact: true,
+                ),
+                _iconBtn(
+                  tooltip: 'Fit: Fit / Crop / Stretch / 16:9 / 4:3 / Original',
+                  icon: Icons.aspect_ratio,
+                  onTap: widget.onFit,
+                  compact: true,
+                ),
+                _iconBtn(
+                  tooltip: widget.rotationLocked
+                      ? 'Rotation locked - tap for auto'
+                      : 'Auto-rotate - tap to lock',
+                  icon: widget.rotationLocked
+                      ? Icons.screen_lock_rotation
+                      : Icons.screen_rotation,
+                  active: widget.rotationLocked,
+                  onTap: widget.onRotate,
+                  compact: true,
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
+
+  Widget _playPause() {
+    return StreamBuilder<bool>(
+      stream: widget.player.stream.playing,
+      initialData: widget.player.state.playing,
+      builder: (context, snapshot) {
+        final playing = snapshot.data ?? false;
+        return _iconBtn(
+          icon: playing
+              ? Icons.pause_circle_filled
+              : Icons.play_circle_filled,
+          size: 46,
+          accentPress: true,
+          onTap: widget.player.playOrPause,
+        );
+      },
+    );
+  }
+
+  /// v22-old speed popup: 0.5x .. 3.0x, anchored to the accent-coloured label.
+  Widget _speedMenu() {
+    return StreamBuilder<double>(
+      stream: widget.player.stream.rate,
+      initialData: widget.player.state.rate,
+      builder: (context, snapshot) {
+        final rate = snapshot.data ?? 1.0;
+        return PopupMenuButton<double>(
+          initialValue: rate,
+          color: const Color(0xFF1a1a24),
+          onSelected: (r) => widget.player.setRate(r),
+          itemBuilder: (context) =>
+              const [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
+                  .map((r) => PopupMenuItem(
+                        value: r,
+                        child: Text('${r}x',
+                            style: const TextStyle(color: Colors.white)),
+                      ))
+                  .toList(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+            child: Text('${rate}x',
+                style: TextStyle(color: AppColors.accent, fontSize: 11)),
+          ),
+        );
+      },
+    );
+  }
+
+  /// The seek slider + time labels. While the user DRAGS, a bubble floats
+  /// above the thumb with the exact timestamp (the old player also showed a
+  /// video-frame thumbnail here; that needs the background thumbnailer,
+  /// which lands in a later drop).
+  Widget _progressBar() {
+    return StreamBuilder<Duration>(
+      stream: widget.player.stream.position,
+      initialData: widget.player.state.position,
+      builder: (context, posSnapshot) {
+        return StreamBuilder<Duration>(
+          stream: widget.player.stream.duration,
+          initialData: widget.player.state.duration,
+          builder: (context, durSnapshot) {
+            final position = posSnapshot.data ?? Duration.zero;
+            final duration = durSnapshot.data ?? Duration.zero;
+            final totalMs = duration.inMilliseconds.clamp(1, 1 << 62);
+            final value = _dragValue ??
+                (position.inMilliseconds / totalMs).clamp(0.0, 1.0);
+            final shownMs = (_dragValue != null
+                    ? _dragValue! * totalMs
+                    : position.inMilliseconds)
+                .round();
+            return Row(
+              children: [
+                Text(formatDuration(Duration(milliseconds: shownMs)),
+                    style: _timeStyle),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, c) {
+                      final w = c.maxWidth;
+                      const bubbleW = 96.0;
+                      final dragging = _dragValue != null;
+                      final rawLeft = dragging
+                          ? _dragValue! * (w - 28) + 14 - bubbleW / 2
+                          : 0.0;
+                      final left = rawLeft
+                          .clamp(0.0, (w - bubbleW).clamp(0.0, w))
+                          .toDouble();
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.center,
+                        children: [
+                          SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 3,
+                              thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 6),
+                              overlayShape: const RoundSliderOverlayShape(
+                                  overlayRadius: 14),
+                              activeTrackColor: AppColors.accent,
+                              inactiveTrackColor:
+                                  Colors.white.withValues(alpha: 0.15),
+                              thumbColor: AppColors.accent,
+                            ),
+                            child: Slider(
+                              value: value,
+                              onChangeStart: (v) {
+                                widget.onScrubbing(true);
+                                setState(() => _dragValue = v);
+                              },
+                              onChanged: (v) =>
+                                  setState(() => _dragValue = v),
+                              onChangeEnd: (v) {
+                                widget.player.seek(Duration(
+                                    milliseconds: (v * totalMs).round()));
+                                setState(() => _dragValue = null);
+                                widget.onScrubbing(false);
+                              },
+                            ),
+                          ),
+                          if (dragging)
+                            Positioned(
+                              bottom: 30,
+                              left: left,
+                              child: IgnorePointer(
+                                child: Container(
+                                  width: bubbleW,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        Colors.black.withValues(alpha: 0.88),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: Colors.white24),
+                                  ),
+                                  child: Text(
+                                    formatDuration(
+                                        Duration(milliseconds: shownMs)),
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(formatDuration(duration), style: _timeStyle),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// One control button. Every button follows the picked theme accent,
+  /// EXCEPT the transport trio (accentPress), which stays white and only
+  /// flashes the accent while pressed. An "on" state (muted, tracks in use,
+  /// rotation locked) sits on a translucent accent chip.
+  Widget _iconBtn({
+    required IconData icon,
+    VoidCallback? onTap,
+    bool active = false,
+    double size = 24,
+    bool compact = false,
+    String? tooltip,
+    bool accentPress = false,
+  }) {
+    final accent = AppColors.accent;
+    final enabled = onTap != null;
+    final IconData shownIcon = icon;
+    final Color color = accentPress
+        ? (enabled ? Colors.white : Colors.white38)
+        : accent;
+    return IconButton(
+      tooltip: tooltip,
+      icon: Icon(shownIcon, size: compact ? 20 : size, color: color),
+      splashColor: accentPress ? accent.withValues(alpha: 0.45) : null,
+      highlightColor: accentPress ? accent.withValues(alpha: 0.28) : null,
+      style: active
+          ? ButtonStyle(
+              backgroundColor:
+                  WidgetStateProperty.all(accent.withValues(alpha: 0.22)),
+            )
+          : null,
+      constraints: compact
+          ? const BoxConstraints.tightFor(width: 34, height: 40)
+          : null,
+      padding: compact ? EdgeInsets.zero : null,
+      visualDensity: compact ? VisualDensity.compact : null,
+      onPressed: enabled ? onTap : null,
+    );
+  }
+
+  static const _timeStyle = TextStyle(fontSize: 12, color: Colors.white70);
 }
 
 class _EdgeButton extends StatelessWidget {
@@ -2179,22 +2225,9 @@ class _SeekPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final backwards = seconds < 0;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-      decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: .62),
-          borderRadius: BorderRadius.circular(14)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(backwards ? Icons.replay_10_rounded : Icons.forward_10_rounded,
-              color: Colors.white, size: 25),
-          const SizedBox(width: 6),
-          Text('${backwards ? '' : '+'}${seconds}s',
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
-        ],
-      ),
+    return _IndicatorPill(
+      icon: backwards ? Icons.replay_10 : Icons.forward_10,
+      label: '${backwards ? '' : '+'}${seconds}s',
     );
   }
 }
@@ -2207,21 +2240,7 @@ class _GesturePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: .72),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.white, size: 21),
-          const SizedBox(width: 8),
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
-        ],
-      ),
-    );
+    return _IndicatorPill(icon: icon, label: label);
   }
 }
 
@@ -2233,19 +2252,84 @@ class _InfoPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return _IndicatorPill(icon: icon, label: text);
+  }
+}
+
+/// The old player's transient indicator: a pill that pops with scale+fade,
+/// accent icon + accent border, values swap instantly.
+class _IndicatorPill extends StatelessWidget {
+  const _IndicatorPill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
       decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: .68),
-          borderRadius: BorderRadius.circular(12)),
+        color: const Color(0xFF161622).withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: AppColors.accent.withValues(alpha: 0.35),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white, size: 19),
-          const SizedBox(width: 7),
-          Text(text,
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+          Icon(icon, color: AppColors.accent, size: 20),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14.5,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Big centred speed badge shown for the whole long-press boost (old look).
+class _BoostBadge extends StatelessWidget {
+  const _BoostBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.accent.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.fast_forward, color: AppColors.onAccent, size: 19),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: AppColors.onAccent,
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );

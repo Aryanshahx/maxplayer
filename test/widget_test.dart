@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:maxplayer/theme.dart';
 import 'package:maxplayer/utils/badges.dart';
 import 'package:maxplayer/utils/collections.dart';
+import 'package:maxplayer/utils/fit.dart';
 import 'package:maxplayer/utils/format.dart';
 import 'package:maxplayer/utils/m3u.dart';
 import 'package:maxplayer/utils/ab_loop.dart';
@@ -36,6 +37,73 @@ void main() {
     test('kilobytes', () => expect(formatBytes(1536), '1.5 KB'));
     test('megabytes', () => expect(formatBytes(734003200), '700.0 MB'));
     test('negative clamps', () => expect(formatBytes(-1), '0B'));
+  });
+
+  group('FitMode (v0.12 player UI)', () {
+    test('six modes in the old app loop order', () {
+      expect(FitMode.values, const [
+        FitMode.fit,
+        FitMode.crop,
+        FitMode.stretch,
+        FitMode.sixteenNine,
+        FitMode.fourThree,
+        FitMode.original,
+      ]);
+    });
+
+    test('boxFit mapping matches the old player', () {
+      expect(FitMode.fit.boxFit, BoxFit.contain);
+      expect(FitMode.crop.boxFit, BoxFit.cover);
+      expect(FitMode.stretch.boxFit, BoxFit.fill);
+      expect(FitMode.sixteenNine.boxFit, BoxFit.fill);
+      expect(FitMode.fourThree.boxFit, BoxFit.fill);
+      expect(FitMode.original.boxFit, BoxFit.none);
+    });
+
+    test('aspectRatio forces frames only for 16:9 and 4:3', () {
+      expect(FitMode.sixteenNine.aspectRatio, 16 / 9);
+      expect(FitMode.fourThree.aspectRatio, 4 / 3);
+      for (final m in const [
+        FitMode.fit,
+        FitMode.crop,
+        FitMode.stretch,
+        FitMode.original,
+      ]) {
+        expect(m.aspectRatio, isNull, reason: '$m must not force a frame');
+      }
+    });
+
+    test('labels match the old player', () {
+      expect(FitMode.fit.label, 'Fit');
+      expect(FitMode.crop.label, 'Crop');
+      expect(FitMode.stretch.label, 'Stretch');
+      expect(FitMode.sixteenNine.label, '16:9');
+      expect(FitMode.fourThree.label, '4:3');
+      expect(FitMode.original.label, 'Original');
+    });
+
+    test('nextFitMode walks the loop and wraps Original -> Fit', () {
+      expect(nextFitMode(FitMode.fit), FitMode.crop);
+      expect(nextFitMode(FitMode.stretch), FitMode.sixteenNine);
+      expect(nextFitMode(FitMode.original), FitMode.fit);
+    });
+
+    test('previousFitMode walks backwards and wraps Fit -> Original', () {
+      expect(previousFitMode(FitMode.fit), FitMode.original);
+      expect(previousFitMode(FitMode.crop), FitMode.fit);
+      expect(previousFitMode(FitMode.original), FitMode.fourThree);
+    });
+
+    test('full cycle visits all six modes', () {
+      var m = FitMode.fit;
+      final seen = <FitMode>{};
+      for (var i = 0; i < 6; i++) {
+        seen.add(m);
+        m = nextFitMode(m);
+      }
+      expect(m, FitMode.fit);
+      expect(seen.length, 6);
+    });
   });
 
   group('resumeTargetMs (v0.3 resume)', () {
