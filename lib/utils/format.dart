@@ -21,3 +21,17 @@ String formatBytes(int bytes) {
   }
   return unit == 0 ? '${bytes}B' : '${value.toStringAsFixed(1)} ${units[unit]}';
 }
+
+/// True when [name] looks like a video file (extension check on the
+/// basename — used by the file manager and vault).
+bool isVideoFile(String name) {
+  final base = name.split('/').last;
+  final dot = base.lastIndexOf('.');
+  if (dot <= 0) return false;
+  final ext = base.substring(dot).toLowerCase();
+  const videoExts = {
+    '.mp4', '.mkv', '.webm', '.avi', '.mov', '.wmv', '.flv', '.ts', '.m2ts',
+    '.mpg', '.mpeg', '.3gp', '.vob', '.m4v', '.mts', '.f4v',
+  };
+  return videoExts.contains(ext);
+}

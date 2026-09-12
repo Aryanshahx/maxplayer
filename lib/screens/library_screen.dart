@@ -497,7 +497,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
     final page1 = [
       (Icons.lock_outline_rounded, 'Private Space',
-          () => push(const PrivateScreen())),
+          () => push(PrivateScreen(libraryVideos: _videos))),
       (Icons.queue_music_outlined, 'Playlists',
           () => push(const PlaylistsScreen())),
       (Icons.folder_outlined, 'Folders', () => push(const FoldersScreen())),

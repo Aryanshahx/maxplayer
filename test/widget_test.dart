@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maxplayer/theme.dart';
+import 'package:maxplayer/models/network_location.dart';
+import 'package:maxplayer/models/saved_server.dart';
 import 'package:maxplayer/utils/badges.dart';
 import 'package:maxplayer/utils/collections.dart';
 import 'package:maxplayer/utils/fit.dart';
@@ -11,6 +13,7 @@ import 'package:maxplayer/utils/mpv_filters.dart';
 import 'package:maxplayer/utils/local_store.dart';
 import 'package:maxplayer/utils/resume.dart';
 import 'package:maxplayer/utils/settings.dart' show accentPalette, defaultAccentIndex;
+import 'package:maxplayer/utils/sha256.dart';
 import 'package:maxplayer/utils/sort.dart';
 import 'package:maxplayer/utils/tmdb.dart';
 import 'package:maxplayer/utils/tmdb_image.dart';
@@ -623,5 +626,112 @@ plain-list-url.mp4
     final theme = Theme.of(tester.element(find.text('ok')));
     expect(theme.scaffoldBackgroundColor, AppColors.background);
     expect(theme.brightness, Brightness.dark);
+  });
+
+  group('sha256Hex (vault PIN hashing)', () {
+    test('empty input (standard vector)', () {
+      expect(
+        sha256Hex(''),
+        'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      );
+    });
+
+    test('"abc" (standard vector)', () {
+      expect(
+        sha256Hex('abc'),
+        'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+      );
+    });
+
+    test('deterministic and distinct per input', () {
+      expect(sha256Hex('1234'), sha256Hex('1234'));
+      expect(sha256Hex('1234'), isNot(sha256Hex('1235')));
+    });
+  });
+
+  group('NetworkLocation (network storage)', () {
+    const loc = NetworkLocation(
+      name: 'NAS',
+      protocol: 'smb',
+      host: '192.168.1.100',
+      port: 445,
+      path: '/Movies/a.mp4',
+      username: 'user',
+      password: 'pass',
+    );
+
+    test('streamUrl builds user:pass@host:port/path', () {
+      expect(loc.streamUrl, 'smb://user:pass@192.168.1.100:445/Movies/a.mp4');
+    });
+
+    test('streamUrl omits empty auth and zero port', () {
+      const bare = NetworkLocation(
+        name: 'x',
+        protocol: 'ftp',
+        host: '10.0.0.2',
+        path: 'share',
+      );
+      expect(bare.streamUrl, 'ftp://10.0.0.2/share');
+    });
+
+    test('round-trips through json', () {
+      final rt = NetworkLocation.fromJson(loc.toJson());
+      expect(rt.name, loc.name);
+      expect(rt.protocol, loc.protocol);
+      expect(rt.host, loc.host);
+      expect(rt.port, loc.port);
+      expect(rt.streamUrl, loc.streamUrl);
+    });
+
+    test('parseNetworkLocationsJson drops malformed rows', () {
+      final list = parseNetworkLocationsJson(
+          '[{"host":"a"},{"name":"no host"}, 42, {"host":"b","protocol":"ftp"}]');
+      expect(list.length, 2);
+      expect(list.first.host, 'a');
+      expect(list.last.host, 'b');
+    });
+
+    test('parseNetworkLocationsJson empty on blank', () {
+      expect(parseNetworkLocationsJson(null), isEmpty);
+      expect(parseNetworkLocationsJson('   '), isEmpty);
+    });
+  });
+
+  group('SavedServer (open stream)', () {
+    test('addSavedServer dedupes by url', () {
+      final list = addSavedServer(const [], const SavedServer(name: 'a', url: 'http://x'));
+      expect(list.length, 1);
+      final deduped = addSavedServer(list, const SavedServer(name: 'b', url: 'http://x'));
+      expect(deduped.length, 1);
+      expect(deduped.single.name, 'a');
+    });
+
+    test('serversToJson / parseServersJson round-trip', () {
+      const servers = [SavedServer(name: 's1', url: 'http://a'), SavedServer(name: 's2', url: 'http://b')];
+      final json = serversToJson(servers);
+      final back = parseServersJson(json);
+      expect(back.length, 2);
+      expect(back.map((s) => s.url), ['http://a', 'http://b']);
+    });
+
+    test('parseServersJson drops entries without url', () {
+      final list = parseServersJson('[{"name":"no url"},{"name":"ok","url":"http://y"}]');
+      expect(list.length, 1);
+      expect(list.single.url, 'http://y');
+    });
+  });
+
+  group('isVideoFile (file manager)', () {
+    test('recognises common containers', () {
+      expect(isVideoFile('/a/b/movie.MKV'), isTrue);
+      expect(isVideoFile('clip.mp4'), isTrue);
+      expect(isVideoFile('/a/b/rec.m2ts'), isTrue);
+    });
+
+    test('rejects non-video', () {
+      expect(isVideoFile('song.mp3'), isFalse);
+      expect(isVideoFile('photo.jpg'), isFalse);
+      expect(isVideoFile('notes.txt'), isFalse);
+    });
   });
 }

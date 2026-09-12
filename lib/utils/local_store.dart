@@ -122,6 +122,26 @@ class LocalStore {
   Future<void> clearPin() async =>
       (await SharedPreferences.getInstance()).remove(_kPin);
 
+  // ---- Private-folder vault PIN (SHA-256 hash, never the PIN itself) ----
+
+  Future<String> vaultPinHash() async =>
+      (await SharedPreferences.getInstance()).getString(_kPin) ?? '';
+
+  Future<void> setVaultPinHash(String hash) async =>
+      (await SharedPreferences.getInstance()).setString(_kPin, hash);
+
+  Future<void> clearVaultPinHash() async =>
+      (await SharedPreferences.getInstance()).remove(_kPin);
+
+  // ---- raw string store (mirrors the old NativeBridge settings pair) ----
+
+  /// Raw string under [key] ('' when absent / unreadable).
+  Future<String> rawString(String key) async =>
+      (await SharedPreferences.getInstance()).getString(key) ?? '';
+
+  Future<void> setRawString(String key, String value) async =>
+      (await SharedPreferences.getInstance()).setString(key, value);
+
   // ---------------- playlists ----------------
 
   Future<Map<String, List<String>>> playlists() async {
@@ -245,6 +265,12 @@ class LocalStore {
     final list = (await recentStreams()
       ..removeWhere((e) => e.url == link.url));
     await _saveLinks(_kRecentStreams, [link, ...list].take(20).toList());
+  }
+
+  Future<void> deleteRecentStream(String url) async {
+    final list = (await recentStreams())
+      ..removeWhere((e) => e.url == url);
+    await _saveLinks(_kRecentStreams, list);
   }
 
   /// Remove an id from everywhere (used after system-consent delete).

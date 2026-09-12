@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../screens/player_screen.dart';
+import '../state/private_vault.dart';
 import '../theme.dart';
 import '../utils/badges.dart';
 import '../utils/crash_log.dart';
@@ -12,6 +14,7 @@ import '../utils/format.dart';
 import '../utils/local_store.dart';
 import '../utils/resume.dart';
 import '../utils/settings.dart';
+import '../utils/storage_permission.dart';
 
 /// Shared video card grid + compact list used by Home, Folders, Playlists,
 /// Private Space and History. Responsive: column count adapts to width.
@@ -119,7 +122,6 @@ class VideoGrid extends StatefulWidget {
 class _VideoGridState extends State<VideoGrid> {
   final _store = LocalStore();
   Set<String> _favs = {};
-  Set<String> _priv = {};
 
   @override
   void initState() {
@@ -129,11 +131,9 @@ class _VideoGridState extends State<VideoGrid> {
 
   Future<void> _loadFlags() async {
     final favs = await _store.favorites();
-    final priv = await _store.privateIds();
     if (mounted) {
       setState(() {
         _favs = favs;
-        _priv = priv;
       });
     }
   }
@@ -145,13 +145,77 @@ class _VideoGridState extends State<VideoGrid> {
   }
 
   Future<void> _togglePrivate(AssetEntity a) async {
-    final nowPrivate = await _store.togglePrivate(a.id);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(nowPrivate
-            ? 'Moved to Private Space'
-            : 'Removed from Private Space'),
-      ));
+    // Old-app parity: "Move to Private folder" really moves the FILE into
+    // the app-private vault (it disappears from Gallery + MediaStore), so
+    // the whole device is the source of truth — not an id flag.
+    if (!await ensureStorageAccess()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Private folder needs storage permission: allow it, then '
+            'long-press the video again',
+          ),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1a24),
+        title: const Text('Move to Private folder?',
+            style: TextStyle(color: Colors.white, fontSize: 17)),
+        content: Text(
+          '"${a.title ?? 'This video'}" moves into the app\'s private folder '
+          '- invisible to Gallery and file managers, visible here only after '
+          'your PIN.\n\nWarning: uninstalling the app deletes hidden videos.',
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 13,
+            height: 1.45,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.lock_outline, size: 16),
+            label: const Text('Hide'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final file = await a.file;
+      final path = file?.path;
+      if (path == null || path.isEmpty) {
+        throw const FileSystemException('Video file not found');
+      }
+      await PrivateVault().hide(path);
+      await _store.scrubId(a.id);
+      CrashLog.crumb('video.hidden', {'id': a.id});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Moved to Private folder')),
+        );
+      }
+    } catch (e) {
+      CrashLog.error('video.hide_failed', e, {'id': a.id});
+      if (mounted) {
+        final why = e
+            .toString()
+            .replaceAll('FileSystemException: ', '')
+            .replaceAll('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not hide: $why')),
+        );
+      }
     }
     await _loadFlags();
     widget.onChanged();
@@ -334,7 +398,6 @@ class _VideoGridState extends State<VideoGrid> {
       );
 
   void _showActions(AssetEntity a) {
-    final isPriv = _priv.contains(a.id);
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface,
@@ -357,14 +420,11 @@ class _VideoGridState extends State<VideoGrid> {
               Navigator.of(context).pop();
               _addToPlaylist(a);
             }),
-            _sheetAction(
-              isPriv ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
-              isPriv ? 'Remove from Private Space' : 'Move to Private Space',
-              () {
-                Navigator.of(context).pop();
-                _togglePrivate(a);
-              },
-            ),
+            _sheetAction(Icons.lock_outline_rounded, 'Move to Private folder',
+                () {
+              Navigator.of(context).pop();
+              _togglePrivate(a);
+            }),
             _sheetAction(Icons.info_outline_rounded, 'Properties', () {
               Navigator.of(context).pop();
               unawaited(_properties(a));
