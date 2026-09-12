@@ -271,8 +271,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildHeader(),
-        _buildTiles(),
         const DiscoverSection(),
+        _buildTiles(),
         const SizedBox(height: 4),
         Expanded(
           child: RefreshIndicator(
@@ -297,15 +297,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Max Player',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white, // fixed brand white (never themes)
-                    letterSpacing: 0.2,
+                ShaderMask(
+                  shaderCallback: (bounds) => const LinearGradient(
+                    colors: [Color(0xFF8B5CF6), Color(0xFF22D3EE)],
+                  ).createShader(bounds),
+                  child: const Text(
+                    'Max Player',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white, // ShaderMask paints over this
+                      letterSpacing: 0.2,
+                    ),
                   ),
                 ),
                 const Text(
