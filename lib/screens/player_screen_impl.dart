@@ -12,7 +12,6 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../theme.dart';
 import '../utils/ab_loop.dart';
 import '../utils/crash_log.dart';
-import '../utils/fit.dart';
 import '../utils/format.dart';
 import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
@@ -51,20 +50,27 @@ class PlayerScreen extends StatefulWidget {
 }
 
 enum _DragMode { none, brightness, volume, seek, zoom }
+enum _FitMode { fit, crop, stretch, fitWidth, fitHeight }
+
+extension on _FitMode {
+  BoxFit get boxFit => switch (this) {
+        _FitMode.fit => BoxFit.contain,
+        _FitMode.crop => BoxFit.cover,
+        _FitMode.stretch => BoxFit.fill,
+        _FitMode.fitWidth => BoxFit.fitWidth,
+        _FitMode.fitHeight => BoxFit.fitHeight,
+      };
+
+  String get label => switch (this) {
+        _FitMode.fit => 'Fit',
+        _FitMode.crop => 'Crop',
+        _FitMode.stretch => 'Stretch',
+        _FitMode.fitWidth => 'Fit width',
+        _FitMode.fitHeight => 'Fit height',
+      };
+}
 
 enum _PlayerMenuAction { info, eq, screenshot, cast, pip, sleep }
-
-enum _SleepChoiceKind { off, minutes, untilEnd }
-
-class _SleepChoice {
-  const _SleepChoice._(this.kind, [this.minutes]);
-  const _SleepChoice.off() : this._(_SleepChoiceKind.off);
-  const _SleepChoice.untilEnd() : this._(_SleepChoiceKind.untilEnd);
-  const _SleepChoice.minutes(int value) : this._(_SleepChoiceKind.minutes, value);
-
-  final _SleepChoiceKind kind;
-  final int? minutes;
-}
 
 class _PlayerScreenState extends State<PlayerScreen>
     with WidgetsBindingObserver {
@@ -83,7 +89,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   Timer? _saveTimer;
   Timer? _flashTimer;
   Timer? _sleepTimer;
-  Timer? _lockedHintTimer;
   VoidCallback? _settingsListener;
 
   late String _title;
@@ -95,9 +100,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _controlsVisible = true;
   bool _boost = false;
   bool _locked = false;
+  bool _fullscreen = false;
   bool _muted = false;
   double _volumePercent = 100;
-  FitMode _fitMode = FitMode.fit;
+  _FitMode _fitMode = _FitMode.fit;
 
   _DragMode _drag = _DragMode.none;
   Offset _dragStart = Offset.zero;
@@ -107,8 +113,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   double _volumeStart = 100;
   double _brightnessStart = 0;
   bool _gestureActive = false;
-  bool _lockedHintVisible = false;
-  bool _rotationLocked = false;
   IconData _gestureIcon = Icons.touch_app_rounded;
   String _gestureLabel = '';
   Duration? _seekPreview;
@@ -125,7 +129,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _karaoke = false;
   String _toneMapping = 'auto';
   int _sleepMinutesLeft = 0;
-  bool _sleepUntilEnd = false;
   bool _softwareDecodeRetried = false;
 
   @override
@@ -133,6 +136,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     _title = widget.title;
     _currentPath = widget.path;
     _queueIndex = widget.queueStart;
@@ -146,14 +150,12 @@ class _PlayerScreenState extends State<PlayerScreen>
       } else if (!_settings.autoHide) {
         _hideTimer?.cancel();
       }
+      _applyPerformanceMode();
+      if (_settings.autoRotate) {
+        unawaited(SystemChrome.setPreferredOrientations(DeviceOrientation.values));
+      }
     };
     _settings.addListener(_settingsListener!);
-    _native.setMethodCallHandler((call) async {
-      if (call.method == 'pipToggle') {
-        await _player.playOrPause();
-      }
-      return null;
-    });
     unawaited(_settings.load());
     _open(_currentPath, offerResume: true);
     _playingSub = _player.stream.playing.listen((playing) {
@@ -164,22 +166,13 @@ class _PlayerScreenState extends State<PlayerScreen>
         WakelockPlus.disable();
         unawaited(_savePosition());
       }
-      unawaited(_syncBackgroundAudio(playing));
-      unawaited(_native.invokeMethod('updatePipPlaying', {'playing': playing}));
       if (mounted) setState(() {});
     });
     _bufferingSub = _player.stream.buffering.listen((b) {
       if (mounted) setState(() => _buffering = b);
     });
     _completedSub = _player.stream.completed.listen((done) {
-      if (done) {
-        if (_sleepUntilEnd) {
-          _sleepUntilEnd = false;
-          if (mounted) setState(() {});
-          _emitSnack('Sleep timer — video ended');
-        }
-        unawaited(_playNext());
-      }
+      if (done) unawaited(_playNext());
     });
     _errorSub = _player.stream.error.listen((e) {
       _onError(e);
@@ -187,21 +180,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       unawaited(_savePosition());
     });
-  }
-
-  Future<void> _syncBackgroundAudio(bool playing) async {
-    if (!_settings.backgroundAudio) {
-      try {
-        await _native.invokeMethod('setBackgroundAudio', {'enabled': false});
-      } catch (_) {}
-      return;
-    }
-    try {
-      await _native.invokeMethod('setBackgroundAudio', {
-        'enabled': playing,
-        'title': _title,
-      });
-    } catch (_) {}
+    _applyPerformanceMode();
   }
 
   Future<void> _open(String path, {required bool offerResume}) async {
@@ -216,6 +195,17 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     } catch (e) {
       _onError(e);
+    }
+  }
+
+  Future<void> _applyPerformanceMode() async {
+    if (!_ready) return;
+    if (_settings.performanceMode) {
+      await _mpvSet('framedrop', 'vo');
+      await _mpvSet('vd-lavc-fast', 'yes');
+    } else {
+      await _mpvSet('framedrop', 'no');
+      await _mpvSet('vd-lavc-fast', 'no');
     }
   }
 
@@ -322,6 +312,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       _title = asset?.title ?? 'Video';
       if (mounted) setState(() {});
       await _player.open(Media(file.path), play: true);
+      await _applyPerformanceMode();
     } catch (e) {
       CrashLog.error('queue.next_failed', e, {'id': id});
       _emitSnack('Could not play the selected video in queue');
@@ -368,40 +359,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
-  /// While the seek bar is dragged the auto-hide countdown pauses — the
-  /// controls must never fade away mid-scrub (old-player behavior).
-  void _onScrubChanged(bool scrubbing) {
-    if (scrubbing) {
-      _hideTimer?.cancel();
-    } else if (_controlsVisible) {
-      _scheduleHide();
-    }
-  }
-
-  /// Whether the tracks (tune) button should show its "active" chip:
-  /// subtitles on, more than one audio track, or an A-B loop in use.
-  bool get _tracksActive =>
-      _ab != AbState.off ||
-      _player.state.track.subtitle.id != 'no' ||
-      _player.state.tracks.audio.length > 1;
-
-  void _onTap() {
-    if (_locked) {
-      _lockedHintTimer?.cancel();
-      setState(() => _lockedHintVisible = true);
-      _lockedHintTimer = Timer(const Duration(seconds: 2), () {
-        if (mounted) setState(() => _lockedHintVisible = false);
-      });
-      return;
-    }
-    _toggleControls();
-  }
-
   void _onDoubleTap(TapDownDetails details) {
     if (_locked) {
       setState(() {
         _locked = false;
-        _lockedHintVisible = false;
         _controlsVisible = true;
       });
       _scheduleHide();
@@ -430,7 +391,6 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _flash(int seconds) {
     _flashTimer?.cancel();
-    _lockedHintTimer?.cancel();
     setState(() {
       _seekFlash = seconds;
       _controlsVisible = true;
@@ -452,23 +412,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     final v = value.clamp(0.0, maxVolume).toDouble();
     _volumePercent = v;
     _muted = false;
-    try {
-      // Do not use MPV's audio-filter chain for volume boost. Invalid/unsupported
-      // filter strings can make MPV report that the video cannot be played.
-      // MPV's volume-max property safely allows software volume above 100%.
-      await _mpvSet('volume-max', maxVolume.round().toString());
-      if (v <= 100) {
-        await _player.setVolume(v);
-      } else {
-        await _mpvSet('volume', v.toStringAsFixed(1));
-      }
+    if (v <= 100) {
+      await _player.setVolume(v);
       await _mpvSet('af', combineAudioFilters(_bands,
           dialogueBoost: _dialogueBoost));
-    } catch (e) {
-      CrashLog.error('player.volume_failed', e, {'value': v});
-      if (v <= 100) {
-        await _player.setVolume(v);
-      }
+    } else {
+      await _player.setVolume(100);
+      final gain = v / 100.0;
+      final base = combineAudioFilters(_bands,
+          dialogueBoost: _dialogueBoost);
+      final gainFilter = base.isEmpty ? 'lavfi=[volume=$gain]' : '$base,volume=$gain';
+      await _mpvSet('af', gainFilter);
     }
     if (mounted) setState(() {});
   }
@@ -487,6 +441,47 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  Future<void> _showSpeedSheet() async {
+    const rates = <double>[0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
+    final current = _player.state.rate;
+    final picked = await showModalBottomSheet<double>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SheetHandle(),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(18, 4, 18, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Playback speed',
+                    style: TextStyle(color: AppColors.textPrimary,
+                        fontSize: 18, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            for (final rate in rates)
+              ListTile(
+                title: Text('${rate}x',
+                    style: const TextStyle(color: AppColors.textPrimary)),
+                trailing: (rate - current).abs() < .001
+                    ? Icon(Icons.check_rounded, color: AppColors.accent)
+                    : null,
+                onTap: () => Navigator.of(context).pop(rate),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) return;
+    await _player.setRate(picked);
+    if (mounted) setState(() {});
+  }
+
   void _setBoost(bool on) {
     if (!_settings.longPressSpeed || _locked) return;
     _boost = on;
@@ -494,24 +489,53 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (mounted) setState(() {});
   }
 
-  /// The old player's fit button: one tap steps to the NEXT fit in the
-  /// six-mode loop (Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original -> Fit).
-  /// No sheet — cycling is the only selection UI, exactly like the old app.
-  void _cycleFit() {
+  void _resetFit() {
     setState(() {
-      _fitMode = nextFitMode(_fitMode);
+      _fitMode = _FitMode.fit;
       _zoom = 1;
     });
-    _emitGesture(_fitMode.icon, 'Fit: ${_fitMode.label}');
   }
 
-  /// 16:9 / 4:3 force the FRAME inside the screen (Center + AspectRatio,
-  /// engine-independent, identical in landscape and portrait — the old
-  /// player's VLC-style resize). Other fit modes pass straight through.
-  Widget _fitFrame({required Widget child}) {
-    final asp = _fitMode.aspectRatio;
-    if (asp == null) return child;
-    return Center(child: AspectRatio(aspectRatio: asp, child: child));
+  void _showFitMenu() {
+    showModalBottomSheet<_FitMode>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SheetHandle(),
+            const ListTile(
+              title: Text('Screen fit', style: TextStyle(
+                  color: AppColors.textPrimary, fontSize: 18,
+                  fontWeight: FontWeight.w700)),
+            ),
+            for (final mode in _FitMode.values)
+              ListTile(
+                leading: Icon(
+                  mode == _FitMode.fit ? Icons.fit_screen_rounded : Icons.crop_rounded,
+                  color: AppColors.accent),
+                title: Text(mode.label,
+                    style: const TextStyle(color: AppColors.textPrimary)),
+                trailing: mode == _fitMode
+                    ? Icon(Icons.check_rounded, color: AppColors.accent)
+                    : null,
+                onTap: () => Navigator.of(context).pop(mode),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    ).then((mode) {
+      if (mode != null) {
+        setState(() {
+          _fitMode = mode;
+          _zoom = 1;
+        });
+      }
+    });
   }
 
   void _onScaleStart(ScaleStartDetails d) {
@@ -521,8 +545,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     _volumeStart = _volumePercent;
     _brightnessStart = _levelValue;
     _gestureActive = false;
-    _gestureLabel = '';
-    _seekPreview = null;
     _drag = d.pointerCount >= 2 && _settings.pinchZoom
         ? _DragMode.zoom
         : _DragMode.none;
@@ -545,8 +567,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final delta = d.focalPoint - _dragStart;
     if (_drag == _DragMode.none && delta.distance >= 14) {
       final width = screenSize.width;
-      if (delta.dx.abs() > delta.dy.abs() * 1.35 &&
-          _settings.horizontalSeek) {
+      if (delta.dx.abs() > delta.dy.abs() * 1.5 && _settings.horizontalSeek) {
         _drag = _DragMode.seek;
         _scrubStart = _player.state.position;
         _lastSentSeek = _scrubStart;
@@ -556,12 +577,11 @@ class _PlayerScreenState extends State<PlayerScreen>
           _drag = _DragMode.brightness;
           _levelValue = await ScreenBrightness.instance.application;
           _brightnessStart = _levelValue;
-          _dragStart = d.focalPoint;
         } else if (_dragStart.dx >= width / 2 && _settings.swipeVolume) {
           _drag = _DragMode.volume;
           _volumeStart = _volumePercent;
-          _dragStart = d.focalPoint;
         }
+        _dragStart = d.focalPoint;
       }
     }
 
@@ -583,15 +603,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     } else if (_drag == _DragMode.seek) {
       final duration = _player.state.duration;
       if (duration <= Duration.zero) return;
-      // Seek relative to the exact point where the finger touched.
-      // One screen width corresponds to +/-90 seconds.
-      const secondsPerScreen = 90.0;
-      final offsetSeconds =
-          (d.focalPoint.dx - _dragStart.dx) / width * secondsPerScreen;
-      var targetMs =
-          _scrubStart.inMilliseconds + (offsetSeconds * 1000).round();
-      targetMs = targetMs.clamp(0, duration.inMilliseconds);
-      final target = Duration(milliseconds: targetMs);
+      final fraction = (d.focalPoint.dx / width).clamp(0.0, 1.0);
+      final target = Duration(
+          milliseconds: (fraction * duration.inMilliseconds).round());
       setState(() {
         _seekPreview = target;
         _gestureActive = true;
@@ -621,44 +635,23 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _onScaleEnd(ScaleEndDetails _) {
     if (_locked) return;
-
-    final drag = _drag;
-    final preview = _seekPreview;
-
-    if (drag == _DragMode.seek && preview != null) {
-      unawaited(_player.seek(preview));
+    if (_drag == _DragMode.seek && _seekPreview != null) {
+      _player.seek(_seekPreview!);
     }
-
-    if (drag == _DragMode.zoom && _zoom < .9) {
-      setState(() {
-        _zoom = 1;
-        _fitMode = FitMode.fit;
-      });
+    if (_drag == _DragMode.zoom && _zoom < .9) {
+      _resetFit();
     }
-
-    _flashTimer?.cancel();
-    if (mounted) {
-      setState(() {
-        _drag = _DragMode.none;
-        _seekPreview = null;
-        _gestureActive = false;
-        _gestureLabel = '';
-      });
-    }
-  }
-
-  String? get _sleepLabel {
-    if (_sleepUntilEnd) return 'Sleep: Until end';
-    if (_sleepTimer != null && _sleepMinutesLeft > 0) {
-      return 'Sleep: $_sleepMinutesLeft min';
-    }
-    return null;
+    setState(() {
+      _drag = _DragMode.none;
+      _seekPreview = null;
+    });
   }
 
   Future<void> _showPlayerSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const PlayerSettingsScreen()),
     );
+    if (mounted) _applyPerformanceMode();
   }
 
   void _showTrackSheet() => _showExtrasSheet();
@@ -682,19 +675,17 @@ class _PlayerScreenState extends State<PlayerScreen>
               _extraAction(
                 icon: Icons.subtitles_rounded,
                 title: 'Subtitles ${tracks.subtitle.isEmpty ? '(none)' : '(on)'}',
-                onTap: () async {
+                onTap: () {
                   Navigator.of(context).pop();
-                  await _showTrackPicker(subtitle: true);
-                  if (mounted) setState(() {});
+                  _showTrackPicker(subtitle: true);
                 },
               ),
               _extraAction(
                 icon: Icons.music_note_rounded,
                 title: 'Audio track (${tracks.audio.length} available)',
-                onTap: () async {
+                onTap: () {
                   Navigator.of(context).pop();
-                  await _showTrackPicker(subtitle: false);
-                  if (mounted) setState(() {});
+                  _showTrackPicker(subtitle: false);
                 },
               ),
               _extraAction(
@@ -989,11 +980,13 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _applyAudioFilters() async {
-    final base = combineAudioFilters(
-      _bands,
-      dialogueBoost: _dialogueBoost,
-    );
-    await _mpvSet('af', base);
+    final base = combineAudioFilters(_bands, dialogueBoost: _dialogueBoost);
+    if (_volumePercent > 100) {
+      final gain = _volumePercent / 100.0;
+      await _mpvSet('af', base.isEmpty ? 'lavfi=[volume=$gain]' : '$base,volume=$gain');
+    } else {
+      await _mpvSet('af', base);
+    }
     if (mounted) setState(() {});
   }
 
@@ -1073,6 +1066,19 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ),
                     ],
                   ),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Dialogue boost',
+                      style: TextStyle(color: AppColors.textPrimary)),
+                  subtitle: const Text('Lifts quiet speech (1-4 kHz)',
+                      style: TextStyle(color: AppColors.textSecondary)),
+                  value: _dialogueBoost,
+                  onChanged: (value) {
+                    _dialogueBoost = value;
+                    unawaited(_applyAudioFilters());
+                    setSheet(() {});
+                  },
+                ),
               ],
             ),
           ),
@@ -1090,125 +1096,67 @@ class _PlayerScreenState extends State<PlayerScreen>
           '${formatDuration(state.position)} / ${formatDuration(state.duration)}'),
       MapEntry('Remaining', formatDuration(state.duration - state.position)),
       MapEntry('Playback speed', '${state.rate}x'),
-      if (state.videoParams.w != null && state.videoParams.h != null)
-        MapEntry('Resolution',
-            '${state.videoParams.w} × ${state.videoParams.h}'),
+      MapEntry('Video encoder params', state.videoParams.toString()),
+      MapEntry('Audio decoder params', state.audioParams.toString()),
       if (state.audioBitrate != null)
         MapEntry('Audio bitrate', '${state.audioBitrate} bit/s'),
     ];
-
-    showModalBottomSheet<void>(
+    showDialog<void>(
       context: context,
-      backgroundColor: AppColors.surface,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (context) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: .62,
-          minChildSize: .35,
-          maxChildSize: .92,
-          builder: (context, controller) => Column(
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.border),
+        ),
+        title: Text(_title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                color: AppColors.textPrimary, fontSize: 15)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
             children: [
-              _SheetHandle(),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 4, 20, 10),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Video info',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
+              for (final row in rows)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(row.key,
+                          style: const TextStyle(
+                              color: AppColors.textSecondary, fontSize: 11.5)),
+                      const SizedBox(height: 2),
+                      Text(row.value,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 12.5)),
+                    ],
                   ),
                 ),
-              ),
-              Expanded(
-                child: ListView(
-                  controller: controller,
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                  children: [
-                    Text(
-                      _title,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    for (final row in rows)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(row.key,
-                                style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 11.5)),
-                            const SizedBox(height: 2),
-                            SelectableText(row.value,
-                                style: const TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 12.5)),
-                          ],
-                        ),
-                      ),
-                    const Divider(color: AppColors.border),
-                    if (state.tracks.video.isNotEmpty)
-                      const Text('Video tracks',
-                          style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w700)),
-                    for (final track in state.tracks.video)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 5),
-                        child: Text(_trackLabel(track),
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12)),
-                      ),
-                    if (state.tracks.audio.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      const Text('Audio tracks',
-                          style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w700)),
-                    ],
-                    for (final track in state.tracks.audio)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 5),
-                        child: Text(_trackLabel(track),
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12)),
-                      ),
-                    if (state.tracks.subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      const Text('Subtitle tracks',
-                          style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w700)),
-                    ],
-                    for (final track in state.tracks.subtitle)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 5),
-                        child: Text(_trackLabel(track),
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12)),
-                      ),
-                  ],
-                ),
-              ),
+              const Divider(color: AppColors.border),
+              for (final track in state.tracks.video)
+                Text('Video: $track',
+                    style: const TextStyle(
+                        color: AppColors.textPrimary, fontSize: 11)),
+              for (final track in state.tracks.audio)
+                Text('Audio: $track',
+                    style: const TextStyle(
+                        color: AppColors.textPrimary, fontSize: 11)),
+              for (final track in state.tracks.subtitle)
+                Text('Subtitle: $track',
+                    style: const TextStyle(
+                        color: AppColors.textPrimary, fontSize: 11)),
             ],
           ),
         ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close')),
+        ],
       ),
     );
   }
@@ -1234,25 +1182,16 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _enterPip() async {
-    if (!_ready || _failed) {
-      _emitSnack('Start the video before using Picture-in-Picture');
-      return;
-    }
     try {
       final video = _player.state.videoParams;
-      setState(() => _controlsVisible = false);
       final ok = await _native.invokeMethod<bool>('enterPip', {
         'w': video.dw ?? 16,
         'h': video.dh ?? 9,
       });
-      if (ok != true && mounted) {
-        setState(() => _controlsVisible = true);
-        _emitSnack('Picture-in-Picture is not available on this device');
-      }
+      if (ok != true) _emitSnack('Picture-in-Picture not available');
     } catch (e) {
       CrashLog.error('pip.failed', e);
-      if (mounted) setState(() => _controlsVisible = true);
-      _emitSnack('Picture-in-Picture could not be started');
+      _emitSnack('Picture-in-Picture not supported on this device');
     }
   }
 
@@ -1266,13 +1205,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _showSleepTimerSheet() async {
-    const mins = [10, 15, 30, 45, 60];
-    final picked = await showModalBottomSheet<_SleepChoice>(
+    const mins = [0, 10, 15, 30, 45, 60];
+    final picked = await showModalBottomSheet<int>(
       context: context,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1289,63 +1227,34 @@ class _PlayerScreenState extends State<PlayerScreen>
                         fontWeight: FontWeight.w700)),
               ),
             ),
-            if (_sleepTimer != null || _sleepUntilEnd)
-              ListTile(
-                title: const Text('Turn off timer',
-                    style: TextStyle(color: AppColors.textPrimary)),
-                onTap: () => Navigator.of(context).pop(_SleepChoice.off()),
-              ),
             for (final min in mins)
               ListTile(
-                title: Text('$min minutes',
-                    style: const TextStyle(color: AppColors.textPrimary)),
-                onTap: () => Navigator.of(context).pop(_SleepChoice.minutes(min)),
+                title: Text(
+                  min == 0
+                      ? (_sleepTimer == null
+                          ? 'Off'
+                          : 'Cancel timer ($_sleepMinutesLeft min)')
+                      : '$min minutes',
+                  style: const TextStyle(color: AppColors.textPrimary),
+                ),
+                onTap: () => Navigator.of(context).pop(min),
               ),
-            ListTile(
-              title: const Text('Until end',
-                  style: TextStyle(color: AppColors.textPrimary)),
-              subtitle: const Text(
-                  'Pause when this video reaches the end',
-                  style: TextStyle(color: AppColors.textSecondary)),
-              onTap: () =>
-                  Navigator.of(context).pop(_SleepChoice.untilEnd()),
-            ),
           ],
         ),
       ),
     );
     if (picked == null) return;
-
     _sleepTimer?.cancel();
-    _sleepTimer = null;
-    _sleepMinutesLeft = 0;
-    _sleepUntilEnd = false;
-
-    switch (picked.kind) {
-      case _SleepChoiceKind.off:
-        _emitSnack('Sleep timer off');
-        break;
-      case _SleepChoiceKind.minutes:
-        final minutes = picked.minutes!;
-        _sleepMinutesLeft = minutes;
-        _sleepTimer = Timer(Duration(minutes: minutes), () {
-          _player.pause();
-          if (mounted) {
-            setState(() {
-              _sleepTimer = null;
-              _sleepMinutesLeft = 0;
-            });
-          }
-          _emitSnack('Sleep timer — playback paused');
-        });
-        _emitSnack('Sleeping in $minutes minutes');
-        break;
-      case _SleepChoiceKind.untilEnd:
-        _sleepUntilEnd = true;
-        _emitSnack('Sleep timer set until end');
-        break;
+    _sleepMinutesLeft = picked;
+    if (picked > 0) {
+      _sleepTimer = Timer(Duration(minutes: picked), () {
+        _player.pause();
+        _emitSnack('Sleep timer — playback paused. Good night');
+      });
+      _emitSnack('Sleeping in $picked minutes');
+    } else {
+      _emitSnack('Sleep timer off');
     }
-    if (mounted) setState(() {});
   }
 
   Future<void> _onMenuAction(_PlayerMenuAction action) async {
@@ -1371,86 +1280,30 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  Future<void> _showPlaylistSheet() async {
-    if (widget.queueIds.isEmpty) {
-      _emitSnack('Playlist is empty');
-      return;
+  Future<void> _toggleFullscreen() async {
+    _fullscreen = !_fullscreen;
+    setState(() {});
+    if (_fullscreen) {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    } else {
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     }
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: .55,
-          minChildSize: .3,
-          maxChildSize: .9,
-          builder: (context, controller) => Column(
-            children: [
-              _SheetHandle(),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(18, 4, 18, 10),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Playlist', style: TextStyle(
-                    color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  controller: controller,
-                  itemCount: widget.queueIds.length,
-                  itemBuilder: (context, index) => ListTile(
-                    leading: CircleAvatar(
-                      radius: 17,
-                      backgroundColor: AppColors.surfaceAlt,
-                      child: Text('${index + 1}', style: const TextStyle(color: AppColors.textSecondary)),
-                    ),
-                    title: FutureBuilder<AssetEntity?>(
-                      future: AssetEntity.fromId(widget.queueIds[index]),
-                      builder: (context, snapshot) => Text(
-                        snapshot.data?.title ?? 'Video ${index + 1}',
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppColors.textPrimary)),
-                    ),
-                    trailing: index == _queueIndex
-                        ? Icon(Icons.play_arrow_rounded, color: AppColors.accent)
-                        : null,
-                    onTap: () async {
-                      Navigator.of(sheetContext).pop();
-                      if (index == _queueIndex) return;
-                      _queueIndex = index;
-                      await _openQueueIndex();
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    _resetFit();
   }
 
-  Future<void> _toggleRotationLock() async {
-    try {
-      final locked =
-          await _native.invokeMethod<bool>('toggleRotationLock') ?? false;
-      if (!mounted) return;
-      setState(() => _rotationLocked = locked);
-      _emitGesture(
-        locked
-            ? Icons.screen_lock_rotation_rounded
-            : Icons.screen_rotation_alt_rounded,
-        locked ? 'Rotation locked' : 'Rotation unlocked',
-      );
-    } catch (e) {
-      CrashLog.error('rotation.lock_failed', e);
-      _emitSnack('Rotation lock is not available');
+  Future<void> _rotateOrientation() async {
+    final orientation = MediaQuery.of(context).orientation;
+    if (orientation == Orientation.portrait) {
+      await SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } else {
+      await SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+      ]);
     }
   }
 
@@ -1476,6 +1329,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     unawaited(_savePosition());
     unawaited(_player.dispose());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
@@ -1493,7 +1347,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       backgroundColor: Colors.black,
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: _onTap,
+        onTap: _toggleControls,
         onDoubleTapDown: _onDoubleTap,
         onLongPressStart: (_) => _setBoost(true),
         onLongPressEnd: (_) => _setBoost(false),
@@ -1508,13 +1362,12 @@ class _PlayerScreenState extends State<PlayerScreen>
               ClipRect(
                 child: Transform.scale(
                   scale: _zoom,
-                  child: _fitFrame(
-                    child: Video(
-                      controller: _controller,
-                      fit: _fitMode.boxFit,
-                      aspectRatio: null,
-                      controls: NoVideoControls,
-                    ),
+                  child: Video(
+                    controller: _controller,
+                    fit: _fitMode.boxFit,
+                    aspectRatio: _fitMode == _FitMode.fit ? null :
+                        (_fitMode == _FitMode.stretch ? null : 16 / 9),
+                    controls: NoVideoControls,
                   ),
                 ),
               )
@@ -1551,54 +1404,40 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ),
               ),
             if (_boost)
+              const Align(alignment: Alignment(0, -.55), child: _SpeedBadge()),
+            if (_locked)
               Align(
-                alignment: Alignment.center,
-                child: _BoostBadge(
-                  label: '${_settings.longPressRate.toStringAsFixed(2)}x',
-                ),
-              ),
-            if (_locked) ...[
-              Align(
-                alignment: Alignment.centerRight,
+                alignment: Alignment.centerLeft,
                 child: Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: _EdgeButton(icon: Icons.lock_rounded, onTap: () {}),
-                ),
-              ),
-              if (_lockedHintVisible)
-                const Align(
-                  alignment: Alignment.center,
-                  child: _GesturePill(
-                    icon: Icons.lock_open_rounded,
-                    label: 'Double tap to unlock',
+                  padding: const EdgeInsets.only(left: 8),
+                  child: _EdgeButton(
+                    icon: Icons.lock_rounded,
+                    onTap: () {},
                   ),
                 ),
-            ],
+              ),
             if (_controlsVisible && !_locked) ...[
               _TopBar(
                 title: _title,
-                sleepLabel: _sleepLabel,
                 onSettings: _showPlayerSettings,
                 onMenu: (action) => unawaited(_onMenuAction(action)),
               ),
               _BottomBar(
                 player: _player,
-                isMuted: _muted,
-                tracksActive: _tracksActive,
                 onTrackSheet: _showTrackSheet,
-                onQueue: _showPlaylistSheet,
-                onRotate: _toggleRotationLock,
-                rotationLocked: _rotationLocked,
-                onFit: _cycleFit,
+                onFullscreen: _toggleFullscreen,
+                onRotate: _rotateOrientation,
+                onFit: _showFitMenu,
                 onMute: _toggleMute,
-                onScrubbing: _onScrubChanged,
+                onSpeed: _showSpeedSheet,
+                isMuted: _muted,
                 canSkip: widget.queueIds.length > 1,
                 onPrevious: _playPrevious,
                 onNext: _playNext,
               ),
               if (_settings.screenLock)
                 Positioned(
-                  right: 6,
+                  left: 8,
                   top: MediaQuery.of(context).size.height * .34,
                   child: _EdgeButton(
                     icon: Icons.lock_outline_rounded,
@@ -1614,15 +1453,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({
-    required this.title,
-    required this.sleepLabel,
-    required this.onSettings,
-    required this.onMenu,
-  });
+  const _TopBar({required this.title, required this.onSettings, required this.onMenu});
 
   final String title;
-  final String? sleepLabel;
   final VoidCallback onSettings;
   final ValueChanged<_PlayerMenuAction> onMenu;
 
@@ -1634,85 +1467,69 @@ class _TopBar extends StatelessWidget {
       right: 0,
       child: Container(
         padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top + 2,
-          left: 2,
-          right: 2,
-          bottom: 14,
+          top: MediaQuery.of(context).padding.top + 6,
+          left: 4,
+          right: 10,
+          bottom: 16,
         ),
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withValues(alpha: 0.75),
-              Colors.transparent,
-            ],
+            colors: [Colors.black87, Colors.transparent],
           ),
         ),
         child: Row(
           children: [
             IconButton(
-              tooltip: 'Back',
-              icon: Icon(Icons.arrow_back, size: 22, color: AppColors.accent),
+              icon: const Icon(Icons.arrow_back_rounded,
+                  color: Colors.white, size: 31),
               onPressed: () => Navigator.of(context).maybePop(),
             ),
             Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _LoopingTitle(title: title),
-                  if (sleepLabel != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.bedtime_outlined,
-                              size: 11, color: AppColors.accent),
-                          const SizedBox(width: 4),
-                          Text(
-                            sleepLabel!,
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.accent,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w600),
               ),
             ),
             PopupMenuButton<_PlayerMenuAction>(
-              tooltip: 'More actions',
-              icon: Icon(Icons.more_vert, size: 22, color: AppColors.accent),
-              color: const Color(0xFF1a1a24),
-              elevation: 8,
+              tooltip: 'More',
+              padding: EdgeInsets.zero,
+              iconSize: 30,
+              icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+              color: AppColors.surface,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(15),
+                side: const BorderSide(color: AppColors.border),
               ),
               onSelected: onMenu,
-              itemBuilder: (context) => [
-                _topMenuItem(_PlayerMenuAction.info,
-                    Icons.info_outline, 'Video info'),
-                _topMenuItem(_PlayerMenuAction.eq,
-                    Icons.graphic_eq, 'Equalizer & Audio FX'),
-                _topMenuItem(_PlayerMenuAction.screenshot,
-                    Icons.camera_alt_outlined, 'Screenshot'),
-                _topMenuItem(
-                    _PlayerMenuAction.cast, Icons.cast_outlined, 'Cast to TV'),
-                _topMenuItem(_PlayerMenuAction.pip,
-                    Icons.picture_in_picture_alt_outlined, 'Picture-in-Picture'),
-                _topMenuItem(
-                    _PlayerMenuAction.sleep, Icons.bedtime_outlined, 'Sleep timer'),
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                    value: _PlayerMenuAction.info,
+                    child: _MoreRow(icon: Icons.info_outline_rounded, label: 'Video info')),
+                PopupMenuItem(
+                    value: _PlayerMenuAction.eq,
+                    child: _MoreRow(icon: Icons.graphic_eq_rounded, label: 'Equalizer & Audio FX')),
+                PopupMenuItem(
+                    value: _PlayerMenuAction.screenshot,
+                    child: _MoreRow(icon: Icons.photo_camera_outlined, label: 'Screenshot')),
+                PopupMenuItem(
+                    value: _PlayerMenuAction.cast,
+                    child: _MoreRow(icon: Icons.cast_rounded, label: 'Cast to TV')),
+                PopupMenuItem(
+                    value: _PlayerMenuAction.pip,
+                    child: _MoreRow(icon: Icons.picture_in_picture_alt_rounded, label: 'Picture-in-Picture')),
+                PopupMenuItem(
+                    value: _PlayerMenuAction.sleep,
+                    child: _MoreRow(icon: Icons.nightlight_round, label: 'Sleep timer')),
               ],
             ),
             IconButton(
               tooltip: 'Player settings',
-              icon: Icon(Icons.settings_outlined,
-                  size: 22, color: AppColors.accent),
+              icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 30),
               onPressed: onSettings,
             ),
           ],
@@ -1720,138 +1537,22 @@ class _TopBar extends StatelessWidget {
       ),
     );
   }
-
-  PopupMenuItem<_PlayerMenuAction> _topMenuItem(
-      _PlayerMenuAction value, IconData icon, String label) {
-    return PopupMenuItem(
-      value: value,
-      height: 44,
-      child: Row(
-        children: [
-          Icon(icon, size: 19, color: AppColors.accent),
-          const SizedBox(width: 12),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-class _LoopingTitle extends StatefulWidget {
-  const _LoopingTitle({required this.title});
+class _MoreRow extends StatelessWidget {
+  const _MoreRow({required this.icon, required this.label});
 
-  final String title;
-
-  @override
-  State<_LoopingTitle> createState() => _LoopingTitleState();
-}
-
-class _LoopingTitleState extends State<_LoopingTitle>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  double _textWidth = 0;
-  bool _scrolling = false;
-
-  static const _style = TextStyle(
-    color: Colors.white,
-    fontSize: 15.5,
-    fontWeight: FontWeight.w600,
-  );
-  static const _gap = 42.0;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant _LoopingTitle oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.title != widget.title) {
-      _controller.stop();
-      _controller.reset();
-      _scrolling = false;
-      _textWidth = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+  final IconData icon;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final painter = TextPainter(
-          text: TextSpan(text: widget.title, style: _style),
-          textDirection: TextDirection.ltr,
-          maxLines: 1,
-        )..layout();
-
-        final shouldScroll = painter.width > constraints.maxWidth;
-        if (shouldScroll != _scrolling || painter.width != _textWidth) {
-          _textWidth = painter.width;
-          _scrolling = shouldScroll;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            if (_scrolling) {
-              final distance = _textWidth + _gap;
-              _controller.duration = Duration(
-                milliseconds:
-                    (distance / 34 * 1000).round().clamp(5000, 16000),
-              );
-              if (!_controller.isAnimating) _controller.repeat();
-            } else {
-              _controller.stop();
-              _controller.reset();
-            }
-          });
-        }
-
-        if (!shouldScroll) {
-          return Text(
-            widget.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: _style,
-          );
-        }
-
-        final distance = _textWidth + _gap;
-        return ClipRect(
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, _) {
-              final offset = -(_controller.value * distance);
-              return Transform.translate(
-                offset: Offset(offset, 0),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(widget.title, style: _style, maxLines: 1),
-                    const SizedBox(width: _gap),
-                    Text(widget.title, style: _style, maxLines: 1),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
-      },
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: AppColors.accent),
+        const SizedBox(width: 12),
+        Text(label, style: const TextStyle(color: AppColors.textPrimary)),
+      ],
     );
   }
 }
@@ -1859,30 +1560,26 @@ class _LoopingTitleState extends State<_LoopingTitle>
 class _BottomBar extends StatefulWidget {
   const _BottomBar({
     required this.player,
-    required this.isMuted,
-    required this.tracksActive,
     required this.onTrackSheet,
-    required this.onQueue,
+    required this.onFullscreen,
     required this.onRotate,
-    required this.rotationLocked,
     required this.onFit,
     required this.onMute,
-    required this.onScrubbing,
+    required this.onSpeed,
+    required this.isMuted,
     required this.canSkip,
     required this.onPrevious,
     required this.onNext,
   });
 
   final Player player;
-  final bool isMuted;
-  final bool tracksActive;
   final VoidCallback onTrackSheet;
-  final VoidCallback onQueue;
+  final VoidCallback onFullscreen;
   final VoidCallback onRotate;
-  final bool rotationLocked;
   final VoidCallback onFit;
   final VoidCallback onMute;
-  final ValueChanged<bool> onScrubbing;
+  final VoidCallback onSpeed;
+  final bool isMuted;
   final bool canSkip;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
@@ -1892,7 +1589,19 @@ class _BottomBar extends StatefulWidget {
 }
 
 class _BottomBarState extends State<_BottomBar> {
-  double? _dragValue; // 0..1 while the user scrubs the seek bar
+  double? _dragMs;
+  DateTime _lastLiveSeek = DateTime.fromMillisecondsSinceEpoch(0);
+  Duration _lastSent = Duration.zero;
+
+  void _liveSeek(Duration target) {
+    final now = DateTime.now();
+    if (now.difference(_lastLiveSeek).inMilliseconds > 120 &&
+        (target - _lastSent).abs().inMilliseconds > 800) {
+      _lastLiveSeek = now;
+      _lastSent = target;
+      widget.player.seek(target);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1901,297 +1610,168 @@ class _BottomBarState extends State<_BottomBar> {
       right: 0,
       bottom: 0,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
-        decoration: BoxDecoration(
+        padding: EdgeInsets.only(
+          left: 14,
+          right: 14,
+          top: 18,
+          bottom: MediaQuery.of(context).padding.bottom + 10,
+        ),
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.transparent,
-              Colors.black.withValues(alpha: 0.85),
-            ],
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: [Colors.black87, Colors.transparent],
           ),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _progressBar(),
-            // Row 1: previous / play-pause / next — the transport trio. These
-            // three stay white; the theme accent shows only as the press flash
-            // behind them (old-player look).
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _iconBtn(
-                  icon: Icons.skip_previous,
-                  size: 30,
-                  accentPress: true,
-                  tooltip: 'Previous video',
-                  onTap: widget.canSkip ? widget.onPrevious : null,
-                ),
-                const SizedBox(width: 22),
-                _playPause(),
-                const SizedBox(width: 22),
-                _iconBtn(
-                  icon: Icons.skip_next,
-                  size: 30,
-                  accentPress: true,
-                  tooltip: 'Next video',
-                  onTap: widget.canSkip ? widget.onNext : null,
-                ),
-              ],
-            ),
-            // Row 2 (compact): mute speed tracks | queue fit rotate.
-            Row(
-              children: [
-                _iconBtn(
-                  icon: widget.isMuted ? Icons.volume_off : Icons.volume_up,
-                  active: widget.isMuted,
-                  tooltip: 'Mute',
-                  onTap: widget.onMute,
-                  compact: true,
-                ),
-                _speedMenu(),
-                _iconBtn(
-                  tooltip: 'Subtitles, audio tracks, A-B loop, karaoke',
-                  icon: Icons.tune,
-                  active: widget.tracksActive,
-                  onTap: widget.onTrackSheet,
-                  compact: true,
-                ),
-                const Spacer(),
-                _iconBtn(
-                  icon: Icons.queue_music,
-                  tooltip: 'Queue',
-                  onTap: widget.onQueue,
-                  compact: true,
-                ),
-                _iconBtn(
-                  tooltip: 'Fit: Fit / Crop / Stretch / 16:9 / 4:3 / Original',
-                  icon: Icons.aspect_ratio,
-                  onTap: widget.onFit,
-                  compact: true,
-                ),
-                _iconBtn(
-                  tooltip: widget.rotationLocked
-                      ? 'Rotation locked - tap for auto'
-                      : 'Auto-rotate - tap to lock',
-                  icon: widget.rotationLocked
-                      ? Icons.screen_lock_rotation
-                      : Icons.screen_rotation,
-                  active: widget.rotationLocked,
-                  onTap: widget.onRotate,
-                  compact: true,
-                ),
-              ],
-            ),
-          ],
+        child: StreamBuilder<Duration>(
+          stream: widget.player.stream.position,
+          initialData: widget.player.state.position,
+          builder: (context, positionSnapshot) {
+            final position = positionSnapshot.data ?? Duration.zero;
+            return StreamBuilder<Duration>(
+              stream: widget.player.stream.duration,
+              initialData: widget.player.state.duration,
+              builder: (context, durationSnapshot) {
+                final duration = durationSnapshot.data ?? Duration.zero;
+                final max = duration.inMilliseconds > 0
+                    ? duration.inMilliseconds.toDouble()
+                    : 1.0;
+                final shown = (_dragMs ?? position.inMilliseconds.toDouble())
+                    .clamp(0.0, max)
+                    .toDouble();
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Text(formatDuration(Duration(milliseconds: shown.round())),
+                            style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                        const Spacer(),
+                        Text(formatDuration(duration),
+                            style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        activeTrackColor: Colors.white,
+                        inactiveTrackColor: Colors.white24,
+                        thumbColor: Colors.white,
+                        trackHeight: 2.6,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayShape: SliderComponentShape.noOverlay,
+                      ),
+                      child: Slider(
+                        value: shown,
+                        max: max,
+                        onChangeStart: (value) => setState(() => _dragMs = value),
+                        onChanged: (value) {
+                          setState(() => _dragMs = value);
+                          _liveSeek(Duration(milliseconds: value.round()));
+                        },
+                        onChangeEnd: (value) {
+                          widget.player.seek(Duration(milliseconds: value.round()));
+                          setState(() => _dragMs = null);
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    StreamBuilder<bool>(
+                      stream: widget.player.stream.playing,
+                      initialData: widget.player.state.playing,
+                      builder: (context, snapshot) {
+                        final playing = snapshot.data ?? false;
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              tooltip: 'Previous',
+                              iconSize: 32,
+                              color: widget.canSkip ? Colors.white : Colors.white38,
+                              onPressed: widget.canSkip ? widget.onPrevious : null,
+                              icon: const Icon(Icons.skip_previous_rounded),
+                            ),
+                            const SizedBox(width: 26),
+                            IconButton(
+                              tooltip: 'Play/Pause',
+                              iconSize: 58,
+                              color: Colors.white,
+                              onPressed: widget.player.playOrPause,
+                              icon: Icon(playing
+                                  ? Icons.pause_circle_filled_rounded
+                                  : Icons.play_circle_filled_rounded),
+                            ),
+                            const SizedBox(width: 26),
+                            IconButton(
+                              tooltip: 'Next',
+                              iconSize: 32,
+                              color: widget.canSkip ? Colors.white : Colors.white38,
+                              onPressed: widget.canSkip ? widget.onNext : null,
+                              icon: const Icon(Icons.skip_next_rounded),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        IconButton(
+                          tooltip: widget.isMuted ? 'Unmute' : 'Mute',
+                          icon: Icon(
+                            widget.isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                            color: Colors.white, size: 27),
+                          onPressed: widget.onMute,
+                        ),
+                        GestureDetector(
+                          onTap: widget.onSpeed,
+                          child: StreamBuilder<double>(
+                            stream: widget.player.stream.rate,
+                            initialData: widget.player.state.rate,
+                            builder: (context, snapshot) => Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
+                                '${(snapshot.data ?? 1).toStringAsFixed((snapshot.data ?? 1) % 1 == 0 ? 1 : 2)}x',
+                                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          tooltip: 'Subtitles, audio & video options',
+                          icon: const Icon(Icons.subtitles_rounded,
+                              color: Colors.white, size: 28),
+                          onPressed: widget.onTrackSheet,
+                        ),
+                        IconButton(
+                          tooltip: 'Screen fit',
+                          icon: const Icon(Icons.fit_screen_rounded,
+                              color: Colors.white, size: 27),
+                          onPressed: widget.onFit,
+                        ),
+                        IconButton(
+                          tooltip: 'Fullscreen',
+                          icon: const Icon(Icons.fullscreen_rounded,
+                              color: Colors.white, size: 30),
+                          onPressed: widget.onFullscreen,
+                        ),
+                        IconButton(
+                          tooltip: 'Rotate',
+                          icon: const Icon(Icons.screen_rotation_alt_rounded,
+                              color: Colors.white, size: 29),
+                          onPressed: widget.onRotate,
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            );
+          },
         ),
       ),
     );
   }
-
-  Widget _playPause() {
-    return StreamBuilder<bool>(
-      stream: widget.player.stream.playing,
-      initialData: widget.player.state.playing,
-      builder: (context, snapshot) {
-        final playing = snapshot.data ?? false;
-        return _iconBtn(
-          icon: playing
-              ? Icons.pause_circle_filled
-              : Icons.play_circle_filled,
-          size: 46,
-          accentPress: true,
-          onTap: widget.player.playOrPause,
-        );
-      },
-    );
-  }
-
-  /// v22-old speed popup: 0.5x .. 3.0x, anchored to the accent-coloured label.
-  Widget _speedMenu() {
-    return StreamBuilder<double>(
-      stream: widget.player.stream.rate,
-      initialData: widget.player.state.rate,
-      builder: (context, snapshot) {
-        final rate = snapshot.data ?? 1.0;
-        return PopupMenuButton<double>(
-          initialValue: rate,
-          color: const Color(0xFF1a1a24),
-          onSelected: (r) => widget.player.setRate(r),
-          itemBuilder: (context) =>
-              const [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
-                  .map((r) => PopupMenuItem(
-                        value: r,
-                        child: Text('${r}x',
-                            style: const TextStyle(color: Colors.white)),
-                      ))
-                  .toList(),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-            child: Text('${rate}x',
-                style: TextStyle(color: AppColors.accent, fontSize: 11)),
-          ),
-        );
-      },
-    );
-  }
-
-  /// The seek slider + time labels. While the user DRAGS, a bubble floats
-  /// above the thumb with the exact timestamp (the old player also showed a
-  /// video-frame thumbnail here; that needs the background thumbnailer,
-  /// which lands in a later drop).
-  Widget _progressBar() {
-    return StreamBuilder<Duration>(
-      stream: widget.player.stream.position,
-      initialData: widget.player.state.position,
-      builder: (context, posSnapshot) {
-        return StreamBuilder<Duration>(
-          stream: widget.player.stream.duration,
-          initialData: widget.player.state.duration,
-          builder: (context, durSnapshot) {
-            final position = posSnapshot.data ?? Duration.zero;
-            final duration = durSnapshot.data ?? Duration.zero;
-            final totalMs = duration.inMilliseconds.clamp(1, 1 << 62);
-            final value = _dragValue ??
-                (position.inMilliseconds / totalMs).clamp(0.0, 1.0);
-            final shownMs = (_dragValue != null
-                    ? _dragValue! * totalMs
-                    : position.inMilliseconds)
-                .round();
-            return Row(
-              children: [
-                Text(formatDuration(Duration(milliseconds: shownMs)),
-                    style: _timeStyle),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, c) {
-                      final w = c.maxWidth;
-                      const bubbleW = 96.0;
-                      final dragging = _dragValue != null;
-                      final rawLeft = dragging
-                          ? _dragValue! * (w - 28) + 14 - bubbleW / 2
-                          : 0.0;
-                      final left = rawLeft
-                          .clamp(0.0, (w - bubbleW).clamp(0.0, w))
-                          .toDouble();
-                      return Stack(
-                        clipBehavior: Clip.none,
-                        alignment: Alignment.center,
-                        children: [
-                          SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              trackHeight: 3,
-                              thumbShape: const RoundSliderThumbShape(
-                                  enabledThumbRadius: 6),
-                              overlayShape: const RoundSliderOverlayShape(
-                                  overlayRadius: 14),
-                              activeTrackColor: AppColors.accent,
-                              inactiveTrackColor:
-                                  Colors.white.withValues(alpha: 0.15),
-                              thumbColor: AppColors.accent,
-                            ),
-                            child: Slider(
-                              value: value,
-                              onChangeStart: (v) {
-                                widget.onScrubbing(true);
-                                setState(() => _dragValue = v);
-                              },
-                              onChanged: (v) =>
-                                  setState(() => _dragValue = v),
-                              onChangeEnd: (v) {
-                                widget.player.seek(Duration(
-                                    milliseconds: (v * totalMs).round()));
-                                setState(() => _dragValue = null);
-                                widget.onScrubbing(false);
-                              },
-                            ),
-                          ),
-                          if (dragging)
-                            Positioned(
-                              bottom: 30,
-                              left: left,
-                              child: IgnorePointer(
-                                child: Container(
-                                  width: bubbleW,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        Colors.black.withValues(alpha: 0.88),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: Colors.white24),
-                                  ),
-                                  child: Text(
-                                    formatDuration(
-                                        Duration(milliseconds: shownMs)),
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text(formatDuration(duration), style: _timeStyle),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  /// One control button. Every button follows the picked theme accent,
-  /// EXCEPT the transport trio (accentPress), which stays white and only
-  /// flashes the accent while pressed. An "on" state (muted, tracks in use,
-  /// rotation locked) sits on a translucent accent chip.
-  Widget _iconBtn({
-    required IconData icon,
-    VoidCallback? onTap,
-    bool active = false,
-    double size = 24,
-    bool compact = false,
-    String? tooltip,
-    bool accentPress = false,
-  }) {
-    final accent = AppColors.accent;
-    final enabled = onTap != null;
-    final IconData shownIcon = icon;
-    final Color color = accentPress
-        ? (enabled ? Colors.white : Colors.white38)
-        : accent;
-    return IconButton(
-      tooltip: tooltip,
-      icon: Icon(shownIcon, size: compact ? 20 : size, color: color),
-      splashColor: accentPress ? accent.withValues(alpha: 0.45) : null,
-      highlightColor: accentPress ? accent.withValues(alpha: 0.28) : null,
-      style: active
-          ? ButtonStyle(
-              backgroundColor:
-                  WidgetStateProperty.all(accent.withValues(alpha: 0.22)),
-            )
-          : null,
-      constraints: compact
-          ? const BoxConstraints.tightFor(width: 34, height: 40)
-          : null,
-      padding: compact ? EdgeInsets.zero : null,
-      visualDensity: compact ? VisualDensity.compact : null,
-      onPressed: enabled ? onTap : null,
-    );
-  }
-
-  static const _timeStyle = TextStyle(fontSize: 12, color: Colors.white70);
 }
 
 class _EdgeButton extends StatelessWidget {
@@ -2225,9 +1805,22 @@ class _SeekPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final backwards = seconds < 0;
-    return _IndicatorPill(
-      icon: backwards ? Icons.replay_10 : Icons.forward_10,
-      label: '${backwards ? '' : '+'}${seconds}s',
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+      decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: .62),
+          borderRadius: BorderRadius.circular(14)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(backwards ? Icons.replay_10_rounded : Icons.forward_10_rounded,
+              color: Colors.white, size: 25),
+          const SizedBox(width: 6),
+          Text('${backwards ? '' : '+'}${seconds}s',
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+        ],
+      ),
     );
   }
 }
@@ -2240,7 +1833,21 @@ class _GesturePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _IndicatorPill(icon: icon, label: label);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: .72),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 21),
+          const SizedBox(width: 8),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
   }
 }
 
@@ -2252,86 +1859,38 @@ class _InfoPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _IndicatorPill(icon: icon, label: text);
-  }
-}
-
-/// The old player's transient indicator: a pill that pops with scale+fade,
-/// accent icon + accent border, values swap instantly.
-class _IndicatorPill extends StatelessWidget {
-  const _IndicatorPill({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF161622).withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: AppColors.accent.withValues(alpha: 0.35),
-          width: 1.2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.45),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+          color: Colors.black.withValues(alpha: .68),
+          borderRadius: BorderRadius.circular(12)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: AppColors.accent, size: 20),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14.5,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.2,
-            ),
-          ),
+          Icon(icon, color: Colors.white, size: 19),
+          const SizedBox(width: 7),
+          Text(text,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
         ],
       ),
     );
   }
 }
 
-/// Big centred speed badge shown for the whole long-press boost (old look).
-class _BoostBadge extends StatelessWidget {
-  const _BoostBadge({required this.label});
-
-  final String label;
+class _SpeedBadge extends StatelessWidget {
+  const _SpeedBadge();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.fast_forward, color: AppColors.onAccent, size: 19),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              color: AppColors.onAccent,
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
+          color: Colors.white.withValues(alpha: .88),
+          borderRadius: BorderRadius.circular(20)),
+      child: const Text('2×',
+          style: TextStyle(
+              color: Colors.black, fontSize: 16, fontWeight: FontWeight.w800)),
     );
   }
 }

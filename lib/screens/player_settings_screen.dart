@@ -68,10 +68,17 @@ class PlayerSettingsScreen extends StatelessWidget {
               onChanged: s.setHorizontalSeek,
             ),
             _ToggleRow(
+              icon: Icons.screen_rotation_alt_rounded,
+              title: 'Auto rotate player',
+              subtitle: 'Allow portrait and landscape automatically',
+              value: s.autoRotate,
+              onChanged: s.setAutoRotate,
+            ),
+            _ToggleRow(
               icon: Icons.zoom_out_map_outlined,
               title: 'Two-finger pinch to zoom',
               subtitle:
-                  'Pinch with two fingers to zoom and resize the video. Use Screen fit for Fit, Crop, Stretch, Fit width, Fit height and 16:9.',
+                  'Pinch with two fingers to zoom; hold and spread to enlarge. Fullscreen button long-press opens Fit, Crop, Stretch and Fit-width/height.',
               value: s.pinchZoom,
               onChanged: s.setPinchZoom,
             ),
@@ -127,6 +134,13 @@ class PlayerSettingsScreen extends StatelessWidget {
               subtitle: 'Keep playing audio when screen is turned off or app is in background',
               value: s.backgroundAudio,
               onChanged: s.setBackgroundAudio,
+            ),
+            _ToggleRow(
+              icon: Icons.speed_rounded,
+              title: 'Performance mode (low-end)',
+              subtitle: 'Drops late frames instead of lagging, auto-detects low-RAM phones when left enabled',
+              value: s.performanceMode,
+              onChanged: s.setPerformanceMode,
             ),
           ],
         ),
@@ -301,14 +315,14 @@ class _ToggleRow extends StatelessWidget {
           ),
           const SizedBox(width: 14),
           Expanded(
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
                         title,
                         style: const TextStyle(
                           color: AppColors.textPrimary,
@@ -316,29 +330,29 @@ class _ToggleRow extends StatelessWidget {
                           height: 1.2,
                         ),
                       ),
-                      if (subtitle != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 3, right: 4),
-                          child: Text(
-                            subtitle!,
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 12.5,
-                              height: 1.25,
-                            ),
-                          ),
-                        ),
-                    ],
+                    ),
+                    if (trailing != null) SizedBox(child: trailing),
+                    const SizedBox(width: 2),
+                    Switch.adaptive(
+                      value: value,
+                      activeThumbColor: AppColors.accent,
+                      activeTrackColor: AppColors.accent.withValues(alpha: 0.45),
+                      onChanged: onChanged,
+                    ),
+                  ],
+                ),
+                if (subtitle != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6, top: 2),
+                    child: Text(
+                      subtitle!,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12.5,
+                        height: 1.25,
+                      ),
+                    ),
                   ),
-                ),
-                if (trailing != null) SizedBox(child: trailing),
-                const SizedBox(width: 2),
-                Switch.adaptive(
-                  value: value,
-                  activeThumbColor: AppColors.accent,
-                  activeTrackColor: AppColors.accent.withValues(alpha: 0.45),
-                  onChanged: onChanged,
-                ),
               ],
             ),
           ),

@@ -10,7 +10,7 @@ class PlayerSettings extends ChangeNotifier {
   static final PlayerSettings instance = PlayerSettings._();
 
   static const seekSteps = <int>[5, 10, 15, 30, 60];
-  static const speedRates = <double>[1.25, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0];
+  static const speedRates = <double>[1.25, 1.5, 2.0, 2.5, 3.0];
   static const autoHideSeconds = <int>[2, 3, 4, 5, 8, 10];
 
   static const _kDoubleTapSides = 'player.doubleTapSides';
@@ -19,7 +19,8 @@ class PlayerSettings extends ChangeNotifier {
   static const _kSwipeVolume = 'player.swipeVolume';
   static const _kSwipeBrightness = 'player.swipeBrightness';
   static const _kHorizontalSeek = 'player.horizontalSeek';
-  static const _kPinchZoom = 'player.pinchZoom.v3';
+  static const _kPinchZoom = 'player.pinchZoom.v2';
+  static const _kAutoRotate = 'player.autoRotate';
   static const _kLongPressSpeed = 'player.longPressSpeed';
   static const _kLongPressRate = 'player.longPressRate';
   static const _kAutoHide = 'player.autoHide';
@@ -28,6 +29,7 @@ class PlayerSettings extends ChangeNotifier {
   static const _kScreenLock = 'player.screenLock';
   static const _kVolumeBoost = 'player.volumeBoost';
   static const _kBackgroundAudio = 'player.backgroundAudio';
+  static const _kPerformanceMode = 'player.performanceMode';
 
   bool doubleTapSides = true;
   bool doubleTapMiddle = true;
@@ -35,7 +37,8 @@ class PlayerSettings extends ChangeNotifier {
   bool swipeVolume = true;
   bool swipeBrightness = true;
   bool horizontalSeek = true;
-  bool pinchZoom = false;
+  bool pinchZoom = true;
+  bool autoRotate = true;
   bool longPressSpeed = true;
   double longPressRate = 2.0;
   bool autoHide = true;
@@ -44,6 +47,7 @@ class PlayerSettings extends ChangeNotifier {
   bool screenLock = true;
   bool volumeBoost = true;
   bool backgroundAudio = true;
+  bool performanceMode = false;
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
@@ -54,7 +58,8 @@ class PlayerSettings extends ChangeNotifier {
     swipeVolume = p.getBool(_kSwipeVolume) ?? true;
     swipeBrightness = p.getBool(_kSwipeBrightness) ?? true;
     horizontalSeek = p.getBool(_kHorizontalSeek) ?? true;
-    pinchZoom = p.getBool(_kPinchZoom) ?? false;
+    pinchZoom = p.getBool(_kPinchZoom) ?? true;
+    autoRotate = p.getBool(_kAutoRotate) ?? true;
     longPressSpeed = p.getBool(_kLongPressSpeed) ?? true;
     final storedRate = p.getDouble(_kLongPressRate);
     longPressRate = speedRates.contains(storedRate) ? storedRate! : 2.0;
@@ -65,6 +70,7 @@ class PlayerSettings extends ChangeNotifier {
     screenLock = p.getBool(_kScreenLock) ?? true;
     volumeBoost = p.getBool(_kVolumeBoost) ?? true;
     backgroundAudio = p.getBool(_kBackgroundAudio) ?? true;
+    performanceMode = p.getBool(_kPerformanceMode) ?? false;
     notifyListeners();
   }
 
@@ -102,6 +108,11 @@ class PlayerSettings extends ChangeNotifier {
   Future<void> setPinchZoom(bool v) async {
     pinchZoom = v;
     await _saveBool(_kPinchZoom, v);
+  }
+
+  Future<void> setAutoRotate(bool v) async {
+    autoRotate = v;
+    await _saveBool(_kAutoRotate, v);
   }
 
   Future<void> setLongPressSpeed(bool v) async {
@@ -144,6 +155,11 @@ class PlayerSettings extends ChangeNotifier {
   Future<void> setBackgroundAudio(bool v) async {
     backgroundAudio = v;
     await _saveBool(_kBackgroundAudio, v);
+  }
+
+  Future<void> setPerformanceMode(bool v) async {
+    performanceMode = v;
+    await _saveBool(_kPerformanceMode, v);
   }
 
   Future<void> _saveBool(String key, bool value) async {
