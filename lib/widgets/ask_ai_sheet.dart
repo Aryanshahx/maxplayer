@@ -109,7 +109,8 @@ class _AskAiSheetState extends State<AskAiSheet> {
       _asking = false;
       if (!result.ok) {
         _error = result.error.startsWith('config')
-            ? 'Ask AI isn\'t available right now - try again in a moment.'
+            ? 'Ask AI needs an OpenRouter key. Add OPENROUTER_API_KEY as a '
+                'GitHub secret and rebuild — no code change needed.'
             : result.error;
       } else {
         _answer = result.text;

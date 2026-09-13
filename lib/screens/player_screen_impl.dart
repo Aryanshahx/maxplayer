@@ -10,12 +10,14 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../services/native_bridge.dart';
 import '../theme.dart';
 import '../utils/ab_loop.dart';
 import '../utils/ai_subtitles.dart';
 import '../utils/crash_log.dart';
 import '../utils/fit.dart';
 import '../utils/format.dart';
+import '../utils/local_store.dart';
 import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
 import '../utils/resume.dart';
@@ -56,7 +58,7 @@ class PlayerScreen extends StatefulWidget {
 
 enum _DragMode { undecided, brightness, volume, seek, pan, zoom, cant }
 
-enum _PlayerMenuAction { info, eq, screenshot, cast, pip, sleep, rename }
+enum _PlayerMenuAction { info, eq, screenshot, cast, pip, sleep }
 
 enum _SleepChoiceKind { off, minutes, untilEnd }
 
@@ -249,7 +251,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     CrashLog.crumb('player.open', {'path': path});
     try {
       await _player.open(Media(path), play: true);
-      _volumePercent = _player.state.volume.clamp(0.0, 100.0);
+      // Old-player rule: the swipe drives the DEVICE media volume, so sync
+      // the tracked level from the real device volume on open (an audible
+      // floor so a silent phone doesn't start muted-looking).
+      var real = await NativeBridge.getMediaVolume();
+      if (real <= 0.02) {
+        real = 0.3;
+        unawaited(NativeBridge.setMediaVolume(real));
+      }
+      _volumePercent = (real * 100).clamp(0.0, 100.0);
       _muted = _volumePercent <= 0;
       if (mounted) setState(() => _ready = true);
       unawaited(_ensureThumbStrip(path));
@@ -548,24 +558,25 @@ class _PlayerScreenState extends State<PlayerScreen>
     final maxVolume = _settings.volumeBoost ? 200.0 : 100.0;
     final v = value.clamp(0.0, maxVolume).toDouble();
     _volumePercent = v;
-    _muted = false;
+    if (v > 0) _muted = false;
     try {
-      // Do not use MPV's audio-filter chain for volume boost. Invalid/unsupported
-      // filter strings can make MPV report that the video cannot be played.
-      // MPV's volume-max property safely allows software volume above 100%.
+      // Old-player volume model: 0..100% drives the DEVICE media volume
+      // (AudioManager STREAM_MUSIC — what the phone's volume keys show),
+      // exactly like the old app / MX Player. Only the 100..200% boost
+      // region lifts MPV's gain above unity. mpv's `volume-max` stays at
+      // 200 for that headroom. Platform property calls bypass media_kit's
+      // serialized lock, so a drag never queues up per-pixel IPC.
+      await NativeBridge.setMediaVolume((v / 100.0).clamp(0.0, 1.0));
       await _mpvSet('volume-max', maxVolume.round().toString());
-      if (v <= 100) {
-        await _player.setVolume(v);
-      } else {
-        await _mpvSet('volume', v.toStringAsFixed(1));
-      }
+      final mpvVolume = v <= 100 ? 100.0 : v;
+      await _mpvSet('volume', mpvVolume.toStringAsFixed(1));
       await _mpvSet('af', combineAudioFilters(_bands,
           dialogueBoost: _dialogueBoost));
     } catch (e) {
       CrashLog.error('player.volume_failed', e, {'value': v});
-      if (v <= 100) {
-        await _player.setVolume(v);
-      }
+      try {
+        await NativeBridge.setMediaVolume((v / 100.0).clamp(0.0, 1.0));
+      } catch (_) {}
     }
     if (mounted) setState(() {});
   }
@@ -578,7 +589,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       await _setVolumePercent(restore);
       _muted = false;
     } else {
-      await _player.setVolume(0);
+      // Mute cuts the DEVICE stream, not just mpv's internal gain — same
+      // as the old app (and the volume keys' mute).
+      await NativeBridge.setMediaVolume(0);
+      await _mpvSet('volume', '0');
       _muted = true;
       if (mounted) setState(() {});
     }
@@ -1651,106 +1665,13 @@ class _PlayerScreenState extends State<PlayerScreen>
       case _PlayerMenuAction.sleep:
         await _showSleepTimerSheet();
         break;
-      case _PlayerMenuAction.rename:
-        await _showRenameDialog();
-        break;
-    }
-  }
-
-  /// Renames the currently playing LOCAL file on disk. Streams have no
-  /// file to rename. The resume point (keyed by path) migrates with it so
-  /// "continue watching" still finds the file under its new name.
-  Future<void> _showRenameDialog() async {
-    if (widget.isStream || _currentPath.isEmpty) {
-      _emitSnack('Only local files can be renamed');
-      return;
-    }
-    final file = File(_currentPath);
-    if (!file.existsSync()) {
-      _emitSnack('File not found on this device');
-      return;
-    }
-    final oldName = _title.isNotEmpty
-        ? _title
-        : _currentPath.split(Platform.pathSeparator).last;
-    final dot = oldName.lastIndexOf('.');
-    final ext =
-        (dot > 0 && dot < oldName.length - 1) ? oldName.substring(dot) : '';
-    final base = dot > 0 ? oldName.substring(0, dot) : oldName;
-    final ctrl = TextEditingController(text: base);
-    final newBase = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.border),
-        ),
-        title: const Text('Rename video',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 17)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          style: const TextStyle(color: AppColors.textPrimary),
-          decoration: const InputDecoration(
-            hintText: 'New name',
-            hintStyle: TextStyle(color: AppColors.textSecondary),
-          ),
-          onSubmitted: (v) => Navigator.of(context).pop(v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.accent,
-              foregroundColor: AppColors.onAccent,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () => Navigator.of(context).pop(ctrl.text.trim()),
-            child: const Text('Rename'),
-          ),
-        ],
-      ),
-    );
-    if (newBase == null || newBase.isEmpty || newBase == base) return;
-    final newName = '$newBase$ext';
-    final dir = file.parent.path;
-    final newPath = '$dir${Platform.pathSeparator}$newName';
-    final newFile = File(newPath);
-    if (newFile.existsSync()) {
-      _emitSnack('A file with that name already exists');
-      return;
-    }
-    try {
-      final saved = await _resume.readMs(_currentPath);
-      await file.rename(newPath);
-      // Migrate the resume point so "continue watching" keeps working.
-      if (saved != null) {
-        await _resume.writeMs(newPath, saved);
-        await _resume.clear(_currentPath);
-      }
-      if (!mounted) return;
-      setState(() {
-        _currentPath = newPath;
-        _title = newName;
-      });
-      _emitSnack('Renamed to "$newName"');
-    } catch (e) {
-      CrashLog.error('player.rename_failed', e);
-      _emitSnack('Rename failed - the file may be protected or in use');
     }
   }
 
   Future<void> _showPlaylistSheet() async {
-    if (widget.queueIds.isEmpty) {
-      _emitSnack('Playlist is empty');
-      return;
-    }
+    final store = LocalStore();
+    final playlists = await store.playlists();
+    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -1758,54 +1679,44 @@ class _PlayerScreenState extends State<PlayerScreen>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (sheetContext) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: .55,
-          minChildSize: .3,
-          maxChildSize: .9,
-          builder: (context, controller) => Column(
-            children: [
-              _SheetHandle(),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(18, 4, 18, 10),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Playlist', style: TextStyle(
-                    color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  controller: controller,
-                  itemCount: widget.queueIds.length,
-                  itemBuilder: (context, index) => ListTile(
-                    leading: CircleAvatar(
-                      radius: 17,
-                      backgroundColor: AppColors.surfaceAlt,
-                      child: Text('${index + 1}', style: const TextStyle(color: AppColors.textSecondary)),
-                    ),
-                    title: FutureBuilder<AssetEntity?>(
-                      future: AssetEntity.fromId(widget.queueIds[index]),
-                      builder: (context, snapshot) => Text(
-                        snapshot.data?.title ?? 'Video ${index + 1}',
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppColors.textPrimary)),
-                    ),
-                    trailing: index == _queueIndex
-                        ? Icon(Icons.play_arrow_rounded, color: AppColors.accent)
-                        : null,
-                    onTap: () async {
-                      Navigator.of(sheetContext).pop();
-                      if (index == _queueIndex) return;
-                      _queueIndex = index;
-                      await _openQueueIndex();
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
+      builder: (_) => _PlaylistsSheetView(
+        store: store,
+        playlists: playlists,
+        onPlay: _playPlaylistVideo,
+      ),
+    );
+  }
+
+  /// Plays [asset] (from a playlist) with that playlist as the new queue.
+  Future<void> _playPlaylistVideo(
+      AssetEntity asset, List<AssetEntity> queue) async {
+    final file = await asset.file;
+    if (!mounted) return;
+    if (file == null || !file.existsSync()) {
+      _emitSnack('Could not open this video');
+      return;
+    }
+    unawaited(LocalStore().addRecent(RecentItem(
+      id: asset.id,
+      title: asset.title ?? 'Video',
+      path: file.path,
+      ts: DateTime.now().millisecondsSinceEpoch,
+    )));
+    final ids = queue.map((e) => e.id).toList();
+    var start = ids.indexOf(asset.id);
+    if (start < 0) start = 0;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PlayerScreen(
+          path: file.path,
+          title: asset.title ?? 'Video',
+          queueIds: ids,
+          queueStart: start,
+          meta: {
+            'File': file.path,
+            'Size': formatBytes(file.lengthSync()),
+          },
         ),
       ),
     );
@@ -2173,10 +2084,6 @@ class _TopBar extends StatelessWidget {
                     _PlayerMenuAction.sleep,
                     Icons.bedtime_outlined,
                     sleepMenuLabel ?? 'Sleep timer'),
-                _topMenuItem(
-                    _PlayerMenuAction.rename,
-                    Icons.drive_file_rename_outline,
-                    'Rename'),
               ],
             ),
             IconButton(
@@ -2431,8 +2338,8 @@ class _BottomBarState extends State<_BottomBar> {
                 ),
                 const Spacer(),
                 _iconBtn(
-                  icon: Icons.queue_music,
-                  tooltip: 'Queue',
+                  icon: Icons.playlist_play,
+                  tooltip: 'Playlists',
                   onTap: widget.onQueue,
                   compact: true,
                 ),
@@ -2972,6 +2879,171 @@ class _SheetHandle extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
       ),
+    );
+  }
+}
+
+/// The player's playlist sheet: lists ONLY the user's created playlists
+/// (never the raw all-videos queue). Tap a playlist to see its videos;
+/// tap a video to play it from there (the playlist becomes the queue).
+class _PlaylistsSheetView extends StatefulWidget {
+  const _PlaylistsSheetView({
+    required this.store,
+    required this.playlists,
+    required this.onPlay,
+  });
+
+  final LocalStore store;
+  final Map<String, List<String>> playlists;
+  final Future<void> Function(AssetEntity asset, List<AssetEntity> queue)
+      onPlay;
+
+  @override
+  State<_PlaylistsSheetView> createState() => _PlaylistsSheetViewState();
+}
+
+class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
+  String? _open;
+  List<AssetEntity> _videos = const [];
+  bool _resolving = false;
+
+  Future<void> _openPlaylist(String name) async {
+    setState(() {
+      _open = name;
+      _resolving = true;
+      _videos = const [];
+    });
+    final ids = widget.playlists[name] ?? const [];
+    final list = <AssetEntity>[];
+    for (final id in ids) {
+      final a = await AssetEntity.fromId(id);
+      if (a != null) list.add(a);
+    }
+    if (!mounted || _open != name) return;
+    setState(() {
+      _videos = list;
+      _resolving = false;
+    });
+  }
+
+  Future<void> _play(AssetEntity asset) async {
+    Navigator.of(context).pop();
+    await widget.onPlay(asset, _videos);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.75,
+        child: Column(
+          children: [
+            _SheetHandle(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+              child: Row(
+                children: [
+                  if (_open != null)
+                    IconButton(
+                      tooltip: 'All playlists',
+                      icon: const Icon(Icons.arrow_back_rounded,
+                          color: AppColors.textSecondary),
+                      onPressed: () =>
+                          setState(() => _open = null),
+                    ),
+                  Expanded(
+                    child: Text(
+                      _open ?? 'Playlists',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: AppColors.border),
+            Expanded(child: _open == null ? _list() : _detail()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _list() {
+    final names = widget.playlists.keys.toList();
+    if (names.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(28),
+          child: Text(
+            'No playlists yet.\nCreate one from the home screen '
+            '(Playlists tile), then long-press a video → "Add to playlist".',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textSecondary, height: 1.4),
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      itemCount: names.length,
+      itemBuilder: (context, i) {
+        final name = names[i];
+        final count = widget.playlists[name]?.length ?? 0;
+        return ListTile(
+          leading: Icon(Icons.playlist_play_rounded, color: AppColors.accent),
+          title: Text(name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w600)),
+          subtitle: Text('$count video${count == 1 ? '' : 's'}',
+              style: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 12)),
+          trailing: const Icon(Icons.chevron_right_rounded,
+              color: AppColors.textSecondary),
+          onTap: () => _openPlaylist(name),
+        );
+      },
+    );
+  }
+
+  Widget _detail() {
+    if (_resolving) {
+      return Center(
+          child: CircularProgressIndicator(color: AppColors.accent));
+    }
+    if (_videos.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(28),
+          child: Text(
+            'No playable videos in this playlist.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      itemCount: _videos.length,
+      itemBuilder: (context, i) {
+        final a = _videos[i];
+        return ListTile(
+          leading: const Icon(Icons.play_circle_outline_rounded,
+              color: AppColors.textSecondary),
+          title: Text(a.title ?? 'Video',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppColors.textPrimary)),
+          onTap: () => _play(a),
+        );
+      },
     );
   }
 }

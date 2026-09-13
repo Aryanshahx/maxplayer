@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../screens/player_screen.dart';
+import '../services/native_bridge.dart';
 import '../state/private_vault.dart';
 import '../theme.dart';
 import '../utils/badges.dart';
@@ -456,10 +457,10 @@ class _VideoGridState extends State<VideoGrid> {
         onTap: onTap,
       );
 
-  /// Renames the video's file on disk (same best-effort rename as the
-  /// player). The resume point (keyed by path) migrates with it so
-  /// "continue watching" keeps working. Refresh after so the grid shows
-  /// the new name.
+  /// Renames the video through the Android platform (MediaStore on scoped
+  /// storage, a direct file rename below that). A raw `File.rename` fails on
+  /// Android 10+ ("protected or in use"), so this must go native. The resume
+  /// point (keyed by path) migrates when the on-disk path actually changed.
   Future<void> _rename(AssetEntity a) async {
     try {
       final file = await a.file;
@@ -516,8 +517,7 @@ class _VideoGridState extends State<VideoGrid> {
       if (newBase == null || newBase.isEmpty || newBase == base) return;
       final newName = '$newBase$ext';
       final targetPath = '${file.parent.path}${Platform.pathSeparator}$newName';
-      final target = File(targetPath);
-      if (target.existsSync()) {
+      if (File(targetPath).existsSync()) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('A file with that name exists')));
@@ -526,10 +526,19 @@ class _VideoGridState extends State<VideoGrid> {
       }
       final resume = ResumeStore();
       final saved = await resume.readMs(path);
-      await file.rename(targetPath);
-      if (saved != null) {
-        await resume.writeMs(targetPath, saved);
-        await resume.clear(path);
+      final renamed = await NativeBridge.renameVideo(path, newName);
+      if (!renamed) {
+        throw const FileSystemException('Rename declined by the platform');
+      }
+      // On scoped storage the MediaStore rename only changes the DISPLAY
+      // name (the on-disk path is untouched); on older Android / app-owned
+      // files the real path moves. Migrate the resume point only when the
+      // new path actually exists on disk.
+      if (File(targetPath).existsSync() && targetPath != path) {
+        if (saved != null) {
+          await resume.writeMs(targetPath, saved);
+          await resume.clear(path);
+        }
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

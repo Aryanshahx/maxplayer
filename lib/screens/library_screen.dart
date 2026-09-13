@@ -390,17 +390,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
               children: [
                 ShaderMask(
                   shaderCallback: (bounds) => const LinearGradient(
-                    colors: [Color(0xFF8B5CF6), Color(0xFF22D3EE)],
+                    // Old app's exact brand gradient (purple -> violet ->
+                    // cyan), fixed and never theme-tinted.
+                    colors: [
+                      Color(0xFFA78BFA),
+                      Color(0xFF8B5CF6),
+                      Color(0xFF22D3EE),
+                    ],
                   ).createShader(bounds),
                   child: const Text(
                     'Max Player',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 19,
+                      fontWeight: FontWeight.bold,
                       color: Colors.white, // ShaderMask paints over this
-                      letterSpacing: 0.2,
                     ),
                   ),
                 ),
@@ -409,7 +414,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style:
-                      TextStyle(fontSize: 10.5, color: AppColors.textSecondary),
+                      TextStyle(fontSize: 9.5, color: AppColors.textSecondary),
                 ),
               ],
             ),
@@ -424,10 +429,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       builder: (_) => const HistoryScreen()))
                   .then((_) => _refresh())),
           PopupMenuButton<_MenuAction>(
-            iconSize: 21,
+            iconSize: 24,
             padding: EdgeInsets.zero,
-            icon: const Icon(Icons.more_vert_rounded,
-                color: AppColors.textPrimary),
+            icon: Icon(Icons.more_vert_rounded, color: AppColors.accent),
             color: const Color(0xFF1a1a24),
             elevation: 8,
             shape: RoundedRectangleBorder(
@@ -489,11 +493,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget _headIcon(IconData icon, String tip, VoidCallback onTap) =>
       IconButton(
         tooltip: tip,
-        iconSize: 20,
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.all(6),
-        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-        icon: Icon(icon, color: AppColors.textPrimary),
+        // Old app uses the stock IconButton metrics: 24px glyphs on the
+        // default 48px tap target.
+        iconSize: 24,
+        icon: Icon(icon, color: AppColors.accent),
         onPressed: onTap,
       );
 

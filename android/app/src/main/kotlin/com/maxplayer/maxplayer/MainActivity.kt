@@ -6,6 +6,7 @@ import android.app.RecoverableSecurityException
 import android.app.RemoteAction
 import android.content.ContentUris
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -15,6 +16,7 @@ import android.graphics.Rect
 import android.graphics.drawable.Icon
 import android.hardware.SensorManager
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -29,6 +31,7 @@ import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.speech.RecognizerIntent
 import android.util.Rational
 import android.view.OrientationEventListener
 import dev.ffmpegkit.whisper.Whisper
@@ -86,9 +89,13 @@ class MainActivity : FlutterFragmentActivity() {
     private var pendingMediaDeleteResult: MethodChannel.Result? = null
     private var pendingMediaDeletePaths: ArrayList<String>? = null
 
+    // Voice search round-trip (system speech dialog, Discover screen).
+    private var pendingVoiceSearchResult: MethodChannel.Result? = null
+
     companion object {
         private const val REQ_SAF_PICK = 47
         private const val REQ_MEDIA_DELETE = 48
+        private const val REQ_VOICE_SEARCH = 49
     }
 
     private val pipSupported: Boolean
@@ -411,8 +418,122 @@ class MainActivity : FlutterFragmentActivity() {
                     }
                 }
 
+                "getMediaVolume" -> {
+                    // DEVICE media volume (the player's swipe drives this,
+                    // like MX Player / the old app, so it can always reach
+                    // the phone's true maximum loudness).
+                    try {
+                        val am =
+                            getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                            .coerceAtLeast(1)
+                        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                        result.success(hashMapOf("level" to cur, "max" to max))
+                    } catch (_: Exception) {
+                        result.success(hashMapOf("level" to 1, "max" to 1))
+                    }
+                }
+
+                "setMediaVolume" -> {
+                    try {
+                        val v = (call.argument<Double>("value") ?: 0.75)
+                            .coerceIn(0.0, 1.0)
+                        val am =
+                            getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                            .coerceAtLeast(1)
+                        am.setStreamVolume(
+                            AudioManager.STREAM_MUSIC,
+                            (v * max).roundToInt().coerceIn(0, max),
+                            0
+                        )
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
+                }
+
+                "renameVideo" -> {
+                    val path = call.argument<String>("path")
+                    val newName = call.argument<String>("newName")
+                    if (path.isNullOrEmpty() || newName.isNullOrEmpty()) {
+                        result.error("bad_args", "path and newName are required", null)
+                    } else {
+                        executor.execute {
+                            val ok = renameVideoSync(path, newName)
+                            mainHandler.post { result.success(ok) }
+                        }
+                    }
+                }
+
+                "launchSystemVoiceSearch" -> {
+                    try {
+                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                            .apply {
+                                putExtra(
+                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                                )
+                                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to search\u2026")
+                                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+                            }
+                        pendingVoiceSearchResult = result
+                        startActivityForResult(intent, REQ_VOICE_SEARCH)
+                    } catch (_: Exception) {
+                        pendingVoiceSearchResult = null
+                        result.success(null)
+                    }
+                }
+
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    /**
+     * Renames a shared-storage video. On Android 10+ (scoped storage) the
+     * rename goes through MediaStore by updating DISPLAY_NAME — a raw
+     * File.rename there fails with "protected or in use". On older Android
+     * (or app-owned / non-indexed files) the file itself is renamed on disk.
+     */
+    private fun renameVideoSync(path: String, newName: String): Boolean {
+        val file = File(path)
+        // Pre-scoped-storage (or a non-indexed file): plain file rename.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return try {
+                val parent = file.parentFile ?: return false
+                file.renameTo(File(parent, newName))
+            } catch (_: Exception) {
+                false
+            }
+        }
+        val uri = resolveVideoUri(path)
+        if (uri == null) {
+            // Not indexed by MediaStore (app-private / vault / Downloads on
+            // some builds): fall back to a direct rename, best effort.
+            return try {
+                val parent = file.parentFile ?: return false
+                file.renameTo(File(parent, newName))
+            } catch (_: Exception) {
+                false
+            }
+        }
+        return try {
+            val values = ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, newName)
+            }
+            contentResolver.update(uri, values, null, null) > 0
+        } catch (_: RecoverableSecurityException) {
+            // API 29 needs user consent for this update — fall back to a
+            // direct rename attempt (legacy-storage devices often allow it).
+            try {
+                val parent = file.parentFile ?: return false
+                file.renameTo(File(parent, newName))
+            } catch (_: Exception) {
+                false
+            }
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -652,6 +773,17 @@ class MainActivity : FlutterFragmentActivity() {
             finishSafPick(resultCode, data)
         } else if (requestCode == REQ_MEDIA_DELETE) {
             finishMediaDelete(resultCode == RESULT_OK)
+        } else if (requestCode == REQ_VOICE_SEARCH) {
+            val pending = pendingVoiceSearchResult
+            pendingVoiceSearchResult = null
+            if (resultCode == RESULT_OK && data != null) {
+                val matches =
+                    data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                val query = matches?.firstOrNull()?.trim() ?: ""
+                pending?.success(query)
+            } else {
+                pending?.success(null)
+            }
         }
     }
 
