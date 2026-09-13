@@ -51,6 +51,7 @@ import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlinx.coroutines.runBlocking
 
 class MainActivity : FlutterFragmentActivity() {

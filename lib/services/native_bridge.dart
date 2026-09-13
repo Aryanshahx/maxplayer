@@ -12,7 +12,12 @@ import 'package:flutter/services.dart';
 class NativeBridge {
   NativeBridge._();
 
+  // Storage operations are handled by maxplayer/storage. Player/device
+  // operations (volume, rename, speech recognition) live on the main native
+  // channel. Keeping the two channels separate prevents calls from being
+  // silently swallowed by the wrong Android handler.
   static const MethodChannel _channel = MethodChannel('maxplayer/storage');
+  static const MethodChannel _nativeChannel = MethodChannel('maxplayer/native');
 
   /// Native -> Dart: cloud import copy progress (done, total bytes).
   static void Function(int done, int total)? pickProgressListener;
@@ -151,7 +156,7 @@ class NativeBridge {
   /// file itself is renamed on disk. True on success.
   static Future<bool> renameVideo(String path, String newName) async {
     try {
-      final res = await _channel.invokeMethod<bool>('renameVideo', {
+      final res = await _nativeChannel.invokeMethod<bool>('renameVideo', {
         'path': path,
         'newName': newName,
       });
@@ -166,7 +171,7 @@ class NativeBridge {
   /// app, so it can always reach the phone's true maximum loudness.
   static Future<double> getMediaVolume() async {
     try {
-      final res = await _channel
+      final res = await _nativeChannel
           .invokeMethod<Map<Object?, Object?>>('getMediaVolume');
       final level = (res?['level'] as num?)?.toDouble() ?? 1.0;
       final max = (res?['max'] as num?)?.toDouble() ?? 1.0;
@@ -180,7 +185,7 @@ class NativeBridge {
   /// Sets the DEVICE media (music-stream) volume. [value] is a 0..1 fraction.
   static Future<void> setMediaVolume(double value) async {
     try {
-      await _channel.invokeMethod('setMediaVolume', {
+      await _nativeChannel.invokeMethod('setMediaVolume', {
         'value': value.clamp(0.0, 1.0),
       });
     } catch (_) {}
@@ -192,7 +197,7 @@ class NativeBridge {
   static Future<String?> launchSystemVoiceSearch() async {
     try {
       final res =
-          await _channel.invokeMethod<String>('launchSystemVoiceSearch');
+          await _nativeChannel.invokeMethod<String>('launchSystemVoiceSearch');
       return (res != null && res.trim().isNotEmpty) ? res.trim() : null;
     } catch (_) {
       return null;
