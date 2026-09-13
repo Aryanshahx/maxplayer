@@ -31,18 +31,33 @@ jobs:
       - run: flutter analyze
       - run: flutter test
 
+      # These are compile-time values. If OPENROUTER_API_KEY is not a
+      # repository secret with this exact name, the APK will contain an empty
+      # value and Ask AI will correctly report that the key is missing.
+      - name: Check API secrets
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "::error::OPENROUTER_API_KEY is empty. Add it under Settings > Secrets and variables > Actions > Repository secrets, then run this workflow again."
+            exit 1
+          fi
+          echo "TMDB_API_KEY: ${TMDB_API_KEY:+configured (TMDB fallback is also available)}"
+          echo "OPENROUTER_API_KEY: configured (length ${#OPENROUTER_API_KEY})"
+
       # Signed with the debug-key fallback for now (installable on your
-      # phone for testing). Real Play signing arrives when we wire the
-      # keystore secrets in the v1.0 release phase.
-      # TMDB_API_KEY and OPENROUTER_API_KEY come from repo secrets (Settings
-      # > Secrets and variables > Actions). Without --dart-define here,
-      # AppConfig.tmdbToken/openRouterKey fall back to their defaults in
-      # lib/utils/config.dart (TMDB still works via its baked-in fallback;
-      # OpenRouter/Ask-AI does NOT, its fallback is empty).
-      - run: >
-          flutter build apk --release
-          --dart-define=TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}
-          --dart-define=OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
+      # phone for testing). The values are passed through env variables so
+      # shell quoting and GitHub masking cannot turn a configured secret into
+      # an empty dart-define.
+      - name: Build release APK
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          flutter build apk --release \
+            "--dart-define=TMDB_API_KEY=$TMDB_API_KEY" \
+            "--dart-define=OPENROUTER_API_KEY=$OPENROUTER_API_KEY"
 
       - uses: actions/upload-artifact@v4
         with:

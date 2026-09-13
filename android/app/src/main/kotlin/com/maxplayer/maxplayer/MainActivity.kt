@@ -8,6 +8,7 @@ import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.IntentSender
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -93,10 +94,23 @@ class MainActivity : FlutterFragmentActivity() {
     // Voice search round-trip (system speech dialog, Discover screen).
     private var pendingVoiceSearchResult: MethodChannel.Result? = null
 
+    // MediaStore rename consent round-trip. Shared-storage files may require
+    // the Android system write dialog before DISPLAY_NAME can be updated.
+    private var pendingRenameResult: MethodChannel.Result? = null
+    private var pendingRenamePath: String? = null
+    private var pendingRenameName: String? = null
+
+    private enum class RenameKind { success, failed, needsConsent }
+    private data class RenameAttempt(
+        val kind: RenameKind,
+        val sender: IntentSender? = null,
+    )
+
     companion object {
         private const val REQ_SAF_PICK = 47
         private const val REQ_MEDIA_DELETE = 48
         private const val REQ_VOICE_SEARCH = 49
+        private const val REQ_MEDIA_WRITE = 50
     }
 
     private val pipSupported: Boolean
@@ -461,8 +475,35 @@ class MainActivity : FlutterFragmentActivity() {
                         result.error("bad_args", "path and newName are required", null)
                     } else {
                         executor.execute {
-                            val ok = renameVideoSync(path, newName)
-                            mainHandler.post { result.success(ok) }
+                            val attempt = renameVideoSync(path, newName)
+                            mainHandler.post {
+                                when (attempt.kind) {
+                                    RenameKind.success -> result.success(true)
+                                    RenameKind.failed -> result.success(false)
+                                    RenameKind.needsConsent -> {
+                                        val sender = attempt.sender
+                                        if (sender == null || pendingRenameResult != null) {
+                                            result.success(false)
+                                        } else {
+                                            pendingRenameResult = result
+                                            pendingRenamePath = path
+                                            pendingRenameName = newName
+                                            try {
+                                                startIntentSenderForResult(
+                                                    sender,
+                                                    REQ_MEDIA_WRITE,
+                                                    null, 0, 0, 0,
+                                                )
+                                            } catch (_: Exception) {
+                                                pendingRenameResult = null
+                                                pendingRenamePath = null
+                                                pendingRenameName = null
+                                                result.success(false)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -478,8 +519,16 @@ class MainActivity : FlutterFragmentActivity() {
                                 putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to search\u2026")
                                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
                             }
-                        pendingVoiceSearchResult = result
-                        startActivityForResult(intent, REQ_VOICE_SEARCH)
+                        if (intent.resolveActivity(packageManager) == null) {
+                            result.error(
+                                "voice_unavailable",
+                                "No speech recognition activity is installed",
+                                null,
+                            )
+                        } else {
+                            pendingVoiceSearchResult = result
+                            startActivityForResult(intent, REQ_VOICE_SEARCH)
+                        }
                     } catch (_: Exception) {
                         pendingVoiceSearchResult = null
                         result.success(null)
@@ -497,15 +546,18 @@ class MainActivity : FlutterFragmentActivity() {
      * File.rename there fails with "protected or in use". On older Android
      * (or app-owned / non-indexed files) the file itself is renamed on disk.
      */
-    private fun renameVideoSync(path: String, newName: String): Boolean {
+    private fun renameVideoSync(path: String, newName: String): RenameAttempt {
         val file = File(path)
         // Pre-scoped-storage (or a non-indexed file): plain file rename.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             return try {
-                val parent = file.parentFile ?: return false
-                file.renameTo(File(parent, newName))
+                val parent = file.parentFile ?: return RenameAttempt(RenameKind.failed)
+                RenameAttempt(
+                    if (file.renameTo(File(parent, newName))) RenameKind.success
+                    else RenameKind.failed,
+                )
             } catch (_: Exception) {
-                false
+                RenameAttempt(RenameKind.failed)
             }
         }
         val uri = resolveVideoUri(path)
@@ -513,28 +565,64 @@ class MainActivity : FlutterFragmentActivity() {
             // Not indexed by MediaStore (app-private / vault / Downloads on
             // some builds): fall back to a direct rename, best effort.
             return try {
-                val parent = file.parentFile ?: return false
-                file.renameTo(File(parent, newName))
+                val parent = file.parentFile ?: return RenameAttempt(RenameKind.failed)
+                RenameAttempt(
+                    if (file.renameTo(File(parent, newName))) RenameKind.success
+                    else RenameKind.failed,
+                )
             } catch (_: Exception) {
-                false
+                RenameAttempt(RenameKind.failed)
             }
         }
         return try {
             val values = ContentValues().apply {
                 put(MediaStore.Video.Media.DISPLAY_NAME, newName)
             }
-            contentResolver.update(uri, values, null, null) > 0
-        } catch (_: RecoverableSecurityException) {
-            // API 29 needs user consent for this update — fall back to a
-            // direct rename attempt (legacy-storage devices often allow it).
-            try {
-                val parent = file.parentFile ?: return false
-                file.renameTo(File(parent, newName))
-            } catch (_: Exception) {
-                false
+            if (contentResolver.update(uri, values, null, null) > 0) {
+                RenameAttempt(RenameKind.success)
+            } else {
+                RenameAttempt(RenameKind.failed)
             }
+        } catch (e: RecoverableSecurityException) {
+            // API 29 supplies its own one-shot consent sender.
+            RenameAttempt(RenameKind.needsConsent, e.userAction.actionIntent.intentSender)
+        } catch (_: SecurityException) {
+            // Android 11+ uses a MediaStore write request for shared files.
+            RenameAttempt(RenameKind.needsConsent, renameWriteSender(uri))
         } catch (_: Exception) {
-            false
+            RenameAttempt(RenameKind.failed)
+        }
+    }
+
+    private fun renameWriteSender(uri: Uri): IntentSender? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        return try {
+            MediaStore.createWriteRequest(
+                contentResolver,
+                arrayListOf(uri),
+            ).intentSender
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun finishRename(granted: Boolean) {
+        val pending = pendingRenameResult
+        val path = pendingRenamePath
+        val name = pendingRenameName
+        pendingRenameResult = null
+        pendingRenamePath = null
+        pendingRenameName = null
+        if (pending == null) return
+        if (!granted || path.isNullOrEmpty() || name.isNullOrEmpty()) {
+            pending.success(false)
+            return
+        }
+        executor.execute {
+            val attempt = renameVideoSync(path, name)
+            mainHandler.post {
+                pending.success(attempt.kind == RenameKind.success)
+            }
         }
     }
 
@@ -774,6 +862,8 @@ class MainActivity : FlutterFragmentActivity() {
             finishSafPick(resultCode, data)
         } else if (requestCode == REQ_MEDIA_DELETE) {
             finishMediaDelete(resultCode == RESULT_OK)
+        } else if (requestCode == REQ_MEDIA_WRITE) {
+            finishRename(resultCode == RESULT_OK)
         } else if (requestCode == REQ_VOICE_SEARCH) {
             val pending = pendingVoiceSearchResult
             pendingVoiceSearchResult = null

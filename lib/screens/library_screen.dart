@@ -390,18 +390,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
               children: [
                 ShaderMask(
                   shaderCallback: (bounds) => const LinearGradient(
-                    // The old app's fixed purple -> cyan brand gradient.
-                    colors: [Color(0xFF8B5CF6), Color(0xFF22D3EE)],
+                    // Exact old-app brand gradient from the supplied old app.
+                    colors: [
+                      Color(0xFFA78BFA),
+                      Color(0xFF8B5CF6),
+                      Color(0xFF22D3EE),
+                    ],
                   ).createShader(bounds),
                   child: const Text(
                     'Max Player',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 19,
+                      fontWeight: FontWeight.bold,
                       color: Colors.white, // ShaderMask paints over this
-                      letterSpacing: 0.2,
                     ),
                   ),
                 ),
@@ -409,26 +412,30 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   'Proudly Developed in India 🇮🇳',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style:
-                      TextStyle(fontSize: 10.5, color: AppColors.textSecondary),
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 9.5,
+                    letterSpacing: 0.3,
+                    height: 1.3,
+                  ),
                 ),
               ],
             ),
           ),
-          _headIcon(Icons.search_rounded, 'Search', () => Navigator.of(context)
+          _headIcon(Icons.search, 'Search', () => Navigator.of(context)
               .push(
                   MaterialPageRoute(builder: (_) => const SearchScreen()))),
-          _headIcon(Icons.refresh_rounded, 'Refresh', _load),
-          _headIcon(Icons.history_rounded, 'History', () =>
+          _headIcon(Icons.sync, 'Refresh', _load),
+          _headIcon(Icons.history, 'History', () =>
               Navigator.of(context)
                   .push(MaterialPageRoute(
                       builder: (_) => const HistoryScreen()))
                   .then((_) => _refresh())),
           PopupMenuButton<_MenuAction>(
-            iconSize: 21,
+            // Same 24px glyph as the old app's three-dots action.
+            iconSize: 24,
             padding: EdgeInsets.zero,
-            icon: const Icon(Icons.more_vert_rounded,
-                color: AppColors.textPrimary),
+            icon: Icon(Icons.more_vert, color: AppColors.accent),
             color: const Color(0xFF1a1a24),
             elevation: 8,
             shape: RoundedRectangleBorder(
@@ -490,13 +497,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget _headIcon(IconData icon, String tip, VoidCallback onTap) =>
       IconButton(
         tooltip: tip,
-        // Exact old-app header metrics: 20px glyphs, compact density and
-        // equal 34px tap targets for Search, Rescan and History.
-        iconSize: 20,
-        visualDensity: VisualDensity.compact,
-        padding: const EdgeInsets.all(6),
-        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-        icon: Icon(icon, color: AppColors.textPrimary),
+        // Stock old-app IconButton metrics: 24px glyph and 48px tap target.
+        iconSize: 24,
+        icon: Icon(icon, color: AppColors.accent),
         onPressed: onTap,
       );
 
