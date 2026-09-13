@@ -246,6 +246,7 @@ class _VideoGridState extends State<VideoGrid> {
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
             ),
@@ -505,6 +506,28 @@ class _VideoGridState extends State<VideoGrid> {
   }
 }
 
+/// Memoized watched-progress fractions (0..1) for the playbar overlay,
+/// keyed by asset id. 0 = nothing watched (or finished — the bar hides).
+final Map<String, Future<double>> resumeProgressCache = {};
+
+Future<double> resumeProgress(AssetEntity asset) =>
+    resumeProgressCache.putIfAbsent(asset.id, () async {
+      try {
+        final file = await asset.file;
+        final path = file?.path;
+        if (path == null || path.isEmpty) return 0;
+        final saved = await ResumeStore().readMs(path);
+        if (saved == null || saved <= 0) return 0;
+        final durMs = asset.duration * 1000;
+        if (durMs <= 0) return 0;
+        // Finished videos (within the end margin) show no partial bar.
+        if (isFinishedMs(saved, durMs)) return 0;
+        return (saved / durMs).clamp(0.0, 1.0);
+      } catch (_) {
+        return 0;
+      }
+    });
+
 /// Static async size cache shared by cards and rows.
 final Map<String, Future<int>> videoSizeCache = {};
 
@@ -574,10 +597,39 @@ class _VideoRow extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style:
                 const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
-        subtitle: Text(
-          '${qualityBadge(asset.width, asset.height)} · ${formatDuration(Duration(seconds: asset.duration))}',
-          style:
-              const TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${qualityBadge(asset.width, asset.height)} · ${formatDuration(Duration(seconds: asset.duration))}',
+              style: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 11.5),
+            ),
+            const SizedBox(height: 5),
+            SizedBox(
+              width: 120,
+              height: 3,
+              child: FutureBuilder<double>(
+                future: resumeProgress(asset),
+                builder: (context, snap) {
+                  final frac = (snap.data ?? 0).clamp(0.0, 1.0);
+                  if (frac <= 0) return const SizedBox.shrink();
+                  return Stack(
+                    children: [
+                      Container(
+                          color: Colors.white.withValues(alpha: 0.18)),
+                      FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: frac,
+                        child: Container(color: AppColors.accent),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
         ),
         trailing: IconButton(
           icon: Icon(
@@ -697,6 +749,33 @@ class _VideoCard extends StatelessWidget {
                         style: const TextStyle(
                             fontSize: 11, color: Colors.white),
                       ),
+                    ),
+                  ),
+                  // Watched-progress playbar (resume position per path).
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: FutureBuilder<double>(
+                      future: resumeProgress(asset),
+                      builder: (context, snap) {
+                        final frac = (snap.data ?? 0).clamp(0.0, 1.0);
+                        if (frac <= 0) return const SizedBox.shrink();
+                        return SizedBox(
+                          height: 3,
+                          child: Stack(
+                            children: [
+                              Container(
+                                  color: Colors.white.withValues(alpha: 0.25)),
+                              FractionallySizedBox(
+                                alignment: Alignment.centerLeft,
+                                widthFactor: frac,
+                                child: Container(color: AppColors.accent),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ],

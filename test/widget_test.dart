@@ -9,12 +9,15 @@ import 'package:maxplayer/utils/fit.dart';
 import 'package:maxplayer/utils/format.dart';
 import 'package:maxplayer/utils/m3u.dart';
 import 'package:maxplayer/utils/ab_loop.dart';
+import 'package:maxplayer/utils/ai_subtitles.dart'
+    show AiSubtitleRunner, isMusicOnlyCaption;
 import 'package:maxplayer/utils/mpv_filters.dart';
 import 'package:maxplayer/utils/local_store.dart';
 import 'package:maxplayer/utils/resume.dart';
 import 'package:maxplayer/utils/settings.dart' show accentPalette, defaultAccentIndex;
 import 'package:maxplayer/utils/sha256.dart';
 import 'package:maxplayer/utils/sort.dart';
+import 'package:maxplayer/utils/srt.dart';
 import 'package:maxplayer/utils/tmdb.dart';
 import 'package:maxplayer/utils/tmdb_image.dart';
 import 'package:maxplayer/utils/video_zoom.dart';
@@ -258,6 +261,166 @@ void main() {
       final input = ['a'];
       toggleId(input, 'x');
       expect(input, ['a']);
+    });
+  });
+
+  group('addId (Drop 6 playlist add)', () {
+    test('appends when missing', () {
+      expect(addId(['a'], 'b'), ['a', 'b']);
+    });
+    test('idempotent when present', () {
+      expect(addId(['a', 'b'], 'b'), ['a', 'b']);
+    });
+    test('does not mutate input', () {
+      final input = ['a'];
+      addId(input, 'x');
+      expect(input, ['a']);
+    });
+  });
+
+  group('buildSrt (AI subtitles)', () {
+    test('numbers, sorts and formats cues', () {
+      final srt = buildSrt(const [
+        SrtCue(5000, 6000, 'later'),
+        SrtCue(1000, 2000, 'first'),
+      ]);
+      expect(srt, '1\n00:00:01,000 --> 00:00:02,000\nfirst\n\n'
+          '2\n00:00:05,000 --> 00:00:06,000\nlater\n\n');
+    });
+    test('drops empty-text cues', () {
+      expect(buildSrt(const [SrtCue(1000, 2000, '  ')]), '');
+    });
+    test('bumps zero-length cue end by one second', () {
+      final srt = buildSrt(const [SrtCue(1000, 1000, 'x')]);
+      expect(srt, contains('00:00:01,000 --> 00:00:02,000'));
+    });
+  });
+
+  group('parseSrt (AI subtitles)', () {
+    test('round-trips buildSrt', () {
+      const cues = [
+        SrtCue(1000, 2000, 'hello'),
+        SrtCue(5000, 6000, 'world'),
+      ];
+      final parsed = parseSrt(buildSrt(cues));
+      expect(parsed.length, 2);
+      expect(parsed[0].text, 'hello');
+      expect(parsed[0].startMs, 1000);
+      expect(parsed[1].endMs, 6000);
+    });
+    test('joins multi-line cue text', () {
+      final parsed = parseSrt('1\n00:00:01,000 --> 00:00:02,000\nline one\n'
+          'line two\n\n');
+      expect(parsed.single.text, 'line one line two');
+    });
+    test('ignores garbage lines', () {
+      final parsed = parseSrt('garbage\n1\n00:00:01,000 --> 00:00:02,000\nok\n\n');
+      expect(parsed.single.text, 'ok');
+    });
+  });
+
+  group('srtPathForVideo (AI subtitles)', () {
+    test('swaps extension for .maxai.srt next to the video', () {
+      expect(srtPathForVideo('/sdcard/Movies/clip.mp4'),
+          '/sdcard/Movies/clip.maxai.srt');
+    });
+    test('handles windows separators', () {
+      expect(srtPathForVideo(r'C:\vids\clip.mkv'),
+          'C:/vids/clip.maxai.srt');
+    });
+    test('no extension still gets the suffix', () {
+      expect(srtPathForVideo('/vids/clip'), '/vids/clip.maxai.srt');
+    });
+  });
+
+  group('sidecarSrtCandidates (AI subtitles)', () {
+    test('exact match first, then language suffixes', () {
+      final picks = sidecarSrtCandidates(
+        ['movie.en.srt', 'movie.srt', 'other.srt'],
+        '/vids/movie.mp4',
+      );
+      expect(picks, ['movie.srt', 'movie.en.srt']);
+    });
+    test('excludes the AI sidecar and non-subs', () {
+      final picks = sidecarSrtCandidates(
+        ['movie.maxai.srt', 'movie.srt', 'poster.jpg'],
+        '/vids/movie.mp4',
+      );
+      expect(picks, ['movie.srt']);
+    });
+  });
+
+  group('isMusicOnlyText (AI subtitles)', () {
+    test('music decorations', () {
+      expect(isMusicOnlyText('[Music]'), isTrue);
+      expect(isMusicOnlyText('(upbeat music)'), isTrue);
+      expect(isMusicOnlyText('♪ ♪'), isTrue);
+    });
+    test('real speech kept', () {
+      expect(isMusicOnlyText('I love music'), isFalse);
+      expect(isMusicOnlyText('Hello there'), isFalse);
+    });
+  });
+
+  group('computeSkipIntro (AI subtitles)', () {
+    test('returns null when speech starts right away', () {
+      expect(computeSkipIntro(const [SrtCue(5000, 6000, 'Hi')]), isNull);
+    });
+    test('returns the first speech cue minus 1s', () {
+      final skip = computeSkipIntro(const [
+        SrtCue(1000, 9000, '[Music]'),
+        SrtCue(30000, 34000, 'And now our story begins'),
+      ]);
+      expect(skip, const Duration(milliseconds: 29000));
+    });
+  });
+
+  group('computeSkipCredits (AI subtitles)', () {
+    List<SrtCue> creditRun() => [
+          for (var i = 0; i < 8; i++)
+            SrtCue(1_800_000 + i * 2000, 1_800_000 + i * 2000 + 800,
+                'Name ${i + 1}'),
+        ];
+    test('returns null for normal dialogue', () {
+      expect(
+          computeSkipCredits(const [
+            SrtCue(1000, 2000, 'A normal line of spoken dialogue here'),
+            SrtCue(3000, 4000, 'Another normal line of spoken dialogue'),
+          ]),
+          isNull);
+    });
+    test('detects a dense trailing credit run', () {
+      final skip = computeSkipCredits(creditRun(), durationMs: 2_000_000);
+      expect(skip, isNotNull);
+      expect(skip!.inMilliseconds, closeTo(1_800_000 - 1500, 1));
+    });
+  });
+
+  group('isMusicOnlyCaption (AI subtitles)', () {
+    test('music decorations', () {
+      expect(isMusicOnlyCaption('[Music]'), isTrue);
+      expect(isMusicOnlyCaption('(upbeat music)'), isTrue);
+      expect(isMusicOnlyCaption('♪'), isTrue);
+      expect(isMusicOnlyCaption('♪ ♫ ♪'), isTrue);
+    });
+    test('real speech kept', () {
+      expect(isMusicOnlyCaption('I love music'), isFalse);
+      expect(isMusicOnlyCaption('Hello there'), isFalse);
+    });
+    test('empty treated as decoration', () {
+      expect(isMusicOnlyCaption('   '), isTrue);
+    });
+  });
+
+  group('AiSubtitleRunner (AI subtitles)', () {
+    test('normalizeModelId falls back to base', () {
+      expect(AiSubtitleRunner.normalizeModelId(null), 'base');
+      expect(AiSubtitleRunner.normalizeModelId('tiny'), 'base');
+      expect(AiSubtitleRunner.normalizeModelId('small'), 'small');
+    });
+    test('modelSizeLabel maps small vs default', () {
+      expect(AiSubtitleRunner.modelSizeLabel('small'), '~466 MB');
+      expect(AiSubtitleRunner.modelSizeLabel('base'), '~142 MB');
     });
   });
 

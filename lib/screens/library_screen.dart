@@ -137,8 +137,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
         }
       }
       _page = 0;
-      _videos.clear();
       _exhausted = false;
+      // Keep the current grid/list on screen during a rescan: the first
+      // _loadMore below atomically swaps in the fresh first page, so
+      // deleted videos disappear without blanking the whole screen.
       await _loadMore();
       await _loadMeta();
       CrashLog.crumb('library.scanned', {'count': _videos.length});
@@ -173,13 +175,23 @@ class _LibraryScreenState extends State<LibraryScreen> {
       final batch =
           await path.getAssetListPaged(page: _page, size: _pageSize);
       if (batch.length < _pageSize) _exhausted = true;
+      final firstPage = _page == 0;
       _page++;
       final vids = batch.where((a) => a.type == AssetType.video).toList();
-      final merged = appendUnique(_videos, vids, (a) => a.id);
-      if (merged.length != _videos.length) {
+      if (firstPage) {
+        // First fresh page of a scan: swap the visible list in one go so
+        // removed videos vanish, WITHOUT clearing during the async fetch
+        // (that is what blanked the screen on rescan).
         _videos
           ..clear()
-          ..addAll(merged);
+          ..addAll(vids);
+      } else {
+        final merged = appendUnique(_videos, vids, (a) => a.id);
+        if (merged.length != _videos.length) {
+          _videos
+            ..clear()
+            ..addAll(merged);
+        }
       }
       if (mounted) setState(() {});
     } finally {
@@ -269,11 +281,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: _loading
-            ? Center(
-                child: CircularProgressIndicator(color: AppColors.accent))
-            : _denied
-                ? _PermissionHint(onRetry: _load)
+        child: _denied && _videos.isEmpty
+            ? _PermissionHint(onRetry: _load)
+            : _loading && _videos.isEmpty
+                ? Center(
+                    child: CircularProgressIndicator(color: AppColors.accent))
                 : _buildHome(),
       ),
     );
@@ -760,6 +772,7 @@ class _PermissionHint extends StatelessWidget {
             FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.accent,
+                foregroundColor: AppColors.onAccent,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),

@@ -120,7 +120,8 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
     setState(() {
       _busy = false;
       if (picks == null) {
-        _error = 'AI is not reachable right now - check the internet and try again.';
+        _error =
+            'Couldn\'t load suggestions - check your internet connection and try again.';
       } else {
         _picks = picks;
         final prefs = SharedPreferences.getInstance();

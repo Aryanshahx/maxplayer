@@ -12,6 +12,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../theme.dart';
 import '../utils/ab_loop.dart';
+import '../utils/ai_subtitles.dart';
 import '../utils/crash_log.dart';
 import '../utils/fit.dart';
 import '../utils/format.dart';
@@ -55,7 +56,7 @@ class PlayerScreen extends StatefulWidget {
 
 enum _DragMode { undecided, brightness, volume, seek, pan, zoom, cant }
 
-enum _PlayerMenuAction { info, eq, screenshot, cast, pip, sleep }
+enum _PlayerMenuAction { info, eq, screenshot, cast, pip, sleep, rename }
 
 enum _SleepChoiceKind { off, minutes, untilEnd }
 
@@ -166,10 +167,18 @@ class _PlayerScreenState extends State<PlayerScreen>
     };
     _settings.addListener(_settingsListener!);
     _native.setMethodCallHandler((call) async {
-      if (call.method == 'pipToggle') {
-        await _player.playOrPause();
+      switch (call.method) {
+        case 'pipToggle':
+          await _player.playOrPause();
+          return null;
+        case 'onAiProgress':
+        case 'onAiSubtitleDone':
+        case 'onAiSubtitleFailed':
+          AiSubtitleRunner.handleNativeEvent(call);
+          return null;
+        default:
+          return null;
       }
-      return null;
     });
     unawaited(_settings.load().then((_) {
       if (!mounted) return;
@@ -1041,6 +1050,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         ? _player.state.tracks.subtitle
         : _player.state.tracks.audio;
     final selected = subtitle ? _player.state.track.subtitle : _player.state.track.audio;
+    // The AI runner needs a context that outlives this sheet (the player
+    // screen's own), so capture it before the sheet builder shadows it.
+    final rootContext = context;
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -1083,6 +1095,35 @@ class _PlayerScreenState extends State<PlayerScreen>
                   if (context.mounted) Navigator.of(context).pop();
                 },
               ),
+            if (subtitle) ...[
+              const Divider(height: 16, color: Colors.white12),
+              ListTile(
+                leading: Icon(Icons.auto_awesome,
+                    size: 20, color: AppColors.accent),
+                title: const Text(
+                  'Generate with AI ✨',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: const Text(
+                  'On-device · free · works offline after a one-time setup',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  AiSubtitleRunner.start(
+                    context: rootContext,
+                    path: _currentPath,
+                    title: _title,
+                    isStream: widget.isStream,
+                    player: _player,
+                  );
+                },
+              ),
+            ],
           ],
         ),
       ),
@@ -1580,6 +1621,98 @@ class _PlayerScreenState extends State<PlayerScreen>
       case _PlayerMenuAction.sleep:
         await _showSleepTimerSheet();
         break;
+      case _PlayerMenuAction.rename:
+        await _showRenameDialog();
+        break;
+    }
+  }
+
+  /// Renames the currently playing LOCAL file on disk. Streams have no
+  /// file to rename. The resume point (keyed by path) migrates with it so
+  /// "continue watching" still finds the file under its new name.
+  Future<void> _showRenameDialog() async {
+    if (widget.isStream || _currentPath.isEmpty) {
+      _emitSnack('Only local files can be renamed');
+      return;
+    }
+    final file = File(_currentPath);
+    if (!file.existsSync()) {
+      _emitSnack('File not found on this device');
+      return;
+    }
+    final oldName = _title.isNotEmpty
+        ? _title
+        : _currentPath.split(Platform.pathSeparator).last;
+    final dot = oldName.lastIndexOf('.');
+    final ext =
+        (dot > 0 && dot < oldName.length - 1) ? oldName.substring(dot) : '';
+    final base = dot > 0 ? oldName.substring(0, dot) : oldName;
+    final ctrl = TextEditingController(text: base);
+    final newBase = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.border),
+        ),
+        title: const Text('Rename video',
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 17)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: const TextStyle(color: AppColors.textPrimary),
+          decoration: const InputDecoration(
+            hintText: 'New name',
+            hintStyle: TextStyle(color: AppColors.textSecondary),
+          ),
+          onSubmitted: (v) => Navigator.of(context).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              foregroundColor: AppColors.onAccent,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.of(context).pop(ctrl.text.trim()),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    if (newBase == null || newBase.isEmpty || newBase == base) return;
+    final newName = '$newBase$ext';
+    final dir = file.parent.path;
+    final newPath = '$dir${Platform.pathSeparator}$newName';
+    final newFile = File(newPath);
+    if (newFile.existsSync()) {
+      _emitSnack('A file with that name already exists');
+      return;
+    }
+    try {
+      final saved = await _resume.readMs(_currentPath);
+      await file.rename(newPath);
+      // Migrate the resume point so "continue watching" keeps working.
+      if (saved != null) {
+        await _resume.writeMs(newPath, saved);
+        await _resume.clear(_currentPath);
+      }
+      if (!mounted) return;
+      setState(() {
+        _currentPath = newPath;
+        _title = newName;
+      });
+      _emitSnack('Renamed to "$newName"');
+    } catch (e) {
+      CrashLog.error('player.rename_failed', e);
+      _emitSnack('Rename failed - the file may be protected or in use');
     }
   }
 
@@ -2010,6 +2143,10 @@ class _TopBar extends StatelessWidget {
                     _PlayerMenuAction.sleep,
                     Icons.bedtime_outlined,
                     sleepMenuLabel ?? 'Sleep timer'),
+                _topMenuItem(
+                    _PlayerMenuAction.rename,
+                    Icons.drive_file_rename_outline,
+                    'Rename'),
               ],
             ),
             IconButton(
@@ -2334,16 +2471,21 @@ class _BottomBarState extends State<_BottomBar> {
   }
 
   void _showSpeedSheet() {
-    final initial = nearestPlaybackRate(widget.player.state.rate);
+    // The live value is declared ONCE here, in the method frame, so the
+    // builder and the drag/chip callbacks all capture the SAME variable.
+    // (Previously `var current = initial` sat inside the builder and was
+    // re-initialised on every rebuild, so the slider thumb and the "x"
+    // readout snapped back to the start value while only the rate itself
+    // changed — the sheet "looked broken".)
+    var current = nearestPlaybackRate(widget.player.state.rate);
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF14141c),
+      backgroundColor: const Color(0xFF1a1a24),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setSheetState) {
-          var current = initial;
           return SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),

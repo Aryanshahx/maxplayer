@@ -522,7 +522,9 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
                 style: TextStyle(color: Colors.white54)),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            style: FilledButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Delete'),
           ),

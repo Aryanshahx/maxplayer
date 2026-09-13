@@ -685,10 +685,8 @@ class _SetupNote extends StatelessWidget {
                 size: 44, color: Colors.white.withValues(alpha: 0.3)),
             const SizedBox(height: 14),
             const Text(
-              'Discover starts in the store build.\n\n'
-              '(Developer note: pass the TMDB token via\n'
-              '--dart-define=TMDB_API_KEY=... - see README. '
-              'Everything else in the app works without it.)',
+              'Discover could not load right now.\n\n'
+              'Check your internet connection, then pull down to retry.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white54, height: 1.5),
             ),

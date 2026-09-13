@@ -44,6 +44,12 @@ List<String> toggleId(List<String> ids, String id) {
   return out;
 }
 
+/// Pure playlist add (unit-tested): idempotent append.
+List<String> addId(List<String> ids, String id) {
+  if (ids.contains(id)) return [...ids];
+  return [...ids, id];
+}
+
 String _join(Set<String> s) => jsonEncode(s.toList());
 
 /// A named remote link (network share / cloud direct-link / stream URL).
@@ -180,6 +186,16 @@ class LocalStore {
     if (!pl.containsKey(name)) return false;
     final before = pl[name]!.length;
     pl[name] = toggleId(pl[name]!, id);
+    await _savePlaylists(pl);
+    return pl[name]!.length > before;
+  }
+
+  /// Idempotent add: returns true only when [id] was newly appended.
+  Future<bool> addToPlaylist(String name, String id) async {
+    final pl = await playlists();
+    if (!pl.containsKey(name)) return false;
+    final before = pl[name]!.length;
+    pl[name] = addId(pl[name]!, id);
     await _savePlaylists(pl);
     return pl[name]!.length > before;
   }

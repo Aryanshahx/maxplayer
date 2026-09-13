@@ -14,6 +14,10 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import android.graphics.drawable.Icon
 import android.hardware.SensorManager
+import android.media.AudioFormat
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaScannerConnection
 import android.net.Uri
@@ -27,14 +31,24 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Rational
 import android.view.OrientationEventListener
+import dev.ffmpegkit.whisper.Whisper
+import dev.ffmpegkit.whisper.WhisperConfig
+import dev.ffmpegkit.whisper.WhisperModel
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.concurrent.Executors
+import kotlin.math.min
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : FlutterFragmentActivity() {
 
@@ -43,6 +57,14 @@ class MainActivity : FlutterFragmentActivity() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val executor = Executors.newSingleThreadExecutor()
+
+    // AI subtitles (on-device whisper.cpp) job state. One job at a time;
+    // the Dart side refuses to start a second while one is running.
+    @Volatile
+    private var aiCancelled = false
+    private var aiJobCounter = 0
+
+    private class AiCancelledException : Exception("cancelled")
 
     // Drop 5 storage channel: system document picker (cloud import),
     // vault directory, system delete-consent, thumbnails. Separate from
@@ -158,6 +180,66 @@ class MainActivity : FlutterFragmentActivity() {
                         val dir = thumbStripEnsureSync(p)
                         mainHandler.post { result.success(dir) }
                     }
+                }
+
+                "whisperAvailable" -> {
+                    // Proves the on-device whisper.cpp engine loaded its
+                    // native library on this device. Runs off the main
+                    // thread (first call may load libwhisper.so).
+                    executor.execute {
+                        val info = try {
+                            Whisper.getSystemInfo()
+                        } catch (t: Throwable) {
+                            null
+                        }
+                        mainHandler.post { result.success(info) }
+                    }
+                }
+
+                "aiModelStatus" -> {
+                    // Which models are already on disk, with size in MB.
+                    val map = HashMap<String, Any>()
+                    for (name in listOf("tiny", "base", "small")) {
+                        val f = modelFileFor(name)
+                        map[name] = if (f.exists() && f.length() > 1_000_000) {
+                            (f.length() / (1024 * 1024)).toInt()
+                        } else {
+                            0
+                        }
+                    }
+                    result.success(map)
+                }
+
+                "aiSubtitleGenerate" -> {
+                    val videoPath = call.argument<String>("videoPath")
+                    val model = call.argument<String>("model") ?: "base"
+                    val language = call.argument<String>("language") ?: "auto"
+                    // whisper translate task -> English subtitles from any
+                    // spoken language.
+                    val translate = call.argument<Boolean>("translate") ?: false
+                    if (videoPath.isNullOrEmpty()) {
+                        result.error("bad_args", "videoPath is required", null)
+                    } else if (!Build.SUPPORTED_ABIS.contains("arm64-v8a")) {
+                        // The whisper engine ships arm64-only native
+                        // libraries. On 32-bit phones decline cleanly BEFORE
+                        // any model download - Dart turns the null job id
+                        // into a friendly snack.
+                        result.success(null)
+                    } else {
+                        aiCancelled = false
+                        val jobId = ++aiJobCounter
+                        executor.execute {
+                            runAiPipeline(
+                                jobId, videoPath, model, language, translate
+                            )
+                        }
+                        result.success(jobId)
+                    }
+                }
+
+                "aiSubtitleCancel" -> {
+                    aiCancelled = true
+                    result.success(true)
                 }
 
                 else -> result.notImplemented()
@@ -996,5 +1078,645 @@ class MainActivity : FlutterFragmentActivity() {
         } finally {
             try { retriever.release() } catch (_: Throwable) {}
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // AI subtitles pipeline: on-device whisper.cpp (offline & free after the
+    // one-time model download). Ported from the old app.
+    //
+    //   video -> [MediaExtractor + MediaCodec] 16 kHz mono WAV (on device)
+    //         -> speech gating (on device) -> speech slices <= 30 s
+    //         -> whisper.cpp transcribe (on device) -> segments to Dart.
+    // -----------------------------------------------------------------------
+
+    private fun aiProgress(jobId: Int, stage: String, percent: Int) {
+        mainHandler.post {
+            methodChannel?.invokeMethod(
+                "onAiProgress",
+                hashMapOf("job" to jobId, "stage" to stage, "percent" to percent)
+            )
+        }
+    }
+
+    // Only the accurate models stay ("tiny" removed for good). Speed comes
+    // from all-core threading instead of a weaker model. Unknown ids
+    // (including a "tiny" id saved by older builds) fall back to "base".
+    private fun modelFileFor(name: String): File {
+        val safe = when (name) {
+            "base", "small" -> name
+            else -> "base"
+        }
+        return File(filesDir, "models/ggml-$safe.bin")
+    }
+
+    private fun modelUrlFor(name: String): String {
+        return when (name) {
+            "small" ->
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
+            else ->
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+        }
+    }
+
+    private fun aiDone(jobId: Int, segments: ArrayList<HashMap<String, Any>>) {
+        mainHandler.post {
+            methodChannel?.invokeMethod(
+                "onAiSubtitleDone",
+                hashMapOf("job" to jobId, "segments" to segments)
+            )
+        }
+    }
+
+    private fun aiFailed(jobId: Int, message: String) {
+        mainHandler.post {
+            methodChannel?.invokeMethod(
+                "onAiSubtitleFailed",
+                hashMapOf("job" to jobId, "message" to message)
+            )
+        }
+    }
+
+    private fun runAiPipeline(
+        jobId: Int,
+        videoPath: String,
+        modelName: String,
+        language: String,
+        translate: Boolean = false
+    ) {
+        try {
+            // 1. Model file (one-time download).
+            val modelFile = modelFileFor(modelName)
+            if (!modelFile.exists() || modelFile.length() < 1_000_000) {
+                aiProgress(jobId, "downloading", 0)
+                val dlError = try {
+                    downloadModel(modelUrlFor(modelName), modelFile, jobId)
+                    null
+                } catch (e: AiCancelledException) {
+                    "cancelled"
+                } catch (e: Exception) {
+                    (e.message ?: "network error").take(80)
+                }
+                if (dlError != null) {
+                    modelFile.delete()
+                    aiFailed(
+                        jobId,
+                        if (dlError == "cancelled") "cancelled"
+                        else "Model download failed ($dlError) - internet is needed once; after that AI subtitles work fully offline."
+                    )
+                    return
+                }
+            }
+            if (aiCancelled) return aiFailed(jobId, "cancelled")
+
+            // 2. Extract audio track -> 16 kHz mono WAV.
+            aiProgress(jobId, "extracting", 0)
+            val wav = File(cacheDir, "ai_audio_$jobId.wav")
+            if (!extractAudioToWav(videoPath, wav, jobId)) {
+                wav.delete()
+                aiFailed(
+                    jobId,
+                    if (aiCancelled) "cancelled" else "Could not read the audio track of this file."
+                )
+                return
+            }
+            if (aiCancelled) {
+                wav.delete()
+                return aiFailed(jobId, "cancelled")
+            }
+
+            // 3. Transcribe with whisper.cpp (offline), speech-gated: the
+            // 16 kHz track is first split into voiced spans and only those
+            // are sent to whisper. Long silent stretches of a video are
+            // skipped entirely, which is FASTER and CLEANER (whisper used
+            // to answer silence with "music" hallucinations). Music is
+            // never treated as silence, so speech over loud background
+            // music still gets transcribed.
+            aiProgress(jobId, "transcribing", 0)
+            val segments = ArrayList<HashMap<String, Any>>()
+            runBlocking {
+                var model: WhisperModel? = null
+                try {
+                    model = Whisper.loadModel(this@MainActivity, modelFile.absolutePath)
+                    val pcmData = readWavPcm(wav) ?: ByteArray(0)
+                    val spans = speechSpans(pcmData)
+                    // spans empty = no voice anywhere -> empty result, and
+                    // Dart shows its friendly "No speech detected" snack.
+                    spans.forEachIndexed { i, span ->
+                        if (aiCancelled) return@forEachIndexed
+                        val spanWav = File(cacheDir, "ai_span_${jobId}_$i.wav")
+                        try {
+                            writeSpanWav(spanWav, pcmData, span[0], span[1])
+                            // The user can pin a language ("hi", "ur", "en",
+                            // ...) in the Generate dialog; "auto" = detect
+                            // it. Pinning is noticeably more accurate.
+                            val res = Whisper.transcribe(
+                                model,
+                                spanWav.absolutePath,
+                                WhisperConfig(
+                                    language = language,
+                                    translate = translate,
+                                    // Use every core the phone offers -
+                                    // whisper.cpp scales well to 8 threads.
+                                    threads = Runtime.getRuntime()
+                                        .availableProcessors()
+                                        .coerceIn(2, 8),
+                                )
+                            )
+                            val offsetMs = span[0] * 1000L / 16000
+                            for (s in res.segments) {
+                                val text = s.text.trim()
+                                if (text.isEmpty()) continue
+                                segments.add(
+                                    hashMapOf(
+                                        "start" to (s.startMs + offsetMs) as Any,
+                                        "end" to (s.endMs + offsetMs) as Any,
+                                        "text" to text as Any
+                                    )
+                                )
+                            }
+                        } finally {
+                            spanWav.delete()
+                        }
+                        aiProgress(jobId, "transcribing", (i + 1) * 100 / spans.size)
+                    }
+                } finally {
+                    model?.let { Whisper.releaseModel(it) }
+                }
+            }
+            wav.delete()
+            if (aiCancelled) return aiFailed(jobId, "cancelled")
+            aiDone(jobId, segments)
+        } catch (t: Throwable) {
+            aiFailed(jobId, t.message ?: "AI subtitle generation failed")
+        }
+    }
+
+    /**
+     * Downloads [url] into [dest] via a ".part" temp file. Redirects are
+     * followed MANUALLY: huggingface.co /resolve/ URLs answer with a 302 to
+     * a CDN host, and relying on HttpURLConnection's automatic redirect
+     * handling has proven unreliable across Android versions. Progress is
+     * reported as the "downloading" stage.
+     */
+    private fun downloadModel(url: String, dest: File, jobId: Int) {
+        dest.parentFile?.mkdirs()
+        val tmp = File(dest.parentFile, dest.name + ".part")
+        var conn: HttpURLConnection? = null
+        try {
+            var current = url
+            var hops = 0
+            while (true) {
+                val c = URL(current).openConnection() as HttpURLConnection
+                conn = c
+                c.connectTimeout = 20000
+                c.readTimeout = 30000
+                c.instanceFollowRedirects = false
+                c.setRequestProperty("User-Agent", "MaxPlayer/1.0 (Android)")
+                c.connect()
+                val code = c.responseCode
+                if (code in 300..399) {
+                    val loc = c.getHeaderField("Location")
+                    c.disconnect()
+                    if (loc == null || ++hops > 6) {
+                        throw java.io.IOException("redirect failed (HTTP $code)")
+                    }
+                    // Handles both absolute and relative Location headers.
+                    current = URL(URL(current), loc).toString()
+                    continue
+                }
+                if (code !in 200..299) {
+                    c.disconnect()
+                    throw java.io.IOException("HTTP $code")
+                }
+                break
+            }
+            val c = conn ?: throw java.io.IOException("no connection")
+            val total = c.contentLengthLong
+            c.inputStream.use { input ->
+                FileOutputStream(tmp).use { out ->
+                    val buf = ByteArray(256 * 1024)
+                    var done = 0L
+                    var read: Int
+                    while (input.read(buf).also { read = it } != -1) {
+                        if (aiCancelled) throw AiCancelledException()
+                        out.write(buf, 0, read)
+                        done += read
+                        if (total > 0) {
+                            aiProgress(jobId, "downloading", (done * 100 / total).toInt())
+                        }
+                    }
+                    if (total > 0 && done != total) {
+                        throw java.io.IOException("incomplete download")
+                    }
+                }
+            }
+            c.disconnect()
+            if (!tmp.renameTo(dest)) {
+                tmp.copyTo(dest, overwrite = true)
+                tmp.delete()
+            }
+        } finally {
+            if (tmp.exists()) tmp.delete()
+        }
+    }
+
+    /**
+     * Decodes the first audio track of [videoPath] to a 16 kHz mono 16-bit
+     * PCM WAV using MediaExtractor + MediaCodec. Returns false if the file
+     * has no (decodable) audio track.
+     */
+    private fun extractAudioToWav(videoPath: String, outFile: File, jobId: Int): Boolean {
+        val extractor = MediaExtractor()
+        var codec: MediaCodec? = null
+        var raf: RandomAccessFile? = null
+        return try {
+            extractor.setDataSource(videoPath)
+            var trackIndex = -1
+            var sampleRate = 44100
+            var channels = 1
+            var durationUs = 0L
+            for (i in 0 until extractor.trackCount) {
+                val f = extractor.getTrackFormat(i)
+                val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
+                if (mime.startsWith("audio/")) {
+                    trackIndex = i
+                    if (f.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                        sampleRate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                    }
+                    if (f.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                        channels = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                    }
+                    if (f.containsKey(MediaFormat.KEY_DURATION)) {
+                        durationUs = f.getLong(MediaFormat.KEY_DURATION)
+                    }
+                    codec = MediaCodec.createDecoderByType(mime)
+                    codec!!.configure(f, null, null, 0)
+                    break
+                }
+            }
+            if (trackIndex < 0 || codec == null) return false
+            extractor.selectTrack(trackIndex)
+            codec!!.start()
+
+            // The decoder's OUTPUT format is authoritative: it can differ
+            // from the container's declared format AND it reveals the PCM
+            // encoding. Many AAC decoders output 32-bit FLOAT PCM - feeding
+            // those bytes to the 16-bit resampler produced noise.
+            var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
+            try {
+                val of = codec!!.outputFormat
+                if (of.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                    sampleRate = of.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                }
+                if (of.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                    channels = of.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                }
+                if (of.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
+                    pcmEncoding = of.getInteger(MediaFormat.KEY_PCM_ENCODING)
+                }
+            } catch (_: Exception) {
+            }
+
+            raf = RandomAccessFile(outFile, "rw")
+            raf.setLength(0)
+            writeWavHeader(raf, 16000, 0) // placeholder, patched at the end
+            var dataBytes = 0L
+
+            val info = MediaCodec.BufferInfo()
+            var inputDone = false
+            var outputDone = false
+            while (!outputDone) {
+                if (aiCancelled) return false
+                if (!inputDone) {
+                    val idx = codec!!.dequeueInputBuffer(10_000)
+                    if (idx >= 0) {
+                        val buf = codec!!.getInputBuffer(idx)!!
+                        val n = extractor.readSampleData(buf, 0)
+                        if (n < 0) {
+                            codec!!.queueInputBuffer(
+                                idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                            )
+                            inputDone = true
+                        } else {
+                            codec!!.queueInputBuffer(idx, 0, n, extractor.sampleTime, 0)
+                            extractor.advance()
+                        }
+                    }
+                }
+                val outIdx = codec!!.dequeueOutputBuffer(info, 10_000)
+                if (outIdx >= 0) {
+                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                        outputDone = true
+                    }
+                    if (info.size > 0) {
+                        val outBuf = codec!!.getOutputBuffer(outIdx)!!
+                        val pcm = ByteArray(info.size)
+                        outBuf.get(pcm)
+                        outBuf.clear()
+                        val mono = pcmToMono16k(pcm, channels, sampleRate, pcmEncoding)
+                        raf.write(mono)
+                        dataBytes += mono.size
+                        if (durationUs > 0 && info.presentationTimeUs > 0) {
+                            aiProgress(
+                                jobId,
+                                "extracting",
+                                (info.presentationTimeUs * 100 / durationUs)
+                                    .toInt()
+                                    .coerceIn(0, 99)
+                            )
+                        }
+                    }
+                    codec!!.releaseOutputBuffer(outIdx, false)
+                }
+            }
+            writeWavHeader(raf, 16000, dataBytes) // real sizes
+            true
+        } catch (e: Exception) {
+            false
+        } finally {
+            try {
+                codec?.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                codec?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                extractor.release()
+            } catch (_: Exception) {
+            }
+            try {
+                raf?.close()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * Normalizes decoder PCM (any common encoding) to interleaved signed
+     * 16-bit little-endian samples. Without this, FLOAT/32-bit decoder
+     * output was interpreted as 16-bit, which sounds like noise - and
+     * the transcriber answered noise with "music".
+     */
+    private fun pcmToShorts(pcm: ByteArray, encoding: Int): ShortArray {
+        return when (encoding) {
+            AudioFormat.ENCODING_PCM_FLOAT -> {
+                val fb = ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN)
+                    .asFloatBuffer()
+                ShortArray(fb.remaining()) { i ->
+                    (fb.get(i).coerceIn(-1f, 1f) * 32767f).toInt().toShort()
+                }
+            }
+            AudioFormat.ENCODING_PCM_32BIT -> {
+                val n = pcm.size / 4
+                ShortArray(n) { i ->
+                    // Top two bytes of each 32-bit LE sample.
+                    val hi = pcm[i * 4 + 3].toInt()
+                    val mid = pcm[i * 4 + 2].toInt() and 0xFF
+                    ((hi shl 8) or mid).toShort()
+                }
+            }
+            AudioFormat.ENCODING_PCM_24BIT_PACKED -> {
+                val n = pcm.size / 3
+                ShortArray(n) { i ->
+                    val hi = pcm[i * 3 + 2].toInt()
+                    val mid = pcm[i * 3 + 1].toInt() and 0xFF
+                    ((hi shl 8) or mid).toShort()
+                }
+            }
+            else -> { // ENCODING_PCM_16BIT (and sane fallback)
+                val n = pcm.size / 2
+                ShortArray(n) { i ->
+                    ((pcm[i * 2 + 1].toInt() shl 8) or
+                        (pcm[i * 2].toInt() and 0xFF)).toShort()
+                }
+            }
+        }
+    }
+
+    /**
+     * Downmixes interleaved PCM to mono and resamples to 16 kHz using a
+     * simple averaging window (good enough for speech).
+     */
+    private fun pcmToMono16k(
+        pcm: ByteArray,
+        channels: Int,
+        srcRate: Int,
+        encoding: Int
+    ): ByteArray {
+        if (channels < 1) return ByteArray(0)
+        val samples = pcmToShorts(pcm, encoding)
+        val frames = samples.size / channels
+        if (frames == 0) return ByteArray(0)
+        val step = srcRate.toDouble() / 16000.0
+        val outCount = (frames / step).toInt()
+        val out = ByteArray(outCount * 2)
+        var pos = 0.0
+        var o = 0
+        while (o < outCount) {
+            val startF = pos.toInt()
+            val endF = min(frames, (pos + step).toInt() + 1)
+            var sum = 0
+            var cnt = 0
+            var f = startF
+            while (f < endF) {
+                var mixed = 0
+                for (ch in 0 until channels) {
+                    mixed += samples[f * channels + ch]
+                }
+                sum += mixed / channels
+                cnt++
+                f++
+            }
+            val v = if (cnt > 0) sum / cnt else 0
+            out[o * 2] = (v and 0xFF).toByte()
+            out[o * 2 + 1] = ((v shr 8) and 0xFF).toByte()
+            o++
+            pos += step
+        }
+        return out
+    }
+
+    /** Writes a standard PCM WAV header (44 bytes) at the current position 0. */
+    private fun writeWavHeader(raf: RandomAccessFile, rate: Int, dataLen: Long) {
+        fun intLe(v: Long) = byteArrayOf(
+            (v and 0xFF).toByte(),
+            ((v shr 8) and 0xFF).toByte(),
+            ((v shr 16) and 0xFF).toByte(),
+            ((v shr 24) and 0xFF).toByte()
+        )
+
+        fun shortLe(v: Int) = byteArrayOf(
+            (v and 0xFF).toByte(),
+            ((v shr 8) and 0xFF).toByte()
+        )
+
+        raf.seek(0)
+        raf.writeBytes("RIFF")
+        raf.write(intLe(36 + dataLen))
+        raf.writeBytes("WAVE")
+        raf.writeBytes("fmt ")
+        raf.write(intLe(16)) // PCM fmt chunk size
+        raf.write(shortLe(1)) // PCM format
+        raf.write(shortLe(1)) // mono
+        raf.write(intLe(rate.toLong()))
+        raf.write(intLe(rate.toLong() * 2)) // byte rate
+        raf.write(shortLe(2)) // block align
+        raf.write(shortLe(16)) // bit depth
+        raf.writeBytes("data")
+        raf.write(intLe(dataLen))
+    }
+
+    /** Reads the PCM data section of a 16 kHz mono 16-bit WAV we wrote
+     * (i.e. everything after the 44-byte header). Null if unreadable. */
+    private fun readWavPcm(wav: File): ByteArray? {
+        return try {
+            val bytes = wav.readBytes()
+            if (bytes.size <= 44) null else bytes.copyOfRange(44, bytes.size)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Writes [pcm] samples in [fromSample, toSample) as a standalone 16 kHz
+     * mono 16-bit WAV (header + raw little-endian data).
+     */
+    private fun writeSpanWav(out: File, pcm: ByteArray, fromSample: Int, toSample: Int) {
+        val from = fromSample * 2
+        val to = minOf(toSample * 2, pcm.size)
+        val raf = RandomAccessFile(out, "rw")
+        try {
+            raf.setLength(0)
+            writeWavHeader(raf, 16000, (to - from).toLong())
+            raf.write(pcm, from, to - from)
+        } finally {
+            raf.close()
+        }
+    }
+
+    /**
+     * Speech-gate for the AI pipeline: finds voiced spans in 16 kHz mono
+     * 16-bit PCM (raw little-endian bytes, no header) and returns them as
+     * [startSample, endSample) pairs - padded, gap-merged and chunked to
+     * <=30 s so slices stay small and fast to transcribe.
+     *
+     * Conservative by design: only true near-silence is dropped. The
+     * threshold sits at ~2x the adaptive noise floor with a very low
+     * absolute floor, so quiet speech is kept while digital/room silence is
+     * skipped. Music is far above this floor and is therefore NEVER gated
+     * out (speech over loud background music still gets transcribed).
+     */
+    private fun speechSpans(pcm: ByteArray): List<IntArray> {
+        val frame = 400 // 25 ms at 16 kHz
+        val totalSamples = pcm.size / 2
+        val totalFrames = totalSamples / frame
+        if (totalFrames < 8) return emptyList() // under 0.2 s of audio at all
+
+        // RMS energy per 25 ms frame, straight from the raw bytes.
+        val rms = DoubleArray(totalFrames)
+        var i = 0
+        while (i < totalFrames) {
+            var sum = 0.0
+            var j = 0
+            val base = i * frame
+            while (j < frame) {
+                val idx = (base + j) * 2
+                val s =
+                    ((pcm[idx + 1].toInt() shl 8) or (pcm[idx].toInt() and 0xFF))
+                        .toShort()
+                        .toInt()
+                sum += s * s
+                j++
+            }
+            rms[i] = kotlin.math.sqrt(sum / frame)
+            i++
+        }
+
+        // Adaptive threshold: ~2.2x the 20th-percentile frame energy (the
+        // noise floor), but never below a conservative absolute floor.
+        val sorted = rms.sorted()
+        val noise = sorted[(totalFrames * 0.2).toInt().coerceIn(0, totalFrames - 1)]
+        val threshold = maxOf(noise * 2.2, 260.0)
+
+        // Voiced frames -> raw spans.
+        val raw = mutableListOf<IntArray>()
+        var start = -1
+        i = 0
+        while (i < totalFrames) {
+            if (rms[i] >= threshold) {
+                if (start < 0) start = i
+            } else if (start >= 0) {
+                raw.add(intArrayOf(start, i))
+                start = -1
+            }
+            i++
+        }
+        if (start >= 0) raw.add(intArrayOf(start, totalFrames))
+        if (raw.isEmpty()) return emptyList()
+
+        // Merge spans separated by < 0.3 s (breaths / sentence gaps), then
+        // pad 0.15 s on each side and drop remnants shorter than 0.4 s.
+        val mergeGap = 12
+        val pad = 6
+        val merged = mutableListOf<IntArray>()
+        var cur = raw[0]
+        i = 1
+        while (i < raw.size) {
+            val n = raw[i]
+            if (n[0] - cur[1] <= mergeGap) {
+                cur[1] = n[1]
+            } else {
+                merged.add(cur)
+                cur = n
+            }
+            i++
+        }
+        merged.add(cur)
+        val padded = mutableListOf<IntArray>()
+        for (m in merged) {
+            val a = maxOf(0, m[0] - pad)
+            val b = minOf(totalFrames, m[1] + pad)
+            if (b - a >= 16) {
+                padded.add(intArrayOf(a * frame, minOf(b * frame, totalSamples)))
+            }
+        }
+
+        // Chunk anything longer than 30 s; split at the quietest frame near
+        // the midpoint (best-effort word boundary), with a hard-split
+        // fallback so the loop always makes progress.
+        val maxFrames = 1200 // 30 s
+        val chunked = mutableListOf<IntArray>()
+        for (o in padded) {
+            var s0 = o[0]
+            val e0 = o[1]
+            while (e0 - s0 > maxFrames * frame) {
+                val midFrame = (s0 / frame + e0 / frame) / 2
+                val win = 120 // +-3 s
+                var best = midFrame
+                var bestV = Double.MAX_VALUE
+                var f = maxOf(s0 / frame + 16, midFrame - win)
+                val fEnd = minOf(e0 / frame - 16, midFrame + win)
+                while (f <= fEnd) {
+                    if (f >= 0 && f < totalFrames && rms[f] < bestV) {
+                        bestV = rms[f]
+                        best = f
+                    }
+                    f++
+                }
+                val splitSample = best * frame
+                if (splitSample <= s0 + frame * 16 || splitSample >= e0 - frame * 16) {
+                    val hard = s0 + maxFrames * frame
+                    chunked.add(intArrayOf(s0, hard))
+                    s0 = hard
+                } else {
+                    chunked.add(intArrayOf(s0, splitSample))
+                    s0 = splitSample
+                }
+            }
+            chunked.add(intArrayOf(s0, e0))
+        }
+        return chunked
     }
 }
