@@ -421,6 +421,10 @@ class _VideoGridState extends State<VideoGrid> {
               Navigator.of(context).pop();
               _addToPlaylist(a);
             }),
+            _sheetAction(Icons.drive_file_rename_outline_rounded, 'Rename', () {
+              Navigator.of(context).pop();
+              _rename(a);
+            }),
             _sheetAction(Icons.lock_outline_rounded, 'Move to Private folder',
                 () {
               Navigator.of(context).pop();
@@ -452,9 +456,109 @@ class _VideoGridState extends State<VideoGrid> {
         onTap: onTap,
       );
 
-  void _open(AssetEntity a) => (widget.onOpen ??
-      (x) => VideoGrid.openVideo(context, x,
-          store: _store, queue: widget.videos))(a);
+  /// Renames the video's file on disk (same best-effort rename as the
+  /// player). The resume point (keyed by path) migrates with it so
+  /// "continue watching" keeps working. Refresh after so the grid shows
+  /// the new name.
+  Future<void> _rename(AssetEntity a) async {
+    try {
+      final file = await a.file;
+      final path = file?.path;
+      if (file == null || path == null || path.isEmpty || !file.existsSync()) {
+        throw const FileSystemException('Video file not found');
+      }
+      final oldName = a.title ?? path.split('/').last;
+      final dot = oldName.lastIndexOf('.');
+      final ext =
+          (dot > 0 && dot < oldName.length - 1) ? oldName.substring(dot) : '';
+      final base = dot > 0 ? oldName.substring(0, dot) : oldName;
+      final ctrl = TextEditingController(text: base);
+      if (!mounted) return;
+      final newBase = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: AppColors.border),
+          ),
+          title: const Text('Rename video',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 17)),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(
+              hintText: 'New name',
+              hintStyle: TextStyle(color: AppColors.textSecondary),
+            ),
+            onSubmitted: (v) => Navigator.of(context).pop(v.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                foregroundColor: AppColors.onAccent,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () => Navigator.of(context).pop(ctrl.text.trim()),
+              child: const Text('Rename'),
+            ),
+          ],
+        ),
+      );
+      if (newBase == null || newBase.isEmpty || newBase == base) return;
+      final newName = '$newBase$ext';
+      final targetPath = '${file.parent.path}${Platform.pathSeparator}$newName';
+      final target = File(targetPath);
+      if (target.existsSync()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('A file with that name exists')));
+        }
+        return;
+      }
+      final resume = ResumeStore();
+      final saved = await resume.readMs(path);
+      await file.rename(targetPath);
+      if (saved != null) {
+        await resume.writeMs(targetPath, saved);
+        await resume.clear(path);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Renamed to "$newName"')));
+      }
+      resumeProgressCache.remove(a.id);
+      widget.onChanged();
+    } catch (e) {
+      CrashLog.error('grid.rename_failed', e, {'id': a.id});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Rename failed - the file may be protected or in use')),
+        );
+      }
+    }
+  }
+
+  Future<void> _open(AssetEntity a) async {
+    if (widget.onOpen != null) {
+      widget.onOpen!(a);
+    } else {
+      await VideoGrid.openVideo(context, a, store: _store, queue: widget.videos);
+    }
+    // Watched-progress bars must reflect the position the player just
+    // saved — drop the memoized fractions so the next build re-reads them.
+    resumeProgressCache.clear();
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {

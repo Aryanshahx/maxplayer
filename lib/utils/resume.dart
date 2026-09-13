@@ -51,4 +51,11 @@ class ResumeStore {
     final all = await _readAll()..remove(path);
     await prefs.setString(_kResumeKey, jsonEncode(all));
   }
+
+  /// Wipes every saved resume point (History → "Clear history" also resets
+  /// resume positions, exactly like the old app).
+  Future<void> clearAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kResumeKey);
+  }
 }

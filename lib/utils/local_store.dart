@@ -225,6 +225,15 @@ class LocalStore {
   Future<void> clearRecent() async =>
       (await SharedPreferences.getInstance()).remove(_kRecent);
 
+  /// Removes one history entry by its file path (the History screen's
+  /// per-row close button).
+  Future<void> removeRecentByPath(String path) async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = (await recent())..removeWhere((e) => e.path == path);
+    await prefs.setString(
+        _kRecent, jsonEncode(list.map((e) => e.toJson()).toList()));
+  }
+
   // -------- saved links (Network Storage / Cloud Storage) --------
 
   static const _kNetworkLinks = 'network.links.v1';

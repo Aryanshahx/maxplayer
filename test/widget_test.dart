@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maxplayer/theme.dart';
+import 'package:maxplayer/screens/history_screen.dart' show timeAgo;
 import 'package:maxplayer/models/network_location.dart';
 import 'package:maxplayer/models/saved_server.dart';
 import 'package:maxplayer/utils/badges.dart';
@@ -421,6 +422,34 @@ void main() {
     test('modelSizeLabel maps small vs default', () {
       expect(AiSubtitleRunner.modelSizeLabel('small'), '~466 MB');
       expect(AiSubtitleRunner.modelSizeLabel('base'), '~142 MB');
+    });
+  });
+
+  group('timeAgo (Drop 6 history)', () {
+    test('just now', () {
+      expect(timeAgo(DateTime.now().millisecondsSinceEpoch), 'Just now');
+    });
+    test('minutes ago', () {
+      final ts = DateTime.now()
+          .subtract(const Duration(minutes: 3))
+          .millisecondsSinceEpoch;
+      expect(timeAgo(ts), '3m ago');
+    });
+    test('hours ago', () {
+      final ts = DateTime.now()
+          .subtract(const Duration(hours: 5))
+          .millisecondsSinceEpoch;
+      expect(timeAgo(ts), '5h ago');
+    });
+    test('days ago', () {
+      final ts = DateTime.now()
+          .subtract(const Duration(days: 2))
+          .millisecondsSinceEpoch;
+      expect(timeAgo(ts), '2d ago');
+    });
+    test('zero/negative is blank', () {
+      expect(timeAgo(0), '');
+      expect(timeAgo(-1), '');
     });
   });
 

@@ -100,6 +100,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _locked = false;
   bool _muted = false;
   double _volumePercent = 100;
+  int _lastVolumePct = -1;
   FitMode _fitMode = FitMode.fit;
 
   _DragMode _drag = _DragMode.undecided;
@@ -138,6 +139,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   int _sleepMinutesLeft = 0;
   bool _sleepUntilEnd = false;
   bool _softwareDecodeRetried = false;
+  bool _resumePromptOpen = false;
 
   // Scrub thumbnail strip (native MediaMetadataRetriever frames).
   String? _thumbStripFor;
@@ -252,7 +254,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (mounted) setState(() => _ready = true);
       unawaited(_ensureThumbStrip(path));
       unawaited(_applyPerformanceMode());
-      if (offerResume && _settings.resume && !widget.isStream) {
+      if (offerResume && !widget.isStream) {
         unawaited(_offerResume());
       }
     } catch (e) {
@@ -299,7 +301,13 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _savePosition() async {
-    if (widget.isStream || !_settings.resume || !_ready || _failed) return;
+    if (widget.isStream ||
+        !_settings.resume ||
+        !_ready ||
+        _failed ||
+        _resumePromptOpen) {
+      return;
+    }
     try {
       final pos = _player.state.position;
       final dur = _player.state.duration;
@@ -316,6 +324,10 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _offerResume() async {
     try {
+      // A fresh open races the settings load — read the REAL resume
+      // preference before deciding, never the in-memory default.
+      await _settings.load();
+      if (!_settings.resume || !mounted) return;
       final saved = await _resume.readMs(_currentPath);
       if (saved == null || !mounted) return;
       var duration = _player.state.duration;
@@ -326,6 +338,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       final target = resumeTargetMs(saved, duration.inMilliseconds);
       if (target == null || !mounted) return;
+      // While the prompt is up, the video is playing from 0 — pause the
+      // periodic bookmark saver so it can't clobber the saved position
+      // before the user decides.
+      _resumePromptOpen = true;
       final resume = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -352,12 +368,15 @@ class _PlayerScreenState extends State<PlayerScreen>
           ],
         ),
       );
+      _resumePromptOpen = false;
+      if (!mounted) return;
       if (resume == true) {
         await _player.seek(Duration(milliseconds: target));
       } else if (resume == false) {
         await _resume.clear(_currentPath);
       }
     } catch (e) {
+      _resumePromptOpen = false;
       CrashLog.error('resume.offer_failed', e, {'path': _currentPath});
     }
   }
@@ -741,6 +760,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         } else if (_dragStart.dx >= width / 2 && _settings.swipeVolume) {
           _drag = _DragMode.volume;
           _volumeStart = _volumePercent;
+          _lastVolumePct = -1;
           _dragStart = d.focalPoint;
         } else {
           _drag = _DragMode.cant;
@@ -762,16 +782,26 @@ class _PlayerScreenState extends State<PlayerScreen>
           Icons.brightness_6_outlined);
     } else if (_drag == _DragMode.volume) {
       // Old player: 300px covers 100%; with boost ON the range grows to
-      // 0..200% (300 * cap pixels for the full range).
+      // 0..200% (300 * cap pixels for the full range). Throttled to whole
+      // percents so mpv isn't hit with a per-pixel IPC storm.
       final maxVolume = _settings.volumeBoost ? 200.0 : 100.0;
       final v = (_volumeStart -
               (d.focalPoint.dy - _dragStart.dy) / (300.0 * maxVolume / 100.0))
           .clamp(0.0, maxVolume)
           .toDouble();
+      final pct = v.round();
+      if (pct == _lastVolumePct) {
+        _showIndicatorThrottled(
+          'Volume $pct%',
+          pct == 0 ? Icons.volume_off : Icons.volume_up,
+        );
+        return;
+      }
+      _lastVolumePct = pct;
       await _setVolumePercent(v);
       _showIndicatorThrottled(
-        'Volume ${v.round()}%',
-        v.round() == 0 ? Icons.volume_off : Icons.volume_up,
+        'Volume $pct%',
+        pct == 0 ? Icons.volume_off : Icons.volume_up,
       );
     } else if (_drag == _DragMode.seek) {
       final duration = _player.state.duration;
@@ -2519,8 +2549,13 @@ class _BottomBarState extends State<_BottomBar> {
                     divisions: 14, // 0.25× steps
                     activeColor: AppColors.accent,
                     inactiveColor: Colors.white10,
-                    onChanged: (v) =>
-                        setSheetState(() => current = nearestPlaybackRate(v)),
+                    onChanged: (v) {
+                      final snapped = nearestPlaybackRate(v);
+                      setSheetState(() => current = snapped);
+                      // Apply live so the change is audible while dragging
+                      // and never lost when the gesture ends abruptly.
+                      unawaited(widget.player.setRate(snapped));
+                    },
                     onChangeEnd: (v) =>
                         widget.player.setRate(nearestPlaybackRate(v)),
                   ),
@@ -2545,7 +2580,10 @@ class _BottomBarState extends State<_BottomBar> {
                     runSpacing: 8,
                     alignment: WrapAlignment.center,
                     children: [
-                      for (final r in const [0.5, 1.0, 1.5, 2.0, 3.0, 4.0])
+                      // The old app's exact preset list (0.5× .. 3.0×).
+                      for (final r in const [
+                        0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0,
+                      ])
                         _speedChip(
                           rate: r,
                           active: r == nearestPlaybackRate(current),
