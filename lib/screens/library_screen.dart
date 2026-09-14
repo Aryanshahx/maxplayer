@@ -9,11 +9,14 @@ import '../theme.dart';
 import '../utils/collections.dart';
 import '../utils/crash_log.dart';
 import '../utils/local_store.dart';
+import '../utils/notifications.dart';
+import '../utils/onboarding.dart';
 import '../utils/privacy_policy.dart';
 import '../utils/settings.dart';
 import '../utils/sort.dart';
 import '../widgets/about_sheet.dart';
 import '../widgets/discover_banner.dart';
+import '../widgets/notifications_sheet.dart';
 import '../widgets/user_manual_sheet.dart';
 import '../widgets/video_grid.dart';
 import 'cloud_storage_screen.dart';
@@ -23,6 +26,7 @@ import 'file_manager_screen.dart';
 import 'folders_screen.dart';
 import 'history_screen.dart';
 import 'network_storage_screen.dart';
+import 'onboarding_flow.dart';
 import 'open_stream_screen.dart';
 import 'playlists_screen.dart';
 import 'private_screen.dart';
@@ -84,6 +88,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _listScroll.addListener(_onListScroll);
     _load();
     AppSettings.instance.addListener(_onSettings);
+    // In-app notification inbox: load, then seed the welcome + first tips
+    // once (only when empty — never overwrites or re-seeds).
+    unawaited(NotificationsStore.instance
+        .load()
+        .then((_) => NotificationsStore.instance.seedIfEmpty()));
+    // First-run onboarding: Welcome → How to use → Video player guide.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowOnboarding());
+  }
+
+  Future<void> _maybeShowOnboarding() async {
+    final seen = await Onboarding.hasSeen();
+    if (seen || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const OnboardingFlow()),
+    );
   }
 
   @override
@@ -263,6 +282,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
       case _MenuAction.manual:
         UserManualSheet.show(context);
         break;
+      case _MenuAction.guide:
+        Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const OnboardingFlow()));
+        break;
       case _MenuAction.about:
         AboutSheet.show(context);
         break;
@@ -431,6 +454,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   .push(MaterialPageRoute(
                       builder: (_) => const HistoryScreen()))
                   .then((_) => _refresh())),
+          _buildBell(),
           PopupMenuButton<_MenuAction>(
             // Same 24px glyph as the old app's three-dots action.
             iconSize: 24,
@@ -461,6 +485,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 height: 44,
                 child: _MenuRow(
                     icon: Icons.menu_book_outlined, label: 'User manual'),
+              ),
+              PopupMenuItem(
+                value: _MenuAction.guide,
+                height: 44,
+                child: _MenuRow(
+                    icon: Icons.play_circle_outline, label: 'Replay guide'),
               ),
               PopupMenuItem(
                 value: _MenuAction.about,
@@ -502,6 +532,52 @@ class _LibraryScreenState extends State<LibraryScreen> {
         icon: Icon(icon, color: AppColors.accent),
         onPressed: onTap,
       );
+
+  /// Bell icon with an unread badge, opening the in-app notification inbox.
+  Widget _buildBell() {
+    return ListenableBuilder(
+      listenable: NotificationsStore.instance,
+      builder: (context, _) {
+        final unread = NotificationsStore.instance.unreadCount;
+        return IconButton(
+          tooltip: 'Notifications',
+          iconSize: 24,
+          onPressed: () => NotificationsSheet.show(context),
+          icon: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(Icons.notifications_none_outlined, color: AppColors.accent),
+              if (unread > 0)
+                Positioned(
+                  right: -5,
+                  top: -4,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 3.5),
+                    constraints:
+                        const BoxConstraints(minWidth: 15, minHeight: 15),
+                    decoration: const BoxDecoration(
+                      color: AppColors.danger,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      unread > 9 ? '9+' : '$unread',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w700,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   // ---------------- quick tiles (old 2x2 grids) ----------------
 
@@ -654,7 +730,7 @@ class _Tile extends StatelessWidget {
   }
 }
 
-enum _MenuAction { display, stats, manual, about, privacy }
+enum _MenuAction { display, stats, manual, guide, about, privacy }
 
 class _MenuRow extends StatelessWidget {
   const _MenuRow({required this.icon, required this.label});

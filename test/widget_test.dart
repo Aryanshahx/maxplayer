@@ -14,6 +14,7 @@ import 'package:maxplayer/utils/ai_subtitles.dart'
     show AiSubtitleRunner, isMusicOnlyCaption;
 import 'package:maxplayer/utils/mpv_filters.dart';
 import 'package:maxplayer/utils/local_store.dart';
+import 'package:maxplayer/utils/notifications.dart';
 import 'package:maxplayer/utils/resume.dart';
 import 'package:maxplayer/utils/settings.dart' show accentPalette, defaultAccentIndex;
 import 'package:maxplayer/utils/sha256.dart';
@@ -1043,6 +1044,65 @@ plain-list-url.mp4
       );
       expect(a, isNotEmpty);
       expect(a.contains('No internet'), isFalse);
+    });
+  });
+
+  group('notifications (in-app inbox)', () {
+    AppNotification n(String id, int ts, {bool read = false}) =>
+        AppNotification(
+          id: id,
+          title: 't-$id',
+          body: 'b-$id',
+          iconKey: 'info',
+          ts: ts,
+          read: read,
+        );
+
+    test('upsertNotification dedupes by id and keeps newest first', () {
+      final a = n('a', 100);
+      final b = n('b', 200);
+      final list = upsertNotification([a], b);
+      expect(list.first.id, 'b');
+      expect(list.length, 2);
+      // re-insert same id with a newer ts replaces in place
+      final a2 = n('a', 300);
+      final merged = upsertNotification(list, a2);
+      expect(merged.length, 2);
+      expect(merged.first.id, 'a');
+    });
+
+    test('upsertNotification caps the list', () {
+      var list = <AppNotification>[];
+      for (var i = 0; i < 60; i++) {
+        list = upsertNotification(list, n('$i', i));
+      }
+      expect(list.length, 50);
+    });
+
+    test('unreadNotificationCount counts only unread', () {
+      final list = [n('a', 1), n('b', 2, read: true), n('c', 3)];
+      expect(unreadNotificationCount(list), 2);
+    });
+
+    test('markNotificationRead flips exactly one item', () {
+      final list = [n('a', 1), n('b', 2)];
+      final out = markNotificationRead(list, 'a');
+      expect(out.firstWhere((e) => e.id == 'a').read, isTrue);
+      expect(out.firstWhere((e) => e.id == 'b').read, isFalse);
+    });
+
+    test('markAllNotificationsRead flips every item', () {
+      final out = markAllNotificationsRead([n('a', 1), n('b', 2)]);
+      expect(out.every((e) => e.read), isTrue);
+    });
+
+    test('seedWelcomeNotifications fills only an empty inbox', () {
+      final seeded = seedWelcomeNotifications([], 1000);
+      expect(seeded.length, 3);
+      expect(seeded.first.id, 'welcome');
+      // non-empty inbox is left untouched
+      final existing = [n('keep', 1)];
+      expect(seedWelcomeNotifications(existing, 1000), same(existing));
     });
   });
 }
