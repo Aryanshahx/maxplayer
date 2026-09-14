@@ -36,6 +36,7 @@ class PlayerSettings extends ChangeNotifier {
   static const _kVolumeBoost = 'player.volumeBoost';
   static const _kBackgroundAudio = 'player.backgroundAudio';
   static const _kPerformanceMode = 'player.performanceMode';
+  static const _kPlaybackRate = 'player.playbackRate';
 
   bool doubleTapSides = true;
   bool doubleTapMiddle = true;
@@ -60,6 +61,12 @@ class PlayerSettings extends ChangeNotifier {
 
   /// VLC-style low-end profile: 'auto' (default) | 'on' | 'off'.
   String performanceMode = 'auto';
+
+  /// The speed chosen in the player's speed sheet, remembered across
+  /// videos and app restarts (0.5× .. 4.0×, snapped to 0.25× steps).
+  /// The old app reset this to 1.0× whenever a new video started; v29
+  /// keeps it applied so "1.5×" stays "1.5×" for the next video too.
+  double playbackRate = 1.0;
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
@@ -86,6 +93,8 @@ class PlayerSettings extends ChangeNotifier {
     final storedPerf = p.getString(_kPerformanceMode);
     performanceMode =
         performanceModes.contains(storedPerf) ? storedPerf! : 'auto';
+    final storedPlaybackRate = p.getDouble(_kPlaybackRate);
+    playbackRate = nearestPlaybackRate(storedPlaybackRate ?? 1.0);
     notifyListeners();
   }
 
@@ -177,6 +186,12 @@ class PlayerSettings extends ChangeNotifier {
     performanceMode = performanceModes.contains(v) ? v : 'auto';
     notifyListeners();
     await _save((p) => p.setString(_kPerformanceMode, performanceMode));
+  }
+
+  Future<void> setPlaybackRate(double v) async {
+    playbackRate = nearestPlaybackRate(v);
+    notifyListeners();
+    await _save((p) => p.setDouble(_kPlaybackRate, playbackRate));
   }
 
   Future<void> _saveBool(String key, bool value) async {

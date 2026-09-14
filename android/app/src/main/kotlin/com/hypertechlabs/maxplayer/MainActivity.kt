@@ -1,5 +1,8 @@
 package com.hypertechlabs.maxplayer
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PictureInPictureParams
 import android.app.PendingIntent
 import android.app.RecoverableSecurityException
@@ -108,6 +111,12 @@ class MainActivity : FlutterFragmentActivity() {
     private var pendingRenameName: String? = null
     private var pendingRenameId: String? = null
 
+    // Real codec dimensions per path (v29 quality-badge fix). MediaStore's
+    // WIDTH/HEIGHT columns are 0 for many MKV/WebM/AVI files, so the badge
+    // probed the real size once through MediaMetadataRetriever and caches
+    // it here for the rest of the app run.
+    private val dimsCache = HashMap<String, IntArray?>()
+
     private enum class RenameKind { success, failed, needsConsent }
     private data class RenameAttempt(
         val kind: RenameKind,
@@ -119,6 +128,10 @@ class MainActivity : FlutterFragmentActivity() {
         private const val REQ_MEDIA_DELETE = 48
         private const val REQ_VOICE_SEARCH = 49
         private const val REQ_MEDIA_WRITE = 50
+
+        // "Continue watching" system notifications (v29).
+        private const val CHANNEL_CONTINUE = "maxplayer_continue"
+        private const val NOTIFY_CONTINUE_ID = 1903
     }
 
     private val pipSupported: Boolean
@@ -174,19 +187,31 @@ class MainActivity : FlutterFragmentActivity() {
                 "updatePipPlaying" -> {
                     pipPlaying = call.argument<Boolean>("playing") ?: true
                     updatePipParams()
+                    // Keep the background media notification's play/pause
+                    // button in sync with the player (v29).
+                    PlaybackKeepAliveService.updatePlaying(this, pipPlaying)
                     result.success(true)
                 }
 
                 "setBackgroundAudio" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: false
+                    val playing = call.argument<Boolean>("playing") ?: enabled
                     if (enabled) {
                         PlaybackKeepAliveService.start(
                             this,
                             call.argument<String>("title") ?: "MaxPlayer",
+                            playing,
                         )
                     } else {
                         PlaybackKeepAliveService.stop(this)
                     }
+                    result.success(true)
+                }
+
+                "notifyContinueWatching" -> {
+                    val title = call.argument<String>("title") ?: "Continue watching"
+                    val body = call.argument<String>("body") ?: ""
+                    postContinueWatching(title, body)
                     result.success(true)
                 }
 
@@ -431,6 +456,14 @@ class MainActivity : FlutterFragmentActivity() {
                     executor.execute {
                         val thumb = videoThumbnailSync(path)
                         mainHandler.post { result.success(thumb) }
+                    }
+                }
+
+                "videoDimensions" -> {
+                    val path = call.argument<String>("path")
+                    executor.execute {
+                        val dims = videoDimensionsSync(path)
+                        mainHandler.post { result.success(dims) }
                     }
                 }
 
@@ -1045,6 +1078,106 @@ class MainActivity : FlutterFragmentActivity() {
     private fun md5(s: String): String {
         val digest = MessageDigest.getInstance("MD5").digest(s.toByteArray(Charsets.UTF_8))
         return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    // -----------------------------------------------------------------------
+    // v29: real video dimensions (quality badge) + "Continue watching"
+    // system notification.
+    // -----------------------------------------------------------------------
+
+    /**
+     * Real codec dimensions of [path] via MediaMetadataRetriever, with the
+     * rotation already applied so portrait videos report their true
+     * width/height. Cached per path for the rest of the app run. Null when
+     * the file can't be decoded (or is a network stream).
+     */
+    private fun videoDimensionsSync(path: String?): HashMap<String, Int>? {
+        if (path.isNullOrEmpty() || path.startsWith("http")) return null
+        if (dimsCache.containsKey(path)) {
+            val cached = dimsCache[path] ?: return null
+            return hashMapOf("w" to cached[0], "h" to cached[1])
+        }
+        val retriever = MediaMetadataRetriever()
+        val dims = try {
+            retriever.setDataSource(path)
+            var w = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                ?.toIntOrNull() ?: 0
+            var h = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                ?.toIntOrNull() ?: 0
+            val rot = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                ?.toIntOrNull() ?: 0
+            if (rot == 90 || rot == 270) {
+                val t = w
+                w = h
+                h = t
+            }
+            if (w > 0 && h > 0) intArrayOf(w, h) else null
+        } catch (_: Throwable) {
+            null
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Throwable) {
+            }
+        }
+        dimsCache[path] = dims
+        return if (dims != null) hashMapOf("w" to dims[0], "h" to dims[1]) else null
+    }
+
+    /** Posts a tap-to-open "Continue watching" system notification. */
+    private fun postContinueWatching(title: String, body: String) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                // Notifications not yet granted (Android 13+): nothing to
+                // show. Dart requests the grant before calling here.
+                return
+            }
+            val nm = getSystemService(NotificationManager::class.java) ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                nm.createNotificationChannel(
+                    NotificationChannel(
+                        CHANNEL_CONTINUE,
+                        "Continue watching",
+                        NotificationManager.IMPORTANCE_DEFAULT,
+                    ),
+                )
+            }
+            val openIntent = PendingIntent.getActivity(
+                this,
+                1904,
+                Intent(this, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val notification: Notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Notification.Builder(this, CHANNEL_CONTINUE)
+                    .setSmallIcon(R.drawable.ic_stat_notify)
+                    .setContentTitle(title)
+                    .setContentText(body)
+                    .setContentIntent(openIntent)
+                    .setAutoCancel(true)
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                Notification.Builder(this)
+                    .setSmallIcon(R.drawable.ic_stat_notify)
+                    .setContentTitle(title)
+                    .setContentText(body)
+                    .setContentIntent(openIntent)
+                    .setAutoCancel(true)
+                    .build()
+            }
+            nm.notify(NOTIFY_CONTINUE_ID, notification)
+        } catch (_: Throwable) {
+            // Best effort — a notification must never crash playback.
+        }
     }
 
     // ---------------------------------------------------------------------------

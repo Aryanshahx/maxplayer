@@ -109,12 +109,15 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
                             style: const TextStyle(
                                 color: AppColors.textPrimary,
                                 fontSize: 13.5)),
-                        subtitle: Text(
-                          '${qualityBadge(v.width, v.height)} · '
-                          '${formatDuration(Duration(seconds: v.duration))}',
-                          style: const TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 11.5),
+                        subtitle: FutureBuilder<String>(
+                          future: resolvedQualityBadge(v),
+                          builder: (context, snap) => Text(
+                            '${snap.data ?? qualityBadge(v.width, v.height)} · '
+                            '${formatDuration(Duration(seconds: v.duration))}',
+                            style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11.5),
+                          ),
                         ),
                         onChanged: (_) => setState(() => sel
                             ? _selected.remove(v.id)

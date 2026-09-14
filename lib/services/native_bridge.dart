@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../utils/ai_subtitles.dart';
 
@@ -230,6 +231,54 @@ class NativeBridge {
     try {
       await _nativeChannel.invokeMethod('stopVoiceSearch');
     } catch (_) {}
+  }
+
+  /// Real codec dimensions of [path] probed through the native
+  /// MediaMetadataRetriever (rotation already applied, cached natively).
+  /// Returns (width, height) or null when the file can't be decoded.
+  /// Used for the quality badge when MediaStore reports 0×0 (common for
+  /// MKV / WebM / AVI files).
+  static Future<(int, int)?> videoDimensions(String path) async {
+    try {
+      final res = await _channel
+          .invokeMethod<Map<Object?, Object?>>('videoDimensions', {
+        'path': path,
+      });
+      final w = (res?['w'] as num?)?.toInt();
+      final h = (res?['h'] as num?)?.toInt();
+      if (w != null && h != null && w > 0 && h > 0) return (w, h);
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Posts a "Continue watching" system notification (its own channel,
+  /// tap opens the app). No-op on platforms without the native handler.
+  static Future<void> notifyContinueWatching({
+    required String title,
+    required String body,
+  }) async {
+    try {
+      await _nativeChannel.invokeMethod('notifyContinueWatching', {
+        'title': title,
+        'body': body,
+      });
+    } catch (_) {}
+  }
+
+  /// Requests the Android 13+ POST_NOTIFICATIONS grant (no-op below API 33
+  /// or on non-Android hosts). Returns true when notifications may post.
+  static Future<bool> ensureNotificationsAllowed() async {
+    try {
+      if (await sdkInt() >= 33) {
+        final status = await Permission.notification.request();
+        return status.isGranted;
+      }
+      return true;
+    } catch (_) {
+      return true;
+    }
   }
 
   // -------------------------------------------------------------------------

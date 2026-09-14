@@ -160,28 +160,46 @@ class _WelcomePage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
       children: [
-        // Brand mark.
+        // Brand mark — the real Max Player app icon (bundled asset).
         Center(
           child: Container(
-            width: 92,
-            height: 92,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFA78BFA), Color(0xFF8B5CF6), Color(0xFF22D3EE)],
-              ),
               borderRadius: BorderRadius.circular(28),
               boxShadow: [
                 BoxShadow(
-                  color: accent.withValues(alpha: 0.25),
-                  blurRadius: 28,
+                  color: accent.withValues(alpha: 0.28),
+                  blurRadius: 30,
                   spreadRadius: 2,
                 ),
               ],
             ),
-            child: const Icon(Icons.play_arrow_rounded,
-                size: 54, color: Colors.white),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: Image.asset(
+                'assets/icon.png',
+                width: 104,
+                height: 104,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stack) => Container(
+                  width: 104,
+                  height: 104,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFFA78BFA),
+                        Color(0xFF8B5CF6),
+                        Color(0xFF22D3EE),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  child: const Icon(Icons.play_arrow_rounded,
+                      size: 60, color: Colors.white),
+                ),
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 26),
@@ -298,6 +316,47 @@ class _HowToPage extends StatelessWidget {
           icon: Icons.history,
           title: 'History & resume',
           subtitle: 'Every video reopens exactly where you stopped watching.',
+        ),
+        _FeatureRow(
+          icon: Icons.playlist_play,
+          title: 'Playlists',
+          subtitle:
+              'Build your own lists of videos — only the playlists you create appear here.',
+        ),
+        _FeatureRow(
+          icon: Icons.cloud_outlined,
+          title: 'Cloud storage',
+          subtitle:
+              'Open videos straight from Google Drive & other providers, then save them to your device.',
+        ),
+        _FeatureRow(
+          icon: Icons.lan_outlined,
+          title: 'Network streams',
+          subtitle:
+              'Play HTTP / HLS / IPTV streams and M3U playlists with Open Stream.',
+        ),
+        _FeatureRow(
+          icon: Icons.lock_outline_rounded,
+          title: 'Private Space',
+          subtitle: 'Hide personal videos behind a PIN or fingerprint.',
+        ),
+        _FeatureRow(
+          icon: Icons.picture_in_picture_alt_outlined,
+          title: 'Background audio & PiP',
+          subtitle:
+              'Keep listening in the background or shrink the player into a floating picture-in-picture window.',
+        ),
+        _FeatureRow(
+          icon: Icons.subtitles_outlined,
+          title: 'Subtitles & karaoke',
+          subtitle:
+              'Sidecar .srt subtitles, word-by-word karaoke overlay, and offline AI captions.',
+        ),
+        _FeatureRow(
+          icon: Icons.notifications_outlined,
+          title: 'Continue-watching alerts',
+          subtitle:
+              'Leave a video halfway? A notification reminds you where you stopped.',
         ),
       ],
     );

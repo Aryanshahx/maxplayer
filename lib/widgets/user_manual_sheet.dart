@@ -482,8 +482,10 @@ const List<_Item> _smartItems = [
   ),
   _Item(
     Icons.speed,
-    'Playback speed up to 4x',
-    'Tap the "1.0×" button in the player controls: 0.5× … 4×.',
+    'Playback speed up to 4x (remembered)',
+    'Tap the "1.0×" button in the player controls: 0.5× … 4×. The speed '
+        'you pick now stays applied for the next video and the next time '
+        'you open the app.',
   ),
   _Item(
     Icons.lock_outline,
@@ -528,6 +530,20 @@ const List<_Item> _smartItems = [
     'Dialogue boost',
     'Player equalizer sheet: Dialogue boost lifts quiet speech. On-device '
         'audio filter, off by default.',
+  ),
+  _Item(
+    Icons.notifications_active_outlined,
+    'Continue-watching notifications',
+    'Leave a video part-way through and the app posts a "Continue '
+        'watching" notification with the exact time you stopped. Tap it to '
+        'come right back.',
+  ),
+  _Item(
+    Icons.music_note_outlined,
+    'Player in the notification shade',
+    'While a video plays in the background, the notification shows its '
+        'title with a play/pause button - pause and resume without opening '
+        'the app.',
   ),
 ];
 

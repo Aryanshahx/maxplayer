@@ -198,6 +198,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         _fitMode =
             FitMode.values[_settings.defaultFit.clamp(0, FitMode.values.length - 1)];
       });
+      // Re-apply the remembered playback speed (it races _open() below, so
+      // _open() re-applies it again once the file is actually loaded).
+      unawaited(_player.setRate(_settings.playbackRate));
     }));
     _open(_currentPath, offerResume: true);
     _playingSub = _player.stream.playing.listen((playing) {
@@ -258,6 +261,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     CrashLog.crumb('player.open', {'path': path});
     try {
       await _player.open(Media(path), play: true);
+      // Keep the remembered playback speed across videos (v29): mpv can
+      // reset the rate while a new file loads, so re-apply it here too.
+      unawaited(_player.setRate(_settings.playbackRate));
       // Head-room for the 200% boost region, set ONCE here (mpv keeps its
       // software gain at 100% for the 0..100% range — the DEVICE media
       // volume owns that, MX Player / VLC style, like the old app).
@@ -355,6 +361,32 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  /// v29: posts a "Continue watching" system notification when the user
+  /// leaves a local video part-way through. Quiet by design — nothing is
+  /// posted for streams, finished videos, sub-10s positions, or when the
+  /// resume feature is off in settings.
+  void _maybePostContinueWatching() {
+    if (widget.isStream || _failed || !_settings.resume) return;
+    final posMs = _player.state.position.inMilliseconds;
+    final durMs = _player.state.duration.inMilliseconds;
+    if (durMs <= 0) return; // unknown length: can't tell finished apart
+    if (resumeTargetMs(posMs, durMs) == null) return;
+    unawaited(_postContinueWatching(posMs));
+  }
+
+  Future<void> _postContinueWatching(int posMs) async {
+    try {
+      if (!await NativeBridge.ensureNotificationsAllowed()) return;
+      await NativeBridge.notifyContinueWatching(
+        title: _title,
+        body:
+            'You were at ${formatDuration(Duration(milliseconds: posMs))} — tap to continue watching.',
+      );
+    } catch (_) {
+      // Never crash on a notification error.
+    }
+  }
+
   Future<void> _offerResume() async {
     try {
       // A fresh open races the settings load — read the REAL resume
@@ -444,6 +476,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       _title = asset?.title ?? 'Video';
       if (mounted) setState(() {});
       await _player.open(Media(file.path), play: true);
+      unawaited(_player.setRate(_settings.playbackRate));
     } catch (e) {
       CrashLog.error('queue.next_failed', e, {'id': id});
       _emitSnack('Could not play the selected video in queue');
@@ -461,6 +494,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       try {
         await _mpvSet('hwdec', 'no');
         await _player.open(Media(_currentPath), play: true);
+        unawaited(_player.setRate(_settings.playbackRate));
         if (mounted) setState(() => _ready = true);
         return;
       } catch (e2) {
@@ -638,7 +672,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (on && !_player.state.playing) return;
     if (on) _boostHaptic();
     _boost = on;
-    unawaited(_player.setRate(on ? _settings.longPressRate : 1.0));
+    unawaited(_player.setRate(on ? _settings.longPressRate : _settings.playbackRate));
     if (mounted) setState(() {});
   }
 
@@ -1918,6 +1952,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     WakelockPlus.disable();
     ScreenBrightness.instance.resetApplicationScreenBrightness();
     unawaited(_savePosition());
+    // v29: when the user leaves a video part-way through, post a
+    // "Continue watching" system notification they can tap to come back.
+    _maybePostContinueWatching();
     unawaited(_player.dispose());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
@@ -2631,9 +2668,14 @@ class _BottomBarState extends State<_BottomBar> {
                       // Apply live so the change is audible while dragging
                       // and never lost when the gesture ends abruptly.
                       unawaited(widget.player.setRate(snapped));
+                      // v29: remember the choice so it survives this video.
+                      unawaited(PlayerSettings.instance.setPlaybackRate(snapped));
                     },
-                    onChangeEnd: (v) =>
-                        widget.player.setRate(nearestPlaybackRate(v)),
+                    onChangeEnd: (v) {
+                      final snapped = nearestPlaybackRate(v);
+                      widget.player.setRate(snapped);
+                      PlayerSettings.instance.setPlaybackRate(snapped);
+                    },
                   ),
                   const Padding(
                     padding: EdgeInsets.only(top: 2, bottom: 10),
@@ -2666,6 +2708,7 @@ class _BottomBarState extends State<_BottomBar> {
                           onTap: () {
                             setSheetState(() => current = r);
                             widget.player.setRate(r);
+                            PlayerSettings.instance.setPlaybackRate(r);
                           },
                         ),
                     ],

@@ -66,6 +66,10 @@ class VideoGrid extends StatefulWidget {
         start = queueIds.indexOf(asset.id);
         if (start < 0) start = 0;
       }
+      // v29: real dimensions for the info sheet (MediaStore can be 0 for
+      // MKV/WebM), probed natively when needed.
+      final info = await resolvedVideoInfo(asset);
+      if (!context.mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => PlayerScreen(
@@ -76,8 +80,7 @@ class VideoGrid extends StatefulWidget {
             meta: {
               'File': file.path,
               'Size': formatBytes(file.lengthSync()),
-              'Resolution':
-                  '${asset.width} × ${asset.height} (${qualityBadge(asset.width, asset.height)})',
+              'Resolution': '${info.w} × ${info.h} (${info.badge})',
               'Duration (MediaStore)':
                   formatDuration(Duration(seconds: asset.duration)),
               if (asset.mimeType != null) 'MIME': asset.mimeType!,
@@ -338,6 +341,7 @@ class _VideoGridState extends State<VideoGrid> {
   Future<void> _properties(AssetEntity a) async {
     final file = await a.file;
     final size = file != null && file.existsSync() ? file.lengthSync() : 0;
+    final info = await resolvedVideoInfo(a);
     final latlng = await a.latlngAsync();
     String fmtDate(DateTime d) =>
         '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} '
@@ -363,8 +367,7 @@ class _VideoGridState extends State<VideoGrid> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _prop('Resolution',
-                  '${a.width} × ${a.height} (${qualityBadge(a.width, a.height)})'),
+              _prop('Resolution', '${info.w} × ${info.h} (${info.badge})'),
               _prop('Megapixels', '${mp.toStringAsFixed(1)} MP/video-frame'),
               _prop('Duration',
                   formatDuration(Duration(seconds: a.duration))),
@@ -731,10 +734,13 @@ class _VideoRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              '${qualityBadge(asset.width, asset.height)} · ${formatDuration(Duration(seconds: asset.duration))}',
-              style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 11.5),
+            FutureBuilder<String>(
+              future: resolvedQualityBadge(asset),
+              builder: (context, snap) => Text(
+                '${snap.data ?? qualityBadge(asset.width, asset.height)} · ${formatDuration(Duration(seconds: asset.duration))}',
+                style: const TextStyle(
+                    color: AppColors.textSecondary, fontSize: 11.5),
+              ),
             ),
             const SizedBox(height: 5),
             SizedBox(
@@ -825,19 +831,22 @@ class _VideoCard extends StatelessWidget {
                   Positioned(
                     top: 4,
                     left: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.7),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        qualityBadge(asset.width, asset.height),
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                    child: FutureBuilder<String>(
+                      future: resolvedQualityBadge(asset),
+                      builder: (context, snap) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          snap.data ?? qualityBadge(asset.width, asset.height),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
