@@ -65,5 +65,13 @@
         <intent>
             <action android:name="android.speech.action.RECOGNIZE_SPEECH"/>
         </intent>
+        <intent>
+            <!-- Old-app parity: visible to the system speech service so the
+                 in-app SpeechRecognizer works on Android 11+ (package
+                 visibility). Without it, isRecognitionAvailable() returns
+                 false on Android 11+ and voice search reports
+                 "Speech recognition is unavailable". -->
+            <action android:name="android.speech.RecognitionService"/>
+        </intent>
     </queries>
 </manifest>

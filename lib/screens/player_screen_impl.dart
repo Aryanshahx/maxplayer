@@ -10,19 +10,14 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-import '../services/native_bridge.dart';
 import '../theme.dart';
 import '../utils/ab_loop.dart';
-import '../utils/ai_subtitles.dart';
 import '../utils/crash_log.dart';
 import '../utils/fit.dart';
 import '../utils/format.dart';
-import '../utils/karaoke.dart';
-import '../utils/local_store.dart';
 import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
 import '../utils/resume.dart';
-import '../utils/srt.dart';
 import '../utils/video_zoom.dart';
 import '../utils/watch_stats.dart';
 import 'player_settings_screen.dart';
@@ -104,7 +99,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _locked = false;
   bool _muted = false;
   double _volumePercent = 100;
-  int _lastVolumePct = -1;
   FitMode _fitMode = FitMode.fit;
 
   _DragMode _drag = _DragMode.undecided;
@@ -139,21 +133,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _dialogueBoost = false;
   bool _enhance = false;
   bool _karaoke = false;
-
-  // Karaoke subtitle state (old app's live sub-text observer port).
-  // media_kit already observes mpv's `sub-text` and publishes it on
-  // `stream.subtitle`, so we listen there and fetch `sub-start`/`sub-end` on
-  // demand instead of double-observing (which would throw).
-  SrtCue? _karaokeLiveCue;
-  List<SrtCue> _karaokeSidecar = const [];
-  bool _karaokeObserverStarted = false;
-  StreamSubscription<List<String>>? _karaokeSubTextSub;
-
   String _toneMapping = 'auto';
   int _sleepMinutesLeft = 0;
   bool _sleepUntilEnd = false;
   bool _softwareDecodeRetried = false;
-  bool _resumePromptOpen = false;
 
   // Scrub thumbnail strip (native MediaMetadataRetriever frames).
   String? _thumbStripFor;
@@ -182,14 +165,12 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     };
     _settings.addListener(_settingsListener!);
-    // `maxplayer/native` now has exactly ONE incoming-event handler,
-    // registered by NativeBridge.ensureNativeHandler in main() — a second
-    // setMethodCallHandler here would silently replace it and break the
-    // AI-subtitle and voice events — so PiP routes through the shared
-    // dispatcher instead.
-    NativeBridge.pipToggleListener = () {
-      unawaited(_player.playOrPause());
-    };
+    _native.setMethodCallHandler((call) async {
+      if (call.method == 'pipToggle') {
+        await _player.playOrPause();
+      }
+      return null;
+    });
     unawaited(_settings.load().then((_) {
       if (!mounted) return;
       // Start the session in the fit mode chosen in Settings (default: Fit).
@@ -257,20 +238,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     CrashLog.crumb('player.open', {'path': path});
     try {
       await _player.open(Media(path), play: true);
-      // Old-player rule: the swipe drives the DEVICE media volume, so sync
-      // the tracked level from the real device volume on open (an audible
-      // floor so a silent phone doesn't start muted-looking).
-      var real = await NativeBridge.getMediaVolume();
-      if (real <= 0.02) {
-        real = 0.3;
-        unawaited(NativeBridge.setMediaVolume(real));
-      }
-      _volumePercent = (real * 100).clamp(0.0, 100.0);
+      _volumePercent = _player.state.volume.clamp(0.0, 100.0);
       _muted = _volumePercent <= 0;
       if (mounted) setState(() => _ready = true);
       unawaited(_ensureThumbStrip(path));
       unawaited(_applyPerformanceMode());
-      if (offerResume && !widget.isStream) {
+      if (offerResume && _settings.resume && !widget.isStream) {
         unawaited(_offerResume());
       }
     } catch (e) {
@@ -285,17 +258,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         await (platform as dynamic).setProperty(key, value);
       }
     } catch (_) {}
-  }
-
-  Future<String?> _mpvGet(String key) async {
-    try {
-      final platform = _player.platform;
-      if (platform == null) return null;
-      final v = await (platform as dynamic).getProperty(key) as String?;
-      return (v != null && v.isNotEmpty) ? v : null;
-    } catch (_) {
-      return null;
-    }
   }
 
   // VLC-style low-end profile (old-player "Performance mode"): drop late
@@ -328,13 +290,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _savePosition() async {
-    if (widget.isStream ||
-        !_settings.resume ||
-        !_ready ||
-        _failed ||
-        _resumePromptOpen) {
-      return;
-    }
+    if (widget.isStream || !_settings.resume || !_ready || _failed) return;
     try {
       final pos = _player.state.position;
       final dur = _player.state.duration;
@@ -351,10 +307,6 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _offerResume() async {
     try {
-      // A fresh open races the settings load — read the REAL resume
-      // preference before deciding, never the in-memory default.
-      await _settings.load();
-      if (!_settings.resume || !mounted) return;
       final saved = await _resume.readMs(_currentPath);
       if (saved == null || !mounted) return;
       var duration = _player.state.duration;
@@ -365,10 +317,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       final target = resumeTargetMs(saved, duration.inMilliseconds);
       if (target == null || !mounted) return;
-      // While the prompt is up, the video is playing from 0 — pause the
-      // periodic bookmark saver so it can't clobber the saved position
-      // before the user decides.
-      _resumePromptOpen = true;
       final resume = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -395,15 +343,12 @@ class _PlayerScreenState extends State<PlayerScreen>
           ],
         ),
       );
-      _resumePromptOpen = false;
-      if (!mounted) return;
       if (resume == true) {
         await _player.seek(Duration(milliseconds: target));
       } else if (resume == false) {
         await _resume.clear(_currentPath);
       }
     } catch (e) {
-      _resumePromptOpen = false;
       CrashLog.error('resume.offer_failed', e, {'path': _currentPath});
     }
   }
@@ -575,25 +520,24 @@ class _PlayerScreenState extends State<PlayerScreen>
     final maxVolume = _settings.volumeBoost ? 200.0 : 100.0;
     final v = value.clamp(0.0, maxVolume).toDouble();
     _volumePercent = v;
-    if (v > 0) _muted = false;
+    _muted = false;
     try {
-      // Old-player volume model: 0..100% drives the DEVICE media volume
-      // (AudioManager STREAM_MUSIC — what the phone's volume keys show),
-      // exactly like the old app / MX Player. Only the 100..200% boost
-      // region lifts MPV's gain above unity. mpv's `volume-max` stays at
-      // 200 for that headroom. Platform property calls bypass media_kit's
-      // serialized lock, so a drag never queues up per-pixel IPC.
-      await NativeBridge.setMediaVolume((v / 100.0).clamp(0.0, 1.0));
+      // Do not use MPV's audio-filter chain for volume boost. Invalid/unsupported
+      // filter strings can make MPV report that the video cannot be played.
+      // MPV's volume-max property safely allows software volume above 100%.
       await _mpvSet('volume-max', maxVolume.round().toString());
-      final mpvVolume = v <= 100 ? 100.0 : v;
-      await _mpvSet('volume', mpvVolume.toStringAsFixed(1));
+      if (v <= 100) {
+        await _player.setVolume(v);
+      } else {
+        await _mpvSet('volume', v.toStringAsFixed(1));
+      }
       await _mpvSet('af', combineAudioFilters(_bands,
           dialogueBoost: _dialogueBoost));
     } catch (e) {
       CrashLog.error('player.volume_failed', e, {'value': v});
-      try {
-        await NativeBridge.setMediaVolume((v / 100.0).clamp(0.0, 1.0));
-      } catch (_) {}
+      if (v <= 100) {
+        await _player.setVolume(v);
+      }
     }
     if (mounted) setState(() {});
   }
@@ -606,10 +550,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       await _setVolumePercent(restore);
       _muted = false;
     } else {
-      // Mute cuts the DEVICE stream, not just mpv's internal gain — same
-      // as the old app (and the volume keys' mute).
-      await NativeBridge.setMediaVolume(0);
-      await _mpvSet('volume', '0');
+      await _player.setVolume(0);
       _muted = true;
       if (mounted) setState(() {});
     }
@@ -791,7 +732,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         } else if (_dragStart.dx >= width / 2 && _settings.swipeVolume) {
           _drag = _DragMode.volume;
           _volumeStart = _volumePercent;
-          _lastVolumePct = -1;
           _dragStart = d.focalPoint;
         } else {
           _drag = _DragMode.cant;
@@ -813,26 +753,16 @@ class _PlayerScreenState extends State<PlayerScreen>
           Icons.brightness_6_outlined);
     } else if (_drag == _DragMode.volume) {
       // Old player: 300px covers 100%; with boost ON the range grows to
-      // 0..200% (300 * cap pixels for the full range). Throttled to whole
-      // percents so mpv isn't hit with a per-pixel IPC storm.
+      // 0..200% (300 * cap pixels for the full range).
       final maxVolume = _settings.volumeBoost ? 200.0 : 100.0;
       final v = (_volumeStart -
               (d.focalPoint.dy - _dragStart.dy) / (300.0 * maxVolume / 100.0))
           .clamp(0.0, maxVolume)
           .toDouble();
-      final pct = v.round();
-      if (pct == _lastVolumePct) {
-        _showIndicatorThrottled(
-          'Volume $pct%',
-          pct == 0 ? Icons.volume_off : Icons.volume_up,
-        );
-        return;
-      }
-      _lastVolumePct = pct;
       await _setVolumePercent(v);
       _showIndicatorThrottled(
-        'Volume $pct%',
-        pct == 0 ? Icons.volume_off : Icons.volume_up,
+        'Volume ${v.round()}%',
+        v.round() == 0 ? Icons.volume_off : Icons.volume_up,
       );
     } else if (_drag == _DragMode.seek) {
       final duration = _player.state.duration;
@@ -1111,9 +1041,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         ? _player.state.tracks.subtitle
         : _player.state.tracks.audio;
     final selected = subtitle ? _player.state.track.subtitle : _player.state.track.audio;
-    // The AI runner needs a context that outlives this sheet (the player
-    // screen's own), so capture it before the sheet builder shadows it.
-    final rootContext = context;
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -1156,35 +1083,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                   if (context.mounted) Navigator.of(context).pop();
                 },
               ),
-            if (subtitle) ...[
-              const Divider(height: 16, color: Colors.white12),
-              ListTile(
-                leading: Icon(Icons.auto_awesome,
-                    size: 20, color: AppColors.accent),
-                title: const Text(
-                  'Generate with AI ✨',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                subtitle: const Text(
-                  'On-device · free · works offline after a one-time setup',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                ),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  AiSubtitleRunner.start(
-                    context: rootContext,
-                    path: _currentPath,
-                    title: _title,
-                    isStream: widget.isStream,
-                    player: _player,
-                  );
-                },
-              ),
-            ],
           ],
         ),
       ),
@@ -1248,96 +1146,28 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _toggleKaraoke(bool value) async {
-    setState(() => _karaoke = value);
-    if (value) {
-      _startKaraokeSubObserver();
-      // A subtitle source must be active for mpv's sub-text to have content.
-      // Prefer an already-selected track; otherwise enable the first
-      // embedded track; otherwise fall back to a same-name sidecar .srt.
-      final st = _player.state.track.subtitle;
-      final hasTrack = st.id.isNotEmpty && st.id != 'no';
-      if (!hasTrack) {
-        final tracks = _player.state.tracks.subtitle;
-        if (tracks.isNotEmpty) {
-          await _player.setSubtitleTrack(tracks.first);
-        } else {
-          await _loadKaraokeSidecar();
-        }
-      }
-      _emitSnack(_karaokeHasSource
-          ? 'Karaoke subtitles on'
-          : 'Karaoke on — no subtitles found in this video');
-    } else {
-      _emitSnack('Karaoke subtitles off');
+    _karaoke = value;
+    setState(() {});
+    if (!value) {
+      await _player.setSubtitleTrack(SubtitleTrack.no());
+      return;
     }
-  }
-
-  bool get _karaokeHasSource {
-    if (_karaokeLiveCue != null) return true;
-    if (_karaokeSidecar.isNotEmpty) return true;
-    final st = _player.state.track.subtitle;
-    return st.id.isNotEmpty && st.id != 'no';
-  }
-
-  /// Live subtitle observer: media_kit already observes mpv's `sub-text` and
-  /// publishes it on `stream.subtitle` ([primary, secondary]) — re-observing
-  /// would throw — so we listen there and read `sub-start` / `sub-end` on
-  /// demand to rebuild a real SrtCue (the old app's exact approach).
-  void _startKaraokeSubObserver() {
-    if (_karaokeObserverStarted) return;
-    _karaokeObserverStarted = true;
-    _karaokeSubTextSub = _player.stream.subtitle.listen((parts) async {
-      final text = parts.isNotEmpty ? parts[0].trim() : '';
-      if (text.isEmpty || isMusicOnlyText(text)) {
-        if (_karaokeLiveCue != null && mounted) {
-          setState(() => _karaokeLiveCue = null);
-        }
-        return;
+    SubtitleTrack? ass;
+    for (final track in _player.state.tracks.subtitle) {
+      if ('${(track as dynamic).codec}'.toLowerCase() == 'ass') {
+        ass = track;
+        break;
       }
-      final clean = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-      var startMs = 0;
-      var endMs = 0;
-      try {
-        startMs =
-            ((double.tryParse(await _mpvGet('sub-start') ?? '') ?? 0) * 1000)
-                .round();
-        endMs =
-            ((double.tryParse(await _mpvGet('sub-end') ?? '') ?? 0) * 1000)
-                .round();
-      } catch (_) {}
-      if (endMs <= startMs) endMs = startMs + 2000; // sane fallback
-      if (mounted) {
-        setState(() => _karaokeLiveCue = SrtCue(startMs, endMs, clean));
-      }
-    });
+    }
+    if (ass == null) {
+      _karaoke = false;
+      setState(() {});
+      _emitSnack('No karaoke (ASS) subtitles inside this video');
+      return;
+    }
+    await _player.setSubtitleTrack(ass);
+    _emitSnack('Karaoke subtitles on');
   }
-
-  /// Parses a same-name `.srt` / `.maxai.srt` sitting next to the video so
-  /// karaoke still has cues when there is no embedded track (old app's
-  /// sidecar fallback).
-  Future<void> _loadKaraokeSidecar() async {
-    if (widget.isStream) return;
-    try {
-      final base = widget.path.replaceAll(RegExp(r'\.[^.]+$'), '');
-      for (final suffix in ['.srt', '.maxai.srt']) {
-        final f = File('$base$suffix');
-        if (await f.exists()) {
-          final cues = parseSrt(await f.readAsString());
-          if (cues.isNotEmpty) {
-            if (mounted) setState(() => _karaokeSidecar = cues);
-            return;
-          }
-        }
-      }
-    } catch (_) {}
-  }
-
-  /// Subtitle rendering in this app is media_kit's own overlay (mpv libass is
-  /// off — `sub-visibility` stays `no`), so "hiding mpv's subtitles" during
-  /// karaoke is done by flipping the Video widget's
-  /// `SubtitleViewConfiguration(visible: !_karaoke)` — no mpv property needs
-  /// to change here (the old app's `sub-visibility=no` dance was for its
-  /// libass pipeline, and would cause DOUBLE subtitles here).
 
   Future<void> _toggleEnhance(bool value) async {
     _enhance = value;
@@ -1754,9 +1584,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _showPlaylistSheet() async {
-    final store = LocalStore();
-    final playlists = await store.playlists();
-    if (!mounted) return;
+    if (widget.queueIds.isEmpty) {
+      _emitSnack('Playlist is empty');
+      return;
+    }
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -1764,44 +1595,54 @@ class _PlayerScreenState extends State<PlayerScreen>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _PlaylistsSheetView(
-        store: store,
-        playlists: playlists,
-        onPlay: _playPlaylistVideo,
-      ),
-    );
-  }
-
-  /// Plays [asset] (from a playlist) with that playlist as the new queue.
-  Future<void> _playPlaylistVideo(
-      AssetEntity asset, List<AssetEntity> queue) async {
-    final file = await asset.file;
-    if (!mounted) return;
-    if (file == null || !file.existsSync()) {
-      _emitSnack('Could not open this video');
-      return;
-    }
-    unawaited(LocalStore().addRecent(RecentItem(
-      id: asset.id,
-      title: asset.title ?? 'Video',
-      path: file.path,
-      ts: DateTime.now().millisecondsSinceEpoch,
-    )));
-    final ids = queue.map((e) => e.id).toList();
-    var start = ids.indexOf(asset.id);
-    if (start < 0) start = 0;
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => PlayerScreen(
-          path: file.path,
-          title: asset.title ?? 'Video',
-          queueIds: ids,
-          queueStart: start,
-          meta: {
-            'File': file.path,
-            'Size': formatBytes(file.lengthSync()),
-          },
+      builder: (sheetContext) => SafeArea(
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: .55,
+          minChildSize: .3,
+          maxChildSize: .9,
+          builder: (context, controller) => Column(
+            children: [
+              _SheetHandle(),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(18, 4, 18, 10),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Playlist', style: TextStyle(
+                    color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  controller: controller,
+                  itemCount: widget.queueIds.length,
+                  itemBuilder: (context, index) => ListTile(
+                    leading: CircleAvatar(
+                      radius: 17,
+                      backgroundColor: AppColors.surfaceAlt,
+                      child: Text('${index + 1}', style: const TextStyle(color: AppColors.textSecondary)),
+                    ),
+                    title: FutureBuilder<AssetEntity?>(
+                      future: AssetEntity.fromId(widget.queueIds[index]),
+                      builder: (context, snapshot) => Text(
+                        snapshot.data?.title ?? 'Video ${index + 1}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: AppColors.textPrimary)),
+                    ),
+                    trailing: index == _queueIndex
+                        ? Icon(Icons.play_arrow_rounded, color: AppColors.accent)
+                        : null,
+                    onTap: () async {
+                      Navigator.of(sheetContext).pop();
+                      if (index == _queueIndex) return;
+                      _queueIndex = index;
+                      await _openQueueIndex();
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1849,10 +1690,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     _bufferingSub?.cancel();
     _completedSub?.cancel();
     _errorSub?.cancel();
-    _karaokeSubTextSub?.cancel();
-    if (NativeBridge.pipToggleListener != null) {
-      NativeBridge.pipToggleListener = null;
-    }
     if (_settingsListener != null) _settings.removeListener(_settingsListener!);
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_native.invokeMethod('disableSensorRotate'));
@@ -1907,11 +1744,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                         fit: _fitMode.boxFit,
                         aspectRatio: null,
                         controls: NoVideoControls,
-                        // Karaoke hides media_kit's own subtitle overlay (the
-                        // word-level overlay below takes over) — same idea as
-                        // the old app's sub-visibility=no.
-                        subtitleViewConfiguration:
-                            SubtitleViewConfiguration(visible: !_karaoke),
                       ),
                     ),
                   ),
@@ -2041,22 +1873,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ),
               ),
             ),
-            // Karaoke word-level subtitle overlay (old player parity): words
-            // light up one by one as they're spoken. Rendered only while
-            // karaoke mode is on; media_kit's own subtitle view is hidden.
-            if (_karaoke && !_locked)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 24,
-                child: IgnorePointer(
-                  child: _KaraokeOverlay(
-                    player: _player,
-                    liveCue: _karaokeLiveCue,
-                    sidecarCues: _karaokeSidecar,
-                  ),
-                ),
-              ),
             // Bottom controls: slide up + fade in/out with the controls.
             Positioned(
               left: 0,
@@ -2448,8 +2264,8 @@ class _BottomBarState extends State<_BottomBar> {
                 ),
                 const Spacer(),
                 _iconBtn(
-                  icon: Icons.playlist_play,
-                  tooltip: 'Playlists',
+                  icon: Icons.queue_music,
+                  tooltip: 'Queue',
                   onTap: widget.onQueue,
                   compact: true,
                 ),
@@ -2518,21 +2334,16 @@ class _BottomBarState extends State<_BottomBar> {
   }
 
   void _showSpeedSheet() {
-    // The live value is declared ONCE here, in the method frame, so the
-    // builder and the drag/chip callbacks all capture the SAME variable.
-    // (Previously `var current = initial` sat inside the builder and was
-    // re-initialised on every rebuild, so the slider thumb and the "x"
-    // readout snapped back to the start value while only the rate itself
-    // changed — the sheet "looked broken".)
-    var current = nearestPlaybackRate(widget.player.state.rate);
+    final initial = nearestPlaybackRate(widget.player.state.rate);
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF1a1a24),
+      backgroundColor: const Color(0xFF14141c),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetContext) => StatefulBuilder(
         builder: (context, setSheetState) {
+          var current = initial;
           return SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
@@ -2566,13 +2377,8 @@ class _BottomBarState extends State<_BottomBar> {
                     divisions: 14, // 0.25× steps
                     activeColor: AppColors.accent,
                     inactiveColor: Colors.white10,
-                    onChanged: (v) {
-                      final snapped = nearestPlaybackRate(v);
-                      setSheetState(() => current = snapped);
-                      // Apply live so the change is audible while dragging
-                      // and never lost when the gesture ends abruptly.
-                      unawaited(widget.player.setRate(snapped));
-                    },
+                    onChanged: (v) =>
+                        setSheetState(() => current = nearestPlaybackRate(v)),
                     onChangeEnd: (v) =>
                         widget.player.setRate(nearestPlaybackRate(v)),
                   ),
@@ -2597,10 +2403,7 @@ class _BottomBarState extends State<_BottomBar> {
                     runSpacing: 8,
                     alignment: WrapAlignment.center,
                     children: [
-                      // The old app's exact preset list (0.5× .. 3.0×).
-                      for (final r in const [
-                        0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0,
-                      ])
+                      for (final r in const [0.5, 1.0, 1.5, 2.0, 3.0, 4.0])
                         _speedChip(
                           rate: r,
                           active: r == nearestPlaybackRate(current),
@@ -2989,231 +2792,6 @@ class _SheetHandle extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
       ),
-    );
-  }
-}
-
-/// The player's playlist sheet: lists ONLY the user's created playlists
-/// (never the raw all-videos queue). Tap a playlist to see its videos;
-/// tap a video to play it from there (the playlist becomes the queue).
-class _PlaylistsSheetView extends StatefulWidget {
-  const _PlaylistsSheetView({
-    required this.store,
-    required this.playlists,
-    required this.onPlay,
-  });
-
-  final LocalStore store;
-  final Map<String, List<String>> playlists;
-  final Future<void> Function(AssetEntity asset, List<AssetEntity> queue)
-      onPlay;
-
-  @override
-  State<_PlaylistsSheetView> createState() => _PlaylistsSheetViewState();
-}
-
-class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
-  String? _open;
-  List<AssetEntity> _videos = const [];
-  bool _resolving = false;
-
-  Future<void> _openPlaylist(String name) async {
-    setState(() {
-      _open = name;
-      _resolving = true;
-      _videos = const [];
-    });
-    final ids = widget.playlists[name] ?? const [];
-    final list = <AssetEntity>[];
-    for (final id in ids) {
-      final a = await AssetEntity.fromId(id);
-      if (a != null) list.add(a);
-    }
-    if (!mounted || _open != name) return;
-    setState(() {
-      _videos = list;
-      _resolving = false;
-    });
-  }
-
-  Future<void> _play(AssetEntity asset) async {
-    Navigator.of(context).pop();
-    await widget.onPlay(asset, _videos);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.75,
-        child: Column(
-          children: [
-            _SheetHandle(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
-              child: Row(
-                children: [
-                  if (_open != null)
-                    IconButton(
-                      tooltip: 'All playlists',
-                      icon: const Icon(Icons.arrow_back_rounded,
-                          color: AppColors.textSecondary),
-                      onPressed: () =>
-                          setState(() => _open = null),
-                    ),
-                  Expanded(
-                    child: Text(
-                      _open ?? 'Playlists',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1, color: AppColors.border),
-            Expanded(child: _open == null ? _list() : _detail()),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _list() {
-    final names = widget.playlists.keys.toList();
-    if (names.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(28),
-          child: Text(
-            'No playlists yet.\nCreate one from the home screen '
-            '(Playlists tile), then long-press a video → "Add to playlist".',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSecondary, height: 1.4),
-          ),
-        ),
-      );
-    }
-    return ListView.builder(
-      itemCount: names.length,
-      itemBuilder: (context, i) {
-        final name = names[i];
-        final count = widget.playlists[name]?.length ?? 0;
-        return ListTile(
-          leading: Icon(Icons.playlist_play_rounded, color: AppColors.accent),
-          title: Text(name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.w600)),
-          subtitle: Text('$count video${count == 1 ? '' : 's'}',
-              style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 12)),
-          trailing: const Icon(Icons.chevron_right_rounded,
-              color: AppColors.textSecondary),
-          onTap: () => _openPlaylist(name),
-        );
-      },
-    );
-  }
-
-  Widget _detail() {
-    if (_resolving) {
-      return Center(
-          child: CircularProgressIndicator(color: AppColors.accent));
-    }
-    if (_videos.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(28),
-          child: Text(
-            'No playable videos in this playlist.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-        ),
-      );
-    }
-    return ListView.builder(
-      itemCount: _videos.length,
-      itemBuilder: (context, i) {
-        final a = _videos[i];
-        return ListTile(
-          leading: const Icon(Icons.play_circle_outline_rounded,
-              color: AppColors.textSecondary),
-          title: Text(a.title ?? 'Video',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppColors.textPrimary)),
-          onTap: () => _play(a),
-        );
-      },
-    );
-  }
-}
-
-/// Karaoke word-level subtitle overlay, ported from the old app's
-/// `KaraokeSubtitle`. Words light up (accent + bold) one by one as they're
-/// spoken; unlit words stay dim. Repaints on the player's position stream.
-class _KaraokeOverlay extends StatelessWidget {
-  const _KaraokeOverlay({
-    required this.player,
-    required this.liveCue,
-    required this.sidecarCues,
-  });
-
-  final Player player;
-  final SrtCue? liveCue;
-  final List<SrtCue> sidecarCues;
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<Duration>(
-      stream: player.stream.position,
-      builder: (context, snap) {
-        final posMs = (snap.data ?? Duration.zero).inMilliseconds;
-        final cue = karaokeCueAt(liveCue, sidecarCues, posMs);
-        if (cue == null) return const SizedBox.shrink();
-        final activeIdx = karaokeWordIndex(cue, posMs);
-        final words = cue.text
-            .split(RegExp(r'\s+'))
-            .where((w) => w.isNotEmpty)
-            .toList();
-        const baseColor = Colors.white54;
-        const shadow = [
-          Shadow(color: Colors.black, blurRadius: 6),
-          Shadow(color: Colors.black, offset: Offset(0, 1)),
-        ];
-        final spans = <InlineSpan>[
-          for (var i = 0; i < words.length; i++)
-            TextSpan(
-              text: i == 0 ? words[i] : ' ${words[i]}',
-              style: TextStyle(
-                color: i <= activeIdx ? AppColors.accent : baseColor,
-                fontSize: 17,
-                fontWeight:
-                    i == activeIdx ? FontWeight.w800 : FontWeight.w500,
-                shadows: shadow,
-                height: 1.35,
-              ),
-            ),
-        ];
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text.rich(
-            TextSpan(children: spans),
-            textAlign: TextAlign.center,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-          ),
-        );
-      },
     );
   }
 }
