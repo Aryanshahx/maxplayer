@@ -253,18 +253,37 @@ class NativeBridge {
     }
   }
 
-  /// Posts a "Continue watching" system notification (its own channel,
-  /// tap opens the app). No-op on platforms without the native handler.
-  static Future<void> notifyContinueWatching({
+  /// Pushes the latest local-video resume state to the native side (v30).
+  /// The native layer stores it and turns it into the "Continue watching"
+  /// notification ONLY when the app is actually closed (activity destroyed) —
+  /// never on a plain home/background press. Send [posMs] <= 0 to clear
+  /// (video finished / nothing resumable).
+  static Future<void> updateContinueWatching({
     required String title,
-    required String body,
+    required String path,
+    required int posMs,
   }) async {
     try {
-      await _nativeChannel.invokeMethod('notifyContinueWatching', {
+      await _nativeChannel.invokeMethod('updateContinueWatching', {
         'title': title,
-        'body': body,
+        'path': path,
+        'posMs': posMs,
       });
     } catch (_) {}
+  }
+
+  /// Consumes a pending "Continue watching" notification tap (deep link),
+  /// returning the video path or null. Pull-based so it is cold-start
+  /// safe; warm starts are additionally pushed via `onContinueWatching`.
+  static Future<String?> consumeContinueWatching() async {
+    try {
+      final path = await _nativeChannel.invokeMethod<String>(
+        'consumeContinueWatching',
+      );
+      return (path == null || path.isEmpty) ? null : path;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Requests the Android 13+ POST_NOTIFICATIONS grant (no-op below API 33
@@ -291,6 +310,11 @@ class NativeBridge {
   // -------------------------------------------------------------------------
   static void Function()? pipToggleListener;
 
+  /// Deep link from the "Continue watching" notification on a WARM start
+  /// (app process alive, tap re-launched the activity). Cold starts use
+  /// [consumeContinueWatching] instead.
+  static void Function(String path)? continueWatchingListener;
+
   static void Function(String state)? onVoiceState;
   static void Function(double rms)? onVoiceRms;
   static void Function(String text)? onVoicePartial;
@@ -308,6 +332,11 @@ class NativeBridge {
       switch (call.method) {
         case 'pipToggle':
           pipToggleListener?.call();
+          break;
+        case 'onContinueWatching':
+          final args = call.arguments;
+          final p = args is Map ? args['path'] : null;
+          if (p is String && p.isNotEmpty) continueWatchingListener?.call(p);
           break;
         case 'onAiProgress':
         case 'onAiSubtitleDone':

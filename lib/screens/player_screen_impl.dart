@@ -54,6 +54,10 @@ class PlayerScreen extends StatefulWidget {
   final bool isStream;
   final Map<String, String> meta;
 
+  /// v30: true while any player screen is open — the "Continue watching"
+  /// deep link uses it to never stack a second player over a running one.
+  static bool isOpen = false;
+
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
@@ -163,11 +167,16 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   void initState() {
     super.initState();
+    PlayerScreen.isOpen = true;
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     // MX/VLC-style rotation: the player rotates by accelerometer even when
     // the phone's system auto-rotate switch is OFF.
     unawaited(_native.invokeMethod('enableSensorRotate'));
+    // v30: the "Continue watching" notification is posted natively when
+    // the app CLOSES, so the Android 13+ notification grant must be
+    // requested up front, while the player is in the foreground.
+    unawaited(NativeBridge.ensureNotificationsAllowed());
     _title = widget.title;
     _currentPath = widget.path;
     _queueIndex = widget.queueStart;
@@ -210,6 +219,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       } else {
         WakelockPlus.disable();
         unawaited(_savePosition());
+        _pushContinueWatching();
       }
       unawaited(_syncBackgroundAudio(playing));
       unawaited(_native.invokeMethod('updatePipPlaying', {'playing': playing}));
@@ -233,6 +243,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       unawaited(_savePosition());
+      // v30: keep the native "Continue watching" state fresh so the
+      // notification posted on app close knows where we stopped.
+      _pushContinueWatching();
       // Watch-time statistics (same 5s tick as the old player): count a
       // bucket whenever a local video is actually playing.
       if (_player.state.playing && !widget.isStream) {
@@ -361,30 +374,30 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  /// v29: posts a "Continue watching" system notification when the user
-  /// leaves a local video part-way through. Quiet by design — nothing is
-  /// posted for streams, finished videos, sub-10s positions, or when the
-  /// resume feature is off in settings.
-  void _maybePostContinueWatching() {
-    if (widget.isStream || _failed || !_settings.resume) return;
+  /// v30: pushes the latest resume state to the native side (5s ticks +
+  /// pause + leave). The NATIVE layer posts the "Continue watching"
+  /// notification, and only when the app is actually CLOSED (activity
+  /// destroyed) — never on a plain home/background press. Quiet by design:
+  /// streams, finished videos, sub-10s positions, and resume-off all push
+  /// a clear (posMs 0) instead.
+  void _pushContinueWatching() {
+    if (widget.isStream || _failed || !_settings.resume) {
+      unawaited(NativeBridge.updateContinueWatching(
+        title: _title,
+        path: _currentPath,
+        posMs: 0,
+      ));
+      return;
+    }
     final posMs = _player.state.position.inMilliseconds;
     final durMs = _player.state.duration.inMilliseconds;
-    if (durMs <= 0) return; // unknown length: can't tell finished apart
-    if (resumeTargetMs(posMs, durMs) == null) return;
-    unawaited(_postContinueWatching(posMs));
-  }
-
-  Future<void> _postContinueWatching(int posMs) async {
-    try {
-      if (!await NativeBridge.ensureNotificationsAllowed()) return;
-      await NativeBridge.notifyContinueWatching(
-        title: _title,
-        body:
-            'You were at ${formatDuration(Duration(milliseconds: posMs))} — tap to continue watching.',
-      );
-    } catch (_) {
-      // Never crash on a notification error.
-    }
+    final resumable =
+        durMs > 0 && resumeTargetMs(posMs, durMs) != null ? posMs : 0;
+    unawaited(NativeBridge.updateContinueWatching(
+      title: _title,
+      path: _currentPath,
+      posMs: resumable,
+    ));
   }
 
   Future<void> _offerResume() async {
@@ -542,7 +555,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       _player.state.tracks.audio.length > 1;
 
   void _onTap() {
-    _tapHaptic();
     if (_locked) {
       _showLockHint();
       return;
@@ -551,7 +563,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _lockScreen() {
-    _commitHaptic();
     _hideTimer?.cancel();
     setState(() {
       _locked = true;
@@ -561,7 +572,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _unlockScreen() {
-    _commitHaptic();
     setState(() {
       _locked = false;
       _controlsVisible = true;
@@ -576,7 +586,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _onDoubleTap() {
-    _commitHaptic();
     final width = MediaQuery.of(context).size.width;
     final third = width / 3;
     final x = _lastDoubleTapDx;
@@ -670,7 +679,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (!_settings.longPressSpeed || _locked) return;
     // No boost (and no badge) while the video is paused - old-player rule.
     if (on && !_player.state.playing) return;
-    if (on) _boostHaptic();
     _boost = on;
     unawaited(_player.setRate(on ? _settings.longPressRate : _settings.playbackRate));
     if (mounted) setState(() {});
@@ -680,7 +688,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// six-mode loop (Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original -> Fit).
   /// No sheet — cycling is the only selection UI, exactly like the old app.
   void _cycleFit() {
-    _commitHaptic();
     setState(() {
       _fitMode = nextFitMode(_fitMode);
       _zoom = 1;
@@ -867,7 +874,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       // Tick at the brightness bounds (0 / 100).
       final pct = (v * 100).round();
       if (pct != _lastBrightnessPct) {
-        if (pct == 0 || pct == 100) _commitHaptic();
         _lastBrightnessPct = pct;
       }
       _showIndicatorThrottled('Brightness $pct%',
@@ -890,8 +896,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         return;
       }
       _lastVolumePct = pct;
-      // Tick at the volume bounds (0 / 100 / 200).
-      if (pct == 0 || pct == 100 || pct == 200) _commitHaptic();
       await _setVolumePercent(v);
       _showIndicatorThrottled(
         'Volume $pct%',
@@ -926,30 +930,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _emitGesture(IconData icon, String label) => _showIndicator(label, icon);
-
-  // ---------------------------------------------------------------------------
-  // Haptic ticks for every gesture (tap / double-tap / long-press boost /
-  // gesture commit / lock / fit / volume & brightness bounds). Requires the
-  // VIBRATE permission (now declared in AndroidManifest.xml). Best-effort —
-  // no-op on devices without a vibrator, never throws.
-  // ---------------------------------------------------------------------------
-  void _tapHaptic() {
-    try {
-      HapticFeedback.lightImpact();
-    } catch (_) {}
-  }
-
-  void _commitHaptic() {
-    try {
-      HapticFeedback.selectionClick();
-    } catch (_) {}
-  }
-
-  void _boostHaptic() {
-    try {
-      HapticFeedback.mediumImpact();
-    } catch (_) {}
-  }
 
   /// Old-player transient indicator: shows the message for ~900ms with the
   /// pill's scale+fade entrance/exit animation.
@@ -1001,12 +981,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           scaled: _pinchScaled,
         )) {
       _resetToFitScreen();
-    }
-
-    // Light "gesture settled" tick when a real gesture just finished
-    // (volume / brightness / seek / fit-loop / zoom / pan).
-    if (drag != _DragMode.undecided && drag != _DragMode.cant) {
-      _commitHaptic();
     }
 
     if (mounted) {
@@ -1934,6 +1908,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   void dispose() {
+    PlayerScreen.isOpen = false;
     _sleepTimer?.cancel();
     _hideTimer?.cancel();
     _indicatorTimer?.cancel();
@@ -1952,9 +1927,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     WakelockPlus.disable();
     ScreenBrightness.instance.resetApplicationScreenBrightness();
     unawaited(_savePosition());
-    // v29: when the user leaves a video part-way through, post a
-    // "Continue watching" system notification they can tap to come back.
-    _maybePostContinueWatching();
+    // v30: hand the final resume state to the native side — it posts the
+    // "Continue watching" notification only if/when the app is CLOSED.
+    _pushContinueWatching();
+    // Stop the background keep-alive/media notification: leaving the
+    // player screen ends playback, so the shade must not keep saying
+    // "Playing in background".
+    unawaited(_syncBackgroundAudio(false));
     unawaited(_player.dispose());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
@@ -1965,6 +1944,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       unawaited(_savePosition());
+      _pushContinueWatching();
+    }
+    // v30: with the cached engine the video keeps playing after the app
+    // is swiped away — release the wakelock so the screen doesn't stay
+    // on in a pocket, and restore it when the app comes back.
+    if (state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      unawaited(WakelockPlus.disable());
+    } else if (state == AppLifecycleState.resumed &&
+        _player.state.playing) {
+      unawaited(WakelockPlus.enable());
     }
   }
 

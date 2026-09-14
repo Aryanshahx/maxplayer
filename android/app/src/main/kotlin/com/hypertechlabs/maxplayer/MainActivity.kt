@@ -46,7 +46,9 @@ import dev.ffmpegkit.whisper.WhisperConfig
 import dev.ffmpegkit.whisper.WhisperModel
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugins.GeneratedPluginRegistrant
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -129,9 +131,54 @@ class MainActivity : FlutterFragmentActivity() {
         private const val REQ_VOICE_SEARCH = 49
         private const val REQ_MEDIA_WRITE = 50
 
-        // "Continue watching" system notifications (v29).
+        // "Continue watching" system notifications (v29+).
         private const val CHANNEL_CONTINUE = "maxplayer_continue"
         private const val NOTIFY_CONTINUE_ID = 1903
+        private const val REQ_CONTINUE_OPEN = 1904
+        const val EXTRA_CONTINUE_PATH = "maxplayer_continue_path"
+        private const val NATIVE_CHANNEL = "maxplayer/native"
+
+        // v30: the Flutter engine is CACHED and outlives the activity, so
+        // swiping the app away keeps the video/audio playing (background
+        // audio survives "app closed") and the notification play/pause can
+        // still reach the player.
+        private const val ENGINE_ID = "maxplayer_engine"
+
+        @Volatile
+        private var engine: FlutterEngine? = null
+
+        // Latest local-video resume state pushed by Dart (5s ticks); used
+        // by onDestroy() to post the "Continue watching" notification when
+        // the app is closed.
+        @Volatile
+        private var continueTitle: String? = null
+
+        @Volatile
+        private var continuePath: String? = null
+
+        @Volatile
+        private var continuePosMs: Long = 0
+
+        // Deep link from the "Continue watching" notification, waiting for
+        // Dart (set from onCreate/onNewIntent, consumed by Dart).
+        @Volatile
+        private var pendingContinuePath: String? = null
+
+        /**
+         * Play/pause from a notification/media button when the activity is
+         * already destroyed: invoke `pipToggle` on the cached engine's
+         * method channel (must run on the main thread).
+         */
+        fun toggleEnginePlayer() {
+            val messenger = engine?.dartExecutor?.binaryMessenger ?: return
+            Handler(Looper.getMainLooper()).post {
+                try {
+                    MethodChannel(messenger, NATIVE_CHANNEL)
+                        .invokeMethod("pipToggle", null)
+                } catch (_: Throwable) {
+                }
+            }
+        }
     }
 
     private val pipSupported: Boolean
@@ -139,8 +186,65 @@ class MainActivity : FlutterFragmentActivity() {
             PackageManager.FEATURE_PICTURE_IN_PICTURE,
         )
 
+    // ---------------------------------------------------------------------------
+    // v30: cached Flutter engine. The engine is created once, cached, and NOT
+    // destroyed with the activity — so when the user swipes the app away the
+    // process and the Dart isolate (and the playing video) stay alive, giving
+    // true background audio after "close", and the reopen returns instantly
+    // to exactly where playback was.
+    // ---------------------------------------------------------------------------
+
+    override fun provideFlutterEngine(context: Context): FlutterEngine? {
+        val cached = FlutterEngineCache.getInstance().get(ENGINE_ID)
+        if (cached != null) {
+            engine = cached
+            return cached
+        }
+        val fresh = FlutterEngine(context.applicationContext)
+        // Engine created outside the delegate: plugins must be registered
+        // explicitly (the delegate only auto-registers engines it creates).
+        try {
+            GeneratedPluginRegistrant.registerWith(fresh)
+        } catch (_: Throwable) {
+        }
+        FlutterEngineCache.getInstance().put(ENGINE_ID, fresh)
+        engine = fresh
+        return fresh
+    }
+
+    override fun shouldDestroyEngineWithHost(): Boolean = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        captureContinueDeepLink(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureContinueDeepLink(intent)
+        // Warm path: the engine is already up, so push the deep link to
+        // Dart right away (it is also stored for the pull-based fallback).
+        val path = pendingContinuePath
+        if (path != null && engine != null) {
+            methodChannel?.invokeMethod(
+                "onContinueWatching",
+                hashMapOf("path" to path),
+            )
+            pendingContinuePath = null
+        }
+    }
+
+    /** Remembers a "Continue watching" notification tap (if any). */
+    private fun captureContinueDeepLink(intent: Intent?) {
+        val path = intent?.getStringExtra(EXTRA_CONTINUE_PATH) ?: return
+        intent.removeExtra(EXTRA_CONTINUE_PATH)
+        pendingContinuePath = path
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        engine = flutterEngine
         PipActionReceiver.bind(this)
 
         methodChannel = MethodChannel(
@@ -208,11 +312,30 @@ class MainActivity : FlutterFragmentActivity() {
                     result.success(true)
                 }
 
-                "notifyContinueWatching" -> {
-                    val title = call.argument<String>("title") ?: "Continue watching"
-                    val body = call.argument<String>("body") ?: ""
-                    postContinueWatching(title, body)
+                "updateContinueWatching" -> {
+                    // v30: Dart pushes the latest local-video resume state
+                    // (5s ticks + dispose). Stored here; onDestroy() turns
+                    // it into the "Continue watching" notification when the
+                    // app is closed. posMs <= 0 clears it (video finished).
+                    val posMs = (call.argument<Number>("posMs"))?.toLong() ?: 0L
+                    if (posMs > 0) {
+                        continueTitle = call.argument<String>("title")
+                        continuePath = call.argument<String>("path")
+                        continuePosMs = posMs
+                    } else {
+                        continueTitle = null
+                        continuePath = null
+                        continuePosMs = 0
+                    }
                     result.success(true)
+                }
+
+                "consumeContinueWatching" -> {
+                    // Pull-based deep link from the "Continue watching"
+                    // notification (cold-start safe).
+                    val path = pendingContinuePath
+                    pendingContinuePath = null
+                    result.success(path)
                 }
 
                 "openCastSettings" -> {
@@ -981,7 +1104,42 @@ class MainActivity : FlutterFragmentActivity() {
         rotateListener?.disable()
         rotateListener = null
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        // v30: "Continue watching" fires when the APP is closed (activity
+        // destroyed — back-exit, swipe-from-recents, system kill), never
+        // when it merely goes to the background. The cached engine keeps
+        // audio playing where possible; the notification always offers a
+        // tap-to-resume way back.
+        postContinueWatchingOnClose()
         super.onDestroy()
+    }
+
+    private fun postContinueWatchingOnClose() {
+        val title = continueTitle
+        val path = continuePath
+        val posMs = continuePosMs
+        if (title.isNullOrEmpty() || path.isNullOrEmpty() || posMs <= 0) return
+        // Clear immediately: one close = one notification.
+        continueTitle = null
+        continuePath = null
+        continuePosMs = 0
+        postContinueWatching(
+            title,
+            "You were at ${formatClockMs(posMs)} — tap to continue watching.",
+            path,
+        )
+    }
+
+    // Same clock format as Dart's formatDuration: 1:05 / 1:02:03.
+    private fun formatClockMs(ms: Long): String {
+        val total = if (ms < 0) 0 else ms / 1000
+        val h = total / 3600
+        val m = (total % 3600) / 60
+        val s = total % 60
+        return if (h > 0) {
+            String.format("%d:%02d:%02d", h, m, s)
+        } else {
+            String.format("%d:%02d", m, s)
+        }
     }
 
     // ---------------------------------------------------------------------------
@@ -1127,15 +1285,21 @@ class MainActivity : FlutterFragmentActivity() {
         return if (dims != null) hashMapOf("w" to dims[0], "h" to dims[1]) else null
     }
 
-    /** Posts a tap-to-open "Continue watching" system notification. */
-    private fun postContinueWatching(title: String, body: String) {
+    /**
+     * Posts the "Continue watching" system notification (v30). Tapping it
+     * opens the app through the system launcher intent — identical to the
+     * home-screen icon, so it reliably brings the existing task to the
+     * front or cold-starts the app — carrying the video path so the app
+     * can resume exactly where it stopped.
+     */
+    private fun postContinueWatching(title: String, body: String, path: String?) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED
             ) {
                 // Notifications not yet granted (Android 13+): nothing to
-                // show. Dart requests the grant before calling here.
+                // show. Dart requests the grant while the player is open.
                 return
             }
             val nm = getSystemService(NotificationManager::class.java) ?: return
@@ -1148,12 +1312,18 @@ class MainActivity : FlutterFragmentActivity() {
                     ),
                 )
             }
+            val base = packageManager.getLaunchIntentForPackage(packageName)
+                ?: Intent(this, MainActivity::class.java)
+            base.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP,
+            )
+            if (!path.isNullOrEmpty()) base.putExtra(EXTRA_CONTINUE_PATH, path)
             val openIntent = PendingIntent.getActivity(
                 this,
-                1904,
-                Intent(this, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-                },
+                REQ_CONTINUE_OPEN,
+                base,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             val notification: Notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

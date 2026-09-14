@@ -534,16 +534,18 @@ const List<_Item> _smartItems = [
   _Item(
     Icons.notifications_active_outlined,
     'Continue-watching notifications',
-    'Leave a video part-way through and the app posts a "Continue '
-        'watching" notification with the exact time you stopped. Tap it to '
-        'come right back.',
+    'Close the app part-way through a video and a "Continue watching" '
+        'notification appears with the exact time you stopped. Tap it to '
+        'open the app and resume right there. (Not posted when the app '
+        'merely moves to the background.)',
   ),
   _Item(
     Icons.music_note_outlined,
     'Player in the notification shade',
-    'While a video plays in the background, the notification shows its '
-        'title with a play/pause button - pause and resume without opening '
-        'the app.',
+    'While a video plays, Android\'s standard media controls show its '
+        'title with play/pause — pause and resume without opening the app. '
+        'With Background audio on, the audio keeps playing even after you '
+        'swipe the app away.',
   ),
 ];
 

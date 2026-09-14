@@ -6,6 +6,7 @@ import 'screens/library_screen.dart';
 import 'services/native_bridge.dart';
 import 'theme.dart';
 import 'utils/crash_log.dart';
+import 'utils/deep_links.dart';
 import 'utils/settings.dart';
 
 Future<void> main() async {
@@ -20,6 +21,9 @@ Future<void> main() async {
   // Must be registered once, before any screen tries to handle the same
   // channel - a second setMethodCallHandler silently replaces the first.
   NativeBridge.ensureNativeHandler();
+  // v30: warm-start deep link from the "Continue watching" notification
+  // (cold starts pull the pending path via consumeContinueWatching).
+  NativeBridge.continueWatchingListener = openContinueWatching;
   CrashLog.crumb('app.start');
   runApp(const MaxPlayerApp());
 }
@@ -36,6 +40,7 @@ class MaxPlayerApp extends StatelessWidget {
         AppColors.accent = AppSettings.instance.accentColor;
         return MaterialApp(
           title: 'Max Player',
+          navigatorKey: rootNavigatorKey,
           debugShowCheckedModeBanner: false,
           theme: buildAppTheme(accent: AppSettings.instance.accentColor),
           home: const LibraryScreen(),

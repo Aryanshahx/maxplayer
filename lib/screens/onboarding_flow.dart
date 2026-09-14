@@ -6,10 +6,10 @@ import '../widgets/gesture_illustrations.dart';
 
 /// First-run onboarding: three pages shown one-by-one (Welcome → How to
 /// use → Video player guide). Pushed automatically the first time the app
-/// opens, or manually from the home ⋮ menu → "Replay guide".
+/// opens.
 ///
 /// "Done / Skip" stores the [Onboarding] flag so the automatic trigger
-/// never fires again; the manual replay path is unaffected.
+/// never fires again.
 class OnboardingFlow extends StatefulWidget {
   const OnboardingFlow({super.key});
 
