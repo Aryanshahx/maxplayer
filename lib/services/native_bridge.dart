@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import '../utils/ai_subtitles.dart';
+
 /// Thin bridge to the Android side for the Drop 5 ports that need the
 /// platform: the system document picker (cloud import), the private-folder
 /// vault directory, system delete-consent, and on-demand thumbnails for
@@ -150,13 +152,20 @@ class NativeBridge {
     }
   }
 
-  /// Renames a shared-storage video. On Android 10+ this goes through
-  /// MediaStore (updating DISPLAY_NAME) because a raw `File.rename` fails
-  /// with "protected or in use"; on older Android / app-owned files the
-  /// file itself is renamed on disk. True on success.
-  static Future<bool> renameVideo(String path, String newName) async {
+  /// Renames a shared-storage video. [id] is the MediaStore _ID
+  /// (photo_manager's AssetEntity.id) used to build the content URI directly
+  /// — far more reliable than re-resolving the raw path on scoped storage.
+  /// On Android 10+ this goes through MediaStore (updating DISPLAY_NAME)
+  /// because a raw `File.rename` fails with "protected or in use"; on older
+  /// Android / app-owned files the file itself is renamed on disk. True on
+  /// success.
+  static Future<bool> renameVideo(
+      {required String id,
+      required String path,
+      required String newName}) async {
     try {
       final res = await _nativeChannel.invokeMethod<bool>('renameVideo', {
+        'id': id,
         'path': path,
         'newName': newName,
       });
@@ -191,9 +200,9 @@ class NativeBridge {
     } catch (_) {}
   }
 
-  /// Launches Android's system speech-recognition dialog (Google voice
-  /// search) and returns the recognised query, or null on cancel/error.
-  /// Callers must request the microphone permission first.
+  /// Launches Android's speech recognition (in-app SpeechRecognizer first,
+  /// system dialog as fallback) and returns the recognised query, or null on
+  /// cancel/error. Callers must request the microphone permission first.
   static Future<String?> launchSystemVoiceSearch() async {
     try {
       final res =
@@ -202,5 +211,82 @@ class NativeBridge {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Starts the in-app speech recognizer (returns true when it began).
+  /// Live events arrive through the callbacks configured by
+  /// [ensureNativeHandler].
+  static Future<bool> startVoiceSearch() async {
+    try {
+      final res = await _nativeChannel.invokeMethod<bool>('startVoiceSearch');
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Stops the in-app speech recognizer. Safe to call anytime.
+  static Future<void> stopVoiceSearch() async {
+    try {
+      await _nativeChannel.invokeMethod('stopVoiceSearch');
+    } catch (_) {}
+  }
+
+  // -------------------------------------------------------------------------
+  // Single dispatcher for `maxplayer/native` INCOMING events. There must be
+  // exactly ONE setMethodCallHandler on a channel — a second registration
+  // silently replaces the first — so every native->Dart event (PiP button,
+  // whisper AI-subtitle progress, voice-search callbacks) routes through
+  // here. Registered once from main(); the player registers its callbacks
+  // (pipToggleListener) instead of its own handler.
+  // -------------------------------------------------------------------------
+  static void Function()? pipToggleListener;
+
+  static void Function(String state)? onVoiceState;
+  static void Function(double rms)? onVoiceRms;
+  static void Function(String text)? onVoicePartial;
+  static void Function(String text)? onVoiceResult;
+  static void Function(int error)? onVoiceError;
+
+  static bool _nativeHandlerSet = false;
+
+  /// Registers the one-and-only `maxplayer/native` incoming-event handler.
+  /// Idempotent — call it from main() and anywhere a feature starts.
+  static void ensureNativeHandler() {
+    if (_nativeHandlerSet) return;
+    _nativeHandlerSet = true;
+    _nativeChannel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'pipToggle':
+          pipToggleListener?.call();
+          break;
+        case 'onAiProgress':
+        case 'onAiSubtitleDone':
+        case 'onAiSubtitleFailed':
+          AiSubtitleRunner.handleNativeEvent(call);
+          break;
+        case 'onVoiceState':
+          final s = call.arguments;
+          if (s is String) onVoiceState?.call(s);
+          break;
+        case 'onVoiceRms':
+          final r = (call.arguments as num?)?.toDouble();
+          if (r != null) onVoiceRms?.call(r);
+          break;
+        case 'onVoicePartial':
+          final p = call.arguments;
+          if (p is String) onVoicePartial?.call(p);
+          break;
+        case 'onVoiceResult':
+          final res = call.arguments;
+          if (res is String) onVoiceResult?.call(res);
+          break;
+        case 'onVoiceError':
+          final err = (call.arguments as num?)?.toInt();
+          if (err != null) onVoiceError?.call(err);
+          break;
+      }
+      return null;
+    });
   }
 }

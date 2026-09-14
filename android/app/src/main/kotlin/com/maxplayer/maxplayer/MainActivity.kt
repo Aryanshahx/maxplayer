@@ -25,6 +25,7 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
@@ -32,7 +33,9 @@ import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.util.Rational
 import android.view.OrientationEventListener
 import dev.ffmpegkit.whisper.Whisper
@@ -94,11 +97,16 @@ class MainActivity : FlutterFragmentActivity() {
     // Voice search round-trip (system speech dialog, Discover screen).
     private var pendingVoiceSearchResult: MethodChannel.Result? = null
 
+    // In-app SpeechRecognizer (Discover voice search; the old app's custom
+    // mic path — more robust than the system dialog on most devices).
+    private var inAppSpeechRecognizer: SpeechRecognizer? = null
+
     // MediaStore rename consent round-trip. Shared-storage files may require
     // the Android system write dialog before DISPLAY_NAME can be updated.
     private var pendingRenameResult: MethodChannel.Result? = null
     private var pendingRenamePath: String? = null
     private var pendingRenameName: String? = null
+    private var pendingRenameId: String? = null
 
     private enum class RenameKind { success, failed, needsConsent }
     private data class RenameAttempt(
@@ -261,6 +269,115 @@ class MainActivity : FlutterFragmentActivity() {
 
                 "aiSubtitleCancel" -> {
                     aiCancelled = true
+                    result.success(true)
+                }
+
+                // -----------------------------------------------------------------
+                // Player/device operations live on `maxplayer/native` (the Dart
+                // NativeBridge calls these on _nativeChannel). Keeping them here
+                // (not on maxplayer/storage) matters: a call sent to the wrong
+                // channel is silently dropped, which is exactly what made
+                // volume swipe, rename and voice search appear "dead".
+                // -----------------------------------------------------------------
+                "getMediaVolume" -> {
+                    // DEVICE media volume (the player's swipe drives this,
+                    // like MX Player / the old app, so it can always reach
+                    // the phone's true maximum loudness).
+                    try {
+                        val am =
+                            getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                            .coerceAtLeast(1)
+                        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                        result.success(hashMapOf("level" to cur, "max" to max))
+                    } catch (_: Exception) {
+                        result.success(hashMapOf("level" to 1, "max" to 1))
+                    }
+                }
+
+                "setMediaVolume" -> {
+                    try {
+                        val v = (call.argument<Double>("value") ?: 0.75)
+                            .coerceIn(0.0, 1.0)
+                        val am =
+                            getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                            .coerceAtLeast(1)
+                        am.setStreamVolume(
+                            AudioManager.STREAM_MUSIC,
+                            (v * max).roundToInt().coerceIn(0, max),
+                            0
+                        )
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
+                }
+
+                "renameVideo" -> {
+                    // id = the MediaStore _ID (photo_manager's AssetEntity.id).
+                    // Building the content URI from the id is far more reliable
+                    // than re-resolving the raw path through the DATA column,
+                    // which scoped storage often hides.
+                    val path = call.argument<String>("path")
+                    val id = call.argument<String>("id")
+                    val newName = call.argument<String>("newName")
+                    if (path.isNullOrEmpty() || newName.isNullOrEmpty()) {
+                        result.error("bad_args", "path and newName are required", null)
+                    } else {
+                        executor.execute {
+                            val attempt = renameVideoSync(id, path, newName)
+                            mainHandler.post {
+                                when (attempt.kind) {
+                                    RenameKind.success -> result.success(true)
+                                    RenameKind.failed -> result.success(false)
+                                    RenameKind.needsConsent -> {
+                                        val sender = attempt.sender
+                                        if (sender == null || pendingRenameResult != null) {
+                                            result.success(false)
+                                        } else {
+                                            pendingRenameResult = result
+                                            pendingRenamePath = path
+                                            pendingRenameName = newName
+                                            pendingRenameId = id
+                                            try {
+                                                startIntentSenderForResult(
+                                                    sender,
+                                                    REQ_MEDIA_WRITE,
+                                                    null, 0, 0, 0,
+                                                )
+                                            } catch (_: Exception) {
+                                                pendingRenameResult = null
+                                                pendingRenamePath = null
+                                                pendingRenameName = null
+                                                pendingRenameId = null
+                                                result.success(false)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Voice search: in-app SpeechRecognizer first (works without a
+                // separate voice-input activity), system dialog as fallback —
+                // the old app's exact behaviour.
+                "launchSystemVoiceSearch" -> {
+                    if (SpeechRecognizer.isRecognitionAvailable(this)) {
+                        startInAppSpeech(result)
+                    } else {
+                        launchSystemSpeechIntent(result)
+                    }
+                }
+
+                "startVoiceSearch" -> {
+                    startInAppSpeech(result)
+                }
+
+                "stopVoiceSearch" -> {
+                    stopInAppSpeech()
                     result.success(true)
                 }
 
@@ -433,108 +550,6 @@ class MainActivity : FlutterFragmentActivity() {
                     }
                 }
 
-                "getMediaVolume" -> {
-                    // DEVICE media volume (the player's swipe drives this,
-                    // like MX Player / the old app, so it can always reach
-                    // the phone's true maximum loudness).
-                    try {
-                        val am =
-                            getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                            .coerceAtLeast(1)
-                        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-                        result.success(hashMapOf("level" to cur, "max" to max))
-                    } catch (_: Exception) {
-                        result.success(hashMapOf("level" to 1, "max" to 1))
-                    }
-                }
-
-                "setMediaVolume" -> {
-                    try {
-                        val v = (call.argument<Double>("value") ?: 0.75)
-                            .coerceIn(0.0, 1.0)
-                        val am =
-                            getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                            .coerceAtLeast(1)
-                        am.setStreamVolume(
-                            AudioManager.STREAM_MUSIC,
-                            (v * max).roundToInt().coerceIn(0, max),
-                            0
-                        )
-                        result.success(true)
-                    } catch (_: Exception) {
-                        result.success(false)
-                    }
-                }
-
-                "renameVideo" -> {
-                    val path = call.argument<String>("path")
-                    val newName = call.argument<String>("newName")
-                    if (path.isNullOrEmpty() || newName.isNullOrEmpty()) {
-                        result.error("bad_args", "path and newName are required", null)
-                    } else {
-                        executor.execute {
-                            val attempt = renameVideoSync(path, newName)
-                            mainHandler.post {
-                                when (attempt.kind) {
-                                    RenameKind.success -> result.success(true)
-                                    RenameKind.failed -> result.success(false)
-                                    RenameKind.needsConsent -> {
-                                        val sender = attempt.sender
-                                        if (sender == null || pendingRenameResult != null) {
-                                            result.success(false)
-                                        } else {
-                                            pendingRenameResult = result
-                                            pendingRenamePath = path
-                                            pendingRenameName = newName
-                                            try {
-                                                startIntentSenderForResult(
-                                                    sender,
-                                                    REQ_MEDIA_WRITE,
-                                                    null, 0, 0, 0,
-                                                )
-                                            } catch (_: Exception) {
-                                                pendingRenameResult = null
-                                                pendingRenamePath = null
-                                                pendingRenameName = null
-                                                result.success(false)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                "launchSystemVoiceSearch" -> {
-                    try {
-                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                            .apply {
-                                putExtra(
-                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                                )
-                                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to search\u2026")
-                                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
-                            }
-                        if (intent.resolveActivity(packageManager) == null) {
-                            result.error(
-                                "voice_unavailable",
-                                "No speech recognition activity is installed",
-                                null,
-                            )
-                        } else {
-                            pendingVoiceSearchResult = result
-                            startActivityForResult(intent, REQ_VOICE_SEARCH)
-                        }
-                    } catch (_: Exception) {
-                        pendingVoiceSearchResult = null
-                        result.success(null)
-                    }
-                }
-
                 else -> result.notImplemented()
             }
         }
@@ -546,7 +561,11 @@ class MainActivity : FlutterFragmentActivity() {
      * File.rename there fails with "protected or in use". On older Android
      * (or app-owned / non-indexed files) the file itself is renamed on disk.
      */
-    private fun renameVideoSync(path: String, newName: String): RenameAttempt {
+    private fun renameVideoSync(
+        id: String?,
+        path: String,
+        newName: String,
+    ): RenameAttempt {
         val file = File(path)
         // Pre-scoped-storage (or a non-indexed file): plain file rename.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -560,7 +579,10 @@ class MainActivity : FlutterFragmentActivity() {
                 RenameAttempt(RenameKind.failed)
             }
         }
-        val uri = resolveVideoUri(path)
+        // Build the content URI from the MediaStore id when available (much
+        // more reliable than the DATA-column query on scoped storage), then
+        // fall back to resolving the raw path.
+        val uri = mediaUriForId(id) ?: resolveVideoUri(path)
         if (uri == null) {
             // Not indexed by MediaStore (app-private / vault / Downloads on
             // some builds): fall back to a direct rename, best effort.
@@ -594,6 +616,175 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    /** MediaStore content URI from a photo_manager asset id (MediaStore _ID). */
+    private fun mediaUriForId(id: String?): Uri? {
+        if (id.isNullOrEmpty()) return null
+        val parsed = id.toLongOrNull() ?: return null
+        if (parsed <= 0) return null
+        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        else
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        return try {
+            ContentUris.withAppendedId(collection, parsed)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * In-app speech recognition (the old app's custom mic). Uses the
+     * platform SpeechRecognizer — on-device on Android 12+, Google-backed
+     * elsewhere — so it works without a separate voice-input activity. Falls
+     * back to the system dialog when recognition is unavailable. Emits
+     * onVoiceState / onVoiceRms / onVoicePartial / onVoiceResult /
+     * onVoiceError on `maxplayer/native` and completes [result] with the
+     * final text (or null).
+     */
+    private fun startInAppSpeech(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            // The Dart side asks for the mic first; a denied grant here means
+            // the system dialog would fail too.
+            result.success(null)
+            return
+        }
+        mainHandler.post {
+            try {
+                inAppSpeechRecognizer?.destroy()
+                inAppSpeechRecognizer = null
+
+                if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+                    launchSystemSpeechIntent(result)
+                    return@post
+                }
+
+                val recognizer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    SpeechRecognizer.isOnDeviceRecognitionAvailable(this)
+                ) {
+                    SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
+                } else {
+                    SpeechRecognizer.createSpeechRecognizer(this)
+                }
+                inAppSpeechRecognizer = recognizer
+
+                recognizer.setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        mainHandler.post {
+                            methodChannel?.invokeMethod("onVoiceState", "listening")
+                        }
+                    }
+
+                    override fun onBeginningOfSpeech() {
+                        mainHandler.post {
+                            methodChannel?.invokeMethod("onVoiceState", "speaking")
+                        }
+                    }
+
+                    override fun onRmsChanged(rmsdB: Float) {
+                        mainHandler.post {
+                            methodChannel?.invokeMethod("onVoiceRms", rmsdB)
+                        }
+                    }
+
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+
+                    override fun onEndOfSpeech() {
+                        mainHandler.post {
+                            methodChannel?.invokeMethod("onVoiceState", "processing")
+                        }
+                    }
+
+                    override fun onError(error: Int) {
+                        mainHandler.post {
+                            methodChannel?.invokeMethod("onVoiceError", error)
+                            result.success(null)
+                        }
+                    }
+
+                    override fun onResults(results: Bundle?) {
+                        val matches = results
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        val text = matches?.firstOrNull()?.trim() ?: ""
+                        mainHandler.post {
+                            methodChannel?.invokeMethod("onVoiceResult", text)
+                            result.success(text.ifEmpty { null })
+                        }
+                    }
+
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val matches = partialResults
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        val text = matches?.firstOrNull()?.trim()
+                        if (!text.isNullOrEmpty()) {
+                            mainHandler.post {
+                                methodChannel?.invokeMethod("onVoicePartial", text)
+                            }
+                        }
+                    }
+
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                })
+
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                    )
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                    putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+                    putExtra(
+                        RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                        1800L
+                    )
+                    putExtra(
+                        RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                        1800L
+                    )
+                }
+                recognizer.startListening(intent)
+            } catch (_: Exception) {
+                launchSystemSpeechIntent(result)
+            }
+        }
+    }
+
+    private fun launchSystemSpeechIntent(result: MethodChannel.Result) {
+        try {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                )
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to search\u2026")
+                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+            }
+            if (intent.resolveActivity(packageManager) == null) {
+                result.success(null)
+                return
+            }
+            pendingVoiceSearchResult = result
+            startActivityForResult(intent, REQ_VOICE_SEARCH)
+        } catch (_: Exception) {
+            pendingVoiceSearchResult = null
+            result.success(null)
+        }
+    }
+
+    private fun stopInAppSpeech() {
+        mainHandler.post {
+            try {
+                inAppSpeechRecognizer?.stopListening()
+                inAppSpeechRecognizer?.destroy()
+                inAppSpeechRecognizer = null
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     private fun renameWriteSender(uri: Uri): IntentSender? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         return try {
@@ -610,16 +801,18 @@ class MainActivity : FlutterFragmentActivity() {
         val pending = pendingRenameResult
         val path = pendingRenamePath
         val name = pendingRenameName
+        val id = pendingRenameId
         pendingRenameResult = null
         pendingRenamePath = null
         pendingRenameName = null
+        pendingRenameId = null
         if (pending == null) return
         if (!granted || path.isNullOrEmpty() || name.isNullOrEmpty()) {
             pending.success(false)
             return
         }
         executor.execute {
-            val attempt = renameVideoSync(path, name)
+            val attempt = renameVideoSync(id, path, name)
             mainHandler.post {
                 pending.success(attempt.kind == RenameKind.success)
             }

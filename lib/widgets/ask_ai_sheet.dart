@@ -103,7 +103,14 @@ class _AskAiSheetState extends State<AskAiSheet> {
       _answerModel = null;
       _error = null;
     });
-    final result = await askMovieAi(systemPrompt: _systemPrompt(), question: q);
+    final result = await askMovieAi(
+      systemPrompt: _systemPrompt(),
+      question: q,
+      movieTitle: widget.movie.title,
+      movieYear: widget.movie.year,
+      movieRating: widget.movie.rating,
+      movieOverview: widget.movie.overview,
+    );
     if (!mounted || token != _askToken) return;
     setState(() {
       _asking = false;
@@ -114,12 +121,13 @@ class _AskAiSheetState extends State<AskAiSheet> {
             : result.error;
       } else {
         _answer = result.text;
-        _answerModel = aiModel;
+        _answerModel = result.local ? 'Max AI' : aiModel;
         final prefs = SharedPreferences.getInstance();
         prefs.then((p) {
           p.setString('movie_ai_${widget.movie.id}_last_q', q);
           p.setString('movie_ai_${widget.movie.id}_last_a', result.text);
-          p.setString('movie_ai_${widget.movie.id}_last_m', aiModel);
+          p.setString(
+              'movie_ai_${widget.movie.id}_last_m', _answerModel ?? aiModel);
         });
       }
     });

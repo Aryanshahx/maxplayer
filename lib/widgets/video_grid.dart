@@ -526,7 +526,8 @@ class _VideoGridState extends State<VideoGrid> {
       }
       final resume = ResumeStore();
       final saved = await resume.readMs(path);
-      final renamed = await NativeBridge.renameVideo(path, newName);
+      final renamed = await NativeBridge.renameVideo(
+          id: a.id, path: path, newName: newName);
       if (!renamed) {
         throw const FileSystemException('Rename declined by the platform');
       }

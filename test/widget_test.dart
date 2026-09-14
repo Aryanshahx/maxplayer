@@ -22,6 +22,8 @@ import 'package:maxplayer/utils/srt.dart';
 import 'package:maxplayer/utils/tmdb.dart';
 import 'package:maxplayer/utils/tmdb_image.dart';
 import 'package:maxplayer/utils/video_zoom.dart';
+import 'package:maxplayer/utils/karaoke.dart';
+import 'package:maxplayer/utils/ai.dart' show smartLocalMovieAnswer;
 import 'package:maxplayer/services/recommendations.dart';
 import 'package:maxplayer/services/ai_suggest.dart';
 import 'package:maxplayer/utils/movie_match.dart';
@@ -924,6 +926,123 @@ plain-list-url.mp4
       expect(isVideoFile('song.mp3'), isFalse);
       expect(isVideoFile('photo.jpg'), isFalse);
       expect(isVideoFile('notes.txt'), isFalse);
+    });
+  });
+
+  group('karaokeWordIndex (word highlight)', () {
+    const cue = SrtCue(1000, 5000, 'one two three');
+
+    test('first word at cue start', () {
+      expect(karaokeWordIndex(cue, 1000), 0);
+    });
+
+    test('middle word around the midpoint', () {
+      expect(karaokeWordIndex(cue, 3000), 1);
+    });
+
+    test('last word near the end', () {
+      expect(karaokeWordIndex(cue, 4999), 2);
+    });
+
+    test('clamps before start / after end', () {
+      expect(karaokeWordIndex(cue, 0), 0);
+      expect(karaokeWordIndex(cue, 9000), 2);
+    });
+
+    test('empty text -> -1', () {
+      expect(karaokeWordIndex(const SrtCue(0, 1000, '  '), 500), -1);
+    });
+  });
+
+  group('karaokeActiveCue (cue selection)', () {
+    final cues = [
+      const SrtCue(0, 500, 'first'),
+      const SrtCue(600, 2000, '[Music]'),
+      const SrtCue(2100, 3000, 'second'),
+    ];
+
+    test('picks the last started cue within its window', () {
+      expect(karaokeActiveCue(cues, 2500)?.text, 'second');
+    });
+
+    test('music-only captions are skipped', () {
+      // at 1500 only the [Music] cue is active -> nothing to show
+      expect(karaokeActiveCue(cues, 1500), isNull);
+    });
+
+    test('trailing 600 ms grace avoids flicker', () {
+      expect(karaokeActiveCue(cues, 3200)?.text, 'second');
+      expect(karaokeActiveCue(cues, 3700), isNull);
+    });
+  });
+
+  group('karaokeCueAt (overlay priority)', () {
+    final sidecar = [const SrtCue(0, 2000, 'sidecar line')];
+
+    test('live line wins while it is current', () {
+      final live = SrtCue(500, 1500, 'live line');
+      expect(karaokeCueAt(live, sidecar, 1200)?.text, 'live line');
+    });
+
+    test('falls back to sidecar when the live line ends', () {
+      final live = SrtCue(500, 1500, 'live line');
+      expect(karaokeCueAt(live, sidecar, 2200)?.text, 'sidecar line');
+    });
+
+    test('null when nothing is active', () {
+      expect(karaokeCueAt(null, sidecar, 99999), isNull);
+      expect(karaokeCueAt(null, null, 0), isNull);
+    });
+  });
+
+  group('smartLocalMovieAnswer (offline Ask AI fallback)', () {
+    const title = 'Test Movie';
+    const overview = 'A hero rises. A villain falls. The city is saved.';
+
+    test('worth-watching question cites the TMDB rating', () {
+      final a = smartLocalMovieAnswer(
+        title: title,
+        year: 2020,
+        rating: 8.2,
+        overview: overview,
+        question: 'Is this movie worth watching?',
+      );
+      expect(a, contains('worth watching'));
+      expect(a, contains('8.2/10'));
+    });
+
+    test('plot question returns the first three sentences', () {
+      final a = smartLocalMovieAnswer(
+        title: title,
+        year: 2020,
+        rating: 8.2,
+        overview: overview,
+        question: 'Explain the story in 3 lines.',
+      );
+      expect(a, contains('A hero rises. A villain falls. The city is saved.'));
+    });
+
+    test('rating question returns the score', () {
+      final a = smartLocalMovieAnswer(
+        title: title,
+        year: 2020,
+        rating: 6.5,
+        overview: overview,
+        question: 'What is the TMDB rating?',
+      );
+      expect(a, contains('6.5/10'));
+    });
+
+    test('never returns an empty or internet-error answer', () {
+      final a = smartLocalMovieAnswer(
+        title: title,
+        year: 2020,
+        rating: 6.5,
+        overview: overview,
+        question: 'tell me about the ending please',
+      );
+      expect(a, isNotEmpty);
+      expect(a.contains('No internet'), isFalse);
     });
   });
 }
