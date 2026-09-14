@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import '../services/native_bridge.dart';
 import '../services/recommendations.dart';
 import '../theme.dart';
 import '../utils/config.dart';
@@ -55,6 +57,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   bool _loadingMore = false;
   String? _error;
   bool _keyMissing = false;
+  bool _voiceSearching = false;
 
   // Chain page loads after each page lands until the grid fills the
   // viewport OR we hit the safety cap — then the normal scroll listener at
@@ -309,13 +312,36 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     _openMovie(pick);
   }
 
-  void _startVoiceSearch() {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(const SnackBar(
-        content: Text('Voice search is not available in this build'),
-        duration: Duration(milliseconds: 1800),
-      ));
+  /// Voice search — asks for the microphone first (so it also shows under
+  /// App info), then launches the system Google speech-recognition dialog
+  /// and populates the search bar with the recognised query (old app's
+  /// behavior).
+  Future<void> _startVoiceSearch() async {
+    if (_voiceSearching) return;
+    final mic = await Permission.microphone.request();
+    if (!mounted) return;
+    if (!mic.isGranted) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Microphone needed for voice search'),
+            duration: Duration(milliseconds: 1800),
+          ),
+        );
+      return;
+    }
+    setState(() => _voiceSearching = true);
+    final query = await NativeBridge.launchSystemVoiceSearch();
+    if (!mounted) return;
+    setState(() => _voiceSearching = false);
+    // null/empty = the user cancelled the system speech dialog (or nothing
+    // was recognised) — just do nothing, like the old app. The old
+    // "Speech recognition is unavailable…" snack was misleading: it fired
+    // whenever the in-app recognizer silently errored or the user cancelled.
+    if (query == null || query.isEmpty) return;
+    _searchCtrl.text = query;
+    _onSearchChanged(query);
   }
 
   @override
@@ -374,10 +400,19 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                               },
                             ),
                           IconButton(
-                            icon: Icon(Icons.mic_none_outlined,
-                                color: AppColors.accent, size: 20),
+                            icon: _voiceSearching
+                                ? SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppColors.accent,
+                                    ),
+                                  )
+                                : Icon(Icons.mic_none_outlined,
+                                    color: AppColors.accent, size: 20),
                             tooltip: 'Voice search',
-                            onPressed: _startVoiceSearch,
+                            onPressed: _voiceSearching ? null : _startVoiceSearch,
                           ),
                         ],
                       ),
@@ -685,10 +720,8 @@ class _SetupNote extends StatelessWidget {
                 size: 44, color: Colors.white.withValues(alpha: 0.3)),
             const SizedBox(height: 14),
             const Text(
-              'Discover starts in the store build.\n\n'
-              '(Developer note: pass the TMDB token via\n'
-              '--dart-define=TMDB_API_KEY=... - see README. '
-              'Everything else in the app works without it.)',
+              'Discover could not load right now.\n\n'
+              'Check your internet connection, then pull down to retry.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white54, height: 1.5),
             ),

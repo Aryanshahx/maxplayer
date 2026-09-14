@@ -361,13 +361,14 @@ class MainActivity : FlutterFragmentActivity() {
                     }
                 }
 
+                // Voice search: in-app SpeechRecognizer first (works without a
+                // separate voice-input activity), system dialog as fallback —
+                // the old app's exact behaviour.
                 // Voice search (Discover mic): the old app launches the SYSTEM
                 // speech dialog here (RecognizerIntent) — far more reliable
                 // than the in-app recognizer, which silently errors on many
-                // devices (no on-device language pack, recognition-service
-                // hiccups) and used to leave the user staring at
-                // "Speech recognition is unavailable". The in-app
-                // SpeechRecognizer stays available separately via
+                // devices and produced "Speech recognition is unavailable".
+                // The in-app SpeechRecognizer stays available separately via
                 // `startVoiceSearch`, exactly like the old app.
                 "launchSystemVoiceSearch" -> {
                     launchSystemSpeechIntent(result)
