@@ -1,4 +1,4 @@
-package com.maxplayer.maxplayer
+package com.hypertechlabs.maxplayer
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -6,7 +6,7 @@ import android.content.Intent
 
 class PipActionReceiver : BroadcastReceiver() {
     companion object {
-        const val ACTION_TOGGLE = "com.maxplayer.maxplayer.PIP_TOGGLE"
+        const val ACTION_TOGGLE = "com.hypertechlabs.maxplayer.PIP_TOGGLE"
         private var activity: MainActivity? = null
 
         fun bind(mainActivity: MainActivity) {

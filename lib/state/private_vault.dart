@@ -20,7 +20,7 @@ class PrivateVault {
   /// Legacy hardcoded location (kept only as a fallback for hosts where the
   /// native side can't provide the framework directory).
   static const String vaultDirPath =
-      '/storage/emulated/0/Android/data/com.maxplayer.maxplayer/files/Private';
+      '/storage/emulated/0/Android/data/com.hypertechlabs.maxplayer/files/Private';
 
   /// Videos moved OUT of the vault land here.
   static const String unhideDirPath = '/storage/emulated/0/Movies';

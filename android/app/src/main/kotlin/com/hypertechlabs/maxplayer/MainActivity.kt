@@ -1,4 +1,4 @@
-package com.maxplayer.maxplayer
+package com.hypertechlabs.maxplayer
 
 import android.app.PictureInPictureParams
 import android.app.PendingIntent
