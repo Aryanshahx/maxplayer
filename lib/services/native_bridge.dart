@@ -286,6 +286,19 @@ class NativeBridge {
     }
   }
 
+  /// v31: on-device facts for the About → Diagnostics sheet (support).
+  static Future<Map<String, dynamic>> diagnostics() async {
+    try {
+      final raw = await _nativeChannel.invokeMethod<Map<Object?, Object?>>(
+        'diagnostics',
+      );
+      if (raw == null) return const {};
+      return raw.map((k, v) => MapEntry(k.toString(), v));
+    } catch (_) {
+      return const {};
+    }
+  }
+
   /// Requests the Android 13+ POST_NOTIFICATIONS grant (no-op below API 33
   /// or on non-Android hosts). Returns true when notifications may post.
   static Future<bool> ensureNotificationsAllowed() async {

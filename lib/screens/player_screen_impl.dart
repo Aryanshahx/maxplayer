@@ -1952,6 +1952,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
       unawaited(WakelockPlus.disable());
+      // v31: belt-and-braces — re-assert the foreground keep-alive so the
+      // audio + media notification survive the swipe-away.
+      if (_player.state.playing) {
+        unawaited(_syncBackgroundAudio(true));
+      }
     } else if (state == AppLifecycleState.resumed &&
         _player.state.playing) {
       unawaited(WakelockPlus.enable());

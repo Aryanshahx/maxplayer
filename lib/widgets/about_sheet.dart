@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app_info.dart';
+import '../services/native_bridge.dart';
 import '../theme.dart';
 import '../utils/privacy_policy.dart';
 
@@ -27,6 +29,21 @@ class AboutSheet extends StatelessWidget {
         builder: (context, controller) =>
             AboutSheet(scrollController: controller),
       ),
+    );
+  }
+
+  /// v31: reads live native state (notification grant, keep-alive service,
+  /// cached engine, continue-watching store) so background-playback and
+  /// notification issues can be diagnosed on-device without guesswork.
+  static Future<void> _showDiagnostics(BuildContext context) {
+    return showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF101018),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const _DiagnosticsSheet(),
     );
   }
 
@@ -168,6 +185,17 @@ class AboutSheet extends StatelessWidget {
             ),
           ),
         ),
+        Center(
+          child: TextButton.icon(
+            onPressed: () => _showDiagnostics(context),
+            icon: const Icon(Icons.bug_report_outlined, size: 16),
+            label: const Text('System diagnostics'),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white54,
+              textStyle: const TextStyle(fontSize: 12.5),
+            ),
+          ),
+        ),
         const Center(
           child: Text(
             'Version $kAppVersion',
@@ -238,3 +266,166 @@ const List<(String, String)> _features = [
     'Continuously improved based on user feedback and evolving technology.'
   ),
 ];
+
+/// v31: live native-state readout for background-audio / notification
+/// issues. Tap-to-copy so the report can be shared with support.
+class _DiagnosticsSheet extends StatefulWidget {
+  const _DiagnosticsSheet();
+
+  @override
+  State<_DiagnosticsSheet> createState() => _DiagnosticsSheetState();
+}
+
+class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
+  Map<String, dynamic>? _data;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final data = await NativeBridge.diagnostics();
+    if (!mounted) return;
+    setState(() {
+      _data = data;
+      _loading = false;
+    });
+  }
+
+  String _fmt(dynamic v) {
+    if (v == null) return '–';
+    if (v is bool) return v ? 'YES' : 'NO';
+    return v.toString();
+  }
+
+  String _report() {
+    final b = StringBuffer()..writeln('Max Player $kAppVersion — diagnostics');
+    (_data ?? const {}).forEach((k, v) => b.writeln('$k: ${_fmt(v)}'));
+    return b.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = _data ?? const <String, dynamic>{};
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: const BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.all(Radius.circular(2)),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              const Icon(Icons.bug_report_outlined,
+                  color: Colors.white70, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'System diagnostics',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: _loading
+                    ? null
+                    : () async {
+                        await Clipboard.setData(
+                            ClipboardData(text: _report()));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Diagnostics copied')),
+                          );
+                        }
+                      },
+                icon: const Icon(Icons.copy, size: 15),
+                label: const Text('Copy'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white70,
+                  textStyle: const TextStyle(fontSize: 12.5),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Reads live on-device state. Share this (Copy → paste) if '
+            'background audio or notifications misbehave.',
+            style: TextStyle(color: Colors.white38, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          if (_loading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    _row('App version', kAppVersion),
+                    for (final k in d.keys) _row(k, _fmt(d[k])),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(String label, String value) {
+    final interesting = label == 'notificationsGranted' ||
+        label == 'serviceRunning' ||
+        label == 'engineCached';
+    final bad = interesting && value == 'NO';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 170,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white54, fontSize: 12.5),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: bad
+                    ? const Color(0xFFFF8A80)
+                    : (interesting
+                        ? const Color(0xFF7CE7A8)
+                        : Colors.white70),
+                fontSize: 12.5,
+                fontWeight: interesting ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

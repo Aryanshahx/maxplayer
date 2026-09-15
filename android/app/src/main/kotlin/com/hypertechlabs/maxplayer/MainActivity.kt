@@ -338,6 +338,34 @@ class MainActivity : FlutterFragmentActivity() {
                     result.success(path)
                 }
 
+                "diagnostics" -> {
+                    // v31: on-device facts for support/debugging.
+                    val granted = if (Build.VERSION.SDK_INT >=
+                        Build.VERSION_CODES.TIRAMISU
+                    ) {
+                        checkSelfPermission(
+                            android.Manifest.permission.POST_NOTIFICATIONS,
+                        ) == PackageManager.PERMISSION_GRANTED
+                    } else {
+                        true
+                    }
+                    result.success(
+                        hashMapOf(
+                            "sdkInt" to Build.VERSION.SDK_INT,
+                            "manufacturer" to Build.MANUFACTURER,
+                            "model" to Build.MODEL,
+                            "notificationsGranted" to granted,
+                            "serviceRunning" to PlaybackKeepAliveService.isRunning(),
+                            "engineCached" to (engine != null),
+                            "activityAlive" to true,
+                            "continueTitle" to (continueTitle ?: ""),
+                            "continuePath" to (continuePath ?: ""),
+                            "continuePosMs" to continuePosMs,
+                            "pendingContinuePath" to (pendingContinuePath ?: ""),
+                        ),
+                    )
+                }
+
                 "openCastSettings" -> {
                     try {
                         startActivity(Intent(Settings.ACTION_CAST_SETTINGS))

@@ -100,6 +100,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
       );
     }
     if (!mounted) return;
+    // v31: request the Android 13+ notification grant EARLY, on the home
+    // screen (a normal dialog context) — the continue-watching and
+    // playback notifications can't show without it.
+    unawaited(NativeBridge.ensureNotificationsAllowed());
     // v30 cold-start deep link: the app was opened from a "Continue
     // watching" notification — resume that video (the player's own
     // resume prompt offers the exact saved position).
