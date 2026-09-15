@@ -286,6 +286,48 @@ class NativeBridge {
     }
   }
 
+  /// v32 (old-app parity): starts/updates the foreground MEDIA service +
+  /// MediaSession notification — the device's own media controls (shade,
+  /// lock screen, Android 11+ media panel) take over, with Previous /
+  /// Play-Pause / Next / Stop buttons and the video thumbnail. The service
+  /// also owns audio focus + a partial wake lock, so audio keeps playing
+  /// in another app and with the screen off.
+  static Future<void> showNowPlaying({
+    required String title,
+    required String subtitle,
+    required bool isPlaying,
+    required String path,
+    String? thumbnailPath,
+    required int positionMs,
+    required int durationMs,
+  }) async {
+    try {
+      await _nativeChannel.invokeMethod('nowPlayingShow', {
+        'title': title,
+        'subtitle': subtitle,
+        'isPlaying': isPlaying,
+        'path': path,
+        'thumbnailPath': thumbnailPath,
+        'positionMs': positionMs,
+        'durationMs': durationMs,
+      });
+    } catch (_) {}
+  }
+
+  /// Stops the media service and removes the now-playing notification.
+  static Future<void> cancelNowPlaying() async {
+    try {
+      await _nativeChannel.invokeMethod('nowPlayingCancel');
+    } catch (_) {}
+  }
+
+  /// CPU wake lock for background audio (old-app parity).
+  static Future<void> setWakeLock(bool enable) async {
+    try {
+      await _nativeChannel.invokeMethod('setWakeLock', {'enable': enable});
+    } catch (_) {}
+  }
+
   /// v31: on-device facts for the About → Diagnostics sheet (support).
   static Future<Map<String, dynamic>> diagnostics() async {
     try {
@@ -323,6 +365,11 @@ class NativeBridge {
   // -------------------------------------------------------------------------
   static void Function()? pipToggleListener;
 
+  /// v32: media-notification / MediaSession buttons (play_pause, next,
+  /// prev, stop) and seekbar — forwarded from the foreground service.
+  static void Function(String action)? mediaActionListener;
+  static void Function(Duration position)? mediaSeekListener;
+
   /// Deep link from the "Continue watching" notification on a WARM start
   /// (app process alive, tap re-launched the activity). Cold starts use
   /// [consumeContinueWatching] instead.
@@ -345,6 +392,16 @@ class NativeBridge {
       switch (call.method) {
         case 'pipToggle':
           pipToggleListener?.call();
+          break;
+        case 'onMediaAction':
+          final a = call.arguments;
+          if (a is String && a.isNotEmpty) mediaActionListener?.call(a);
+          break;
+        case 'onMediaSeek':
+          final ms = (call.arguments as num?)?.toInt();
+          if (ms != null) {
+            mediaSeekListener?.call(Duration(milliseconds: ms));
+          }
           break;
         case 'onContinueWatching':
           final args = call.arguments;

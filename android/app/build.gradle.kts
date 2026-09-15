@@ -96,6 +96,12 @@ dependencies {
     // suspend functions from Kotlin, so we need it explicitly at compile
     // time. Same version as the AAR's -> no conflict.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // v32 (old-app parity): NotificationCompat.MediaStyle bound to the
+    // MediaSession token — puts the REAL device media controls in the
+    // shade and on the lock screen (low-importance rows are hidden on
+    // MIUI/OneUI/ColorOS lock screens).
+    implementation("androidx.media:media:1.7.0")
+    implementation("androidx.core:core:1.13.1")
 }
 
 kotlin {

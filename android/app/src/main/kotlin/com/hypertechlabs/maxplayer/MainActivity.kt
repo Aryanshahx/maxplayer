@@ -32,6 +32,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -216,6 +217,15 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // v32 (old-app parity): all notification channels exist before any
+        // feature posts one; media-service actions route to Dart.
+        Notifications.ensureChannels(applicationContext)
+        MediaPlaybackService.onMediaAction = { action ->
+            mainHandler.post { methodChannel?.invokeMethod("onMediaAction", action) }
+        }
+        MediaPlaybackService.onMediaSeek = { posMs ->
+            mainHandler.post { methodChannel?.invokeMethod("onMediaSeek", posMs) }
+        }
         captureContinueDeepLink(intent)
     }
 
@@ -235,11 +245,23 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
-    /** Remembers a "Continue watching" notification tap (if any). */
+    /** Remembers a notification-tap deep link (if any). */
     private fun captureContinueDeepLink(intent: Intent?) {
-        val path = intent?.getStringExtra(EXTRA_CONTINUE_PATH) ?: return
-        intent.removeExtra(EXTRA_CONTINUE_PATH)
-        pendingContinuePath = path
+        if (intent == null) return
+        val path = intent.getStringExtra(EXTRA_CONTINUE_PATH)
+        if (path != null) {
+            intent.removeExtra(EXTRA_CONTINUE_PATH)
+            pendingContinuePath = path
+            return
+        }
+        // v32: old-app payload scheme ("video:<path>").
+        val payload = intent.getStringExtra(Notifications.EXTRA_PAYLOAD)
+        if (!payload.isNullOrEmpty()) {
+            intent.removeExtra(Notifications.EXTRA_PAYLOAD)
+            if (payload.startsWith("video:")) {
+                pendingContinuePath = payload.removePrefix("video:")
+            }
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -291,24 +313,32 @@ class MainActivity : FlutterFragmentActivity() {
                 "updatePipPlaying" -> {
                     pipPlaying = call.argument<Boolean>("playing") ?: true
                     updatePipParams()
-                    // Keep the background media notification's play/pause
-                    // button in sync with the player (v29).
-                    PlaybackKeepAliveService.updatePlaying(this, pipPlaying)
                     result.success(true)
                 }
 
-                "setBackgroundAudio" -> {
-                    val enabled = call.argument<Boolean>("enabled") ?: false
-                    val playing = call.argument<Boolean>("playing") ?: enabled
-                    if (enabled) {
-                        PlaybackKeepAliveService.start(
-                            this,
-                            call.argument<String>("title") ?: "MaxPlayer",
-                            playing,
-                        )
-                    } else {
-                        PlaybackKeepAliveService.stop(this)
-                    }
+                "nowPlayingShow" -> {
+                    // v32 (old-app parity): foreground media service +
+                    // MediaSession notification (device media controls).
+                    MediaPlaybackService.startOrUpdate(
+                        applicationContext,
+                        call.argument<String>("title") ?: "Max Player",
+                        call.argument<String>("subtitle") ?: "",
+                        call.argument<Boolean>("isPlaying") ?: true,
+                        call.argument<String>("path") ?: "",
+                        call.argument<String>("thumbnailPath"),
+                        call.argument<Number>("positionMs")?.toLong() ?: 0L,
+                        call.argument<Number>("durationMs")?.toLong() ?: 0L,
+                    )
+                    result.success(MediaPlaybackService.NOTIF_ID)
+                }
+
+                "nowPlayingCancel" -> {
+                    MediaPlaybackService.stop(applicationContext)
+                    result.success(true)
+                }
+
+                "setWakeLock" -> {
+                    setWakeLock(call.argument<Boolean>("enable") ?: false)
                     result.success(true)
                 }
 
@@ -355,7 +385,7 @@ class MainActivity : FlutterFragmentActivity() {
                             "manufacturer" to Build.MANUFACTURER,
                             "model" to Build.MODEL,
                             "notificationsGranted" to granted,
-                            "serviceRunning" to PlaybackKeepAliveService.isRunning(),
+                            "serviceRunning" to MediaPlaybackService.isRunning,
                             "engineCached" to (engine != null),
                             "activityAlive" to true,
                             "continueTitle" to (continueTitle ?: ""),
@@ -1092,6 +1122,34 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     // ---------------------------------------------------------------------------
+    // v32 (old-app parity): CPU wake lock for background audio. The media
+    // service holds its own lock while it runs; this one covers the
+    // Dart-driven path so playback never starves when the screen is off.
+    // ---------------------------------------------------------------------------
+
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    private fun setWakeLock(enable: Boolean) {
+        try {
+            if (enable) {
+                if (wakeLock == null) {
+                    val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                    wakeLock = pm?.newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK,
+                        "MaxPlayer::BackgroundAudioLock",
+                    )
+                }
+                if (wakeLock?.isHeld == false) {
+                    wakeLock?.acquire(24 * 60 * 60 * 1000L)
+                }
+            } else {
+                if (wakeLock?.isHeld == true) wakeLock?.release()
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    // ---------------------------------------------------------------------------
     // Sensor-driven rotation (MX Player / VLC style): the player rotates by
     // accelerometer regardless of the phone's system auto-rotate switch.
     // ---------------------------------------------------------------------------
@@ -1128,6 +1186,10 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onDestroy() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Throwable) {
+        }
         rotateLocked = false
         rotateListener?.disable()
         rotateListener = null
@@ -1320,6 +1382,11 @@ class MainActivity : FlutterFragmentActivity() {
      * front or cold-starts the app — carrying the video path so the app
      * can resume exactly where it stopped.
      */
+    /**
+     * v32: "Continue watching" notification via the old-app notification
+     * foundation — tapping carries the video path back into the app as a
+     * "video:<path>" payload so playback resumes exactly where it stopped.
+     */
     private fun postContinueWatching(title: String, body: String, path: String?) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -1330,49 +1397,16 @@ class MainActivity : FlutterFragmentActivity() {
                 // show. Dart requests the grant while the player is open.
                 return
             }
-            val nm = getSystemService(NotificationManager::class.java) ?: return
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                nm.createNotificationChannel(
-                    NotificationChannel(
-                        CHANNEL_CONTINUE,
-                        "Continue watching",
-                        NotificationManager.IMPORTANCE_DEFAULT,
-                    ),
-                )
-            }
-            val base = packageManager.getLaunchIntentForPackage(packageName)
-                ?: Intent(this, MainActivity::class.java)
-            base.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP,
+            Notifications.show(
+                applicationContext,
+                Notifications.CHANNEL_CONTINUE,
+                NOTIFY_CONTINUE_ID,
+                title,
+                body,
+                if (path.isNullOrEmpty()) null else "video:$path",
+                false,
+                null,
             )
-            if (!path.isNullOrEmpty()) base.putExtra(EXTRA_CONTINUE_PATH, path)
-            val openIntent = PendingIntent.getActivity(
-                this,
-                REQ_CONTINUE_OPEN,
-                base,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-            val notification: Notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Notification.Builder(this, CHANNEL_CONTINUE)
-                    .setSmallIcon(R.drawable.ic_stat_notify)
-                    .setContentTitle(title)
-                    .setContentText(body)
-                    .setContentIntent(openIntent)
-                    .setAutoCancel(true)
-                    .build()
-            } else {
-                @Suppress("DEPRECATION")
-                Notification.Builder(this)
-                    .setSmallIcon(R.drawable.ic_stat_notify)
-                    .setContentTitle(title)
-                    .setContentText(body)
-                    .setContentIntent(openIntent)
-                    .setAutoCancel(true)
-                    .build()
-            }
-            nm.notify(NOTIFY_CONTINUE_ID, notification)
         } catch (_: Throwable) {
             // Best effort — a notification must never crash playback.
         }

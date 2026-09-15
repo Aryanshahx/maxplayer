@@ -200,6 +200,26 @@ class _PlayerScreenState extends State<PlayerScreen>
     NativeBridge.pipToggleListener = () {
       unawaited(_player.playOrPause());
     };
+    // v32: buttons on the now-playing notification, the device's media
+    // panel and the lock screen (old-app parity).
+    NativeBridge.mediaActionListener = (action) {
+      switch (action) {
+        case 'play_pause':
+          unawaited(_player.playOrPause());
+          break;
+        case 'next':
+          unawaited(_playNext());
+          break;
+        case 'prev':
+          unawaited(_playPrevious());
+          break;
+        case 'stop':
+          unawaited(_player.pause());
+          unawaited(NativeBridge.cancelNowPlaying());
+          break;
+      }
+    };
+    NativeBridge.mediaSeekListener = (pos) => unawaited(_player.seek(pos));
     unawaited(_settings.load().then((_) {
       if (!mounted) return;
       // Start the session in the fit mode chosen in Settings (default: Fit).
@@ -221,7 +241,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         unawaited(_savePosition());
         _pushContinueWatching();
       }
-      unawaited(_syncBackgroundAudio(playing));
+      unawaited(_syncNowPlaying());
       unawaited(_native.invokeMethod('updatePipPlaying', {'playing': playing}));
       if (mounted) setState(() {});
     });
@@ -243,6 +263,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       unawaited(_savePosition());
+      // v32: refresh the media notification's progress bar + position.
+      if (_settings.backgroundAudio && _player.state.playing) {
+        unawaited(_syncNowPlaying());
+      }
       // v30: keep the native "Continue watching" state fresh so the
       // notification posted on app close knows where we stopped.
       _pushContinueWatching();
@@ -255,19 +279,49 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
-  Future<void> _syncBackgroundAudio(bool playing) async {
-    if (!_settings.backgroundAudio) {
+  /// v32 (old-app parity): syncs the foreground MEDIA service + device
+  /// media controls (Previous / Play-Pause / Next / Stop, thumbnail,
+  /// progress) with the player. The service owns audio focus + a partial
+  /// wake lock — so audio keeps playing in another app and screen-off,
+  /// exactly like the old app.
+  Future<void> _syncNowPlaying() async {
+    if (!_settings.backgroundAudio || _failed || _currentPath.isEmpty) {
       try {
-        await _native.invokeMethod('setBackgroundAudio', {'enabled': false});
+        await NativeBridge.cancelNowPlaying();
+        await NativeBridge.setWakeLock(false);
       } catch (_) {}
       return;
     }
+    final playing = _player.state.playing;
     try {
-      await _native.invokeMethod('setBackgroundAudio', {
-        'enabled': playing,
-        'title': _title,
-      });
+      await NativeBridge.showNowPlaying(
+        title: _title,
+        subtitle: playing ? 'Playing' : 'Paused',
+        isPlaying: playing,
+        path: _currentPath,
+        thumbnailPath: await _notificationThumb(),
+        positionMs: _player.state.position.inMilliseconds,
+        durationMs: _player.state.duration.inMilliseconds,
+      );
+      await NativeBridge.setWakeLock(playing);
     } catch (_) {}
+  }
+
+  /// Cached video thumbnail for the media notification's large icon.
+  String? _notifThumbPath;
+  String? _notifThumbFor;
+
+  Future<String?> _notificationThumb() async {
+    if (_currentPath.isEmpty || _currentPath.startsWith('http')) return null;
+    if (_notifThumbFor == _currentPath) return _notifThumbPath;
+    try {
+      final t = await NativeBridge.videoThumbnail(_currentPath);
+      _notifThumbFor = _currentPath;
+      _notifThumbPath = t;
+      return t;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _open(String path, {required bool offerResume}) async {
@@ -281,6 +335,12 @@ class _PlayerScreenState extends State<PlayerScreen>
       // software gain at 100% for the 0..100% range — the DEVICE media
       // volume owns that, MX Player / VLC style, like the old app).
       await _mpvSet('volume-max', '200');
+      // v32: mpv's AudioTrack output pauses itself on ANY audio-focus loss,
+      // which stopped background audio the moment another app opened. The
+      // native media service now owns audio focus exactly like the old app
+      // (pause only on permanent loss, resume on gain) — mpv must not
+      // second-guess it. (Older bundled mpv builds ignore unknown options.)
+      unawaited(_mpvSet('audiotrack-pause-on-focus-loss', 'no'));
       await _mpvSet('volume', '100');
       // Old-player rule: the swipe drives the DEVICE media volume, so sync
       // the tracked level from the real device volume on open (an audible
@@ -1921,6 +1981,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (NativeBridge.pipToggleListener != null) {
       NativeBridge.pipToggleListener = null;
     }
+    NativeBridge.mediaActionListener = null;
+    NativeBridge.mediaSeekListener = null;
     if (_settingsListener != null) _settings.removeListener(_settingsListener!);
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_native.invokeMethod('disableSensorRotate'));
@@ -1933,7 +1995,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     // Stop the background keep-alive/media notification: leaving the
     // player screen ends playback, so the shade must not keep saying
     // "Playing in background".
-    unawaited(_syncBackgroundAudio(false));
+    unawaited(NativeBridge.cancelNowPlaying());
+    unawaited(NativeBridge.setWakeLock(false));
     unawaited(_player.dispose());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
@@ -1955,7 +2018,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       // v31: belt-and-braces — re-assert the foreground keep-alive so the
       // audio + media notification survive the swipe-away.
       if (_player.state.playing) {
-        unawaited(_syncBackgroundAudio(true));
+        unawaited(_syncNowPlaying());
       }
     } else if (state == AppLifecycleState.resumed &&
         _player.state.playing) {

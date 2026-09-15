@@ -542,10 +542,11 @@ const List<_Item> _smartItems = [
   _Item(
     Icons.music_note_outlined,
     'Player in the notification shade',
-    'While a video plays, Android\'s standard media controls show its '
-        'title with play/pause — pause and resume without opening the app. '
-        'With Background audio on, the audio keeps playing even after you '
-        'swipe the app away.',
+    'While a video plays, the device\'s own media controls appear (shade, '
+        'lock screen, media panel) with the video thumbnail, progress bar '
+        'and Previous / Play-Pause / Next / Stop buttons. With Background '
+        'audio on, the audio keeps playing in another app, with the screen '
+        'off, and even after you swipe the app away.',
   ),
 ];
 
