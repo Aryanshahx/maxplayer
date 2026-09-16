@@ -352,10 +352,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       _volumePercent = (real * 100).clamp(0.0, 100.0);
       _muted = _volumePercent <= 0;
-      // Keep mpv's gain in sync with the tracked level so loudness on
-      // open matches what the indicator shows (mpv is the primary
-      // loudness control now).
-      await _mpvSet('volume', _volumePercent.toStringAsFixed(1));
       if (mounted) setState(() => _ready = true);
       unawaited(_ensureThumbStrip(path));
       unawaited(_applyPerformanceMode());
@@ -373,7 +369,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (platform != null) {
         await (platform as dynamic).setProperty(key, value);
       }
-    } catch (_) {}
+    } catch (e) {
+      // Never swallow silently: a dead property path is exactly what made
+      // volume feel stuck with no trace.
+      CrashLog.error('player.mpv_set_failed', e, {'key': key, 'value': value});
+    }
   }
 
   Future<String?> _mpvGet(String key) async {
@@ -693,21 +693,25 @@ class _PlayerScreenState extends State<PlayerScreen>
     final v = value.clamp(0.0, maxVolume).toDouble();
     _volumePercent = v;
     if (v > 0) _muted = false;
-    try {
-      // mpv's own gain is the PRIMARY loudness control — continuous over
-      // the full 0..200% range, immune to the STREAM_MUSIC step
-      // quantization (as few as ~7 steps) that OEM skins like
-      // Realme/ColorOS apply, which made the swipe feel stuck at
-      // 43-44%. The device media volume is set in parallel, best-effort,
-      // so the system volume UI follows along.
-      await _mpvSet('volume', v.toStringAsFixed(1));
-      unawaited(NativeBridge.setMediaVolume((v / 100.0).clamp(0.0, 1.0)));
-    } catch (e) {
-      CrashLog.error('player.volume_failed', e, {'value': v});
-      // Last resort: mpv software volume (always works).
-      try {
-        await _mpvSet('volume', v.clamp(0.0, 200.0).toStringAsFixed(1));
-      } catch (_) {}
+    // OLD-APP VOLUME MODEL (the one that works on-device): the DEVICE
+    // media volume (STREAM_MUSIC — what the phone's volume keys/UI show)
+    // is the loudness control for 0..100%. mpv's software gain stays at
+    // unity in that range and only lifts in the 100..200% boost region.
+    // Setting mpv gain AND device level together compounds into a double
+    // curve (50% swipe ~= 25% loudness) — that is exactly what made the
+    // swipe feel wrong, so they are kept strictly separate, as in the old
+    // app's media_player_state.setVolume.
+    final deviceOk =
+        await NativeBridge.setMediaVolume((v / 100.0).clamp(0.0, 1.0));
+    final mpvGain = v <= 100 ? 100.0 : v;
+    await _mpvSet('volume', mpvGain.toStringAsFixed(1));
+    if (!deviceOk) {
+      // Platform call failed outright (should be rare — Realme-style
+      // silent ignoring reports success). Drive mpv gain as a fallback so
+      // loudness still moves on every swipe point.
+      CrashLog.error('player.device_volume_rejected',
+          StateError('setMediaVolume returned false'), {'value': v});
+      await _mpvSet('volume', v.clamp(0.0, 200.0).toStringAsFixed(1));
     }
     if (mounted) setState(() {});
   }

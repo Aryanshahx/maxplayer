@@ -192,14 +192,29 @@ class NativeBridge {
     }
   }
 
-  /// Sets the DEVICE media (music-stream) volume. [value] is a 0..1 fraction.
-  static Future<void> setMediaVolume(double value) async {
+  /// Sets the DEVICE media (music-stream) volume. [value] is a 0..1
+  /// fraction. Returns false when the platform call could not be made
+  /// (the player then falls back to mpv gain so loudness still moves).
+  static Future<bool> setMediaVolume(double value) async {
     try {
-      await _nativeChannel.invokeMethod('setMediaVolume', {
+      final ok = await _nativeChannel.invokeMethod<bool>('setMediaVolume', {
         'value': value.clamp(0.0, 1.0),
       });
-    } catch (_) {}
+      if (ok == true) {
+        lastDeviceVolumeSet = value.clamp(0.0, 1.0);
+        lastDeviceVolumeSetAt = DateTime.now();
+      }
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
   }
+
+  /// Telemetry for the diagnostics sheet: the last volume the player asked
+  /// the device to apply (and when). Helps tell "swipe never fired" apart
+  /// from "OEM skin ignored the stream change".
+  static double? lastDeviceVolumeSet;
+  static DateTime? lastDeviceVolumeSetAt;
 
   /// Launches Android's speech recognition (in-app SpeechRecognizer first,
   /// system dialog as fallback) and returns the recognised query, or null on
@@ -335,7 +350,12 @@ class NativeBridge {
         'diagnostics',
       );
       if (raw == null) return const {};
-      return raw.map((k, v) => MapEntry(k.toString(), v));
+      final out = raw.map((k, v) => MapEntry(k.toString(), v));
+      out['lastVolumeSwipeTarget'] =
+          lastDeviceVolumeSet == null ? '-' : lastDeviceVolumeSet!.toStringAsFixed(2);
+      out['lastVolumeSwipeAt'] =
+          lastDeviceVolumeSetAt == null ? '-' : lastDeviceVolumeSetAt!.toIso8601String();
+      return out;
     } catch (_) {
       return const {};
     }

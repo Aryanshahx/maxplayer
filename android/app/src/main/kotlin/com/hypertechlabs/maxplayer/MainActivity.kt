@@ -379,9 +379,18 @@ class MainActivity : FlutterFragmentActivity() {
                     } else {
                         true
                     }
+                    val diagAm =
+                        getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    val devVolMax = diagAm.getStreamMaxVolume(
+                        AudioManager.STREAM_MUSIC,
+                    )
+                    val devVolCur = diagAm.getStreamVolume(
+                        AudioManager.STREAM_MUSIC,
+                    )
                     result.success(
                         hashMapOf(
                             "sdkInt" to Build.VERSION.SDK_INT,
+                            "deviceMediaVolume" to "$devVolCur/$devVolMax",
                             "manufacturer" to Build.MANUFACTURER,
                             "model" to Build.MODEL,
                             "notificationsGranted" to granted,
