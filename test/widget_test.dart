@@ -18,6 +18,7 @@ import 'package:maxplayer/utils/notifications.dart';
 import 'package:maxplayer/utils/resume.dart';
 import 'package:maxplayer/utils/settings.dart' show accentPalette, defaultAccentIndex;
 import 'package:maxplayer/utils/sha256.dart';
+import 'package:maxplayer/utils/volume.dart';
 import 'package:maxplayer/utils/sort.dart';
 import 'package:maxplayer/utils/srt.dart';
 import 'package:maxplayer/utils/tmdb.dart';
@@ -1105,4 +1106,32 @@ plain-list-url.mp4
       expect(seedWelcomeNotifications(existing, 1000), same(existing));
     });
   });
+
+  group('volume math (OEM stuck-volume fix)', () {
+    test('targetDeviceLevel mirrors the native rounding and clamps', () {
+      expect(targetDeviceLevel(0.75, 15), 11);
+      expect(targetDeviceLevel(1.0, 15), 15);
+      expect(targetDeviceLevel(0.0, 15), 0);
+      expect(targetDeviceLevel(1.5, 15), 15); // over-100 clamps to max
+      expect(targetDeviceLevel(-0.2, 15), 0);
+      expect(targetDeviceLevel(0.75, 0), 1); // degenerate max => 1 tick
+    });
+
+    test('deviceVolumeApplied distrusts the success flag', () {
+      // The Realme/ColorOS case: call throws nothing, yet the stream
+      // never moved -> must read as NOT applied so mpv gain covers it.
+      expect(deviceVolumeApplied(11, 11), isTrue);
+      expect(deviceVolumeApplied(11, 7), isFalse);
+      expect(deviceVolumeApplied(11, -1), isFalse);
+      expect(deviceVolumeApplied(0, 0), isTrue);
+    });
+
+    test('readbackFraction reports what the device really did', () {
+      expect(readbackFraction(7, 15), closeTo(7 / 15, 1e-9));
+      expect(readbackFraction(30, 15), 1.0); // over-max clamps
+      expect(readbackFraction(-3, 15), 0.0);
+      expect(readbackFraction(1, 0), 1.0);
+    });
+  });
 }
+

@@ -511,6 +511,14 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 "setMediaVolume" -> {
+                    // v1.0.8: NEVER trust the call's lack of exception as
+                    // success. On Realme UI / ColorOS / MIUI / OriginOS,
+                    // setStreamVolume with flags=0 can complete normally and
+                    // SECRETLY ignore the change — the swipe then appears to
+                    // do nothing ("stuck at device volume") while Dart never
+                    // engages its mpv-gain fallback because it believed the
+                    // true reply. We answer with the level read BACK from
+                    // the device; Dart decides success by target==readback.
                     try {
                         val v = (call.argument<Double>("value") ?: 0.75)
                             .coerceIn(0.0, 1.0)
@@ -518,14 +526,31 @@ class MainActivity : FlutterFragmentActivity() {
                             getSystemService(Context.AUDIO_SERVICE) as AudioManager
                         val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                             .coerceAtLeast(1)
+                        val target = (v * max).roundToInt().coerceIn(0, max)
                         am.setStreamVolume(
                             AudioManager.STREAM_MUSIC,
-                            (v * max).roundToInt().coerceIn(0, max),
+                            target,
                             0
                         )
-                        result.success(true)
+                        val readback =
+                            am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                        result.success(
+                            hashMapOf(
+                                "ok" to (readback == target),
+                                "target" to target,
+                                "readback" to readback,
+                                "max" to max,
+                            ),
+                        )
                     } catch (_: Exception) {
-                        result.success(false)
+                        result.success(
+                            hashMapOf(
+                                "ok" to false,
+                                "target" to -1,
+                                "readback" to -1,
+                                "max" to 1,
+                            ),
+                        )
                     }
                 }
 

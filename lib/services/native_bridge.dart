@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../utils/ai_subtitles.dart';
+import '../utils/volume.dart';
 
 /// Thin bridge to the Android side for the Drop 5 ports that need the
 /// platform: the system document picker (cloud import), the private-folder
@@ -195,16 +196,43 @@ class NativeBridge {
   /// Sets the DEVICE media (music-stream) volume. [value] is a 0..1
   /// fraction. Returns false when the platform call could not be made
   /// (the player then falls back to mpv gain so loudness still moves).
+  ///
+  /// v1.0.8: success now means the device ACTUALLY applied the level.
+  /// Several OEM skins (Realme UI, ColorOS, MIUI, OriginOS) swallow
+  /// `setStreamVolume` without throwing — a plain `true` from the native
+  /// side used to hide that, which is what made the volume swipe look
+  /// "stuck at device volume": the call lied and the mpv-gain fallback
+  /// never engaged. The native handler now read-backs the stream level;
+  /// both the modern Map reply ({ok, target, readback, max}) and the
+  /// legacy plain-bool reply from older APKs are understood.
   static Future<bool> setMediaVolume(double value) async {
+    final v = value.clamp(0.0, 1.0);
     try {
-      final ok = await _nativeChannel.invokeMethod<bool>('setMediaVolume', {
-        'value': value.clamp(0.0, 1.0),
+      final res =
+          await _nativeChannel.invokeMethod<Object?>('setMediaVolume', {
+        'value': v,
       });
-      if (ok == true) {
-        lastDeviceVolumeSet = value.clamp(0.0, 1.0);
+      bool ok;
+      if (res is Map) {
+        // Modern contract: trust only the read-back, not the success flag.
+        final max = (res['max'] as num?)?.toInt() ?? 1;
+        final target =
+            (res['target'] as num?)?.toInt() ?? targetDeviceLevel(v, max);
+        final readback = (res['readback'] as num?)?.toInt() ?? -1;
+        ok = deviceVolumeApplied(target, readback);
+        lastDeviceVolumeTarget = target;
+        lastDeviceVolumeReadback = readback;
+        lastDeviceVolumeMax = max;
+      } else {
+        // Legacy plain-bool reply (older native side). No read-back
+        // available, so the flag is the best signal there is.
+        ok = res == true;
+      }
+      if (ok) {
+        lastDeviceVolumeSet = v;
         lastDeviceVolumeSetAt = DateTime.now();
       }
-      return ok ?? false;
+      return ok;
     } catch (_) {
       return false;
     }
@@ -215,6 +243,15 @@ class NativeBridge {
   /// from "OEM skin ignored the stream change".
   static double? lastDeviceVolumeSet;
   static DateTime? lastDeviceVolumeSetAt;
+
+  /// Read-back telemetry from the modern setMediaVolume reply: what the
+  /// player asked for (target, in device ticks), what the device reported
+  /// having applied (readback), and the stream's tick max. When
+  /// [lastDeviceVolumeReadback] != [lastDeviceVolumeTarget] an OEM skin
+  /// swallowed the change and the player is driving mpv gain instead.
+  static int? lastDeviceVolumeTarget;
+  static int? lastDeviceVolumeReadback;
+  static int? lastDeviceVolumeMax;
 
   /// Launches Android's speech recognition (in-app SpeechRecognizer first,
   /// system dialog as fallback) and returns the recognised query, or null on
@@ -355,6 +392,12 @@ class NativeBridge {
           lastDeviceVolumeSet == null ? '-' : lastDeviceVolumeSet!.toStringAsFixed(2);
       out['lastVolumeSwipeAt'] =
           lastDeviceVolumeSetAt == null ? '-' : lastDeviceVolumeSetAt!.toIso8601String();
+      // '240/3' style: what we asked for vs what the device read back.
+      // Mismatch => OEM skin swallowed setStreamVolume; mpv gain covers it.
+      out['deviceVolumeTarget'] =
+          lastDeviceVolumeTarget == null ? '-' : '$lastDeviceVolumeTarget';
+      out['deviceVolumeReadback'] =
+          lastDeviceVolumeReadback == null ? '-' : '$lastDeviceVolumeReadback';
       return out;
     } catch (_) {
       return const {};
