@@ -352,6 +352,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       _volumePercent = (real * 100).clamp(0.0, 100.0);
       _muted = _volumePercent <= 0;
+      // Keep mpv's gain in sync with the tracked level so loudness on
+      // open matches what the indicator shows (mpv is the primary
+      // loudness control now).
+      await _mpvSet('volume', _volumePercent.toStringAsFixed(1));
       if (mounted) setState(() => _ready = true);
       unawaited(_ensureThumbStrip(path));
       unawaited(_applyPerformanceMode());
@@ -690,24 +694,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     _volumePercent = v;
     if (v > 0) _muted = false;
     try {
-      // Old-player volume model: 0..100% drives the DEVICE media volume
-      // (AudioManager STREAM_MUSIC — what the phone's volume keys show),
-      // exactly like the old app / MX Player. Only the 100..200% boost
-      // region lifts MPV's gain above unity. `volume-max` is set once at
-      // open; no per-tick property churn here.
-      await NativeBridge.setMediaVolume((v / 100.0).clamp(0.0, 1.0));
-      final mpvVolume = v <= 100 ? 100.0 : v;
-      await _mpvSet('volume', mpvVolume.toStringAsFixed(1));
-      // Readback guard: some Android builds ignore programmatic
-      // STREAM_MUSIC changes (or the volume keys' UI doesn't follow), which
-      // made the swipe feel "stuck". When the device level did not follow,
-      // drive mpv's gain instead so the swipe ALWAYS changes loudness.
-      if (v <= 100.0) {
-        final after = await NativeBridge.getMediaVolume();
-        if ((after - (v / 100.0)).abs() > 0.15) {
-          await _mpvSet('volume', v.toStringAsFixed(1));
-        }
-      }
+      // mpv's own gain is the PRIMARY loudness control — continuous over
+      // the full 0..200% range, immune to the STREAM_MUSIC step
+      // quantization (as few as ~7 steps) that OEM skins like
+      // Realme/ColorOS apply, which made the swipe feel stuck at
+      // 43-44%. The device media volume is set in parallel, best-effort,
+      // so the system volume UI follows along.
+      await _mpvSet('volume', v.toStringAsFixed(1));
+      unawaited(NativeBridge.setMediaVolume((v / 100.0).clamp(0.0, 1.0)));
     } catch (e) {
       CrashLog.error('player.volume_failed', e, {'value': v});
       // Last resort: mpv software volume (always works).
