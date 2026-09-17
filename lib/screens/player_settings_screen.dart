@@ -158,14 +158,6 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 ),
                 const _SectionHeader('Sound'),
                 _BoostToggleTile(s: s),
-                _SwitchTile(
-                  icon: Icons.headphones_outlined,
-                  label: 'Background audio',
-                  subtitle: 'Keep playing with the app minimized or the screen '
-                      'locked — notification shows play/pause/loop controls.',
-                  value: s.backgroundAudio,
-                  onChanged: s.setBackgroundAudio,
-                ),
                 const _SectionHeader('Playback'),
                 _SwitchTile(
                   icon: Icons.timer_off_outlined,

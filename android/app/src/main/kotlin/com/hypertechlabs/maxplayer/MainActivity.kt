@@ -36,7 +36,6 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Rational
-import android.content.IntentFilter
 import android.view.KeyEvent
 import android.view.OrientationEventListener
 import dev.ffmpegkit.whisper.Whisper
@@ -146,17 +145,6 @@ class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         PipActionReceiver.bind(this)
-        AudioControlReceiver.activity = this
-        ensureAudioControlReceiverRegistered()
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(
-                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                9201,
-            )
-        }
 
         methodChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -164,31 +152,6 @@ class MainActivity : FlutterFragmentActivity() {
         )
         methodChannel!!.setMethodCallHandler { call, result ->
             when (call.method) {
-                "bgAudioStart" -> {
-                    // v1.0.11 background audio: start/update the foreground
-                    // service that keeps mpv's audio alive off-screen.
-                    bgAudioStart(
-                        title = call.argument<String>("title") ?: "Max Player",
-                        playing = call.argument<Boolean>("playing") ?: true,
-                        looping = call.argument<Boolean>("looping") ?: false,
-                    )
-                    result.success(true)
-                }
-
-                "bgAudioUpdate" -> {
-                    bgAudioStart(
-                        title = call.argument<String>("title") ?: "Max Player",
-                        playing = call.argument<Boolean>("playing") ?: true,
-                        looping = call.argument<Boolean>("looping") ?: false,
-                    )
-                    result.success(true)
-                }
-
-                "bgAudioStop" -> {
-                    bgAudioStop()
-                    result.success(true)
-                }
-
                 "setVolumeKeyIntercept" -> {
                     // v1.0.10: while intercepting, volume keys are consumed
                     // in dispatchKeyEvent and forwarded to Dart instead of
@@ -968,59 +931,6 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
-    // ---------------------------------------------------------------------------
-    // v1.0.11 background audio (foreground service + notification controls).
-    // Dart pushes state in (title/playing/looping); notification actions are
-    // broadcast into AudioControlReceiver which calls back into Dart via
-    // methodChannel.invokeMethod("bgAudioAction", action).
-    // ---------------------------------------------------------------------------
-
-    private var audioControlReceiver: AudioControlReceiver? = null
-
-    private fun ensureAudioControlReceiverRegistered() {
-        if (audioControlReceiver != null) return
-        val r = AudioControlReceiver()
-        val filter = IntentFilter().apply {
-            addAction(AudioControlReceiver.ACTION_PLAY)
-            addAction(AudioControlReceiver.ACTION_PAUSE)
-            addAction(AudioControlReceiver.ACTION_LOOP)
-            addAction(AudioControlReceiver.ACTION_CLOSE)
-        }
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(
-                r, filter,
-                Context.RECEIVER_NOT_EXPORTED,
-            )
-        } else {
-            registerReceiver(r, filter)
-        }
-        audioControlReceiver = r
-    }
-
-    private fun bgAudioStart(title: String, playing: Boolean, looping: Boolean) {
-        val intent = BackgroundAudioService.startIntent(
-            this, title, playing, looping,
-        )
-        runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
-        }
-    }
-
-    private fun bgAudioStop() {
-        runCatching {
-            stopService(Intent(this, BackgroundAudioService::class.java))
-        }
-    }
-
-    /** Notification -> Receiver -> here -> Dart. */
-    fun handleBackgroundAudioAction(action: String) {
-        methodChannel?.invokeMethod("bgAudioAction", action)
-    }
-
     // v1.0.10 device-independent volume: while a player screen is visible,
     // hardware volume keys adjust the in-app (mpv) volume, not the device
     // media stream. Each key press is forwarded to Dart, which owns the
@@ -1052,11 +962,6 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onDestroy() {
-        AudioControlReceiver.activity = null
-        runCatching {
-            audioControlReceiver?.let { unregisterReceiver(it) }
-        }
-        audioControlReceiver = null
         rotateLocked = false
         rotateListener?.disable()
         rotateListener = null

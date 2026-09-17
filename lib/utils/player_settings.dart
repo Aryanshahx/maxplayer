@@ -25,7 +25,6 @@ class PlayerSettings extends ChangeNotifier {
   static const _kSwipeBrightness = 'player.swipeBrightness';
   static const _kSwipeVolume = 'player.swipeVolume';
   static const _kVolumeBoost = 'player.volumeBoost';
-  static const _kBackgroundAudio = 'player.backgroundAudio';
   static const _kHorizontalSeek = 'player.horizontalSeek';
   static const _kPinchZoom = 'player.pinchZoom.v3';
   static const _kDefaultFit = 'player.defaultFit';
@@ -49,10 +48,6 @@ class PlayerSettings extends ChangeNotifier {
   /// v1.0.11: allow over-amplification to 200% (default ON, VLC-style).
   /// OFF caps the in-app volume at 100% everywhere (swipe, keys, HUD).
   bool volumeBoost = true;
-
-  /// v1.0.11: keep audio alive in a foreground service when the app is
-  /// minimized or the screen locks (notification has play/pause/loop).
-  bool backgroundAudio = true;
   bool horizontalSeek = true;
   bool pinchZoom = false;
 
@@ -85,7 +80,6 @@ class PlayerSettings extends ChangeNotifier {
     swipeBrightness = p.getBool(_kSwipeBrightness) ?? true;
     swipeVolume = p.getBool(_kSwipeVolume) ?? true;
     volumeBoost = p.getBool(_kVolumeBoost) ?? true;
-    backgroundAudio = p.getBool(_kBackgroundAudio) ?? true;
     horizontalSeek = p.getBool(_kHorizontalSeek) ?? true;
     pinchZoom = p.getBool(_kPinchZoom) ?? false;
     final storedFit = p.getInt(_kDefaultFit);
@@ -135,11 +129,6 @@ class PlayerSettings extends ChangeNotifier {
   Future<void> setVolumeBoost(bool v) async {
     volumeBoost = v;
     await _saveBool(_kVolumeBoost, v);
-  }
-
-  Future<void> setBackgroundAudio(bool v) async {
-    backgroundAudio = v;
-    await _saveBool(_kBackgroundAudio, v);
   }
 
   Future<void> setHorizontalSeek(bool v) async {
