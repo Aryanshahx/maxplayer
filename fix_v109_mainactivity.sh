@@ -1,3 +1,23 @@
+#!/usr/bin/env bash
+# Max Player v1.0.9+157 - HOTFIX: MainActivity.kt Kotlin build failure.
+#
+# The v1.0.9 feature-amputation accidentally deleted the sensor-rotation
+# subsystem (rotateListener / rotateLocked / ensureRotateListener) and
+# onPictureInPictureModeChanged, but the enableSensorRotate / lockRotation
+# method handlers still referenced them -> 11 "Unresolved reference"
+# errors at :app:compileReleaseKotlin.
+#
+# This script overwrites ONLY MainActivity.kt with the corrected file
+# (verbatim graft-back of the missing blocks from v1.0.8 cbe02ff).
+#
+# Usage:  cd <repo root>   (the tree you pushed as v1.0.9+157)
+#         bash fix_v109_mainactivity.sh
+set -euo pipefail
+
+f="android/app/src/main/kotlin/com/hypertechlabs/maxplayer/MainActivity.kt"
+[ -f "$f" ] || { echo "ERROR: $f not found - run from the repo root"; exit 1; }
+
+cat > "$f" <<'EOF_KOTLIN'
 package com.hypertechlabs.maxplayer
 
 import android.app.PictureInPictureParams
@@ -2170,3 +2190,8 @@ class MainActivity : FlutterFragmentActivity() {
         return chunked
     }
 }
+EOF_KOTLIN
+
+echo "MainActivity.kt fixed ($(wc -l < "$f") lines)."
+grep -q 'private fun ensureRotateListener' "$f" && echo "rotation block OK"
+grep -q 'onPictureInPictureModeChanged'  "$f" && echo "PiP override OK"
