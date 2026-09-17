@@ -53,12 +53,21 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="file" android:mimeType="video/*"/>
             </intent-filter>
-            <!-- Old file managers that send file:// with no MIME. -->
+            <!-- Old file managers that send file:// with no MIME: one data
+         element per extension (pathPattern is portable across APIs). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
-                <data android:scheme="file" android:host="*"
-                    android:pathSuffixes=".mp4,.mkv,.avi,.webm,.wmv,.flv,.ts,.mov,.m4v,.3gp"/>
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\.mp4"/>
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\.mkv"/>
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\.avi"/>
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\.webm"/>
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\.wmv"/>
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\.flv"/>
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\.ts"/>
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\.mov"/>
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\.m4v"/>
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\.3gp"/>
             </intent-filter>
         </activity>
         <meta-data
