@@ -3,6 +3,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:ui' show Offset, Size;
 
 /// Pinch range: 1.0 = fit screen (the DEFAULT), up to 4x zoomed in.
 const double kMinVideoZoom = 1.0;
@@ -61,3 +62,21 @@ double freeZoomFor({
   required double scale,
 }) =>
     clampVideoZoom(baseZoom * scale);
+
+/// (v1.0.14) Clamped pan range for a center-scaled video: at zoom [z] the
+/// frame overflows the viewport by (z-1)*size/2 on EACH side, so valid
+/// pan is -half..+half on both axes. Scale in Flutter is center-based;
+/// the old one-sided (-max..0) clamp left half the zoomed frame
+/// unreachable and let the far end overscroll into black.
+Offset clampPanFor({
+  required Offset pan,
+  required double zoom,
+  required Size size,
+}) {
+  final halfX = size.width * (zoom - 1) / 2;
+  final halfY = size.height * (zoom - 1) / 2;
+  return Offset(
+    pan.dx.clamp(-halfX, halfX).toDouble(),
+    pan.dy.clamp(-halfY, halfY).toDouble(),
+  );
+}

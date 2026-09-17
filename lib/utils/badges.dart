@@ -5,14 +5,21 @@ import '../services/native_bridge.dart';
 /// Pure quality-badge mapping (unit-tested): from video dimensions to a
 /// short label shown on cards. Uses the LONG side so BOTH a landscape
 /// 3840x2160 and a portrait 2160x3840 read "4K" — matching how YouTube/
-/// MX label them. (v0.8 fix: some devices reported rotated dimensions.)
+/// MX label them (v0.8: some devices reported rotated dimensions).
+///
+/// v1.0.14: thresholds sit a hair UNDER the nominal sizes because real
+/// encodes are cropped — a Blu-ray 1080p title is routinely 1916x1080
+/// (or 1920x804 ultrawide), a 720p one 1274/1264 wide, 480p is 848x480.
+/// With hard 1920/1280/854 gates those all fell one bucket and a 1080p
+/// file showed "720p". The gaps between standards (1900 vs 720p max
+/// ~1300; 1260 vs 480p max ~850) are wide, so this can't mislabel.
 String qualityBadge(int width, int height) {
   final s = width > height ? width : height;
   if (s >= 3400) return '4K';
-  if (s >= 2560) return '2K';
-  if (s >= 1920) return '1080p';
-  if (s >= 1280) return '720p';
-  if (s >= 854) return '480p';
+  if (s >= 2500) return '2K';
+  if (s >= 1900) return '1080p';
+  if (s >= 1260) return '720p';
+  if (s >= 840) return '480p';
   return 'SD';
 }
 

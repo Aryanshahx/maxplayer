@@ -228,6 +228,20 @@ void main() {
       expect(qualityBadge(1080, 1920), '1080p');
     });
     test('720p', () => expect(qualityBadge(1280, 720), '720p'));
+    // v1.0.14: real encodes are cropped just under the nominal width —
+    // these must NOT fall a bucket (the user-reported 1916x1080 -> "720p").
+    test('cropped 1080p Blu-ray (1916x1080)', () {
+      expect(qualityBadge(1916, 1080), '1080p');
+    });
+    test('ultrawide 1080p (1920x804)', () {
+      expect(qualityBadge(1920, 804), '1080p');
+    });
+    test('cropped 720p (1274x720)', () {
+      expect(qualityBadge(1274, 720), '720p');
+    });
+    test('cropped 480p (848x480)', () {
+      expect(qualityBadge(848, 480), '480p');
+    });
     test('480p', () => expect(qualityBadge(854, 480), '480p'));
     test('SD', () => expect(qualityBadge(320, 240), 'SD'));
   });
@@ -1116,4 +1130,29 @@ plain-list-url.mp4
     });
   });
 
+
+group('clampPanFor (v1.0.14 pinch-zoom pan)', () {
+  const size = Size(360, 800);
+
+  test('zoom 1x: any pan collapses to zero', () {
+    expect(clampPanFor(pan: const Offset(99, -99), zoom: 1, size: size),
+        Offset.zero);
+  });
+
+  test('zoom 2x: full symmetric range reachable', () {
+    const half = Offset(180, 400); // (z-1)*size/2
+    expect(
+        clampPanFor(pan: const Offset(9999, 9999), zoom: 2, size: size),
+        half);
+    expect(
+        clampPanFor(pan: const Offset(-9999, -9999), zoom: 2, size: size),
+        -half);
+  });
+
+  test('inside range passes through untouched', () {
+    expect(
+        clampPanFor(pan: const Offset(50, -60), zoom: 2, size: size),
+        const Offset(50, -60));
+  });
+});
 }

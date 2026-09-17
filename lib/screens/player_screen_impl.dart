@@ -698,12 +698,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   /// Keep the scaled video covering the viewport (no drifting past edges).
-  Offset _clampPan(Offset pan, double z) {
-    final size = MediaQuery.of(context).size;
-    final maxX = size.width * (z - 1);
-    final maxY = size.height * (z - 1);
-    return Offset(pan.dx.clamp(-maxX, 0.0), pan.dy.clamp(-maxY, 0.0));
-  }
+  /// Math lives in video_zoom.dart as [clampPanFor] (unit-tested).
+  Offset _clampPan(Offset pan, double z) =>
+      clampPanFor(pan: pan, zoom: z, size: MediaQuery.of(context).size);
 
   void _onScaleStart(ScaleStartDetails d) {
     if (_locked) return;
