@@ -35,10 +35,17 @@ class AppVolume extends ChangeNotifier {
   Future<void> load() async {
     if (_loaded) return;
     _loaded = true;
-    final p = await SharedPreferences.getInstance();
-    level = clampAppVolume(p.getDouble(_kLevel) ?? 100);
-    muted = p.getBool(_kMuted) ?? false;
-    notifyListeners();
+    try {
+      final p = await SharedPreferences.getInstance();
+      final savedLevel = p.getDouble(_kLevel) ?? 100;
+      final savedMuted = p.getBool(_kMuted) ?? false;
+      level = savedLevel.isFinite ? clampAppVolume(savedLevel) : 100;
+      muted = savedMuted;
+      notifyListeners();
+    } catch (_) {
+      // Corrupt/mismatched prefs must never kill the player: fall back to
+      // factory defaults and stay usable for this session.
+    }
   }
 
   /// Sets the level (clamped to 0..200). Raising above zero while muted

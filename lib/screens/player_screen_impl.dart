@@ -201,16 +201,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     // player mirrors it into mpv, and hardware keys are handed to us by
     // the native side for as long as this screen is alive.
     AppVolume.instance.addListener(_applyVolume);
-    unawaited(AppVolume.instance.load().then((_) {
-      if (mounted) _applyVolume();
-    }));
-    _applyVolume();
+    // v1.0.13 STABILITY: no engine touch before open() resolves — mpv
+    // property writes during/before open() take the whole process down on
+    // some devices (crash-on-second-launch regression of v1.0.10). Load
+    // the store here but do NOT mirror into mpv from initState anymore.
+    unawaited(AppVolume.instance.load());
     NativeBridge.volumeKeyListener = (dir) {
       unawaited(_onVolumeKey(dir));
     };
     unawaited(NativeBridge.setVolumeKeyIntercept(true));
-    // mpv caps `volume` at 100 unless told otherwise — the boost ceiling.
-    unawaited(_mpvSet('volume-max', '200'));
+    // mpv caps `volume` at 100 unless told otherwise — the boost ceiling is
+    // (re)applied AFTER open() in _open(); never call _mpvSet from here.
     unawaited(_settings.load().then((_) {
       if (!mounted) return;
       // Start the session in the fit mode chosen in Settings (default: Fit).
@@ -271,8 +272,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       // reset the rate while a new file loads, so re-apply it here too.
       unawaited(_player.setRate(_settings.playbackRate));
       await _mpvSet('volume-max', '200');
-      _applyVolume();
       if (mounted) setState(() => _ready = true);
+      // v1.0.13: mirror the store only once the file is loaded —
+      // the single safe point (pre-159 ordering).
+      _applyVolume();
       unawaited(_ensureThumbStrip(path));
       unawaited(_applyPerformanceMode());
       if (offerResume && !widget.isStream) {
@@ -588,8 +591,15 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// moves the volume (swipe, hardware keys, settings slider, mute button)
   /// writes to the store; the listener registered in initState lands here.
   void _applyVolume() {
-    unawaited(_mpvSet('volume', AppVolume.instance.mpvGain.round().toString()));
-    if (mounted) setState(() {});
+    // v1.0.13: hard no-op until open() has completed.
+    if (!_ready || _failed) return;
+    try {
+      unawaited(_mpvSet(
+          'volume', AppVolume.instance.mpvGain.round().toString()));
+      if (mounted) setState(() {});
+    } catch (e) {
+      CrashLog.error('player.volume_apply_failed', e);
+    }
   }
 
   Future<void> _onVolumeKey(String dir) async {
