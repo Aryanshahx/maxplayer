@@ -6,8 +6,11 @@ import 'screens/library_screen.dart';
 import 'services/native_bridge.dart';
 import 'theme.dart';
 import 'utils/crash_log.dart';
-import 'utils/deep_links.dart';
 import 'utils/settings.dart';
+
+/// Root navigator key (kept for future system-level pushes; the
+/// notification deep links that used it are gone).
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,9 +24,6 @@ Future<void> main() async {
   // Must be registered once, before any screen tries to handle the same
   // channel - a second setMethodCallHandler silently replaces the first.
   NativeBridge.ensureNativeHandler();
-  // v30: warm-start deep link from the "Continue watching" notification
-  // (cold starts pull the pending path via consumeContinueWatching).
-  NativeBridge.continueWatchingListener = openContinueWatching;
   CrashLog.crumb('app.start');
   runApp(const MaxPlayerApp());
 }

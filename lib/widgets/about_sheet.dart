@@ -32,9 +32,8 @@ class AboutSheet extends StatelessWidget {
     );
   }
 
-  /// v31: reads live native state (notification grant, keep-alive service,
-  /// cached engine, continue-watching store) so background-playback and
-  /// notification issues can be diagnosed on-device without guesswork.
+  /// Reads live native state (SDK, device model, engine) so playback
+  /// issues can be diagnosed on-device without guesswork.
   static Future<void> _showDiagnostics(BuildContext context) {
     return showModalBottomSheet(
       context: context,
@@ -267,8 +266,8 @@ const List<(String, String)> _features = [
   ),
 ];
 
-/// v31: live native-state readout for background-audio / notification
-/// issues. Tap-to-copy so the report can be shared with support.
+/// Live native-state readout. Tap-to-copy so the report can be shared
+/// with support.
 class _DiagnosticsSheet extends StatefulWidget {
   const _DiagnosticsSheet();
 
@@ -366,7 +365,7 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
           const SizedBox(height: 6),
           const Text(
             'Reads live on-device state. Share this (Copy → paste) if '
-            'background audio or notifications misbehave.',
+            'playback misbehaves.',
             style: TextStyle(color: Colors.white38, fontSize: 12),
           ),
           const SizedBox(height: 12),
@@ -394,10 +393,6 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
   }
 
   Widget _row(String label, String value) {
-    final interesting = label == 'notificationsGranted' ||
-        label == 'serviceRunning' ||
-        label == 'engineCached';
-    final bad = interesting && value == 'NO';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
@@ -413,15 +408,7 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
           Expanded(
             child: Text(
               value,
-              style: TextStyle(
-                color: bad
-                    ? const Color(0xFFFF8A80)
-                    : (interesting
-                        ? const Color(0xFF7CE7A8)
-                        : Colors.white70),
-                fontSize: 12.5,
-                fontWeight: interesting ? FontWeight.w600 : FontWeight.w400,
-              ),
+              style: const TextStyle(color: Colors.white70, fontSize: 12.5),
             ),
           ),
         ],

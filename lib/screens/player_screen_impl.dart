@@ -62,7 +62,7 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-enum _DragMode { undecided, brightness, volume, seek, pan, zoom, cant }
+enum _DragMode { undecided, brightness, seek, pan, zoom, cant }
 
 enum _PlayerMenuAction { info, eq, screenshot, cast, pip, sleep }
 
@@ -107,8 +107,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _boost = false;
   bool _locked = false;
   bool _muted = false;
-  double _volumePercent = 100;
-  int _lastVolumePct = -1;
   FitMode _fitMode = FitMode.fit;
 
   _DragMode _drag = _DragMode.undecided;
@@ -117,7 +115,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   double _zoom = 1;
   double _zoomBase = 1;
   double _levelValue = 0;
-  double _volumeStart = 100;
   double _brightnessStart = 0;
   int _lastBrightnessPct = -1;
   Offset _pan = Offset.zero;
@@ -173,10 +170,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     // MX/VLC-style rotation: the player rotates by accelerometer even when
     // the phone's system auto-rotate switch is OFF.
     unawaited(_native.invokeMethod('enableSensorRotate'));
-    // v30: the "Continue watching" notification is posted natively when
-    // the app CLOSES, so the Android 13+ notification grant must be
-    // requested up front, while the player is in the foreground.
-    unawaited(NativeBridge.ensureNotificationsAllowed());
     _title = widget.title;
     _currentPath = widget.path;
     _queueIndex = widget.queueStart;
@@ -200,26 +193,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     NativeBridge.pipToggleListener = () {
       unawaited(_player.playOrPause());
     };
-    // v32: buttons on the now-playing notification, the device's media
-    // panel and the lock screen (old-app parity).
-    NativeBridge.mediaActionListener = (action) {
-      switch (action) {
-        case 'play_pause':
-          unawaited(_player.playOrPause());
-          break;
-        case 'next':
-          unawaited(_playNext());
-          break;
-        case 'prev':
-          unawaited(_playPrevious());
-          break;
-        case 'stop':
-          unawaited(_player.pause());
-          unawaited(NativeBridge.cancelNowPlaying());
-          break;
-      }
-    };
-    NativeBridge.mediaSeekListener = (pos) => unawaited(_player.seek(pos));
     unawaited(_settings.load().then((_) {
       if (!mounted) return;
       // Start the session in the fit mode chosen in Settings (default: Fit).
@@ -239,9 +212,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       } else {
         WakelockPlus.disable();
         unawaited(_savePosition());
-        _pushContinueWatching();
       }
-      unawaited(_syncNowPlaying());
       unawaited(_native.invokeMethod('updatePipPlaying', {'playing': playing}));
       if (mounted) setState(() {});
     });
@@ -263,13 +234,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       unawaited(_savePosition());
-      // v32: refresh the media notification's progress bar + position.
-      if (_settings.backgroundAudio && _player.state.playing) {
-        unawaited(_syncNowPlaying());
-      }
-      // v30: keep the native "Continue watching" state fresh so the
-      // notification posted on app close knows where we stopped.
-      _pushContinueWatching();
       // Watch-time statistics (same 5s tick as the old player): count a
       // bucket whenever a local video is actually playing.
       if (_player.state.playing && !widget.isStream) {
@@ -279,50 +243,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
-  /// v32 (old-app parity): syncs the foreground MEDIA service + device
-  /// media controls (Previous / Play-Pause / Next / Stop, thumbnail,
-  /// progress) with the player. The service owns audio focus + a partial
-  /// wake lock — so audio keeps playing in another app and screen-off,
-  /// exactly like the old app.
-  Future<void> _syncNowPlaying() async {
-    if (!_settings.backgroundAudio || _failed || _currentPath.isEmpty) {
-      try {
-        await NativeBridge.cancelNowPlaying();
-        await NativeBridge.setWakeLock(false);
-      } catch (_) {}
-      return;
-    }
-    final playing = _player.state.playing;
-    try {
-      await NativeBridge.showNowPlaying(
-        title: _title,
-        subtitle: playing ? 'Playing' : 'Paused',
-        isPlaying: playing,
-        path: _currentPath,
-        thumbnailPath: await _notificationThumb(),
-        positionMs: _player.state.position.inMilliseconds,
-        durationMs: _player.state.duration.inMilliseconds,
-      );
-      await NativeBridge.setWakeLock(playing);
-    } catch (_) {}
-  }
 
-  /// Cached video thumbnail for the media notification's large icon.
-  String? _notifThumbPath;
-  String? _notifThumbFor;
-
-  Future<String?> _notificationThumb() async {
-    if (_currentPath.isEmpty || _currentPath.startsWith('http')) return null;
-    if (_notifThumbFor == _currentPath) return _notifThumbPath;
-    try {
-      final t = await NativeBridge.videoThumbnail(_currentPath);
-      _notifThumbFor = _currentPath;
-      _notifThumbPath = t;
-      return t;
-    } catch (_) {
-      return null;
-    }
-  }
 
   Future<void> _open(String path, {required bool offerResume}) async {
     CrashLog.crumb('player.open', {'path': path});
@@ -331,27 +252,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       // Keep the remembered playback speed across videos (v29): mpv can
       // reset the rate while a new file loads, so re-apply it here too.
       unawaited(_player.setRate(_settings.playbackRate));
-      // Head-room for the 200% boost region, set ONCE here (mpv keeps its
-      // software gain at 100% for the 0..100% range — the DEVICE media
-      // volume owns that, MX Player / VLC style, like the old app).
-      await _mpvSet('volume-max', '200');
-      // v32: mpv's AudioTrack output pauses itself on ANY audio-focus loss,
-      // which stopped background audio the moment another app opened. The
-      // native media service now owns audio focus exactly like the old app
-      // (pause only on permanent loss, resume on gain) — mpv must not
-      // second-guess it. (Older bundled mpv builds ignore unknown options.)
-      unawaited(_mpvSet('audiotrack-pause-on-focus-loss', 'no'));
       await _mpvSet('volume', '100');
-      // Old-player rule: the swipe drives the DEVICE media volume, so sync
-      // the tracked level from the real device volume on open (an audible
-      // floor so a silent phone doesn't start muted-looking).
-      var real = await NativeBridge.getMediaVolume();
-      if (real <= 0.02) {
-        real = 0.3;
-        unawaited(NativeBridge.setMediaVolume(real));
-      }
-      _volumePercent = (real * 100).clamp(0.0, 100.0);
-      _muted = _volumePercent <= 0;
       if (mounted) setState(() => _ready = true);
       unawaited(_ensureThumbStrip(path));
       unawaited(_applyPerformanceMode());
@@ -438,31 +339,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  /// v30: pushes the latest resume state to the native side (5s ticks +
-  /// pause + leave). The NATIVE layer posts the "Continue watching"
-  /// notification, and only when the app is actually CLOSED (activity
-  /// destroyed) — never on a plain home/background press. Quiet by design:
-  /// streams, finished videos, sub-10s positions, and resume-off all push
-  /// a clear (posMs 0) instead.
-  void _pushContinueWatching() {
-    if (widget.isStream || _failed || !_settings.resume) {
-      unawaited(NativeBridge.updateContinueWatching(
-        title: _title,
-        path: _currentPath,
-        posMs: 0,
-      ));
-      return;
-    }
-    final posMs = _player.state.position.inMilliseconds;
-    final durMs = _player.state.duration.inMilliseconds;
-    final resumable =
-        durMs > 0 && resumeTargetMs(posMs, durMs) != null ? posMs : 0;
-    unawaited(NativeBridge.updateContinueWatching(
-      title: _title,
-      path: _currentPath,
-      posMs: resumable,
-    ));
-  }
 
   Future<void> _offerResume() async {
     try {
@@ -688,51 +564,20 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Future<void> _setVolumePercent(double value) async {
-    final maxVolume = _settings.volumeBoost ? 200.0 : 100.0;
-    final v = value.clamp(0.0, maxVolume).toDouble();
-    _volumePercent = v;
-    if (v > 0) _muted = false;
-    // OLD-APP VOLUME MODEL (the one that works on-device): the DEVICE
-    // media volume (STREAM_MUSIC — what the phone's volume keys/UI show)
-    // is the loudness control for 0..100%. mpv's software gain stays at
-    // unity in that range and only lifts in the 100..200% boost region.
-    // Setting mpv gain AND device level together compounds into a double
-    // curve (50% swipe ~= 25% loudness) — that is exactly what made the
-    // swipe feel wrong, so they are kept strictly separate, as in the old
-    // app's media_player_state.setVolume.
-    final deviceOk =
-        await NativeBridge.setMediaVolume((v / 100.0).clamp(0.0, 1.0));
-    final mpvGain = v <= 100 ? 100.0 : v;
-    await _mpvSet('volume', mpvGain.toStringAsFixed(1));
-    if (!deviceOk) {
-      // Platform call failed outright (should be rare — Realme-style
-      // silent ignoring reports success). Drive mpv gain as a fallback so
-      // loudness still moves on every swipe point.
-      CrashLog.error('player.device_volume_rejected',
-          StateError('setMediaVolume returned false'), {'value': v});
-      await _mpvSet('volume', v.clamp(0.0, 200.0).toStringAsFixed(1));
+
+  /// Simple mpv-level mute/unmute (kept deliberately small). There is no
+  /// other volume control in the app anymore: the phone's hardware keys
+  /// drive the system stream, like any normal video player.
+  Future<void> _toggleMute() async {
+    if (_muted) {
+      await _mpvSet('volume', '100');
+      _muted = false;
+    } else {
+      await _mpvSet('volume', '0');
+      _muted = true;
     }
     if (mounted) setState(() {});
   }
-
-  Future<void> _toggleMute() async {
-    if (_muted || _volumePercent <= 0) {
-      final restore = _volumePercent <= 0
-          ? 100.0
-          : _volumePercent;
-      await _setVolumePercent(restore);
-      _muted = false;
-    } else {
-      // Mute cuts the DEVICE stream, not just mpv's internal gain — same
-      // as the old app (and the volume keys' mute).
-      await NativeBridge.setMediaVolume(0);
-      await _mpvSet('volume', '0');
-      _muted = true;
-      if (mounted) setState(() {});
-    }
-  }
-
   void _setBoost(bool on) {
     if (!_settings.longPressSpeed || _locked) return;
     // No boost (and no badge) while the video is paused - old-player rule.
@@ -822,9 +667,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _focalBase = d.focalPoint;
     _zoomBase = _zoom;
     _panBase = _pan;
-    _volumeStart = _volumePercent;
     _brightnessStart = _levelValue;
-    _lastVolumePct = -1;
     _lastBrightnessPct = -1;
     _scaleStartMs = DateTime.now().millisecondsSinceEpoch;
     _pinchTravelPx = 0;
@@ -908,12 +751,9 @@ class _PlayerScreenState extends State<PlayerScreen>
           _brightnessStart = await ScreenBrightness.instance.application;
           _levelValue = _brightnessStart;
           _dragStart = d.focalPoint;
-        } else if (_dragStart.dx >= width / 2 && _settings.swipeVolume) {
-          _drag = _DragMode.volume;
-          _volumeStart = _volumePercent;
-          _lastVolumePct = -1;
-          _dragStart = d.focalPoint;
         } else {
+          // Right-half vertical drag used to be the volume swipe — that
+          // gesture is gone; vertical drags on the right do nothing.
           _drag = _DragMode.cant;
         }
       }
@@ -936,29 +776,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       _showIndicatorThrottled('Brightness $pct%',
           Icons.brightness_6_outlined);
-    } else if (_drag == _DragMode.volume) {
-      // Old player: 300px covers 100%; with boost ON the range grows to
-      // 0..200% (300 * cap pixels for the full range). Throttled to whole
-      // percents so mpv isn't hit with a per-pixel IPC storm.
-      final maxVolume = _settings.volumeBoost ? 200.0 : 100.0;
-      final v = (_volumeStart -
-              (d.focalPoint.dy - _dragStart.dy) / (300.0 * maxVolume / 100.0))
-          .clamp(0.0, maxVolume)
-          .toDouble();
-      final pct = v.round();
-      if (pct == _lastVolumePct) {
-        _showIndicatorThrottled(
-          'Volume $pct%',
-          pct == 0 ? Icons.volume_off : Icons.volume_up,
-        );
-        return;
-      }
-      _lastVolumePct = pct;
-      await _setVolumePercent(v);
-      _showIndicatorThrottled(
-        'Volume $pct%',
-        pct == 0 ? Icons.volume_off : Icons.volume_up,
-      );
     } else if (_drag == _DragMode.seek) {
       final duration = _player.state.duration;
       if (duration <= Duration.zero) return;
@@ -1979,22 +1796,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (NativeBridge.pipToggleListener != null) {
       NativeBridge.pipToggleListener = null;
     }
-    NativeBridge.mediaActionListener = null;
-    NativeBridge.mediaSeekListener = null;
     if (_settingsListener != null) _settings.removeListener(_settingsListener!);
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_native.invokeMethod('disableSensorRotate'));
     WakelockPlus.disable();
     ScreenBrightness.instance.resetApplicationScreenBrightness();
     unawaited(_savePosition());
-    // v30: hand the final resume state to the native side — it posts the
-    // "Continue watching" notification only if/when the app is CLOSED.
-    _pushContinueWatching();
-    // Stop the background keep-alive/media notification: leaving the
-    // player screen ends playback, so the shade must not keep saying
-    // "Playing in background".
-    unawaited(NativeBridge.cancelNowPlaying());
-    unawaited(NativeBridge.setWakeLock(false));
     unawaited(_player.dispose());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
@@ -2005,20 +1812,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       unawaited(_savePosition());
-      _pushContinueWatching();
+      // No background audio: app going away ends playback loudly (mpv
+      // keeps decoding the last frame; pause so nothing blares).
+      if (_player.state.playing) unawaited(_player.pause());
     }
-    // v30: with the cached engine the video keeps playing after the app
-    // is swiped away — release the wakelock so the screen doesn't stay
-    // on in a pocket, and restore it when the app comes back.
-    if (state == AppLifecycleState.detached ||
-        state == AppLifecycleState.hidden) {
-      unawaited(WakelockPlus.disable());
-      // v31: belt-and-braces — re-assert the foreground keep-alive so the
-      // audio + media notification survive the swipe-away.
-      if (_player.state.playing) {
-        unawaited(_syncNowPlaying());
-      }
-    } else if (state == AppLifecycleState.resumed &&
+    if (state == AppLifecycleState.resumed &&
         _player.state.playing) {
       unawaited(WakelockPlus.enable());
     }
@@ -2079,7 +1877,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   child: CircularProgressIndicator(color: Colors.white),
                 ),
               ),
-            // Transient indicator (seek / volume / brightness / zoom /
+            // Transient indicator (seek / brightness / zoom /
             // resume / fit / play-pause / lock) - the old player's
             // full-width centred pill at top: 64, popping in with
             // scale+fade.

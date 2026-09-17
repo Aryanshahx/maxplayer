@@ -13,7 +13,6 @@ enum GestureKind {
   doubleTapSides,
   doubleTapMiddle,
   swipeBrightness,
-  swipeVolume,
   swipeSeek,
   pinchZoom,
   holdSpeed,
@@ -198,33 +197,6 @@ class _GesturePainter extends CustomPainter {
     }
   }
 
-  void _speakerGlyph(Canvas canvas, Offset at) {
-    final p = Paint()
-      ..color = Colors.white70
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-    // Cone.
-    final path = Path()
-      ..moveTo(at.dx - 9, at.dy - 4)
-      ..lineTo(at.dx - 4, at.dy - 4)
-      ..lineTo(at.dx + 1, at.dy - 9)
-      ..lineTo(at.dx + 1, at.dy + 9)
-      ..lineTo(at.dx - 4, at.dy + 4)
-      ..lineTo(at.dx - 9, at.dy + 4)
-      ..close();
-    canvas.drawPath(path, p);
-    // Sound waves.
-    for (final r in [5.0, 9.0]) {
-      canvas.drawArc(
-        Rect.fromCircle(center: at + const Offset(3, 0), radius: r),
-        -0.9,
-        1.8,
-        false,
-        p,
-      );
-    }
-  }
 
   /// Tinted half of the screen (left or right) with up/down arrows in it.
   void _halfSwipe(Canvas canvas, Size size,
@@ -259,8 +231,6 @@ class _GesturePainter extends CustomPainter {
     _arrow(canvas, Offset(ax, cy + 8), Offset(ax, cy + 28), _accentPaint);
     if (doodle == IconKindDoodle.sun) {
       _sunGlyph(canvas, Offset(ax, r.top + 15), 5.5);
-    } else {
-      _speakerGlyph(canvas, Offset(ax, r.top + 17));
     }
   }
 
@@ -305,13 +275,6 @@ class _GesturePainter extends CustomPainter {
             leftHalf: true,
             tint: const Color(0xFFFFC107),
             doodle: IconKindDoodle.sun);
-        break;
-
-      case GestureKind.swipeVolume:
-        _halfSwipe(canvas, size,
-            leftHalf: false,
-            tint: accent,
-            doodle: IconKindDoodle.speaker);
         break;
 
       case GestureKind.swipeSeek:
@@ -373,4 +336,4 @@ class _GesturePainter extends CustomPainter {
       old.kind != kind || old.accent != accent;
 }
 
-enum IconKindDoodle { sun, speaker }
+enum IconKindDoodle { sun }

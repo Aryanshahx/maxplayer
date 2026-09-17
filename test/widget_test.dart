@@ -14,11 +14,9 @@ import 'package:maxplayer/utils/ai_subtitles.dart'
     show AiSubtitleRunner, isMusicOnlyCaption;
 import 'package:maxplayer/utils/mpv_filters.dart';
 import 'package:maxplayer/utils/local_store.dart';
-import 'package:maxplayer/utils/notifications.dart';
 import 'package:maxplayer/utils/resume.dart';
 import 'package:maxplayer/utils/settings.dart' show accentPalette, defaultAccentIndex;
 import 'package:maxplayer/utils/sha256.dart';
-import 'package:maxplayer/utils/volume.dart';
 import 'package:maxplayer/utils/sort.dart';
 import 'package:maxplayer/utils/srt.dart';
 import 'package:maxplayer/utils/tmdb.dart';
@@ -1048,90 +1046,4 @@ plain-list-url.mp4
     });
   });
 
-  group('notifications (in-app inbox)', () {
-    AppNotification n(String id, int ts, {bool read = false}) =>
-        AppNotification(
-          id: id,
-          title: 't-$id',
-          body: 'b-$id',
-          iconKey: 'info',
-          ts: ts,
-          read: read,
-        );
-
-    test('upsertNotification dedupes by id and keeps newest first', () {
-      final a = n('a', 100);
-      final b = n('b', 200);
-      final list = upsertNotification([a], b);
-      expect(list.first.id, 'b');
-      expect(list.length, 2);
-      // re-insert same id with a newer ts replaces in place
-      final a2 = n('a', 300);
-      final merged = upsertNotification(list, a2);
-      expect(merged.length, 2);
-      expect(merged.first.id, 'a');
-    });
-
-    test('upsertNotification caps the list', () {
-      var list = <AppNotification>[];
-      for (var i = 0; i < 60; i++) {
-        list = upsertNotification(list, n('$i', i));
-      }
-      expect(list.length, 50);
-    });
-
-    test('unreadNotificationCount counts only unread', () {
-      final list = [n('a', 1), n('b', 2, read: true), n('c', 3)];
-      expect(unreadNotificationCount(list), 2);
-    });
-
-    test('markNotificationRead flips exactly one item', () {
-      final list = [n('a', 1), n('b', 2)];
-      final out = markNotificationRead(list, 'a');
-      expect(out.firstWhere((e) => e.id == 'a').read, isTrue);
-      expect(out.firstWhere((e) => e.id == 'b').read, isFalse);
-    });
-
-    test('markAllNotificationsRead flips every item', () {
-      final out = markAllNotificationsRead([n('a', 1), n('b', 2)]);
-      expect(out.every((e) => e.read), isTrue);
-    });
-
-    test('seedWelcomeNotifications fills only an empty inbox', () {
-      final seeded = seedWelcomeNotifications([], 1000);
-      expect(seeded.length, 3);
-      expect(seeded.first.id, 'welcome');
-      // non-empty inbox is left untouched
-      final existing = [n('keep', 1)];
-      expect(seedWelcomeNotifications(existing, 1000), same(existing));
-    });
-  });
-
-  group('volume math (OEM stuck-volume fix)', () {
-    test('targetDeviceLevel mirrors the native rounding and clamps', () {
-      expect(targetDeviceLevel(0.75, 15), 11);
-      expect(targetDeviceLevel(1.0, 15), 15);
-      expect(targetDeviceLevel(0.0, 15), 0);
-      expect(targetDeviceLevel(1.5, 15), 15); // over-100 clamps to max
-      expect(targetDeviceLevel(-0.2, 15), 0);
-      expect(targetDeviceLevel(0.75, 0), 1); // degenerate max => 1 tick
-    });
-
-    test('deviceVolumeApplied distrusts the success flag', () {
-      // The Realme/ColorOS case: call throws nothing, yet the stream
-      // never moved -> must read as NOT applied so mpv gain covers it.
-      expect(deviceVolumeApplied(11, 11), isTrue);
-      expect(deviceVolumeApplied(11, 7), isFalse);
-      expect(deviceVolumeApplied(11, -1), isFalse);
-      expect(deviceVolumeApplied(0, 0), isTrue);
-    });
-
-    test('readbackFraction reports what the device really did', () {
-      expect(readbackFraction(7, 15), closeTo(7 / 15, 1e-9));
-      expect(readbackFraction(30, 15), 1.0); // over-max clamps
-      expect(readbackFraction(-3, 15), 0.0);
-      expect(readbackFraction(1, 0), 1.0);
-    });
-  });
 }
-

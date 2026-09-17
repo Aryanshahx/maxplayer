@@ -335,13 +335,6 @@ const List<_GestureItem> _gestureItems = [
         'you leave the player.',
   ),
   _GestureItem(
-    GestureKind.swipeVolume,
-    'Swipe on the RIGHT half - volume',
-    'The same gesture on the right half changes the volume. Sliding all '
-        'the way down mutes the video; swipe up or tap the speaker button '
-        'to unmute.',
-  ),
-  _GestureItem(
     GestureKind.swipeSeek,
     'Swipe SIDEWAYS - scrub through the video',
     'Drag one finger LEFT or RIGHT anywhere on the video to scrub: the '
@@ -468,19 +461,6 @@ const List<_Item> _smartItems = [
         'cleanly from the "Folders" quick tile.',
   ),
   _Item(
-    Icons.headset_outlined,
-    'Background & Screen-off audio playback',
-    'Keep listening to music, podcasts, or video audio with your phone '
-        'locked or while using other apps.',
-  ),
-  _Item(
-    Icons.volume_up,
-    'Volume boost up to 200%',
-    'ON by default: the volume swipe simply continues past 100% up to '
-        '200% for quiet audio files. Player settings → Sound & subtitles '
-        'switches it off.',
-  ),
-  _Item(
     Icons.speed,
     'Playback speed up to 4x (remembered)',
     'Tap the "1.0×" button in the player controls: 0.5× … 4×. The speed '
@@ -531,35 +511,9 @@ const List<_Item> _smartItems = [
     'Player equalizer sheet: Dialogue boost lifts quiet speech. On-device '
         'audio filter, off by default.',
   ),
-  _Item(
-    Icons.notifications_active_outlined,
-    'Continue-watching notifications',
-    'Close the app part-way through a video and a "Continue watching" '
-        'notification appears with the exact time you stopped. Tap it to '
-        'open the app and resume right there. (Not posted when the app '
-        'merely moves to the background.)',
-  ),
-  _Item(
-    Icons.music_note_outlined,
-    'Player in the notification shade',
-    'While a video plays, the device\'s own media controls appear (shade, '
-        'lock screen, media panel) with the video thumbnail, progress bar '
-        'and Previous / Play-Pause / Next / Stop buttons. With Background '
-        'audio on, the audio keeps playing in another app, with the screen '
-        'off, and even after you swipe the app away.',
-  ),
 ];
 
 const List<_Item> _tipItems = [
-  _Item(
-    Icons.notifications_active_outlined,
-    'Playback controls missing on the lock screen?',
-    'Keep the app updated, then check: (1) Android Settings → Apps → Max '
-        'Player → Notifications is allowed; (2) your phone\'s lock-screen '
-        'setting shows notifications; (3) battery saving or background '
-        'restrictions are off for Max Player. The media panel appears '
-        'whenever a video is playing or paused in the background.',
-  ),
   _Item(
     Icons.info_outline,
     'A new video does not appear in the library?',

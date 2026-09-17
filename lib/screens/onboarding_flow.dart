@@ -352,12 +352,6 @@ class _HowToPage extends StatelessWidget {
           subtitle:
               'Sidecar .srt subtitles, word-by-word karaoke overlay, and offline AI captions.',
         ),
-        _FeatureRow(
-          icon: Icons.notifications_outlined,
-          title: 'Continue-watching alerts',
-          subtitle:
-              'Leave a video halfway? A notification reminds you where you stopped.',
-        ),
       ],
     );
   }
@@ -408,11 +402,6 @@ class _PlayerGuidePage extends StatelessWidget {
           kind: GestureKind.swipeBrightness,
           title: 'Swipe the left half',
           subtitle: 'Up = brighter, down = dimmer.',
-        ),
-        _GestureRow(
-          kind: GestureKind.swipeVolume,
-          title: 'Swipe the right half',
-          subtitle: 'Up = louder, down = quieter (all the way down mutes).',
         ),
         _GestureRow(
           kind: GestureKind.swipeSeek,

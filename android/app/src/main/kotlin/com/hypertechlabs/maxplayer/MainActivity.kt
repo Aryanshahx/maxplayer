@@ -1,8 +1,5 @@
 package com.hypertechlabs.maxplayer
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PictureInPictureParams
 import android.app.PendingIntent
 import android.app.RecoverableSecurityException
@@ -20,7 +17,6 @@ import android.graphics.Rect
 import android.graphics.drawable.Icon
 import android.hardware.SensorManager
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -32,7 +28,6 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
-import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -47,9 +42,7 @@ import dev.ffmpegkit.whisper.WhisperConfig
 import dev.ffmpegkit.whisper.WhisperModel
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.plugin.common.MethodChannel
-import io.flutter.plugins.GeneratedPluginRegistrant
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -132,54 +125,8 @@ class MainActivity : FlutterFragmentActivity() {
         private const val REQ_VOICE_SEARCH = 49
         private const val REQ_MEDIA_WRITE = 50
 
-        // "Continue watching" system notifications (v29+).
-        private const val CHANNEL_CONTINUE = "maxplayer_continue"
-        private const val NOTIFY_CONTINUE_ID = 1903
-        private const val REQ_CONTINUE_OPEN = 1904
-        const val EXTRA_CONTINUE_PATH = "maxplayer_continue_path"
         private const val NATIVE_CHANNEL = "maxplayer/native"
 
-        // v30: the Flutter engine is CACHED and outlives the activity, so
-        // swiping the app away keeps the video/audio playing (background
-        // audio survives "app closed") and the notification play/pause can
-        // still reach the player.
-        private const val ENGINE_ID = "maxplayer_engine"
-
-        @Volatile
-        private var engine: FlutterEngine? = null
-
-        // Latest local-video resume state pushed by Dart (5s ticks); used
-        // by onDestroy() to post the "Continue watching" notification when
-        // the app is closed.
-        @Volatile
-        private var continueTitle: String? = null
-
-        @Volatile
-        private var continuePath: String? = null
-
-        @Volatile
-        private var continuePosMs: Long = 0
-
-        // Deep link from the "Continue watching" notification, waiting for
-        // Dart (set from onCreate/onNewIntent, consumed by Dart).
-        @Volatile
-        private var pendingContinuePath: String? = null
-
-        /**
-         * Play/pause from a notification/media button when the activity is
-         * already destroyed: invoke `pipToggle` on the cached engine's
-         * method channel (must run on the main thread).
-         */
-        fun toggleEnginePlayer() {
-            val messenger = engine?.dartExecutor?.binaryMessenger ?: return
-            Handler(Looper.getMainLooper()).post {
-                try {
-                    MethodChannel(messenger, NATIVE_CHANNEL)
-                        .invokeMethod("pipToggle", null)
-                } catch (_: Throwable) {
-                }
-            }
-        }
     }
 
     private val pipSupported: Boolean
@@ -187,86 +134,17 @@ class MainActivity : FlutterFragmentActivity() {
             PackageManager.FEATURE_PICTURE_IN_PICTURE,
         )
 
-    // ---------------------------------------------------------------------------
-    // v30: cached Flutter engine. The engine is created once, cached, and NOT
-    // destroyed with the activity — so when the user swipes the app away the
-    // process and the Dart isolate (and the playing video) stay alive, giving
-    // true background audio after "close", and the reopen returns instantly
-    // to exactly where playback was.
-    // ---------------------------------------------------------------------------
-
-    override fun provideFlutterEngine(context: Context): FlutterEngine? {
-        val cached = FlutterEngineCache.getInstance().get(ENGINE_ID)
-        if (cached != null) {
-            engine = cached
-            return cached
-        }
-        val fresh = FlutterEngine(context.applicationContext)
-        // Engine created outside the delegate: plugins must be registered
-        // explicitly (the delegate only auto-registers engines it creates).
-        try {
-            GeneratedPluginRegistrant.registerWith(fresh)
-        } catch (_: Throwable) {
-        }
-        FlutterEngineCache.getInstance().put(ENGINE_ID, fresh)
-        engine = fresh
-        return fresh
-    }
-
-    override fun shouldDestroyEngineWithHost(): Boolean = false
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // v32 (old-app parity): all notification channels exist before any
-        // feature posts one; media-service actions route to Dart.
-        Notifications.ensureChannels(applicationContext)
-        MediaPlaybackService.onMediaAction = { action ->
-            mainHandler.post { methodChannel?.invokeMethod("onMediaAction", action) }
-        }
-        MediaPlaybackService.onMediaSeek = { posMs ->
-            mainHandler.post { methodChannel?.invokeMethod("onMediaSeek", posMs) }
-        }
-        captureContinueDeepLink(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        captureContinueDeepLink(intent)
-        // Warm path: the engine is already up, so push the deep link to
-        // Dart right away (it is also stored for the pull-based fallback).
-        val path = pendingContinuePath
-        if (path != null && engine != null) {
-            methodChannel?.invokeMethod(
-                "onContinueWatching",
-                hashMapOf("path" to path),
-            )
-            pendingContinuePath = null
-        }
-    }
-
-    /** Remembers a notification-tap deep link (if any). */
-    private fun captureContinueDeepLink(intent: Intent?) {
-        if (intent == null) return
-        val path = intent.getStringExtra(EXTRA_CONTINUE_PATH)
-        if (path != null) {
-            intent.removeExtra(EXTRA_CONTINUE_PATH)
-            pendingContinuePath = path
-            return
-        }
-        // v32: old-app payload scheme ("video:<path>").
-        val payload = intent.getStringExtra(Notifications.EXTRA_PAYLOAD)
-        if (!payload.isNullOrEmpty()) {
-            intent.removeExtra(Notifications.EXTRA_PAYLOAD)
-            if (payload.startsWith("video:")) {
-                pendingContinuePath = payload.removePrefix("video:")
-            }
-        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        engine = flutterEngine
         PipActionReceiver.bind(this)
 
         methodChannel = MethodChannel(
@@ -316,91 +194,13 @@ class MainActivity : FlutterFragmentActivity() {
                     result.success(true)
                 }
 
-                "nowPlayingShow" -> {
-                    // v32 (old-app parity): foreground media service +
-                    // MediaSession notification (device media controls).
-                    MediaPlaybackService.startOrUpdate(
-                        applicationContext,
-                        call.argument<String>("title") ?: "Max Player",
-                        call.argument<String>("subtitle") ?: "",
-                        call.argument<Boolean>("isPlaying") ?: true,
-                        call.argument<String>("path") ?: "",
-                        call.argument<String>("thumbnailPath"),
-                        call.argument<Number>("positionMs")?.toLong() ?: 0L,
-                        call.argument<Number>("durationMs")?.toLong() ?: 0L,
-                    )
-                    result.success(MediaPlaybackService.NOTIF_ID)
-                }
-
-                "nowPlayingCancel" -> {
-                    MediaPlaybackService.stop(applicationContext)
-                    result.success(true)
-                }
-
-                "setWakeLock" -> {
-                    setWakeLock(call.argument<Boolean>("enable") ?: false)
-                    result.success(true)
-                }
-
-                "updateContinueWatching" -> {
-                    // v30: Dart pushes the latest local-video resume state
-                    // (5s ticks + dispose). Stored here; onDestroy() turns
-                    // it into the "Continue watching" notification when the
-                    // app is closed. posMs <= 0 clears it (video finished).
-                    val posMs = (call.argument<Number>("posMs"))?.toLong() ?: 0L
-                    if (posMs > 0) {
-                        continueTitle = call.argument<String>("title")
-                        continuePath = call.argument<String>("path")
-                        continuePosMs = posMs
-                    } else {
-                        continueTitle = null
-                        continuePath = null
-                        continuePosMs = 0
-                    }
-                    result.success(true)
-                }
-
-                "consumeContinueWatching" -> {
-                    // Pull-based deep link from the "Continue watching"
-                    // notification (cold-start safe).
-                    val path = pendingContinuePath
-                    pendingContinuePath = null
-                    result.success(path)
-                }
-
                 "diagnostics" -> {
-                    // v31: on-device facts for support/debugging.
-                    val granted = if (Build.VERSION.SDK_INT >=
-                        Build.VERSION_CODES.TIRAMISU
-                    ) {
-                        checkSelfPermission(
-                            android.Manifest.permission.POST_NOTIFICATIONS,
-                        ) == PackageManager.PERMISSION_GRANTED
-                    } else {
-                        true
-                    }
-                    val diagAm =
-                        getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                    val devVolMax = diagAm.getStreamMaxVolume(
-                        AudioManager.STREAM_MUSIC,
-                    )
-                    val devVolCur = diagAm.getStreamVolume(
-                        AudioManager.STREAM_MUSIC,
-                    )
                     result.success(
                         hashMapOf(
                             "sdkInt" to Build.VERSION.SDK_INT,
-                            "deviceMediaVolume" to "$devVolCur/$devVolMax",
                             "manufacturer" to Build.MANUFACTURER,
                             "model" to Build.MODEL,
-                            "notificationsGranted" to granted,
-                            "serviceRunning" to MediaPlaybackService.isRunning,
-                            "engineCached" to (engine != null),
                             "activityAlive" to true,
-                            "continueTitle" to (continueTitle ?: ""),
-                            "continuePath" to (continuePath ?: ""),
-                            "continuePosMs" to continuePosMs,
-                            "pendingContinuePath" to (pendingContinuePath ?: ""),
                         ),
                     )
                 }
@@ -492,68 +292,8 @@ class MainActivity : FlutterFragmentActivity() {
                 // NativeBridge calls these on _nativeChannel). Keeping them here
                 // (not on maxplayer/storage) matters: a call sent to the wrong
                 // channel is silently dropped, which is exactly what made
-                // volume swipe, rename and voice search appear "dead".
+                // rename and voice search appear "dead".
                 // -----------------------------------------------------------------
-                "getMediaVolume" -> {
-                    // DEVICE media volume (the player's swipe drives this,
-                    // like MX Player / the old app, so it can always reach
-                    // the phone's true maximum loudness).
-                    try {
-                        val am =
-                            getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                            .coerceAtLeast(1)
-                        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-                        result.success(hashMapOf("level" to cur, "max" to max))
-                    } catch (_: Exception) {
-                        result.success(hashMapOf("level" to 1, "max" to 1))
-                    }
-                }
-
-                "setMediaVolume" -> {
-                    // v1.0.8: NEVER trust the call's lack of exception as
-                    // success. On Realme UI / ColorOS / MIUI / OriginOS,
-                    // setStreamVolume with flags=0 can complete normally and
-                    // SECRETLY ignore the change — the swipe then appears to
-                    // do nothing ("stuck at device volume") while Dart never
-                    // engages its mpv-gain fallback because it believed the
-                    // true reply. We answer with the level read BACK from
-                    // the device; Dart decides success by target==readback.
-                    try {
-                        val v = (call.argument<Double>("value") ?: 0.75)
-                            .coerceIn(0.0, 1.0)
-                        val am =
-                            getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                            .coerceAtLeast(1)
-                        val target = (v * max).roundToInt().coerceIn(0, max)
-                        am.setStreamVolume(
-                            AudioManager.STREAM_MUSIC,
-                            target,
-                            0
-                        )
-                        val readback =
-                            am.getStreamVolume(AudioManager.STREAM_MUSIC)
-                        result.success(
-                            hashMapOf(
-                                "ok" to (readback == target),
-                                "target" to target,
-                                "readback" to readback,
-                                "max" to max,
-                            ),
-                        )
-                    } catch (_: Exception) {
-                        result.success(
-                            hashMapOf(
-                                "ok" to false,
-                                "target" to -1,
-                                "readback" to -1,
-                                "max" to 1,
-                            ),
-                        )
-                    }
-                }
-
                 "renameVideo" -> {
                     // id = the MediaStore _ID (photo_manager's AssetEntity.id).
                     // Building the content URI from the id is far more reliable
@@ -1155,115 +895,12 @@ class MainActivity : FlutterFragmentActivity() {
         methodChannel?.invokeMethod("pipToggle", null)
     }
 
-    // ---------------------------------------------------------------------------
-    // v32 (old-app parity): CPU wake lock for background audio. The media
-    // service holds its own lock while it runs; this one covers the
-    // Dart-driven path so playback never starves when the screen is off.
-    // ---------------------------------------------------------------------------
-
-    private var wakeLock: PowerManager.WakeLock? = null
-
-    private fun setWakeLock(enable: Boolean) {
-        try {
-            if (enable) {
-                if (wakeLock == null) {
-                    val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
-                    wakeLock = pm?.newWakeLock(
-                        PowerManager.PARTIAL_WAKE_LOCK,
-                        "MaxPlayer::BackgroundAudioLock",
-                    )
-                }
-                if (wakeLock?.isHeld == false) {
-                    wakeLock?.acquire(24 * 60 * 60 * 1000L)
-                }
-            } else {
-                if (wakeLock?.isHeld == true) wakeLock?.release()
-            }
-        } catch (_: Throwable) {
-        }
-    }
-
-    // ---------------------------------------------------------------------------
-    // Sensor-driven rotation (MX Player / VLC style): the player rotates by
-    // accelerometer regardless of the phone's system auto-rotate switch.
-    // ---------------------------------------------------------------------------
-
-    private var rotateListener: OrientationEventListener? = null
-    private var rotateLocked = false
-
-    private fun ensureRotateListener() {
-        if (rotateListener != null) return
-        rotateListener = object : OrientationEventListener(
-            this, SensorManager.SENSOR_DELAY_NORMAL
-        ) {
-            override fun onOrientationChanged(angle: Int) {
-                if (angle == ORIENTATION_UNKNOWN || rotateLocked) return
-                val target = when {
-                    angle in 45..134 ->
-                        ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-                    angle in 225..314 ->
-                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                    else ->
-                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                }
-                if (requestedOrientation != target) requestedOrientation = target
-            }
-        }
-    }
-
-    override fun onPictureInPictureModeChanged(
-        isInPictureInPictureMode: Boolean,
-        newConfig: Configuration,
-    ) {
-        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        methodChannel?.invokeMethod("onPipChanged", isInPictureInPictureMode)
-    }
-
     override fun onDestroy() {
-        try {
-            if (wakeLock?.isHeld == true) wakeLock?.release()
-        } catch (_: Throwable) {
-        }
         rotateLocked = false
         rotateListener?.disable()
         rotateListener = null
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        // v30: "Continue watching" fires when the APP is closed (activity
-        // destroyed — back-exit, swipe-from-recents, system kill), never
-        // when it merely goes to the background. The cached engine keeps
-        // audio playing where possible; the notification always offers a
-        // tap-to-resume way back.
-        postContinueWatchingOnClose()
         super.onDestroy()
-    }
-
-    private fun postContinueWatchingOnClose() {
-        val title = continueTitle
-        val path = continuePath
-        val posMs = continuePosMs
-        if (title.isNullOrEmpty() || path.isNullOrEmpty() || posMs <= 0) return
-        // Clear immediately: one close = one notification.
-        continueTitle = null
-        continuePath = null
-        continuePosMs = 0
-        postContinueWatching(
-            title,
-            "You were at ${formatClockMs(posMs)} — tap to continue watching.",
-            path,
-        )
-    }
-
-    // Same clock format as Dart's formatDuration: 1:05 / 1:02:03.
-    private fun formatClockMs(ms: Long): String {
-        val total = if (ms < 0) 0 else ms / 1000
-        val h = total / 3600
-        val m = (total % 3600) / 60
-        val s = total % 60
-        return if (h > 0) {
-            String.format("%d:%02d:%02d", h, m, s)
-        } else {
-            String.format("%d:%02d", m, s)
-        }
     }
 
     // ---------------------------------------------------------------------------
@@ -1363,8 +1000,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     // -----------------------------------------------------------------------
-    // v29: real video dimensions (quality badge) + "Continue watching"
-    // system notification.
+    // v29: real video dimensions (quality badge)
     // -----------------------------------------------------------------------
 
     /**
@@ -1407,43 +1043,6 @@ class MainActivity : FlutterFragmentActivity() {
         }
         dimsCache[path] = dims
         return if (dims != null) hashMapOf("w" to dims[0], "h" to dims[1]) else null
-    }
-
-    /**
-     * Posts the "Continue watching" system notification (v30). Tapping it
-     * opens the app through the system launcher intent — identical to the
-     * home-screen icon, so it reliably brings the existing task to the
-     * front or cold-starts the app — carrying the video path so the app
-     * can resume exactly where it stopped.
-     */
-    /**
-     * v32: "Continue watching" notification via the old-app notification
-     * foundation — tapping carries the video path back into the app as a
-     * "video:<path>" payload so playback resumes exactly where it stopped.
-     */
-    private fun postContinueWatching(title: String, body: String, path: String?) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                // Notifications not yet granted (Android 13+): nothing to
-                // show. Dart requests the grant while the player is open.
-                return
-            }
-            Notifications.show(
-                applicationContext,
-                Notifications.CHANNEL_CONTINUE,
-                NOTIFY_CONTINUE_ID,
-                title,
-                body,
-                if (path.isNullOrEmpty()) null else "video:$path",
-                false,
-                null,
-            )
-        } catch (_: Throwable) {
-            // Best effort — a notification must never crash playback.
-        }
     }
 
     // ---------------------------------------------------------------------------

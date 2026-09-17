@@ -108,12 +108,6 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   onChanged: s.setDoubleTapMiddle,
                 ),
                 _SwitchTile(
-                  icon: Icons.volume_up_outlined,
-                  label: 'Swipe right side for volume',
-                  value: s.swipeVolume,
-                  onChanged: s.setSwipeVolume,
-                ),
-                _SwitchTile(
                   icon: Icons.brightness_6_outlined,
                   label: 'Swipe left side for brightness',
                   value: s.swipeBrightness,
@@ -184,23 +178,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   value: s.screenLock,
                   onChanged: s.setScreenLock,
                 ),
-                const _SectionHeader('Sound & subtitles'),
-                _SwitchTile(
-                  icon: Icons.volume_up,
-                  label: 'Volume boost up to 200%',
-                  subtitle: 'ON by default - the swipe continues past 100% '
-                      'for quiet videos',
-                  value: s.volumeBoost,
-                  onChanged: s.setVolumeBoost,
-                ),
-                _SwitchTile(
-                  icon: Icons.headset_outlined,
-                  label: 'Background audio playback',
-                  subtitle: 'Keep playing audio when screen is turned off '
-                      'or app is in background',
-                  value: s.backgroundAudio,
-                  onChanged: s.setBackgroundAudio,
-                ),
+                const _SectionHeader('Performance'),
                 _SwitchTile(
                   icon: Icons.speed_outlined,
                   label: 'Performance mode (low-end)',

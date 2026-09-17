@@ -22,7 +22,6 @@ class PlayerSettings extends ChangeNotifier {
   static const _kDoubleTapSides = 'player.doubleTapSides';
   static const _kDoubleTapMiddle = 'player.doubleTapMiddle';
   static const _kSeekStep = 'player.seekStep';
-  static const _kSwipeVolume = 'player.swipeVolume';
   static const _kSwipeBrightness = 'player.swipeBrightness';
   static const _kHorizontalSeek = 'player.horizontalSeek';
   static const _kPinchZoom = 'player.pinchZoom.v3';
@@ -33,15 +32,12 @@ class PlayerSettings extends ChangeNotifier {
   static const _kAutoHideDelay = 'player.autoHideDelay';
   static const _kResume = 'player.resume';
   static const _kScreenLock = 'player.screenLock';
-  static const _kVolumeBoost = 'player.volumeBoost';
-  static const _kBackgroundAudio = 'player.backgroundAudio';
   static const _kPerformanceMode = 'player.performanceMode';
   static const _kPlaybackRate = 'player.playbackRate';
 
   bool doubleTapSides = true;
   bool doubleTapMiddle = true;
   int seekStep = 10;
-  bool swipeVolume = true;
   bool swipeBrightness = true;
   bool horizontalSeek = true;
   bool pinchZoom = false;
@@ -56,8 +52,6 @@ class PlayerSettings extends ChangeNotifier {
   int autoHideDelay = 4;
   bool resume = true;
   bool screenLock = true;
-  bool volumeBoost = true;
-  bool backgroundAudio = true;
 
   /// VLC-style low-end profile: 'auto' (default) | 'on' | 'off'.
   String performanceMode = 'auto';
@@ -74,7 +68,6 @@ class PlayerSettings extends ChangeNotifier {
     doubleTapMiddle = p.getBool(_kDoubleTapMiddle) ?? true;
     final storedSeek = p.getInt(_kSeekStep);
     seekStep = seekSteps.contains(storedSeek) ? storedSeek! : 10;
-    swipeVolume = p.getBool(_kSwipeVolume) ?? true;
     swipeBrightness = p.getBool(_kSwipeBrightness) ?? true;
     horizontalSeek = p.getBool(_kHorizontalSeek) ?? true;
     pinchZoom = p.getBool(_kPinchZoom) ?? false;
@@ -88,8 +81,6 @@ class PlayerSettings extends ChangeNotifier {
     autoHideDelay = autoHideSeconds.contains(storedHide) ? storedHide! : 4;
     resume = p.getBool(_kResume) ?? true;
     screenLock = p.getBool(_kScreenLock) ?? true;
-    volumeBoost = p.getBool(_kVolumeBoost) ?? true;
-    backgroundAudio = p.getBool(_kBackgroundAudio) ?? true;
     final storedPerf = p.getString(_kPerformanceMode);
     performanceMode =
         performanceModes.contains(storedPerf) ? storedPerf! : 'auto';
@@ -112,11 +103,6 @@ class PlayerSettings extends ChangeNotifier {
     seekStep = v;
     notifyListeners();
     await _save((p) => p.setInt(_kSeekStep, v));
-  }
-
-  Future<void> setSwipeVolume(bool v) async {
-    swipeVolume = v;
-    await _saveBool(_kSwipeVolume, v);
   }
 
   Future<void> setSwipeBrightness(bool v) async {
@@ -170,16 +156,6 @@ class PlayerSettings extends ChangeNotifier {
   Future<void> setScreenLock(bool v) async {
     screenLock = v;
     await _saveBool(_kScreenLock, v);
-  }
-
-  Future<void> setVolumeBoost(bool v) async {
-    volumeBoost = v;
-    await _saveBool(_kVolumeBoost, v);
-  }
-
-  Future<void> setBackgroundAudio(bool v) async {
-    backgroundAudio = v;
-    await _saveBool(_kBackgroundAudio, v);
   }
 
   Future<void> setPerformanceMode(String v) async {

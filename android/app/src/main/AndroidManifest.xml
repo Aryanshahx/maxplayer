@@ -12,11 +12,7 @@
         android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <application
         android:label="Max Player"
@@ -50,14 +46,6 @@
         <receiver
             android:name=".PipActionReceiver"
             android:exported="false" />
-        <!-- v32: old-app parity — foreground media service with MediaSession,
-             audio focus and a partial wake lock: background audio keeps
-             playing in another app and with the screen off. -->
-        <service
-            android:name=".MediaPlaybackService"
-            android:exported="false"
-            android:stopWithTask="false"
-            android:foregroundServiceType="mediaPlayback" />
     </application>
     <queries>
         <intent>

@@ -8,8 +8,6 @@ import '../app_info.dart';
 import '../theme.dart';
 import '../utils/collections.dart';
 import '../utils/crash_log.dart';
-import '../services/native_bridge.dart';
-import '../utils/deep_links.dart';
 import '../utils/local_store.dart';
 import '../utils/onboarding.dart';
 import '../utils/privacy_policy.dart';
@@ -99,16 +97,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
         MaterialPageRoute(builder: (_) => const OnboardingFlow()),
       );
     }
-    if (!mounted) return;
-    // v31: request the Android 13+ notification grant EARLY, on the home
-    // screen (a normal dialog context) — the continue-watching and
-    // playback notifications can't show without it.
-    unawaited(NativeBridge.ensureNotificationsAllowed());
-    // v30 cold-start deep link: the app was opened from a "Continue
-    // watching" notification — resume that video (the player's own
-    // resume prompt offers the exact saved position).
-    final path = await NativeBridge.consumeContinueWatching();
-    if (path != null) openContinueWatching(path);
   }
 
   @override

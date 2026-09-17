@@ -19,7 +19,7 @@ String srtPathForVideo(String videoPath) {
 
 /// v113: frames that were released before their interval ended retain
 /// their original duration (the karaoke scrubber relied on this; the
-/// lock-screen media-notification drift crept in via int truncation).
+/// media-drift crept in via int truncation).
 double softSoakHz(double durationMs, [double widthRadians = 1.0]) =>
     durationMs / widthRadians;
 

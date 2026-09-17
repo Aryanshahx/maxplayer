@@ -1,8 +1,6 @@
 import 'package:flutter/services.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../utils/ai_subtitles.dart';
-import '../utils/volume.dart';
 
 /// Thin bridge to the Android side for the Drop 5 ports that need the
 /// platform: the system document picker (cloud import), the private-folder
@@ -17,7 +15,7 @@ class NativeBridge {
   NativeBridge._();
 
   // Storage operations are handled by maxplayer/storage. Player/device
-  // operations (volume, rename, speech recognition) live on the main native
+  // operations (rename, speech recognition) live on the main native
   // channel. Keeping the two channels separate prevents calls from being
   // silently swallowed by the wrong Android handler.
   static const MethodChannel _channel = MethodChannel('maxplayer/storage');
@@ -177,81 +175,7 @@ class NativeBridge {
     }
   }
 
-  /// Current DEVICE media (music-stream) volume as a 0..1 fraction. The
-  /// player's volume swipe drives this, exactly like MX Player / the old
-  /// app, so it can always reach the phone's true maximum loudness.
-  static Future<double> getMediaVolume() async {
-    try {
-      final res = await _nativeChannel
-          .invokeMethod<Map<Object?, Object?>>('getMediaVolume');
-      final level = (res?['level'] as num?)?.toDouble() ?? 1.0;
-      final max = (res?['max'] as num?)?.toDouble() ?? 1.0;
-      if (max <= 0) return 1.0;
-      return (level / max).clamp(0.0, 1.0);
-    } catch (_) {
-      return 1.0;
-    }
-  }
 
-  /// Sets the DEVICE media (music-stream) volume. [value] is a 0..1
-  /// fraction. Returns false when the platform call could not be made
-  /// (the player then falls back to mpv gain so loudness still moves).
-  ///
-  /// v1.0.8: success now means the device ACTUALLY applied the level.
-  /// Several OEM skins (Realme UI, ColorOS, MIUI, OriginOS) swallow
-  /// `setStreamVolume` without throwing — a plain `true` from the native
-  /// side used to hide that, which is what made the volume swipe look
-  /// "stuck at device volume": the call lied and the mpv-gain fallback
-  /// never engaged. The native handler now read-backs the stream level;
-  /// both the modern Map reply ({ok, target, readback, max}) and the
-  /// legacy plain-bool reply from older APKs are understood.
-  static Future<bool> setMediaVolume(double value) async {
-    final v = value.clamp(0.0, 1.0);
-    try {
-      final res =
-          await _nativeChannel.invokeMethod<Object?>('setMediaVolume', {
-        'value': v,
-      });
-      bool ok;
-      if (res is Map) {
-        // Modern contract: trust only the read-back, not the success flag.
-        final max = (res['max'] as num?)?.toInt() ?? 1;
-        final target =
-            (res['target'] as num?)?.toInt() ?? targetDeviceLevel(v, max);
-        final readback = (res['readback'] as num?)?.toInt() ?? -1;
-        ok = deviceVolumeApplied(target, readback);
-        lastDeviceVolumeTarget = target;
-        lastDeviceVolumeReadback = readback;
-        lastDeviceVolumeMax = max;
-      } else {
-        // Legacy plain-bool reply (older native side). No read-back
-        // available, so the flag is the best signal there is.
-        ok = res == true;
-      }
-      if (ok) {
-        lastDeviceVolumeSet = v;
-        lastDeviceVolumeSetAt = DateTime.now();
-      }
-      return ok;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// Telemetry for the diagnostics sheet: the last volume the player asked
-  /// the device to apply (and when). Helps tell "swipe never fired" apart
-  /// from "OEM skin ignored the stream change".
-  static double? lastDeviceVolumeSet;
-  static DateTime? lastDeviceVolumeSetAt;
-
-  /// Read-back telemetry from the modern setMediaVolume reply: what the
-  /// player asked for (target, in device ticks), what the device reported
-  /// having applied (readback), and the stream's tick max. When
-  /// [lastDeviceVolumeReadback] != [lastDeviceVolumeTarget] an OEM skin
-  /// swallowed the change and the player is driving mpv gain instead.
-  static int? lastDeviceVolumeTarget;
-  static int? lastDeviceVolumeReadback;
-  static int? lastDeviceVolumeMax;
 
   /// Launches Android's speech recognition (in-app SpeechRecognizer first,
   /// system dialog as fallback) and returns the recognised query, or null on
@@ -305,80 +229,10 @@ class NativeBridge {
     }
   }
 
-  /// Pushes the latest local-video resume state to the native side (v30).
-  /// The native layer stores it and turns it into the "Continue watching"
-  /// notification ONLY when the app is actually closed (activity destroyed) —
-  /// never on a plain home/background press. Send [posMs] <= 0 to clear
-  /// (video finished / nothing resumable).
-  static Future<void> updateContinueWatching({
-    required String title,
-    required String path,
-    required int posMs,
-  }) async {
-    try {
-      await _nativeChannel.invokeMethod('updateContinueWatching', {
-        'title': title,
-        'path': path,
-        'posMs': posMs,
-      });
-    } catch (_) {}
-  }
 
-  /// Consumes a pending "Continue watching" notification tap (deep link),
-  /// returning the video path or null. Pull-based so it is cold-start
-  /// safe; warm starts are additionally pushed via `onContinueWatching`.
-  static Future<String?> consumeContinueWatching() async {
-    try {
-      final path = await _nativeChannel.invokeMethod<String>(
-        'consumeContinueWatching',
-      );
-      return (path == null || path.isEmpty) ? null : path;
-    } catch (_) {
-      return null;
-    }
-  }
 
-  /// v32 (old-app parity): starts/updates the foreground MEDIA service +
-  /// MediaSession notification — the device's own media controls (shade,
-  /// lock screen, Android 11+ media panel) take over, with Previous /
-  /// Play-Pause / Next / Stop buttons and the video thumbnail. The service
-  /// also owns audio focus + a partial wake lock, so audio keeps playing
-  /// in another app and with the screen off.
-  static Future<void> showNowPlaying({
-    required String title,
-    required String subtitle,
-    required bool isPlaying,
-    required String path,
-    String? thumbnailPath,
-    required int positionMs,
-    required int durationMs,
-  }) async {
-    try {
-      await _nativeChannel.invokeMethod('nowPlayingShow', {
-        'title': title,
-        'subtitle': subtitle,
-        'isPlaying': isPlaying,
-        'path': path,
-        'thumbnailPath': thumbnailPath,
-        'positionMs': positionMs,
-        'durationMs': durationMs,
-      });
-    } catch (_) {}
-  }
 
-  /// Stops the media service and removes the now-playing notification.
-  static Future<void> cancelNowPlaying() async {
-    try {
-      await _nativeChannel.invokeMethod('nowPlayingCancel');
-    } catch (_) {}
-  }
 
-  /// CPU wake lock for background audio (old-app parity).
-  static Future<void> setWakeLock(bool enable) async {
-    try {
-      await _nativeChannel.invokeMethod('setWakeLock', {'enable': enable});
-    } catch (_) {}
-  }
 
   /// v31: on-device facts for the About → Diagnostics sheet (support).
   static Future<Map<String, dynamic>> diagnostics() async {
@@ -388,35 +242,12 @@ class NativeBridge {
       );
       if (raw == null) return const {};
       final out = raw.map((k, v) => MapEntry(k.toString(), v));
-      out['lastVolumeSwipeTarget'] =
-          lastDeviceVolumeSet == null ? '-' : lastDeviceVolumeSet!.toStringAsFixed(2);
-      out['lastVolumeSwipeAt'] =
-          lastDeviceVolumeSetAt == null ? '-' : lastDeviceVolumeSetAt!.toIso8601String();
-      // '240/3' style: what we asked for vs what the device read back.
-      // Mismatch => OEM skin swallowed setStreamVolume; mpv gain covers it.
-      out['deviceVolumeTarget'] =
-          lastDeviceVolumeTarget == null ? '-' : '$lastDeviceVolumeTarget';
-      out['deviceVolumeReadback'] =
-          lastDeviceVolumeReadback == null ? '-' : '$lastDeviceVolumeReadback';
       return out;
     } catch (_) {
       return const {};
     }
   }
 
-  /// Requests the Android 13+ POST_NOTIFICATIONS grant (no-op below API 33
-  /// or on non-Android hosts). Returns true when notifications may post.
-  static Future<bool> ensureNotificationsAllowed() async {
-    try {
-      if (await sdkInt() >= 33) {
-        final status = await Permission.notification.request();
-        return status.isGranted;
-      }
-      return true;
-    } catch (_) {
-      return true;
-    }
-  }
 
   // -------------------------------------------------------------------------
   // Single dispatcher for `maxplayer/native` INCOMING events. There must be
@@ -427,16 +258,6 @@ class NativeBridge {
   // (pipToggleListener) instead of its own handler.
   // -------------------------------------------------------------------------
   static void Function()? pipToggleListener;
-
-  /// v32: media-notification / MediaSession buttons (play_pause, next,
-  /// prev, stop) and seekbar — forwarded from the foreground service.
-  static void Function(String action)? mediaActionListener;
-  static void Function(Duration position)? mediaSeekListener;
-
-  /// Deep link from the "Continue watching" notification on a WARM start
-  /// (app process alive, tap re-launched the activity). Cold starts use
-  /// [consumeContinueWatching] instead.
-  static void Function(String path)? continueWatchingListener;
 
   static void Function(String state)? onVoiceState;
   static void Function(double rms)? onVoiceRms;
@@ -455,21 +276,6 @@ class NativeBridge {
       switch (call.method) {
         case 'pipToggle':
           pipToggleListener?.call();
-          break;
-        case 'onMediaAction':
-          final a = call.arguments;
-          if (a is String && a.isNotEmpty) mediaActionListener?.call(a);
-          break;
-        case 'onMediaSeek':
-          final ms = (call.arguments as num?)?.toInt();
-          if (ms != null) {
-            mediaSeekListener?.call(Duration(milliseconds: ms));
-          }
-          break;
-        case 'onContinueWatching':
-          final args = call.arguments;
-          final p = args is Map ? args['path'] : null;
-          if (p is String && p.isNotEmpty) continueWatchingListener?.call(p);
           break;
         case 'onAiProgress':
         case 'onAiSubtitleDone':
