@@ -157,7 +157,15 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                       : null,
                 ),
                 const _SectionHeader('Sound'),
-                const _VolumeSliderTile(),
+                _BoostToggleTile(s: s),
+                _SwitchTile(
+                  icon: Icons.headphones_outlined,
+                  label: 'Background audio',
+                  subtitle: 'Keep playing with the app minimized or the screen '
+                      'locked — notification shows play/pause/loop controls.',
+                  value: s.backgroundAudio,
+                  onChanged: s.setBackgroundAudio,
+                ),
                 const _SectionHeader('Playback'),
                 _SwitchTile(
                   icon: Icons.timer_off_outlined,
@@ -280,10 +288,11 @@ class _SwitchTile extends StatelessWidget {
   }
 }
 
-/// v1.0.10 device-independent volume slider: drives the global AppVolume
-/// store (persisted, mirrored into mpv, hardware keys follow it too).
-class _VolumeSliderTile extends StatelessWidget {
-  const _VolumeSliderTile();
+/// v1.0.11 boost toggle (default ON): lets the in-app volume scale run
+/// past 100% up to 200% like VLC. OFF caps everything at 100%.
+class _BoostToggleTile extends StatelessWidget {
+  final PlayerSettings s;
+  const _BoostToggleTile({required this.s});
 
   @override
   Widget build(BuildContext context) {
@@ -291,52 +300,36 @@ class _VolumeSliderTile extends StatelessWidget {
       listenable: AppVolume.instance,
       builder: (context, _) {
         final av = AppVolume.instance;
-        final boosted = av.level > kBoostStart;
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
           child: Row(children: [
-            Icon(
-              av.muted || av.level <= 0
-                  ? Icons.volume_off_outlined
-                  : boosted
-                      ? Icons.volume_up
-                      : Icons.volume_down_outlined,
-              color: av.muted ? Colors.white38 : Colors.white70,
-              size: 22,
-            ),
+            const Icon(Icons.volume_up, color: Colors.white70, size: 22),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    boosted
-                        ? 'Player volume ${av.level.round()}% (boost)'
-                        : 'Player volume ${av.level.round()}%',
-                    style: const TextStyle(color: Colors.white, fontSize: 15),
-                  ),
                   const Text(
-                    'In-app volume — device volume untouched. '
-                    'Hardware keys adjust this while the player is open.',
-                    style: TextStyle(color: Colors.white38, fontSize: 12),
+                    'Volume boost (up to 200%)',
+                    style: TextStyle(color: Colors.white, fontSize: 15),
                   ),
-                  Slider(
-                    value: av.level,
-                    min: 0,
-                    max: kAppVolumeMax,
-                    divisions: 40,
-                    activeColor: AppColors.accent,
-                    onChanged: (v) => AppVolume.instance.setLevel(v),
+                  Text(
+                    s.volumeBoost
+                        ? 'On — current level ${av.level.round()}%'
+                        : 'Off — capped at 100%, current level ${av.level.round()}%',
+                    style:
+                        const TextStyle(color: Colors.white38, fontSize: 12),
                   ),
                 ],
               ),
             ),
-            IconButton(
-              tooltip: av.muted ? 'Unmute' : 'Mute',
-              icon: Icon(av.muted ? Icons.volume_off : Icons.volume_up,
-                  color: av.muted ? AppColors.accent : Colors.white70,
-                  size: 20),
-              onPressed: () => AppVolume.instance.setMuted(!av.muted),
+            Switch.adaptive(
+              value: s.volumeBoost,
+              activeThumbColor: AppColors.accent,
+              onChanged: (v) async {
+                await s.setVolumeBoost(v);
+                await AppVolume.instance.setBoostEnabled(v);
+              },
             ),
           ]),
         );

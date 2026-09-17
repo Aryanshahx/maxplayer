@@ -107,6 +107,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _controlsVisible = true;
   bool _boost = false;
   bool _locked = false;
+  /// v1.0.11 background audio: service+notification mirrors these two fields.
+  bool _bgLooping = false;
+  bool _bgActive = false;
   FitMode _fitMode = FitMode.fit;
 
   _DragMode _drag = _DragMode.undecided;
@@ -179,6 +182,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     _settingsListener = () {
       if (!mounted) return;
       setState(() {});
+      // v1.0.11: mirror the boost toggle into the volume store.
+      unawaited(AppVolume.instance
+          .setBoostEnabled(_settings.volumeBoost));
+      // Background audio toggled off mid-play -> drop the notification.
+      if (!_settings.backgroundAudio && _bgActive) unawaited(_bgAudioStop());
       if (_settings.autoHide && _player.state.playing) {
         _scheduleHide();
       } else if (!_settings.autoHide) {
@@ -205,6 +213,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     NativeBridge.volumeKeyListener = (dir) {
       unawaited(_onVolumeKey(dir));
     };
+    NativeBridge.bgAudioActionListener = _onBgAudioAction;
     unawaited(NativeBridge.setVolumeKeyIntercept(true));
     // mpv caps `volume` at 100 unless told otherwise — the boost ceiling.
     unawaited(_mpvSet('volume-max', '200'));
@@ -224,9 +233,14 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (playing) {
         WakelockPlus.enable();
         if (_settings.autoHide) _scheduleHide();
+        if (_settings.backgroundAudio) unawaited(_bgAudioSync());
       } else {
         WakelockPlus.disable();
         unawaited(_savePosition());
+        // Paused in background: notification flips to the Play action.
+        if (_settings.backgroundAudio && _bgActive) {
+          unawaited(_bgAudioSync());
+        }
       }
       unawaited(_native.invokeMethod('updatePipPlaying', {'playing': playing}));
       if (mounted) setState(() {});
@@ -601,6 +615,52 @@ class _PlayerScreenState extends State<PlayerScreen>
     _showIndicatorThrottled(v <= 0 || av.muted ? 'Muted' : 'Volume $v%', icon);
   }
 
+  // ---------------------------------------------------------------------
+  // v1.0.11 background audio — notification lifecycle + action handling.
+  // ---------------------------------------------------------------------
+
+  Future<void> _bgAudioSync() async {
+    if (!_settings.backgroundAudio) return;
+    _bgActive = true;
+    await NativeBridge.bgAudioUpdate(
+      title: _title,
+      playing: _player.state.playing,
+      looping: _bgLooping,
+    );
+  }
+
+  Future<void> _bgAudioStop() async {
+    _bgActive = false;
+    await NativeBridge.bgAudioStop();
+  }
+
+  Future<void> _toggleBgLoop() async {
+    _bgLooping = !_bgLooping;
+    // mpv-side loop so it also persists if the user keeps the screen on.
+    unawaited(_mpvSet('loop-file', _bgLooping ? 'inf' : 'no'));
+    _showIndicatorThrottled(
+        _bgLooping ? 'Loop on' : 'Loop off', Icons.loop);
+    await _bgAudioSync();
+  }
+
+  void _onBgAudioAction(String action) {
+    final act = action.split('.').last;
+    switch (act) {
+      case 'PLAY':
+      case 'PAUSE':
+        unawaited(_player.playOrPause());
+        break;
+      case 'LOOP':
+        unawaited(_toggleBgLoop());
+        break;
+      case 'STOP':
+        unawaited(_player.pause());
+        unawaited(_bgAudioStop());
+        break;
+    }
+    if (mounted) setState(() {});
+  }
+
   /// Tap-to-mute: a store-level flag so unmuting restores the exact level.
   Future<void> _toggleMute() async {
     await AppVolume.instance.setMuted(!AppVolume.instance.muted);
@@ -780,7 +840,14 @@ class _PlayerScreenState extends State<PlayerScreen>
       } else if (delta.dy.abs() >= delta.dx.abs()) {
         if (_dragStart.dx < width / 2 && _settings.swipeBrightness) {
           _drag = _DragMode.brightness;
-          _brightnessStart = await ScreenBrightness.instance.application;
+          // Some devices throw/kill the app-brightness read — fall back to
+          // the last known value so the gesture never dies silently.
+          try {
+            _brightnessStart = await ScreenBrightness.instance.application;
+          } catch (e) {
+            CrashLog.error('player.brightness_read_failed', e);
+            _brightnessStart = _levelValue.clamp(0.0, 1.0);
+          }
           _levelValue = _brightnessStart;
           _dragStart = d.focalPoint;
         } else if (_settings.swipeVolume) {
@@ -802,7 +869,11 @@ class _PlayerScreenState extends State<PlayerScreen>
           (_brightnessStart - (d.focalPoint.dy - _dragStart.dy) / 300.0)
               .clamp(0.0, 1.0)
               .toDouble();
-      await ScreenBrightness.instance.setApplicationScreenBrightness(v);
+      try {
+        await ScreenBrightness.instance.setApplicationScreenBrightness(v);
+      } catch (e) {
+        CrashLog.error('player.brightness_write_failed', e);
+      }
       _levelValue = v;
       // Tick at the brightness bounds (0 / 100).
       final pct = (v * 100).round();
@@ -1846,6 +1917,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     AppVolume.instance.removeListener(_applyVolume);
     NativeBridge.volumeKeyListener = null;
+    NativeBridge.bgAudioActionListener = null;
+    unawaited(_bgAudioStop());
     unawaited(NativeBridge.setVolumeKeyIntercept(false));
     if (_settingsListener != null) _settings.removeListener(_settingsListener!);
     WidgetsBinding.instance.removeObserver(this);
@@ -1863,9 +1936,18 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       unawaited(_savePosition());
-      // No background audio: app going away ends playback loudly (mpv
-      // keeps decoding the last frame; pause so nothing blares).
-      if (_player.state.playing) unawaited(_player.pause());
+      if (_settings.backgroundAudio && _player.state.playing) {
+        // v1.0.11: keep playing — hand control to the foreground service.
+        unawaited(_bgAudioSync());
+      } else if (_player.state.playing) {
+        // No background audio: app going away ends playback loudly (mpv
+        // keeps decoding the last frame; pause so nothing blares).
+        unawaited(_player.pause());
+      }
+    }
+    if (state == AppLifecycleState.resumed) {
+      // Back in front: in-app UI takes control again; drop the notification.
+      if (_bgActive) unawaited(_bgAudioStop());
     }
     if (state == AppLifecycleState.resumed &&
         _player.state.playing) {

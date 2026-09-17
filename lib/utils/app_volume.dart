@@ -22,6 +22,10 @@ class AppVolume extends ChangeNotifier {
   /// Current level, 0..[kAppVolumeMax] percent. Above [kBoostStart] is boost.
   double level = 100;
 
+  /// v1.0.11: Player settings "Volume boost (up to 200%)". Default ON —
+  /// when OFF the level is clamped at [kBoostStart] (plain 0..100 range).
+  bool boostEnabled = true;
+
   /// Muted flag. Kept separate from [level] so unmuting restores the exact
   /// previous level (0% and "muted" are different states, like VLC).
   bool muted = false;
@@ -40,7 +44,7 @@ class AppVolume extends ChangeNotifier {
   /// Sets the level (clamped to 0..200). Raising above zero while muted
   /// clears the muted flag — moving the volume always means "make sound".
   Future<void> setLevel(double v) async {
-    final next = clampAppVolume(v);
+    final next = clampAppVolumeBoost(v, boostEnabled);
     if (next == level) return;
     level = next;
     if (level > 0 && muted) muted = false;
@@ -62,6 +66,15 @@ class AppVolume extends ChangeNotifier {
 
   /// The effective gain mpv should be given right now.
   double get mpvGain => muted ? 0 : level;
+
+  /// Toggle the boost ceiling; disabling clamps a boosted level back to 100%.
+  Future<void> setBoostEnabled(bool b) async {
+    if (b == boostEnabled) return;
+    boostEnabled = b;
+    if (!b && level > kBoostStart) level = kBoostStart;
+    notifyListeners();
+    unawaited(_save());
+  }
 
   Future<void> _save() async {
     try {
@@ -90,6 +103,10 @@ const double kSwipeSpanPx = 300.0;
 
 /// Clamps an arbitrary level into 0..[kAppVolumeMax].
 double clampAppVolume(double v) => v.clamp(0.0, kAppVolumeMax).toDouble();
+
+/// Clamp honoring the Player-settings boost toggle: OFF caps at 100%.
+double clampAppVolumeBoost(double v, bool boostEnabled) =>
+    v.clamp(0.0, boostEnabled ? kAppVolumeMax : kBoostStart).toDouble();
 
 /// One hardware-key notch on the display scale, clamped into range.
 double stepAppVolume(double current, int direction) =>

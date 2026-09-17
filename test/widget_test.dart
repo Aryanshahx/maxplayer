@@ -1075,6 +1075,14 @@ plain-list-url.mp4
       expect(swipeAppVolume(20, 300), 0); // clamped at the floor
     });
 
+    test('boost toggle caps the clamp at 100 when OFF', () {
+      expect(clampAppVolumeBoost(150, true), 150);
+      expect(clampAppVolumeBoost(150, false), 100);
+      expect(clampAppVolumeBoost(50, false), 50);
+      expect(clampAppVolumeBoost(250, true), 200);
+      expect(clampAppVolumeBoost(250, false), 100);
+    });
+
     test('icon buckets follow level and mute', () {
       expect(appVolumeIconName(0, false), 'off');
       expect(appVolumeIconName(30, false), 'down');

@@ -118,8 +118,35 @@ class NativeBridge {
     }
   }
 
-  /// Aborts the in-flight cloud copy started by pickVideoDocument; the
-  /// partial cache file is discarded natively. Safe to call anytime.
+  /// v1.0.11: show/update the background-audio foreground notification.
+  static Future<void> bgAudioStart(
+      {required String title,
+      required bool playing,
+      bool looping = false}) async {
+    try {
+      await _nativeChannel.invokeMethod('bgAudioStart',
+          {'title': title, 'playing': playing, 'looping': looping});
+    } catch (_) {}
+  }
+
+  /// Same as [bgAudioStart] but semantically an in-place update.
+  static Future<void> bgAudioUpdate(
+      {required String title,
+      required bool playing,
+      bool looping = false}) async {
+    try {
+      await _nativeChannel.invokeMethod('bgAudioUpdate',
+          {'title': title, 'playing': playing, 'looping': looping});
+    } catch (_) {}
+  }
+
+  /// Hide the background-audio notification (player closed / setting off).
+  static Future<void> bgAudioStop() async {
+    try {
+      await _nativeChannel.invokeMethod('bgAudioStop');
+    } catch (_) {}
+  }
+
   /// v1.0.10: ask MainActivity to swallow volume keys and forward them to
   /// [volumeKeyListener] instead of the device media stream. The player
   /// enables this when opened and disables on dispose.
@@ -271,6 +298,11 @@ class NativeBridge {
   // -------------------------------------------------------------------------
   static void Function()? pipToggleListener;
 
+  /// v1.0.11: background-audio notification actions forwarded by
+  /// AudioControlReceiver through MainActivity ('play' | 'pause' | 'loop' |
+  /// 'stop' — the raw action string, suffixed with the last path segment).
+  static void Function(String action)? bgAudioActionListener;
+
   /// v1.0.10: hardware volume keys, forwarded by MainActivity only while a
   /// player screen told the native side to intercept them (device stream
   /// stays untouched; the in-app AppVolume store is adjusted instead).
@@ -297,6 +329,10 @@ class NativeBridge {
         case 'volumeKey':
           final dir = call.arguments;
           if (dir is String) volumeKeyListener?.call(dir);
+          break;
+        case 'bgAudioAction':
+          final a = call.arguments;
+          if (a is String) bgAudioActionListener?.call(a);
           break;
         case 'onAiProgress':
         case 'onAiSubtitleDone':
