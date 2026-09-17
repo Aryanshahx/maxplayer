@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import '../utils/app_volume.dart';
 import '../utils/player_settings.dart';
 
 /// "Player settings" sheet - customize every gesture and playback behavior,
@@ -114,6 +115,13 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   onChanged: s.setSwipeBrightness,
                 ),
                 _SwitchTile(
+                  icon: Icons.volume_up_outlined,
+                  label: 'Swipe right side for volume',
+                  subtitle: 'In-app volume, 0-200% (boost past 100%)',
+                  value: s.swipeVolume,
+                  onChanged: s.setSwipeVolume,
+                ),
+                _SwitchTile(
                   icon: Icons.swap_horizontal_circle_outlined,
                   label: 'Horizontal swipe to seek',
                   subtitle: 'Drag sideways anywhere to scrub (±90s per screen)',
@@ -148,6 +156,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                         )
                       : null,
                 ),
+                const _SectionHeader('Sound'),
+                const _VolumeSliderTile(),
                 const _SectionHeader('Playback'),
                 _SwitchTile(
                   icon: Icons.timer_off_outlined,
@@ -266,6 +276,71 @@ class _SwitchTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// v1.0.10 device-independent volume slider: drives the global AppVolume
+/// store (persisted, mirrored into mpv, hardware keys follow it too).
+class _VolumeSliderTile extends StatelessWidget {
+  const _VolumeSliderTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: AppVolume.instance,
+      builder: (context, _) {
+        final av = AppVolume.instance;
+        final boosted = av.level > kBoostStart;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          child: Row(children: [
+            Icon(
+              av.muted || av.level <= 0
+                  ? Icons.volume_off_outlined
+                  : boosted
+                      ? Icons.volume_up
+                      : Icons.volume_down_outlined,
+              color: av.muted ? Colors.white38 : Colors.white70,
+              size: 22,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    boosted
+                        ? 'Player volume ${av.level.round()}% (boost)'
+                        : 'Player volume ${av.level.round()}%',
+                    style: const TextStyle(color: Colors.white, fontSize: 15),
+                  ),
+                  const Text(
+                    'In-app volume — device volume untouched. '
+                    'Hardware keys adjust this while the player is open.',
+                    style: TextStyle(color: Colors.white38, fontSize: 12),
+                  ),
+                  Slider(
+                    value: av.level,
+                    min: 0,
+                    max: kAppVolumeMax,
+                    divisions: 40,
+                    activeColor: AppColors.accent,
+                    onChanged: (v) => AppVolume.instance.setLevel(v),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: av.muted ? 'Unmute' : 'Mute',
+              icon: Icon(av.muted ? Icons.volume_off : Icons.volume_up,
+                  color: av.muted ? AppColors.accent : Colors.white70,
+                  size: 20),
+              onPressed: () => AppVolume.instance.setMuted(!av.muted),
+            ),
+          ]),
+        );
+      },
     );
   }
 }

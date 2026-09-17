@@ -13,6 +13,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/native_bridge.dart';
 import '../theme.dart';
 import '../utils/ab_loop.dart';
+import '../utils/app_volume.dart';
 import '../utils/ai_subtitles.dart';
 import '../utils/crash_log.dart';
 import '../utils/fit.dart';
@@ -62,7 +63,7 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-enum _DragMode { undecided, brightness, seek, pan, zoom, cant }
+enum _DragMode { undecided, brightness, volume, seek, pan, zoom, cant }
 
 enum _PlayerMenuAction { info, eq, screenshot, cast, pip, sleep }
 
@@ -106,7 +107,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _controlsVisible = true;
   bool _boost = false;
   bool _locked = false;
-  bool _muted = false;
   FitMode _fitMode = FitMode.fit;
 
   _DragMode _drag = _DragMode.undecided;
@@ -116,6 +116,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   double _zoomBase = 1;
   double _levelValue = 0;
   double _brightnessStart = 0;
+  double _volumeStart = 0;
   int _lastBrightnessPct = -1;
   Offset _pan = Offset.zero;
   Offset _panBase = Offset.zero;
@@ -193,6 +194,20 @@ class _PlayerScreenState extends State<PlayerScreen>
     NativeBridge.pipToggleListener = () {
       unawaited(_player.playOrPause());
     };
+    // v1.0.10 device-independent volume: the store owns the level; the
+    // player mirrors it into mpv, and hardware keys are handed to us by
+    // the native side for as long as this screen is alive.
+    AppVolume.instance.addListener(_applyVolume);
+    unawaited(AppVolume.instance.load().then((_) {
+      if (mounted) _applyVolume();
+    }));
+    _applyVolume();
+    NativeBridge.volumeKeyListener = (dir) {
+      unawaited(_onVolumeKey(dir));
+    };
+    unawaited(NativeBridge.setVolumeKeyIntercept(true));
+    // mpv caps `volume` at 100 unless told otherwise — the boost ceiling.
+    unawaited(_mpvSet('volume-max', '200'));
     unawaited(_settings.load().then((_) {
       if (!mounted) return;
       // Start the session in the fit mode chosen in Settings (default: Fit).
@@ -252,7 +267,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       // Keep the remembered playback speed across videos (v29): mpv can
       // reset the rate while a new file loads, so re-apply it here too.
       unawaited(_player.setRate(_settings.playbackRate));
-      await _mpvSet('volume', '100');
+      await _mpvSet('volume-max', '200');
+      _applyVolume();
       if (mounted) setState(() => _ready = true);
       unawaited(_ensureThumbStrip(path));
       unawaited(_applyPerformanceMode());
@@ -565,19 +581,35 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
 
-  /// Simple mpv-level mute/unmute (kept deliberately small). There is no
-  /// other volume control in the app anymore: the phone's hardware keys
-  /// drive the system stream, like any normal video player.
-  Future<void> _toggleMute() async {
-    if (_muted) {
-      await _mpvSet('volume', '100');
-      _muted = false;
-    } else {
-      await _mpvSet('volume', '0');
-      _muted = true;
-    }
+  /// v1.0.10: apply the AppVolume store to the engine. Everything that
+  /// moves the volume (swipe, hardware keys, settings slider, mute button)
+  /// writes to the store; the listener registered in initState lands here.
+  void _applyVolume() {
+    unawaited(_mpvSet('volume', AppVolume.instance.mpvGain.round().toString()));
     if (mounted) setState(() {});
   }
+
+  Future<void> _onVolumeKey(String dir) async {
+    final av = AppVolume.instance;
+    await av.step(dir == 'up' ? 1 : -1);
+    final v = av.level.round();
+    final icon = switch (appVolumeIconName(av.level, av.muted)) {
+      'off' => Icons.volume_off,
+      'down' => Icons.volume_down,
+      _ => Icons.volume_up,
+    };
+    _showIndicatorThrottled(v <= 0 || av.muted ? 'Muted' : 'Volume $v%', icon);
+  }
+
+  /// Tap-to-mute: a store-level flag so unmuting restores the exact level.
+  Future<void> _toggleMute() async {
+    await AppVolume.instance.setMuted(!AppVolume.instance.muted);
+    final v = AppVolume.instance.level.round();
+    _showIndicator(AppVolume.instance.muted ? 'Muted' : 'Volume $v%',
+        AppVolume.instance.muted ? Icons.volume_off : Icons.volume_up);
+  }
+
+  bool get _muted => AppVolume.instance.muted;
   void _setBoost(bool on) {
     if (!_settings.longPressSpeed || _locked) return;
     // No boost (and no badge) while the video is paused - old-player rule.
@@ -751,9 +783,12 @@ class _PlayerScreenState extends State<PlayerScreen>
           _brightnessStart = await ScreenBrightness.instance.application;
           _levelValue = _brightnessStart;
           _dragStart = d.focalPoint;
+        } else if (_settings.swipeVolume) {
+          // v1.0.10: right-half vertical drag = in-app volume (MX/VLC).
+          _drag = _DragMode.volume;
+          _volumeStart = AppVolume.instance.level;
+          _dragStart = d.focalPoint;
         } else {
-          // Right-half vertical drag used to be the volume swipe — that
-          // gesture is gone; vertical drags on the right do nothing.
           _drag = _DragMode.cant;
         }
       }
@@ -776,6 +811,19 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       _showIndicatorThrottled('Brightness $pct%',
           Icons.brightness_6_outlined);
+    } else if (_drag == _DragMode.volume) {
+      final v = swipeAppVolume(
+          _volumeStart, d.focalPoint.dy - _dragStart.dy);
+      unawaited(AppVolume.instance.setLevel(v));
+      final pct = v.round();
+      final icon = switch (appVolumeIconName(v, AppVolume.instance.muted)) {
+        'off' => Icons.volume_off,
+        'down' => Icons.volume_down,
+        _ => Icons.volume_up,
+      };
+      _levelValue = v;
+      _showIndicatorThrottled(
+          pct <= 0 ? 'Muted' : 'Volume $pct%', icon);
     } else if (_drag == _DragMode.seek) {
       final duration = _player.state.duration;
       if (duration <= Duration.zero) return;
@@ -1796,6 +1844,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (NativeBridge.pipToggleListener != null) {
       NativeBridge.pipToggleListener = null;
     }
+    AppVolume.instance.removeListener(_applyVolume);
+    NativeBridge.volumeKeyListener = null;
+    unawaited(NativeBridge.setVolumeKeyIntercept(false));
     if (_settingsListener != null) _settings.removeListener(_settingsListener!);
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_native.invokeMethod('disableSensorRotate'));

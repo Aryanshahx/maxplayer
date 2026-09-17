@@ -36,6 +36,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Rational
+import android.view.KeyEvent
 import android.view.OrientationEventListener
 import dev.ffmpegkit.whisper.Whisper
 import dev.ffmpegkit.whisper.WhisperConfig
@@ -151,6 +152,15 @@ class MainActivity : FlutterFragmentActivity() {
         )
         methodChannel!!.setMethodCallHandler { call, result ->
             when (call.method) {
+                "setVolumeKeyIntercept" -> {
+                    // v1.0.10: while intercepting, volume keys are consumed
+                    // in dispatchKeyEvent and forwarded to Dart instead of
+                    // touching the device media stream.
+                    interceptVolumeKeys =
+                        call.argument<Boolean>("enabled") ?: false
+                    result.success(true)
+                }
+
                 "enableSensorRotate" -> {
                     ensureRotateListener()
                     rotateLocked = false
@@ -919,6 +929,28 @@ class MainActivity : FlutterFragmentActivity() {
                 if (requestedOrientation != target) requestedOrientation = target
             }
         }
+    }
+
+    // v1.0.10 device-independent volume: while a player screen is visible,
+    // hardware volume keys adjust the in-app (mpv) volume, not the device
+    // media stream. Each key press is forwarded to Dart, which owns the
+    // level (AppVolume store) and shows the HUD.
+    private var interceptVolumeKeys = false
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (interceptVolumeKeys && event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP -> {
+                    methodChannel?.invokeMethod("volumeKey", "up")
+                    return true
+                }
+                KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                    methodChannel?.invokeMethod("volumeKey", "down")
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onPictureInPictureModeChanged(

@@ -120,6 +120,18 @@ class NativeBridge {
 
   /// Aborts the in-flight cloud copy started by pickVideoDocument; the
   /// partial cache file is discarded natively. Safe to call anytime.
+  /// v1.0.10: ask MainActivity to swallow volume keys and forward them to
+  /// [volumeKeyListener] instead of the device media stream. The player
+  /// enables this when opened and disables on dispose.
+  static Future<void> setVolumeKeyIntercept(bool enabled) async {
+    try {
+      await _nativeChannel
+          .invokeMethod('setVolumeKeyIntercept', {'enabled': enabled});
+    } catch (_) {}
+  }
+
+  /// Aborts the in-flight cloud copy started by pickVideoDocument; the
+  /// partial cache file is discarded natively. Safe to call anytime.
   static Future<void> abortPickCopy() async {
     try {
       await _channel.invokeMethod('abortPickCopy');
@@ -259,6 +271,11 @@ class NativeBridge {
   // -------------------------------------------------------------------------
   static void Function()? pipToggleListener;
 
+  /// v1.0.10: hardware volume keys, forwarded by MainActivity only while a
+  /// player screen told the native side to intercept them (device stream
+  /// stays untouched; the in-app AppVolume store is adjusted instead).
+  static void Function(String dir)? volumeKeyListener;
+
   static void Function(String state)? onVoiceState;
   static void Function(double rms)? onVoiceRms;
   static void Function(String text)? onVoicePartial;
@@ -276,6 +293,10 @@ class NativeBridge {
       switch (call.method) {
         case 'pipToggle':
           pipToggleListener?.call();
+          break;
+        case 'volumeKey':
+          final dir = call.arguments;
+          if (dir is String) volumeKeyListener?.call(dir);
           break;
         case 'onAiProgress':
         case 'onAiSubtitleDone':

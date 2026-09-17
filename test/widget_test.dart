@@ -26,6 +26,9 @@ import 'package:maxplayer/utils/karaoke.dart';
 import 'package:maxplayer/utils/ai.dart' show smartLocalMovieAnswer;
 import 'package:maxplayer/services/recommendations.dart';
 import 'package:maxplayer/services/ai_suggest.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:maxplayer/utils/app_volume.dart';
 import 'package:maxplayer/utils/movie_match.dart';
 import 'package:maxplayer/utils/player_settings.dart';
 import 'package:maxplayer/utils/watch_stats.dart';
@@ -1043,6 +1046,65 @@ plain-list-url.mp4
       );
       expect(a, isNotEmpty);
       expect(a.contains('No internet'), isFalse);
+    });
+  });
+
+  group('app volume (device-independent, v1.0.10)', () {
+    test('clamp holds the 0..200 boost range', () {
+      expect(clampAppVolume(-5), 0);
+      expect(clampAppVolume(50), 50);
+      expect(clampAppVolume(100), 100);
+      expect(clampAppVolume(150), 150);
+      expect(clampAppVolume(250), 200);
+    });
+
+    test('hardware-key steps are 5% notches and saturate at the ends', () {
+      expect(stepAppVolume(100, 1), 105);
+      expect(stepAppVolume(100, -1), 95);
+      expect(stepAppVolume(198, 1), 200);
+      expect(stepAppVolume(200, 1), 200);
+      expect(stepAppVolume(3, -1), 0);
+      expect(stepAppVolume(0, -1), 0);
+    });
+
+    test('a 300px swipe spans 100 points; up swipe over 100 enters boost', () {
+      expect(swipeAppVolume(100, -300), 200); // full up-swipe -> max boost
+      expect(swipeAppVolume(100, 300), 0); // full down-swipe -> mute level
+      expect(swipeAppVolume(50, -150), 100);
+      expect(swipeAppVolume(180, -300), 200); // clamped at the boost ceiling
+      expect(swipeAppVolume(20, 300), 0); // clamped at the floor
+    });
+
+    test('icon buckets follow level and mute', () {
+      expect(appVolumeIconName(0, false), 'off');
+      expect(appVolumeIconName(30, false), 'down');
+      expect(appVolumeIconName(49.9, false), 'down');
+      expect(appVolumeIconName(50, false), 'up');
+      expect(appVolumeIconName(150, false), 'up');
+      expect(appVolumeIconName(100, true), 'off');
+    });
+
+    test('setLevel clamps, unmutes on raise, no-op writes stay silent',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final av = AppVolume.instance;
+      var pings = 0;
+      void onChange() => pings++;
+      av.addListener(onChange);
+      try {
+        await av.setMuted(true);
+        pings = 0;
+        await av.setLevel(240); // over the boost ceiling -> clamps to 200
+        expect(av.level, 200);
+        expect(av.muted, isFalse); // raising the volume unmutes
+        expect(pings, 1);
+        await av.setLevel(200); // no-op
+        expect(pings, 1);
+      } finally {
+        av.removeListener(onChange);
+        await av.setMuted(false);
+        await av.setLevel(100);
+      }
     });
   });
 

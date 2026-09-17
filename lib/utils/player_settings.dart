@@ -23,6 +23,7 @@ class PlayerSettings extends ChangeNotifier {
   static const _kDoubleTapMiddle = 'player.doubleTapMiddle';
   static const _kSeekStep = 'player.seekStep';
   static const _kSwipeBrightness = 'player.swipeBrightness';
+  static const _kSwipeVolume = 'player.swipeVolume';
   static const _kHorizontalSeek = 'player.horizontalSeek';
   static const _kPinchZoom = 'player.pinchZoom.v3';
   static const _kDefaultFit = 'player.defaultFit';
@@ -39,6 +40,9 @@ class PlayerSettings extends ChangeNotifier {
   bool doubleTapMiddle = true;
   int seekStep = 10;
   bool swipeBrightness = true;
+
+  /// v1.0.10: right-half vertical swipe drives the in-app volume (0..200%).
+  bool swipeVolume = true;
   bool horizontalSeek = true;
   bool pinchZoom = false;
 
@@ -69,6 +73,7 @@ class PlayerSettings extends ChangeNotifier {
     final storedSeek = p.getInt(_kSeekStep);
     seekStep = seekSteps.contains(storedSeek) ? storedSeek! : 10;
     swipeBrightness = p.getBool(_kSwipeBrightness) ?? true;
+    swipeVolume = p.getBool(_kSwipeVolume) ?? true;
     horizontalSeek = p.getBool(_kHorizontalSeek) ?? true;
     pinchZoom = p.getBool(_kPinchZoom) ?? false;
     final storedFit = p.getInt(_kDefaultFit);
@@ -108,6 +113,11 @@ class PlayerSettings extends ChangeNotifier {
   Future<void> setSwipeBrightness(bool v) async {
     swipeBrightness = v;
     await _saveBool(_kSwipeBrightness, v);
+  }
+
+  Future<void> setSwipeVolume(bool v) async {
+    swipeVolume = v;
+    await _saveBool(_kSwipeVolume, v);
   }
 
   Future<void> setHorizontalSeek(bool v) async {
