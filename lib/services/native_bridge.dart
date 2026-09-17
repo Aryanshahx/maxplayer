@@ -128,6 +128,32 @@ class NativeBridge {
     } catch (_) {}
   }
 
+  /// v1.0.15 "Open with Max Player": the URI (if any) that launched the
+  /// cold-start — parked on the Android intent until this first poll.
+  static Future<String?> getInitialVideo() async {
+    try {
+      return await _nativeChannel.invokeMethod<String>('getInitialVideo');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Resolves an "Open with" URI (content://, file://, http(s)) into a
+  /// playable descriptor: path/title/stream. Native thread; null on
+  /// failure (e.g. permission-less provider).
+  static Future<Map<String, dynamic>?> resolveSharedVideo(String uri) async {
+    try {
+      final res = await _nativeChannel
+          .invokeMethod<Map<Object?, Object?>>('resolveSharedVideo', {
+        'uri': uri,
+      });
+      if (res == null) return null;
+      return res.map((k, v) => MapEntry(k.toString(), v));
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Aborts the in-flight cloud copy started by pickVideoDocument; the
   /// partial cache file is discarded natively. Safe to call anytime.
   static Future<void> abortPickCopy() async {
@@ -274,6 +300,10 @@ class NativeBridge {
   /// stays untouched; the in-app AppVolume store is adjusted instead).
   static void Function(String dir)? volumeKeyListener;
 
+  /// v1.0.15 "Open with Max Player": a Gallery/Files ACTION_VIEW landed
+  /// while the app + Dart were already up — argument is the raw URI.
+  static void Function(String uri)? openWithVideoListener;
+
   static void Function(String state)? onVoiceState;
   static void Function(double rms)? onVoiceRms;
   static void Function(String text)? onVoicePartial;
@@ -295,6 +325,10 @@ class NativeBridge {
         case 'volumeKey':
           final dir = call.arguments;
           if (dir is String) volumeKeyListener?.call(dir);
+          break;
+        case 'openWithVideo':
+          final uri = (call.arguments as Map?)?.cast<String, dynamic>()['uri'];
+          if (uri is String) openWithVideoListener?.call(uri);
           break;
         case 'onAiProgress':
         case 'onAiSubtitleDone':

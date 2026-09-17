@@ -706,7 +706,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (_locked) return;
     _drag = _DragMode.undecided;
     _dragStart = d.focalPoint;
-    _focalBase = d.focalPoint;
+    // Local space: every consumer in _onScaleUpdate uses localFocalPoint.
+    _focalBase = d.localFocalPoint;
     _zoomBase = _zoom;
     _panBase = _pan;
     _brightnessStart = _levelValue;
@@ -746,8 +747,17 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
 
       final z = freeZoomFor(baseZoom: _zoomBase, scale: d.scale);
-      final contentV = (_focalBase - _panBase) / _zoomBase;
-      final pan = _clampPan(d.localFocalPoint - contentV * z, z);
+      // v1.0.15: anchor the pinch exactly under the fingers — the scale
+      // pivot is the child CENTER, not the origin (old formula drifted).
+      final pan = _clampPan(
+          pinchPanFor(
+              startFocal: _focalBase,
+              liveFocal: d.localFocalPoint,
+              startPan: _panBase,
+              startZoom: _zoomBase,
+              zoom: z,
+              size: screenSize),
+          z);
       if (z == _zoom && pan == _pan) return;
       setState(() {
         _zoom = z;

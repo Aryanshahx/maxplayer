@@ -17,6 +17,8 @@ import '../widgets/about_sheet.dart';
 import '../widgets/discover_banner.dart';
 import '../widgets/user_manual_sheet.dart';
 import '../widgets/video_grid.dart';
+import '../services/native_bridge.dart';
+import 'player_screen.dart';
 import 'cloud_storage_screen.dart';
 import 'discover_screen.dart';
 import 'display_settings_screen.dart';
@@ -83,11 +85,41 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   void initState() {
     super.initState();
+    _wireOpenWith();
     _listScroll.addListener(_onListScroll);
     _load();
     AppSettings.instance.addListener(_onSettings);
     // First-run onboarding: Welcome → How to use → Video player guide.
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowOnboarding());
+  }
+
+  // v1.0.15 "Open with Max Player": Gallery/Files ACTION_VIEW arrives
+  // either parked on the cold-start intent (polled once below) or pushed
+  // over the channel while the app runs. Both land in [_openSharedVideo].
+  void _wireOpenWith() {
+    NativeBridge.openWithVideoListener = (uri) {
+      unawaited(_openSharedVideo(uri));
+    };
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final uri = await NativeBridge.getInitialVideo();
+      if (uri != null) await _openSharedVideo(uri);
+    });
+  }
+
+  Future<void> _openSharedVideo(String uri) async {
+    if (!PlayerScreen.isOpen && mounted) {
+      final played = await NativeBridge.resolveSharedVideo(uri);
+      if (played == null || !mounted) return;
+      final path = played['path'] as String?;
+      if (path == null) return;
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => played['stream'] == true
+            ? PlayerScreen.stream(
+                path: path, title: played['title'] as String? ?? 'Stream')
+            : PlayerScreen(
+                path: path, title: played['title'] as String? ?? 'Video'),
+      ));
+    }
   }
 
   Future<void> _maybeShowOnboarding() async {

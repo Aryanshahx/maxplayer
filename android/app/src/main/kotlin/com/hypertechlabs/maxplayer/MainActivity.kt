@@ -135,12 +135,61 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleViewIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleViewIntent(intent)
     }
+
+    // ---------------------------------------------------------------------------
+    // v1.0.15: "Open with Max Player" — Gallery/Files send ACTION_VIEW.
+    // The URI is parked on the intent until Dart declares itself ready (its
+    // first getInitialVideo poll, right after the first frame). From then on
+    // deliveries go straight over the channel. Resolving/copying the uri
+    // happens off the UI thread inside resolveSharedVideo (the same
+    // MediaStore/stream machinery used by the document picker).
+    private var dartReadyForOpenWith = false
+
+    private fun handleViewIntent(intent: Intent?) {
+        if (intent == null || intent.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+        reportOpenWith(uri.toString())
+    }
+
+    private fun reportOpenWith(uri: String) {
+        if (dartReadyForOpenWith) {
+            methodChannel?.invokeMethod(
+                "openWithVideo",
+                mapOf("uri" to uri),
+            )
+        } else {
+            intent?.putExtra("openWithUri", uri)
+        }
+    }
+
+    /** Resolve + (if needed) copy an "Open with" URI for MPV. */
+    private fun resolveOpenWith(uri: String): Map<String, Any?>? {
+        val u = Uri.parse(uri) ?: return null
+        if (u.scheme == "http" || u.scheme == "https") {
+            val m = HashMap<String, Any?>()
+            m["path"] = uri
+            m["title"] = u.lastPathSegment ?: "Stream"
+            m["stream"] = true
+            return m
+        }
+        var path = resolveVideoPath(u)
+        if (path == null) path = copyContentToCache(u)
+        if (path == null) return null
+        val m = HashMap<String, Any?>()
+        m["path"] = path
+        m["title"] = File(path).name
+        m["stream"] = false
+        return m
+    }
+
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -152,6 +201,30 @@ class MainActivity : FlutterFragmentActivity() {
         )
         methodChannel!!.setMethodCallHandler { call, result ->
             when (call.method) {
+                "getInitialVideo" -> {
+                    // "Open with Max Player" cold start: Dart polls once on
+                    // the first frame; this flips us into channel-push mode
+                    // and returns any parked URI (null otherwise).
+                    dartReadyForOpenWith = true
+                    val uri = intent?.getStringExtra("openWithUri")
+                    intent?.removeExtra("openWithUri")
+                    result.success(uri)
+                }
+
+                "resolveSharedVideo" -> {
+                    val uri = call.argument<String>("uri")
+                    if (uri == null) {
+                        result.success(null)
+                    } else {
+                        // Copy/resolve can block for cloud URIs — thread it,
+                        // deliver the result back on the main thread.
+                        Thread {
+                            val map = resolveOpenWith(uri)
+                            runOnUiThread { result.success(map) }
+                        }.start()
+                    }
+                }
+
                 "setVolumeKeyIntercept" -> {
                     // v1.0.10: while intercepting, volume keys are consumed
                     // in dispatchKeyEvent and forwarded to Dart instead of

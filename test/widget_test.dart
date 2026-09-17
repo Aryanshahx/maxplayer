@@ -1155,4 +1155,72 @@ group('clampPanFor (v1.0.14 pinch-zoom pan)', () {
         const Offset(50, -60));
   });
 });
+
+group('pinchPanFor (v1.0.15 focal hinge)', () {
+  const size = Size(360, 800);
+
+  test('anchor under the fingers does not move while spreading', () {
+    const startFocal = Offset(180, 400);
+    // Touch-down at screen center, pan 0, zoom 1 -> zoom 2 keeping fingers.
+    final pan = pinchPanFor(
+      startFocal: startFocal,
+      liveFocal: startFocal,
+      startPan: Offset.zero,
+      startZoom: 1,
+      zoom: 2,
+      size: size,
+    );
+    // center-facing (child-center pivot): pan must stay ZERO — the center
+    // of the child IS the pivot, no drift off the finger.
+    expect(pan, Offset.zero);
+    // Old (origin-pivot) formula would have produced (-180,-400) == drift.
+  });
+
+  test('off-center anchor tracks exactly under the fingers', () {
+    const startFocal = Offset(90, 200); // top-left quarter
+    const liveFocal = Offset(100, 210); // fingers moved slightly
+    final pan = pinchPanFor(
+      startFocal: startFocal,
+      liveFocal: liveFocal,
+      startPan: Offset.zero,
+      startZoom: 1,
+      zoom: 2,
+      size: size,
+    );
+    // Child point under the initial touch: c* in child coords =
+    // C + (focal - C)/1 = focal (pan 0, zoom 1 == identity).
+    // After zoom 2 about the center, that point lands at:
+    //   screen = pan + C + (c* - C) * 2
+    // We require screen == liveFocal exactly.
+    const c = Offset(180, 400);
+    final expected = liveFocal - c - (startFocal - c) * 2;
+    expect(pan.dx, closeTo(expected.dx, 1e-6));
+    expect(pan.dy, closeTo(expected.dy, 1e-6));
+    // Sanity against the old formula (from-origin pivot):
+    final old = liveFocal - (startFocal - Offset.zero) * 2;
+    expect((pan - old).distance, greaterThan(10)); // not the old behavior
+  });
+
+  test('anchor works when already zoomed (recursive hinge)', () {
+    // Already at zoom 2 with pan P; pinch again to 3.
+    const startPan = Offset(30, 40);
+    const startZoom = 2.0;
+    const startFocal = Offset(200, 300);
+    const liveFocal = Offset(220, 300);
+    final pan = pinchPanFor(
+      startFocal: startFocal,
+      liveFocal: liveFocal,
+      startPan: startPan,
+      startZoom: startZoom,
+      zoom: 3.0,
+      size: size,
+    );
+    // Content point anchored at second-touch-down:
+    const c = Offset(180, 400);
+    final contentC = c + (startFocal - startPan - c) / startZoom;
+    final expected = liveFocal - c - (contentC - c) * 3.0;
+    expect(pan.dx, closeTo(expected.dx, 1e-6));
+    expect(pan.dy, closeTo(expected.dy, 1e-6));
+  });
+});
 }

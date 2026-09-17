@@ -80,3 +80,29 @@ Offset clampPanFor({
     pan.dy.clamp(-halfY, halfY).toDouble(),
   );
 }
+
+/// v1.0.15: focal-anchored pinch pan. Flutter's Transform.scale pivots
+/// around the CENTER of its child (default Alignment.center), so for an
+/// anchor to stay pinned under the moving fingers the pan must satisfy:
+///
+///   screenPoint = pan + C + (childPoint - C) * zoom      (C = viewport center)
+///
+/// Given the touch-down focal, the start pan/zoom and the live
+/// focal/zoom, the pan that keeps the touch-down content under the live
+/// fingers is derived from those. The OLD formula
+/// `liveFocal - (startFocal - startPan)/startZoom * zoom` is the same
+/// physics with the pivot at the ORIGIN (0,0) instead of the center —
+/// anchors drifted toward screen middle, i.e. "zoom doesn't happen where
+/// my fingers are". Pure for tests.
+Offset pinchPanFor({
+  required Offset startFocal,
+  required Offset liveFocal,
+  required Offset startPan,
+  required double startZoom,
+  required double zoom,
+  required Size size,
+}) {
+  final c = Offset(size.width / 2, size.height / 2);
+  final v = startFocal - startPan - c;
+  return liveFocal - c - v * (zoom / startZoom);
+}
