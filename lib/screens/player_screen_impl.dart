@@ -13,6 +13,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/native_bridge.dart';
 import '../theme.dart';
 import '../utils/ab_loop.dart';
+import '../utils/gesture_ticks.dart';
 import '../utils/app_volume.dart';
 import '../utils/ai_subtitles.dart';
 import '../utils/crash_log.dart';
@@ -118,6 +119,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   double _brightnessStart = 0;
   double _volumeStart = 0;
   int _lastBrightnessPct = -1;
+  int _lastVolumePct = -1;
   Offset _pan = Offset.zero;
   Offset _panBase = Offset.zero;
   int _ladderBaseIndex = 0;
@@ -712,6 +714,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _panBase = _pan;
     _brightnessStart = _levelValue;
     _lastBrightnessPct = -1;
+    _lastVolumePct = -1;
     _scaleStartMs = DateTime.now().millisecondsSinceEpoch;
     _pinchTravelPx = 0;
     _pinchScaled = false;
@@ -835,9 +838,11 @@ class _PlayerScreenState extends State<PlayerScreen>
         CrashLog.error('player.brightness_write_failed', e);
       }
       _levelValue = v;
-      // Tick at the brightness bounds (0 / 100).
+      // Tick at the brightness bounds (0 / 100) + soft tick per percent.
       final pct = (v * 100).round();
       if (pct != _lastBrightnessPct) {
+        _gestureHaptic(gestureTickFor(
+            _lastBrightnessPct < 0 ? null : _lastBrightnessPct, pct, 0, 100));
         _lastBrightnessPct = pct;
       }
       _showIndicatorThrottled('Brightness $pct%',
@@ -846,7 +851,16 @@ class _PlayerScreenState extends State<PlayerScreen>
       final v = swipeAppVolume(
           _volumeStart, d.focalPoint.dy - _dragStart.dy);
       unawaited(AppVolume.instance.setLevel(v));
-      final pct = v.round();
+      // Stored level is the truth (setLevel clamps at the boost ceiling);
+      // the ceiling also changes where the edge tap lands.
+      final pct = AppVolume.instance.level.round();
+      final ceil = (AppVolume.instance.boostEnabled
+              ? kAppVolumeMax
+              : kBoostStart)
+          .round();
+      _gestureHaptic(gestureTickFor(
+          _lastVolumePct < 0 ? null : _lastVolumePct, pct, 0, ceil));
+      _lastVolumePct = pct;
       final icon = switch (appVolumeIconName(v, AppVolume.instance.muted)) {
         'off' => Icons.volume_off,
         'down' => Icons.volume_down,
@@ -903,6 +917,19 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// Same as [_showIndicator] but an unchanged message only refreshes the
   /// hide timer (no setState flood while a drag keeps reporting the same
   /// percentage).
+
+  /// v1.0.17: soft haptics for the swipe gestures — one micro-tick per
+  /// percent crossed, one edge tap at either bound. Uses Flutter's
+  /// built-in HapticFeedback (view-level haptics => no VIBRATE permission
+  /// needed, and Android drops NO calls at this rate).
+  void _gestureHaptic(GestureTick t) {
+    if (t == GestureTick.none) return;
+    final f = t == GestureTick.tick
+        ? HapticFeedback.selectionClick
+        : HapticFeedback.lightImpact;
+    unawaited(f());
+  }
+
   void _showIndicatorThrottled(String text, [IconData? icon]) {
     if (!mounted) return;
     final key = '$text|${icon?.codePoint ?? 0}';

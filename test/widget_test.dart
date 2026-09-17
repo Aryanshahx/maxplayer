@@ -21,6 +21,7 @@ import 'package:maxplayer/utils/sort.dart';
 import 'package:maxplayer/utils/srt.dart';
 import 'package:maxplayer/utils/tmdb.dart';
 import 'package:maxplayer/utils/tmdb_image.dart';
+import 'package:maxplayer/utils/gesture_ticks.dart';
 import 'package:maxplayer/utils/video_zoom.dart';
 import 'package:maxplayer/utils/karaoke.dart';
 import 'package:maxplayer/utils/ai.dart' show smartLocalMovieAnswer;
@@ -1221,6 +1222,36 @@ group('pinchPanFor (v1.0.15 focal hinge)', () {
     final expected = liveFocal - c - (contentC - c) * 3.0;
     expect(pan.dx, closeTo(expected.dx, 1e-6));
     expect(pan.dy, closeTo(expected.dy, 1e-6));
+  });
+});
+
+group('gestureTickFor (v1.0.17 swipe haptics)', () {
+  test('per-percent movement ticks (both directions)', () {
+    expect(gestureTickFor(40, 41, 0, 100), GestureTick.tick);
+    expect(gestureTickFor(41, 40, 0, 100), GestureTick.tick);
+  });
+
+  test('no movement or finger-arrival: no buzz', () {
+    expect(gestureTickFor(50, 50, 0, 100), GestureTick.none);
+    expect(gestureTickFor(null, 50, 0, 100), GestureTick.none);
+  });
+
+  test('hitting 0: edgeLow fires once, then silence', () {
+    expect(gestureTickFor(1, 0, 0, 100), GestureTick.edgeLow);
+    expect(gestureTickFor(0, 0, 0, 100), GestureTick.none);
+    expect(gestureTickFor(1, -3, 0, 100), GestureTick.edgeLow);
+    expect(gestureTickFor(-3, -3, 0, 100), GestureTick.none);
+  });
+
+  test('hitting the 200 ceiling: edgeHigh once, then silence', () {
+    expect(gestureTickFor(199, 200, 0, 200), GestureTick.edgeHigh);
+    expect(gestureTickFor(200, 200, 0, 200), GestureTick.none);
+    expect(gestureTickFor(199, 210, 0, 200), GestureTick.edgeHigh);
+  });
+
+  test('boost OFF: 100 IS the ceiling', () {
+    expect(gestureTickFor(98, 110, 0, 100), GestureTick.edgeHigh);
+    expect(gestureTickFor(98, 99, 0, 100), GestureTick.tick);
   });
 });
 }
