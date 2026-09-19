@@ -8,13 +8,27 @@ import '../utils/audio_player.dart';
 import '../utils/format.dart';
 import '../utils/player_settings.dart';
 
-/// v1.0.21 full-screen AUDIO PLAYER — separate from the video player on
-/// purpose: it binds to the process-lifetime [AudioPlayerHolder] engine,
-/// so leaving this screen (Back) keeps the music going; the Audio tab's
-/// mini bar is the way back in. Slider/Speed/Shuffle/Repeat/Boost are all
-/// real (mpv soft-gain like the video player).
-class AudioPlayerScreen extends StatelessWidget {
+/// Full-screen AUDIO PLAYER — separate from the video player on purpose:
+/// it binds to the process-lifetime [AudioPlayerHolder] engine.
+/// v1.0.1+4: the Audio tab mini bar was removed — this screen is now the
+/// ONLY playback UI, so closing it PAUSES the music (invisible playback
+/// with no controls would be a bug factory). Slider/Speed (pill + sheet)/
+/// Shuffle/Repeat/Boost are all real (mpv soft-gain like the video player).
+class AudioPlayerScreen extends StatefulWidget {
   const AudioPlayerScreen({super.key});
+
+  @override
+  State<AudioPlayerScreen> createState() => _AudioPlayerScreenState();
+}
+
+class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
+  @override
+  void dispose() {
+    // Fix 4: the mini bar is gone — this screen closing must stop audible
+    // playback, because nothing else on screen can pause it afterwards.
+    unawaited(AudioPlayerHolder.instance.pause());
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -36,9 +36,10 @@ String describeAudioEngineError(String raw) {
   return t.isEmpty ? 'Playback error' : t;
 }
 
-/// Process-lifetime audio playback engine (v1.0.21): created once, kept
-/// alive when the full player screen closes, so music keeps going while
-/// you browse the Audio tab (the mini bar there drives it back up).
+/// Process-lifetime audio playback engine: created once and reused across
+/// opens. v1.0.1+4: the Audio tab mini bar was removed — the Now Playing
+/// screen now PAUSES the engine when it closes, so playback never runs
+/// without a UI to control it.
 class AudioPlayerHolder extends ChangeNotifier {
   AudioPlayerHolder._() {
     AppVolume.instance.addListener(_applyVolume);
@@ -214,6 +215,15 @@ class AudioPlayerHolder extends ChangeNotifier {
     final p = _player;
     if (p == null) return;
     unawaited(p.play());
+  }
+
+  /// Pause without touching the queue or position — called when the full
+  /// Now Playing screen closes (no mini bar anymore, so invisible music
+  /// would be uncontrollable).
+  Future<void> pause() async {
+    final p = _player;
+    if (p == null) return;
+    unawaited(p.pause());
   }
 
   Future<void> next() async {

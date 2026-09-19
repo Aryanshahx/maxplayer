@@ -10,9 +10,11 @@ import '../utils/format.dart';
 import 'audio_player_screen.dart';
 
 /// v1.0.21 Audio tab — every audio file on the device, with search, sort,
-/// a process-lifetime playback engine, a mini player bar, and the full
-/// Now Playing screen (AudioPlayerScreen). Replaces the old "File Manager"
-/// quick tile.
+/// a process-lifetime playback engine and the full Now Playing screen
+/// (AudioPlayerScreen). Replaces the old "File Manager" quick tile.
+/// v1.0.1+4: the mini player bar is GONE (user request) — tapping a song
+/// opens Now Playing directly, and leaving that screen PAUSES the engine
+/// so music never plays with no UI to stop it.
 enum _AudioSort { dateDesc, titleAsc, durationDesc }
 
 class AudioScreen extends StatefulWidget {
@@ -198,10 +200,6 @@ class _AudioScreenState extends State<AudioScreen> {
               ),
             ),
           Expanded(child: _buildBody()),
-          _MiniBar(onOpenFull: () {
-            Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AudioPlayerScreen()));
-          }),
         ],
       ),
     );
@@ -287,66 +285,3 @@ class _AudioScreenState extends State<AudioScreen> {
   }
 }
 
-/// Bottom mini bar — visible while the engine has a track, survives this
-/// screen being rebuilt/popped; the engine is process-lifetime.
-class _MiniBar extends StatelessWidget {
-  const _MiniBar({required this.onOpenFull});
-
-  final VoidCallback onOpenFull;
-
-  @override
-  Widget build(BuildContext context) {
-    final holder = AudioPlayerHolder.instance;
-    return AnimatedBuilder(
-      animation: holder,
-      builder: (context, _) {
-        if (!holder.hasTrack) return const SizedBox.shrink();
-        return Material(
-          color: AppColors.surface,
-          child: InkWell(
-            onTap: onOpenFull,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
-              child: Row(
-                children: [
-                  Icon(Icons.music_note_rounded, color: AppColors.accent),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(holder.currentTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w600)),
-                        Text(
-                          '${formatDuration(holder.position)} / ${formatDuration(holder.duration)}',
-                          style: const TextStyle(
-                              color: AppColors.textSecondary, fontSize: 11.5),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      holder.playing
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                    ),
-                    onPressed: () => unawaited(holder.toggle()),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.skip_next_rounded),
-                    onPressed: () => unawaited(holder.next()),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
