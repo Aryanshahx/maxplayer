@@ -238,6 +238,11 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
   final List<String> _log = [];
   String? _error;
 
+  /// v1.0.2: which of the device's IPs the QR/link shows (multi-network
+  /// phones — e.g. hotspot + wifi — often showed the wrong one, and the
+  /// receiver then spun forever on an unreachable address).
+  int _hostIndex = 0;
+
   @override
   void initState() {
     super.initState();
@@ -279,6 +284,12 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
   @override
   Widget build(BuildContext context) {
     final s = _session;
+    final sel = (s != null && s.hosts.isNotEmpty)
+        ? _hostIndex.clamp(0, s.hosts.length - 1)
+        : 0;
+    final url = (s != null && s.hosts.isNotEmpty)
+        ? quickShareBaseUrl(s.hosts[sel], s.port)
+        : s?.primaryUrl ?? '';
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -306,11 +317,28 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
                 child: CircularProgressIndicator(),
               )
             else ...[
+              if (s.hosts.length > 1)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Wrap(
+                    spacing: 6,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      for (var hi = 0; hi < s.hosts.length; hi++)
+                        ChoiceChip(
+                          label: Text(s.hosts[hi],
+                              style: const TextStyle(fontSize: 11.5)),
+                          selected: sel == hi,
+                          onSelected: (_) => setState(() => _hostIndex = hi),
+                        ),
+                    ],
+                  ),
+                ),
               Container(
                 color: Colors.white,
                 padding: const EdgeInsets.all(10),
                 child: QrImageView(
-                  data: s.primaryUrl,
+                  data: url,
                   version: QrVersions.auto,
                   size: 170,
                 ),
@@ -318,7 +346,7 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
               const SizedBox(height: 10),
               InkWell(
                 onTap: () {
-                  Clipboard.setData(ClipboardData(text: s.primaryUrl));
+                  Clipboard.setData(ClipboardData(text: url));
                   ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Link copied')));
                 },
@@ -328,7 +356,7 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Flexible(
-                        child: Text(s.primaryUrl,
+                        child: Text(url,
                             style: TextStyle(
                                 color: AppColors.accent,
                                 fontWeight: FontWeight.w700,
@@ -340,10 +368,17 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
                   ),
                 ),
               ),
-              if (s.hosts.length > 1)
-                Text('also: ${s.hosts.skip(1).join('  ·  ')}',
-                    style: const TextStyle(
-                        color: AppColors.textSecondary, fontSize: 11)),
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'If the page opens slowly: both phones must be on the SAME '
+                  'Wi-Fi • turn OFF VPN / "data saver" on the receiving phone '
+                  '• large videos crawl on busy 2.4GHz Wi-Fi — keep both '
+                  'phones near the router.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                  textAlign: TextAlign.center,
+                ),
+              ),
               const SizedBox(height: 8),
               if (_log.isNotEmpty)
                 Container(

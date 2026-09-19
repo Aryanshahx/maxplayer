@@ -25,7 +25,8 @@ String buildMovieSystemPrompt({
     'Synopsis: $overview';
 
 class AiResult {
-  const AiResult({this.text = '', this.error = '', this.local = false});
+  const AiResult(
+      {this.text = '', this.error = '', this.local = false, this.reason = ''});
 
   final String text;
   final String error;
@@ -33,7 +34,30 @@ class AiResult {
   /// True when the answer came from the offline rule-based engine
   /// ([smartLocalMovieAnswer]) rather than an OpenRouter model.
   final bool local;
+
+  /// v1.0.2: WHY the online chain was skipped/failed when [local] is true
+  /// ('no-key' | 'offline' | 'http-401' | 'http-402' | 'http-429' | ...).
+  /// The sheet turns this into a HONEST one-line diagnosis instead of the
+  /// old everything-is-"no key or no internet" lie.
+  final String reason;
   bool get ok => error.isEmpty && text.isNotEmpty;
+}
+
+/// Pure diagnosis of why the OpenRouter chain produced no answer
+/// (unit-tested). [httpStatuses] = status codes collected across models.
+String aiFallbackReason({
+  required bool keyEmpty,
+  required List<int> httpStatuses,
+  required int exceptionCount,
+}) {
+  if (keyEmpty) return 'no-key';
+  // Not a single server answer: DNS/socket/timeout everywhere -> offline.
+  if (httpStatuses.isEmpty) return 'offline';
+  // An answered status beats guesswork; common cases first.
+  if (httpStatuses.contains(401)) return 'http-401';
+  if (httpStatuses.contains(402)) return 'http-402';
+  if (httpStatuses.contains(429)) return 'http-429';
+  return 'http-${httpStatuses.first}';
 }
 
 /// Free-tier OpenRouter models, tried in order — the first one that answers
@@ -67,9 +91,13 @@ Future<AiResult> askMovieAi({
   double movieRating = 0,
   String movieOverview = '',
 }) async {
-  if (AppConfig.openRouterKey.isEmpty) {
+  final keyEmpty = AppConfig.openRouterKey.isEmpty;
+  if (keyEmpty) {
+    CrashLog.crumb('ai.skipped_no_key');
     return AiResult(
       local: true,
+      reason: aiFallbackReason(
+          keyEmpty: true, httpStatuses: const [], exceptionCount: 0),
       text: smartLocalMovieAnswer(
         title: movieTitle,
         year: movieYear,
@@ -81,6 +109,8 @@ Future<AiResult> askMovieAi({
   }
   final client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 20);
+  final httpStatuses = <int>[];
+  var exceptionCount = 0;
 
   for (final model in kAskAiModels) {
     try {
@@ -106,6 +136,7 @@ Future<AiResult> askMovieAi({
           .join()
           .timeout(const Duration(seconds: 30));
       if (res.statusCode != 200) {
+        httpStatuses.add(res.statusCode);
         CrashLog.error('ai.http_${res.statusCode}', body.length);
         continue; // rate-limited / model down -> next in the chain
       }
@@ -119,13 +150,24 @@ Future<AiResult> askMovieAi({
         }
       }
     } catch (e) {
+      exceptionCount++;
       CrashLog.error('ai.model_failed', {'model': model, 'error': '$e'});
       // network blip for this model -> try the next one
     }
   }
   // Every model failed or the phone is offline -> rule-based local answer.
+  final reason = aiFallbackReason(
+      keyEmpty: false,
+      httpStatuses: httpStatuses,
+      exceptionCount: exceptionCount);
+  CrashLog.crumb('ai.fallback_local', {
+    'reason': reason,
+    'statuses': httpStatuses,
+    'exceptions': exceptionCount,
+  });
   return AiResult(
     local: true,
+    reason: reason,
     text: smartLocalMovieAnswer(
       title: movieTitle,
       year: movieYear,

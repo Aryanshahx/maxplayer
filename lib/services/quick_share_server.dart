@@ -67,6 +67,33 @@ String sanitizeShareFileName(String path) {
 /// Where the receiver should point its client.
 String quickShareBaseUrl(String host, int port) => 'http://$host:$port';
 
+/// Pure parser for `Range: bytes=a-b` (single range only — multi-range
+/// gets null so we answer a normal 200). Returns [start, endInclusive]
+/// clamped to [totalLength], or null when no single range was requested.
+/// Browsers issue Range requests for big downloads/streaming; answering
+/// 200 to a browser that expected 206 is exactly what made "download
+/// takes forever, then restarts" — v1.0.2 fix.
+List<int>? parseRangeHeader(String? header, int totalLength) {
+  if (header == null || totalLength <= 0) return null;
+  final h = header.trim();
+  if (!h.startsWith('bytes=') || h.contains(',')) return null;
+  final spec = h.substring(6).split('-');
+  if (spec.length != 2) return null;
+  final a = int.tryParse(spec[0].trim());
+  final b = int.tryParse(spec[1].trim());
+  if (a == null && b == null) return null;
+  if (a == null) {
+    // Suffix form "bytes=-N": the LAST N bytes.
+    final count = b!;
+    if (count <= 0) return null;
+    final start = totalLength - count;
+    return [start < 0 ? 0 : start, totalLength - 1];
+  }
+  final end = (b == null || b >= totalLength) ? totalLength - 1 : b;
+  if (a > end || a >= totalLength) return null;
+  return [a, end];
+}
+
 /// In-app direct device-to-device sharing (v1.0.21) — no third-party app
 /// needed on either side: this hosts the selected files over HTTP on the
 /// local network; the receiver uses Max Player's Receive mode or literally
@@ -155,14 +182,31 @@ class QuickShareSession {
           final f = File(entry.path);
           final len = await f.length();
           final name = sanitizeShareFileName(entry.name);
-          res.statusCode = HttpStatus.ok;
+          // v1.0.2: honor single byte ranges -> 206 partial content, so
+          // browsers can resume/progress large downloads instead of
+          // restarting from byte 0 (the "takes too long" complaint).
+          final range =
+              parseRangeHeader(req.headers.value(HttpHeaders.rangeHeader), len);
+          final start = range?[0] ?? 0;
+          final end = range?[1] ?? (len - 1);
+          res.statusCode = range == null
+              ? HttpStatus.ok
+              : HttpStatus.partialContent;
           res.headers.contentType =
               ContentType('application', 'octet-stream');
-          res.headers.contentLength = len;
+          res.headers.contentLength = end - start + 1;
+          res.headers.set('Accept-Ranges', 'bytes');
+          if (range != null) {
+            res.headers.set(
+                HttpHeaders.contentRangeHeader, 'bytes $start-$end/$len');
+          }
           res.headers.set('Content-Disposition',
               'attachment; filename="$name"; filename*=UTF-8\'\'${Uri.encodeComponent(name)}');
-          onEvent?.call('sending $name to ${req.connectionInfo?.remoteAddress.address}');
-          await res.addStream(f.openRead());
+          onEvent?.call(range == null
+              ? 'sending $name to ${req.connectionInfo?.remoteAddress.address}'
+              : 'sending $name (bytes $start-$end) to ${req.connectionInfo?.remoteAddress.address}');
+          await res.addStream(
+              range == null ? f.openRead() : f.openRead(start, end + 1));
           onEvent?.call('done $name');
         }
       } else {

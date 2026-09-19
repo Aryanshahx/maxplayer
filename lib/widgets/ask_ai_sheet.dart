@@ -57,6 +57,7 @@ class _AskAiSheetState extends State<AskAiSheet> {
   bool _asking = false;
   String? _answer;
   String? _answerModel;
+  String? _localReason;
   String? _error;
   int _askToken = 0;
 
@@ -122,6 +123,7 @@ class _AskAiSheetState extends State<AskAiSheet> {
       } else {
         _answer = result.text;
         _answerModel = result.local ? 'Max AI' : aiModel;
+        _localReason = result.local ? result.reason : '';
         final prefs = SharedPreferences.getInstance();
         prefs.then((p) {
           p.setString('movie_ai_${widget.movie.id}_last_q', q);
@@ -279,7 +281,7 @@ class _AskAiSheetState extends State<AskAiSheet> {
               _answerModel == 'saved'
                   ? 'Saved answer - instant, works offline'
                   : _answerModel == 'Max AI'
-                      ? 'Preloaded answer (offline - no AI key or no internet)'
+                      ? _localLabel(_localReason)
                       : 'Answer by AI (${_answerModel!.split('/').last.split(':').first})',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.35),
@@ -290,6 +292,31 @@ class _AskAiSheetState extends State<AskAiSheet> {
         ],
       ),
     );
+  }
+}
+
+/// v1.0.2: honest one-liner for WHY the local (offline) answer was used —
+/// the old text blamed "no AI key or no internet" for EVERY failure
+/// (including 401 bad key and 429 rate limits), which was undebuggable.
+String _localLabel(String? reason) {
+  const prefix = 'Offline answer — ';
+  switch (reason) {
+    case 'no-key':
+      return '${prefix}this build has NO AI key. Install the GitHub-Actions '
+          'APK/AAB (built after OPENROUTER_API_KEY was set).';
+    case 'offline':
+      return '${prefix}no internet / AI service unreachable.';
+    case 'http-401':
+      return '${prefix}AI KEY REJECTED (401) — the OpenRouter secret is '
+          'wrong/expired; fix it in GitHub → Settings → Secrets.';
+    case 'http-402':
+      return '${prefix}OpenRouter has no free credits left (402).';
+    case 'http-429':
+      return '${prefix}AI rate-limited (429) — try again in a minute.';
+    default:
+      return reason != null && reason.startsWith('http-')
+          ? '$prefix AI error ($reason).'
+          : '${prefix}local fallback.';
   }
 }
 
