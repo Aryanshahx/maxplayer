@@ -94,15 +94,22 @@ bool aiShouldRetryRound2(List<int> httpStatuses, int exceptionCount) =>
     exceptionCount == 0 &&
     httpStatuses.every((s) => s == 429);
 
-/// One-shot chat completion against OpenRouter, walking the free-model
-/// fallback chain. Never throws; an [AiResult.error] starting with 'config'
-/// means the API key isn't set (add OPENROUTER_API_KEY to GitHub secrets).
-///
-/// When there is no key, or the network/models are all down, this falls back
-/// to a rule-based local answer built from the movie's own TMDB data
-/// ([smartLocalMovieAnswer]) — the old app's exact behaviour — so offline /
-/// keyless users always get a real answer instead of
-/// "No internet or AI service unavailable".
+/// v1.0.1+5: USER DECISION — Ask AI answers ON-DEVICE ONLY. No cloud AI is
+/// both free AND unlimited: every free tier has a daily cap (OpenRouter
+/// 50/day kept exhausting mid-session, Gemini 1500/day needs a Google key,
+/// Groq ~1000/day). On-device answers never fail, never rate-limit, never
+/// send data anywhere. The full cloud chain below stays in the tree (fully
+/// built, tested, and one flag away) — flip this to true WITH a working
+/// OPENROUTER_API_KEY dart-define to bring cloud answers back.
+/// ⚠ NOT const on purpose: a const-false would make the analyzer flag the
+/// dormant cloud chain below as dead code.
+bool kAskAiOnlineEnabled = false;
+
+/// One-shot question -> answer. On-device mode: always the rule-based local
+/// answer built from the movie's own TMDB data ([smartLocalMovieAnswer]).
+/// Cloud mode (flag on): walks the OpenRouter free-model fallback chain;
+/// an [AiResult.error] starting with 'config' means the API key isn't set
+/// (add OPENROUTER_API_KEY to GitHub secrets).
 Future<AiResult> askMovieAi({
   required String systemPrompt,
   required String question,
@@ -111,6 +118,22 @@ Future<AiResult> askMovieAi({
   double movieRating = 0,
   String movieOverview = '',
 }) async {
+  if (!kAskAiOnlineEnabled) {
+    // On-device only — instant, unlimited, works with no internet and no
+    // key. See kAskAiOnlineEnabled for how to re-enable cloud answers.
+    CrashLog.crumb('ai.on_device_only');
+    return AiResult(
+      local: true,
+      reason: 'offline',
+      text: smartLocalMovieAnswer(
+        title: movieTitle,
+        year: movieYear,
+        rating: movieRating,
+        overview: movieOverview,
+        question: question,
+      ),
+    );
+  }
   final keyEmpty = AppConfig.openRouterKey.isEmpty;
   if (keyEmpty) {
     CrashLog.crumb('ai.skipped_no_key');
