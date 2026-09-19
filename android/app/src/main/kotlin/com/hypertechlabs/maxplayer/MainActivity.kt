@@ -201,6 +201,24 @@ class MainActivity : FlutterFragmentActivity() {
         )
         methodChannel!!.setMethodCallHandler { call, result ->
             when (call.method) {
+                "saveToGallery" -> {
+                    // v1.0.21 direct Quick Share receive: copy a downloaded
+                    // temp file into MediaStore (Movies|Music/MaxPlayer) so
+                    // it shows up in the library / gallery — scoped-storage
+                    // safe on API 29+, WRITE_EXTERNAL on older.
+                    val srcPath = call.argument<String>("path")
+                    val displayName = call.argument<String>("name")
+                    val kind = call.argument<String>("kind") ?: "video"
+                    if (srcPath == null || displayName == null) {
+                        result.success(false)
+                    } else {
+                        Thread {
+                            val ok = saveToGallery(srcPath, displayName, kind)
+                            runOnUiThread { result.success(ok) }
+                        }.start()
+                    }
+                }
+
                 "getInitialVideo" -> {
                     // "Open with Max Player" cold start: Dart polls once on
                     // the first frame; this flips us into channel-push mode
@@ -1032,6 +1050,61 @@ class MainActivity : FlutterFragmentActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         methodChannel?.invokeMethod("onPipChanged", isInPictureInPictureMode)
+    }
+
+    // ---------------------------------------------------------------------------
+    // v1.0.21 direct Quick Share — receiver-side gallery insert.
+    private fun saveToGallery(srcPath: String, displayName: String, kind: String): Boolean {
+        return try {
+            val isAudio = kind == "audio"
+            val mime = run {
+                val ext = displayName.substringAfterLast('.', "").lowercase()
+                android.webkit.MimeTypeMap.getSingleton()
+                    .getMimeTypeFromExtension(ext)
+                    ?: (if (isAudio) "audio/*" else "video/*")
+            }
+            val collection =
+                if (isAudio) {
+                    if (Build.VERSION.SDK_INT >= 29)
+                        MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    else MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                } else {
+                    if (Build.VERSION.SDK_INT >= 29)
+                        MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                }
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                if (Build.VERSION.SDK_INT >= 29) {
+                    put(
+                        MediaStore.MediaColumns.RELATIVE_PATH,
+                        (if (isAudio) "Music/" else "Movies/") + "MaxPlayer",
+                    )
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+            }
+            val uri = contentResolver.insert(collection, values) ?: return false
+            val wrote = contentResolver.openOutputStream(uri)?.use { out ->
+                File(srcPath).inputStream().use { it.copyTo(out) }
+                true
+            } ?: false
+            if (!wrote) {
+                contentResolver.delete(uri, null, null)
+                return false
+            }
+            if (Build.VERSION.SDK_INT >= 29) {
+                val done = ContentValues().apply {
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+                }
+                contentResolver.update(uri, done, null, null)
+            }
+            android.util.Log.i("MainActivity", "saveToGallery ok: $uri")
+            true
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "saveToGallery failed: $e")
+            false
+        }
     }
 
     override fun onDestroy() {

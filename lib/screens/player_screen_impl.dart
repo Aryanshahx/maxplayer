@@ -158,8 +158,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   StreamSubscription<List<String>>? _karaokeSubTextSub;
 
   String _toneMapping = 'auto';
-  int _sleepMinutesLeft = 0;
   bool _sleepUntilEnd = false;
+
+  /// v1.0.21: wall-clock arm moment + 1s ticker drive the live countdown
+  /// chip (`Sleep 29:58`) — the primary timer still does the pausing.
+  DateTime? _sleepEndsAt;
+  Timer? _sleepTick;
   bool _softwareDecodeRetried = false;
   bool _resumePromptOpen = false;
 
@@ -995,10 +999,19 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  /// Remaining time for the countdown chip (null when no minute-timer).
+  Duration? get _sleepRemaining {
+    final end = _sleepEndsAt;
+    if (end == null) return null;
+    final r = end.difference(DateTime.now());
+    return r.isNegative ? Duration.zero : r;
+  }
+
   String? get _sleepLabel {
     if (_sleepUntilEnd) return 'Sleep: Until end';
-    if (_sleepTimer != null && _sleepMinutesLeft > 0) {
-      return 'Sleep: $_sleepMinutesLeft min';
+    final r = _sleepRemaining;
+    if (_sleepTimer != null && r != null) {
+      return 'Sleep ${formatCountdown(r)}';
     }
     return null;
   }
@@ -1007,8 +1020,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// ('Sleep timer (12 min)' / 'Sleep timer (end of video)').
   String? get _sleepMenuLabel {
     if (_sleepUntilEnd) return 'Sleep timer (end of video)';
-    if (_sleepTimer != null && _sleepMinutesLeft > 0) {
-      return 'Sleep timer ($_sleepMinutesLeft min)';
+    final r = _sleepRemaining;
+    if (_sleepTimer != null && r != null) {
+      return 'Sleep timer (${formatCountdown(r)})';
     }
     return null;
   }
@@ -1720,14 +1734,24 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _showSleepTimerSheet() async {
     const mins = [10, 15, 30, 45, 60];
+    // v1.0.21 landscape fix: Material 3's default modal sheet is capped
+    // (max width 640, half-height) which looks like a cramped floating
+    // column in landscape. Expand it fully there + scroll for safety.
+    final landscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
     final picked = await showModalBottomSheet<_SleepChoice>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: AppColors.surface,
+      constraints: landscape
+          ? const BoxConstraints.expand()
+          : const BoxConstraints(maxWidth: double.infinity),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (context) => SafeArea(
-        child: Column(
+        child: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             _SheetHandle(),
@@ -1764,6 +1788,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   Navigator.of(context).pop(_SleepChoice.untilEnd()),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -1771,7 +1796,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     _sleepTimer?.cancel();
     _sleepTimer = null;
-    _sleepMinutesLeft = 0;
+    _sleepTick?.cancel();
+    _sleepTick = null;
+    _sleepEndsAt = null;
     _sleepUntilEnd = false;
 
     switch (picked.kind) {
@@ -1780,13 +1807,21 @@ class _PlayerScreenState extends State<PlayerScreen>
         break;
       case _SleepChoiceKind.minutes:
         final minutes = picked.minutes!;
-        _sleepMinutesLeft = minutes;
+        // v1.0.21: live countdown — the chip next to the title now ticks
+        // every second (Sleep 29:59) instead of a static minute number.
+        _sleepEndsAt = DateTime.now().add(Duration(minutes: minutes));
+        _sleepTick = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (!mounted || _sleepEndsAt == null) return;
+          setState(() {});
+        });
         _sleepTimer = Timer(Duration(minutes: minutes), () {
           _player.pause();
+          _sleepTick?.cancel();
+          _sleepTick = null;
+          _sleepEndsAt = null;
           if (mounted) {
             setState(() {
               _sleepTimer = null;
-              _sleepMinutesLeft = 0;
             });
           }
           _emitSnack('Sleep timer — playback paused');
@@ -1914,6 +1949,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   void dispose() {
     PlayerScreen.isOpen = false;
     _sleepTimer?.cancel();
+    _sleepTick?.cancel();
     _hideTimer?.cancel();
     _indicatorTimer?.cancel();
     _saveTimer?.cancel();

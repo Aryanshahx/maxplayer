@@ -1,0 +1,216 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import '../utils/crash_log.dart';
+
+/// One file offered by a Quick Share send session.
+class QuickShareFileEntry {
+  const QuickShareFileEntry(
+      {required this.name, required this.size, required this.path});
+
+  final String name;
+  final int size;
+  final String path;
+}
+
+/// Pure manifest encoding (unit-tested — the receiver parses exactly this).
+String encodeQuickShareManifest(List<QuickShareFileEntry> files) =>
+    jsonEncode([
+      for (var i = 0; i < files.length; i++)
+        {'i': i, 'name': files[i].name, 'size': files[i].size},
+    ]);
+
+/// Receiver-side manifest row (unit-tested round-trip).
+class RemoteShareFile {
+  const RemoteShareFile(
+      {required this.index, required this.name, required this.size});
+
+  final int index;
+  final String name;
+  final int size;
+
+  @override
+  bool operator ==(Object other) =>
+      other is RemoteShareFile &&
+      other.index == index &&
+      other.name == name &&
+      other.size == size;
+
+  @override
+  int get hashCode => Object.hash(index, name, size);
+}
+
+/// Pure manifest decoding — tolerant of trailing junk, strict on shape.
+List<RemoteShareFile> decodeQuickShareManifest(String body) {
+  final raw = jsonDecode(body);
+  if (raw is! List) throw const FormatException('manifest is not a list');
+  return [
+    for (final e in raw)
+      if (e is Map)
+        RemoteShareFile(
+          index: (e['i'] as num).toInt(),
+          name: e['name']?.toString() ?? 'file',
+          size: (e['size'] as num?)?.toInt() ?? 0,
+        ),
+  ];
+}
+
+/// Basename + header-safe cleanup for the Content-Disposition header.
+String sanitizeShareFileName(String path) {
+  var base = path.split(RegExp(r'[\\/]')).last.trim();
+  base = base.replaceAll(RegExp(r'[\r\n"]'), '_');
+  if (base.isEmpty) base = 'file';
+  return base;
+}
+
+/// Where the receiver should point its client.
+String quickShareBaseUrl(String host, int port) => 'http://$host:$port';
+
+/// In-app direct device-to-device sharing (v1.0.21) — no third-party app
+/// needed on either side: this hosts the selected files over HTTP on the
+/// local network; the receiver uses Max Player's Receive mode or literally
+/// any browser (the / page is plain HTML with download links).
+class QuickShareSession {
+  QuickShareSession._(
+      this._server, this.files, this.hosts, this.onEvent);
+
+  final HttpServer _server;
+  final List<QuickShareFileEntry> files;
+
+  /// Candidate IPv4 addresses of this device (wifi/hotspot), best first.
+  final List<String> hosts;
+  final void Function(String event)? onEvent;
+
+  static const int kPort = 4747;
+
+  StreamSubscription<HttpRequest>? _sub;
+  int get port => _server.port;
+
+  static Future<QuickShareSession> start(
+    List<QuickShareFileEntry> files, {
+    void Function(String event)? onEvent,
+  }) async {
+    final server = await HttpServer.bind(InternetAddress.anyIPv4, kPort);
+    final hosts = await _shareHosts();
+    final session = QuickShareSession._(server, files, hosts, onEvent);
+    session._sub = server.listen(session._serve);
+    CrashLog.crumb('quickshare.server_started',
+        {'port': server.port, 'files': files.length, 'hosts': hosts});
+    return session;
+  }
+
+  /// Best-guess local IPv4s (wifi wlan*/ap* first, then other non-vpn).
+  static Future<List<String>> _shareHosts() async {
+    final wlan = <String>[];
+    final others = <String>[];
+    try {
+      final ifaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
+      for (final i in ifaces) {
+        final name = i.name.toLowerCase();
+        for (final a in i.addresses) {
+          if (a.isLoopback) continue;
+          final ip = a.address;
+          if (name.contains('wlan') ||
+              name.contains('ap') ||
+              name.contains('wifi')) {
+            wlan.add(ip);
+          } else if (!name.contains('tun') && !name.contains('ppp')) {
+            others.add(ip);
+          }
+        }
+      }
+    } catch (e) {
+      CrashLog.error('quickshare.ifaces_failed', e);
+    }
+    return [...wlan, ...others];
+  }
+
+  String get primaryUrl =>
+      hosts.isEmpty ? 'http://DEVICE-IP:$port' : quickShareBaseUrl(hosts.first, port);
+
+  Future<void> _serve(HttpRequest req) async {
+    final res = req.response;
+    try {
+      final path = req.uri.path;
+      if (path == '/' || path.isEmpty) {
+        res.headers.contentType =
+            ContentType('text', 'html', charset: 'utf-8');
+        res.write(_indexHtml());
+        onEvent?.call('served index page to ${req.connectionInfo?.remoteAddress.address}');
+      } else if (path == '/manifest.json') {
+        res.headers.contentType =
+            ContentType('application', 'json', charset: 'utf-8');
+        res.write(encodeQuickShareManifest(files));
+      } else if (path == '/file') {
+        final i = int.tryParse(req.uri.queryParameters['i'] ?? '') ?? -1;
+        if (i < 0 || i >= files.length) {
+          res.statusCode = HttpStatus.notFound;
+          onEvent?.call('404 bad index $i');
+        } else {
+          final entry = files[i];
+          final f = File(entry.path);
+          final len = await f.length();
+          final name = sanitizeShareFileName(entry.name);
+          res.statusCode = HttpStatus.ok;
+          res.headers.contentType =
+              ContentType('application', 'octet-stream');
+          res.headers.contentLength = len;
+          res.headers.set('Content-Disposition',
+              'attachment; filename="$name"; filename*=UTF-8\'\'${Uri.encodeComponent(name)}');
+          onEvent?.call('sending $name to ${req.connectionInfo?.remoteAddress.address}');
+          await res.addStream(f.openRead());
+          onEvent?.call('done $name');
+        }
+      } else {
+        res.statusCode = HttpStatus.notFound;
+      }
+    } catch (e) {
+      CrashLog.error('quickshare.serve_failed', e);
+      try {
+        res.statusCode = HttpStatus.internalServerError;
+      } catch (_) {}
+    } finally {
+      try {
+        await res.close();
+      } catch (_) {}
+    }
+  }
+
+  String _indexHtml() {
+    final items = StringBuffer();
+    for (var i = 0; i < files.length; i++) {
+      final e = files[i];
+      final mb = (e.size / (1024 * 1024)).toStringAsFixed(1);
+      items.write(
+          '<a class="card" href="/file?i=$i" download><div class="n">'
+          '${_esc(e.name)}</div><div class="s">$mb MB · tap to download</div></a>');
+    }
+    return '<!doctype html><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<title>Max Player Quick Share</title>'
+        '<style>body{font-family:system-ui;background:#0b0b0d;color:#eee;padding:16px}'
+        '.card{display:block;background:#18181c;border-radius:14px;padding:14px;'
+        'margin:10px 0;text-decoration:none;color:#eee}'
+        '.n{font-weight:600;word-break:break-all}.s{color:#9aa;font-size:12px;margin-top:4px}'
+        'h1{font-size:18px}.hint{color:#9aa;font-size:12px}</style>'
+        '<h1>Max Player — Quick Share</h1>'
+        '<p class="hint">${files.length} file(s) — keep the sender screen open until all downloads finish.</p>'
+        '$items';
+  }
+
+  static String _esc(String s) => s
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;');
+
+  Future<void> stop() async {
+    await _sub?.cancel();
+    await _server.close(force: true);
+    CrashLog.crumb('quickshare.server_stopped');
+  }
+}

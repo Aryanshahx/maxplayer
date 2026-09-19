@@ -154,6 +154,23 @@ class NativeBridge {
     }
   }
 
+  /// v1.0.21 direct Quick Share: copy a downloaded file into MediaStore
+  /// (Movies|Music/MaxPlayer) so the library picks it up. Returns false if
+  /// the insert/write failed (scoped-storage denied on very old Android).
+  static Future<bool> saveToGallery({
+    required String path,
+    required String name,
+    String kind = 'video',
+  }) async {
+    try {
+      final ok = await _nativeChannel.invokeMethod<bool>(
+          'saveToGallery', {'path': path, 'name': name, 'kind': kind});
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Aborts the in-flight cloud copy started by pickVideoDocument; the
   /// partial cache file is discarded natively. Safe to call anytime.
   static Future<void> abortPickCopy() async {

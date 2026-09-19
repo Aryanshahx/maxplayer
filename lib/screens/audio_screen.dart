@@ -4,14 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../theme.dart';
+import '../utils/audio_player.dart';
 import '../utils/crash_log.dart';
 import '../utils/format.dart';
-import 'player_screen.dart';
+import 'audio_player_screen.dart';
 
-/// v1.0.20 Audio tab — every audio file on the device (MediaStore via
-/// photo_manager), playable in the SAME player as videos (mpv renders the
-/// waveform-less track over the normal control surface: seek, speed, EQ,
-/// boost all apply). Replaces the old "File Manager" quick tile.
+/// v1.0.21 Audio tab — every audio file on the device, with search, sort,
+/// a process-lifetime playback engine, a mini player bar, and the full
+/// Now Playing screen (AudioPlayerScreen). Replaces the old "File Manager"
+/// quick tile.
+enum _AudioSort { dateDesc, titleAsc, durationDesc }
+
 class AudioScreen extends StatefulWidget {
   const AudioScreen({super.key});
 
@@ -21,13 +24,28 @@ class AudioScreen extends StatefulWidget {
 
 class _AudioScreenState extends State<AudioScreen> {
   final List<AssetEntity> _songs = [];
+  final TextEditingController _searchCtrl = TextEditingController();
   bool _loading = true;
   bool _denied = false;
+  String _query = '';
+  _AudioSort _sort = _AudioSort.dateDesc;
 
   @override
   void initState() {
     super.initState();
+    AudioPlayerHolder.instance.addListener(_onEngine);
     _scan();
+  }
+
+  @override
+  void dispose() {
+    AudioPlayerHolder.instance.removeListener(_onEngine);
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onEngine() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _scan() async {
@@ -36,12 +54,9 @@ class _AudioScreenState extends State<AudioScreen> {
       _denied = false;
     });
     try {
-      // v1.0.20 forensics: the DEFAULT request option is RequestType
-      // .common = image|video — no AUDIO. On Android 13+ that means the
-      // video permission the app already holds does NOT cover music, the
-      // scan below would query MediaStore.Audio with READ_MEDIA_AUDIO
-      // denied and silently return zero songs (the classic "nothing
-      // shows up" bug). Ask for the AUDIO type explicitly.
+      // The DEFAULT request option is RequestType.common = image|video —
+      // no AUDIO. On Android 13+ the video permission does NOT cover
+      // music, and the scan below would silently return zero songs.
       final ps = await PhotoManager.requestPermissionExtend(
         requestOption: const PermissionRequestOption(
           androidPermission:
@@ -71,8 +86,6 @@ class _AudioScreenState extends State<AudioScreen> {
               await paths.first.getAssetListRange(start: start, end: end));
         }
       }
-      // Newest first, matching the video library's ordering.
-      items.sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
       if (!mounted) return;
       setState(() {
         _songs
@@ -91,44 +104,61 @@ class _AudioScreenState extends State<AudioScreen> {
     }
   }
 
-  Future<void> _open(AssetEntity asset) async {
-    try {
-      final file = await asset.file;
-      if (file == null) {
-        throw StateError('no backing file for ${asset.id}');
-      }
-      if (!mounted) return;
-      await Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => PlayerScreen(
-          path: file.path,
-          title: asset.title ?? 'Audio',
-          meta: {
-            'File': file.path,
-            'Duration (MediaStore)':
-                formatDuration(Duration(seconds: asset.duration)),
-            if (asset.mimeType != null) 'MIME': asset.mimeType!,
-          },
-        ),
-      ));
-    } catch (e) {
-      CrashLog.error('audio.open_failed', e, {'id': asset.id});
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open this audio file')),
-        );
-      }
+  List<AssetEntity> get _visible {
+    var list = _songs;
+    final q = _query.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      list =
+          list.where((a) => (a.title ?? '').toLowerCase().contains(q)).toList();
     }
+    final sorted = List<AssetEntity>.from(list);
+    switch (_sort) {
+      case _AudioSort.dateDesc:
+        sorted.sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
+        break;
+      case _AudioSort.titleAsc:
+        sorted.sort((a, b) =>
+            (a.title ?? '').toLowerCase().compareTo((b.title ?? '').toLowerCase()));
+        break;
+      case _AudioSort.durationDesc:
+        sorted.sort((a, b) => b.duration.compareTo(a.duration));
+        break;
+    }
+    return sorted;
   }
+
+  Future<void> _openTrack(List<AssetEntity> visible, int i) async {
+    await AudioPlayerHolder.instance.setQueue(visible, i);
+    if (!mounted) return;
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const AudioPlayerScreen()));
+  }
+
+  void _cycleSort() {
+    setState(() {
+      _sort = _AudioSort.values[(_sort.index + 1) % _AudioSort.values.length];
+    });
+  }
+
+  String get _sortLabel => switch (_sort) {
+        _AudioSort.dateDesc => 'Newest',
+        _AudioSort.titleAsc => 'A–Z',
+        _AudioSort.durationDesc => 'Longest',
+      };
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(_loading
-            ? 'Audio'
-            : 'Audio (${_songs.length})'),
+        title: Text(_loading ? 'Audio' : 'Audio (${_visible.length})'),
         actions: [
+          if (_songs.isNotEmpty)
+            TextButton.icon(
+              onPressed: _cycleSort,
+              icon: const Icon(Icons.sort_rounded, size: 18),
+              label: Text(_sortLabel),
+            ),
           IconButton(
             tooltip: 'Rescan',
             icon: const Icon(Icons.refresh_rounded),
@@ -136,7 +166,44 @@ class _AudioScreenState extends State<AudioScreen> {
           ),
         ],
       ),
-      body: _buildBody(),
+      body: Column(
+        children: [
+          if (_songs.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+              child: TextField(
+                controller: _searchCtrl,
+                onChanged: (v) => setState(() => _query = v),
+                style: const TextStyle(fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Search songs…',
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _query = '');
+                          },
+                        ),
+                  filled: true,
+                  fillColor: AppColors.surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+          Expanded(child: _buildBody()),
+          _MiniBar(onOpenFull: () {
+            Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AudioPlayerScreen()));
+          }),
+        ],
+      ),
     );
   }
 
@@ -167,36 +234,119 @@ class _AudioScreenState extends State<AudioScreen> {
         ),
       );
     }
-    if (_songs.isEmpty) {
-      return const Center(child: Text('No audio files found on this device'));
+    final visible = _visible;
+    if (visible.isEmpty) {
+      return Center(
+          child: Text(
+              _query.isEmpty
+                  ? 'No audio files found on this device'
+                  : 'No matches for "$_query"',
+              style: const TextStyle(color: AppColors.textSecondary)));
     }
+    final holder = AudioPlayerHolder.instance;
     return RefreshIndicator(
       onRefresh: _scan,
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: _songs.length,
-        separatorBuilder: (_, i) =>
-            const Divider(height: 1, indent: 72),
+        itemCount: visible.length,
+        separatorBuilder: (_, i) => const Divider(height: 1, indent: 72),
         itemBuilder: (context, i) {
-          final a = _songs[i];
+          final a = visible[i];
+          final isCurrent = holder.hasTrack &&
+              holder.current?.id == a.id;
           return ListTile(
             leading: CircleAvatar(
               backgroundColor: AppColors.accent.withValues(alpha: 0.12),
-              child: Icon(Icons.music_note, color: AppColors.accent),
+              child: Icon(
+                isCurrent && holder.playing
+                    ? Icons.graphic_eq_rounded
+                    : Icons.music_note,
+                color: AppColors.accent,
+              ),
             ),
             title: Text(
               a.title ?? 'Audio',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color:
+                    isCurrent ? AppColors.accent : AppColors.textPrimary,
+                fontWeight:
+                    isCurrent ? FontWeight.w600 : FontWeight.normal,
+              ),
             ),
             subtitle: Text(
               formatDuration(Duration(seconds: a.duration)),
               maxLines: 1,
             ),
-            onTap: () => unawaited(_open(a)),
+            onTap: () => unawaited(_openTrack(visible, i)),
           );
         },
       ),
+    );
+  }
+}
+
+/// Bottom mini bar — visible while the engine has a track, survives this
+/// screen being rebuilt/popped; the engine is process-lifetime.
+class _MiniBar extends StatelessWidget {
+  const _MiniBar({required this.onOpenFull});
+
+  final VoidCallback onOpenFull;
+
+  @override
+  Widget build(BuildContext context) {
+    final holder = AudioPlayerHolder.instance;
+    return AnimatedBuilder(
+      animation: holder,
+      builder: (context, _) {
+        if (!holder.hasTrack) return const SizedBox.shrink();
+        return Material(
+          color: AppColors.surface,
+          child: InkWell(
+            onTap: onOpenFull,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+              child: Row(
+                children: [
+                  Icon(Icons.music_note_rounded, color: AppColors.accent),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(holder.currentTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
+                        Text(
+                          '${formatDuration(holder.position)} / ${formatDuration(holder.duration)}',
+                          style: const TextStyle(
+                              color: AppColors.textSecondary, fontSize: 11.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      holder.playing
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                    ),
+                    onPressed: () => unawaited(holder.toggle()),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.skip_next_rounded),
+                    onPressed: () => unawaited(holder.next()),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

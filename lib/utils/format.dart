@@ -9,6 +9,19 @@ String formatDuration(Duration d) {
   return h > 0 ? '$h:$m:$s' : '${int.parse(m)}:$s';
 }
 
+/// Countdown display for the sleep-timer chip: always minutes:seconds,
+/// rounding UP so "29:59" is what you see the second after arming 30 min.
+/// 0 -> "0:00", 125s -> "2:05", 3700s -> "1:01:40"
+String formatCountdown(Duration d) {
+  if (d.isNegative) d = Duration.zero;
+  var s = d.inSeconds;
+  if (d.inMilliseconds.remainder(1000) > 0) s += 1; // ceil to whole seconds
+  final h = s ~/ 3600;
+  final m = ((s % 3600) ~/ 60).toString().padLeft(2, '0');
+  final ss = (s % 60).toString().padLeft(2, '0');
+  return h > 0 ? '$h:$m:$ss' : '${int.parse(m)}:$ss';
+}
+
 /// 1536 -> "1.5 KB", 734003200 -> "700.0 MB"
 String formatBytes(int bytes) {
   if (bytes < 0) bytes = 0;
