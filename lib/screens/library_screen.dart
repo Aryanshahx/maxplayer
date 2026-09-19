@@ -10,6 +10,7 @@ import '../utils/collections.dart';
 import '../utils/crash_log.dart';
 import '../utils/local_store.dart';
 import '../utils/onboarding.dart';
+import '../utils/quick_tiles.dart';
 import '../utils/privacy_policy.dart';
 import '../utils/settings.dart';
 import '../utils/sort.dart';
@@ -19,10 +20,10 @@ import '../widgets/user_manual_sheet.dart';
 import '../widgets/video_grid.dart';
 import '../services/native_bridge.dart';
 import 'player_screen.dart';
+import 'audio_screen.dart';
 import 'cloud_storage_screen.dart';
 import 'discover_screen.dart';
 import 'display_settings_screen.dart';
-import 'file_manager_screen.dart';
 import 'folders_screen.dart';
 import 'history_screen.dart';
 import 'network_storage_screen.dart';
@@ -558,39 +559,38 @@ class _LibraryScreenState extends State<LibraryScreen> {
         .push(MaterialPageRoute(builder: (_) => page))
         .then((_) => _refresh());
 
-    final page1 = [
-      (Icons.lock_outline_rounded, 'Private Space',
-          () => push(PrivateScreen(libraryVideos: _videos))),
-      (Icons.queue_music_outlined, 'Playlists',
-          () => push(const PlaylistsScreen())),
-      (Icons.folder_outlined, 'Folders', () => push(const FoldersScreen())),
-      (Icons.cloud_queue_outlined, 'Cloud Storage',
-          () => push(const CloudStorageScreen())),
-    ];
-    final page2 = [
-      (Icons.dns_outlined, 'Network Storage',
-          () => push(const NetworkStorageScreen())),
-      (Icons.folder_shared_outlined, 'File Manager',
-          () => push(const FileManagerScreen())),
-      (Icons.link, 'Open Stream(iptv)', () => push(const OpenStreamScreen())),
-      (Icons.ios_share, 'Quick Share', () => push(const QuickShareScreen())),
-    ];
+    // v1.0.20: tiles are DATA-DRIVEN (lib/utils/quick_tiles.dart) — the
+    // File Manager tile was replaced by Audio, and the positions of Cloud
+    // Storage and Audio were interchanged. Ordering is unit-tested.
+    final actions = <String, VoidCallback>{
+      'privateSpace': () => push(PrivateScreen(libraryVideos: _videos)),
+      'playlists': () => push(const PlaylistsScreen()),
+      'folders': () => push(const FoldersScreen()),
+      'audio': () => push(const AudioScreen()),
+      'networkStorage': () => push(const NetworkStorageScreen()),
+      'cloudStorage': () => push(const CloudStorageScreen()),
+      'openStream': () => push(const OpenStreamScreen()),
+      'quickShare': () => push(const QuickShareScreen()),
+    };
 
-    Widget grid(List<(IconData, String, void Function())> items) => Column(
+    Widget tileAt(QuickTileSpec spec) =>
+        _Tile(spec.icon, spec.label, actions[spec.id] ?? () {});
+
+    Widget grid(List<QuickTileSpec> items) => Column(
           children: [
             Row(
               children: [
-                Expanded(child: _Tile(items[0].$1, items[0].$2, items[0].$3)),
+                Expanded(child: tileAt(items[0])),
                 const SizedBox(width: 8),
-                Expanded(child: _Tile(items[1].$1, items[1].$2, items[1].$3)),
+                Expanded(child: tileAt(items[1])),
               ],
             ),
             const SizedBox(height: 8),
             Row(
               children: [
-                Expanded(child: _Tile(items[2].$1, items[2].$2, items[2].$3)),
+                Expanded(child: tileAt(items[2])),
                 const SizedBox(width: 8),
-                Expanded(child: _Tile(items[3].$1, items[3].$2, items[3].$3)),
+                Expanded(child: tileAt(items[3])),
               ],
             ),
           ],
@@ -606,7 +606,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: PageView(
               controller: _tilePager,
               onPageChanged: (i) => setState(() => _tilePage = i),
-              children: [grid(page1), grid(page2)],
+              children: [grid(kQuickTilesPage1), grid(kQuickTilesPage2)],
             ),
           ),
           const SizedBox(height: 6),

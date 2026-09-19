@@ -104,6 +104,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   int _queueIndex = 0;
   bool _ready = false;
   bool _failed = false;
+
+  /// v1.0.20: one-shot hedge for the volume boost — see _playingSub below.
+  bool _volumeMaxArmed = false;
   bool _buffering = false;
   bool _controlsVisible = true;
   bool _boost = false;
@@ -230,6 +233,17 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (playing) {
         WakelockPlus.enable();
         if (_settings.autoHide) _scheduleHide();
+        // v1.0.20 boost hedge: mpv can silently reset options written
+        // during open() once the playback core finishes loading the file.
+        // The engine is fully warm at the first playing event — this is
+        // the one spot where a 'volume-max' write is guaranteed to stick;
+        // re-applying the gain afterwards re-covers a level that was
+        // already clamped by a lost/ignored ceiling.
+        if (!_volumeMaxArmed) {
+          _volumeMaxArmed = true;
+          unawaited(_mpvSet('volume-max', '200')
+              .then((_) => _applyVolume()));
+        }
       } else {
         WakelockPlus.disable();
         unawaited(_savePosition());
@@ -268,6 +282,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _open(String path, {required bool offerResume}) async {
     CrashLog.crumb('player.open', {'path': path});
+    _volumeMaxArmed = false;
     try {
       await _player.open(Media(path), play: true);
       // Keep the remembered playback speed across videos (v29): mpv can
@@ -278,6 +293,14 @@ class _PlayerScreenState extends State<PlayerScreen>
       // v1.0.13: mirror the store only once the file is loaded —
       // the single safe point (pre-159 ordering).
       _applyVolume();
+      // v1.0.20 boost forensics: read the property BACK and log what we
+      // asked for vs what the engine actually has — if a device's mpv
+      // ever clamps the boost region to 100/130, the evidence lands in
+      // events.jsonl ('set' vs 'read' mismatch) instead of silence.
+      final requestedGain = AppVolume.instance.mpvGain.round();
+      unawaited(_mpvGet('volume').then((read) => CrashLog.crumb(
+          'player.volume_verify',
+          {'set': requestedGain, 'read': read, 'path': path})));
       unawaited(_ensureThumbStrip(path));
       unawaited(_applyPerformanceMode());
       if (offerResume && !widget.isStream) {
