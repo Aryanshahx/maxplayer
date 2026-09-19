@@ -173,27 +173,26 @@ class AudioPlayerScreen extends StatelessWidget {
                         ),
                         onPressed: holder.cycleRepeat,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  // Speed chips.
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('Speed',
+                      // Playback speed: one compact "Nx" pill opening a
+                      // slider sheet (0.5x–3x + presets) — replaces the old
+                      // permanent 5-chip row the user found cluttered.
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(40, 36),
+                        ),
+                        onPressed: () => showAudioSpeedSheet(context, holder),
+                        child: Text(
+                          audioSpeedLabel(holder.rate),
                           style: TextStyle(
-                              color: AppColors.textSecondary, fontSize: 12)),
-                      const SizedBox(width: 10),
-                      for (final r in const [0.75, 1.0, 1.25, 1.5, 2.0])
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 3),
-                          child: ChoiceChip(
-                            label: Text('${r}x',
-                                style: const TextStyle(fontSize: 11.5)),
-                            selected: holder.rate == r,
-                            onSelected: (_) => unawaited(holder.setSpeed(r)),
+                            color: holder.rate == 1.0
+                                ? AppColors.textSecondary
+                                : AppColors.accent,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -241,4 +240,96 @@ class AudioPlayerScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// "1x" / "1.25x" — trims trailing zeros for the pill + sheet.
+String audioSpeedLabel(double r) {
+  final s = r == r.roundToDouble()
+      ? r.toStringAsFixed(0)
+      : r
+          .toStringAsFixed(2)
+          .replaceAll(RegExp(r'0+$'), '')
+          .replaceAll(RegExp(r'\.$'), '');
+  return '${s}x';
+}
+
+/// Speed picker sheet (v1.0.1 fix 3): slider 0.5x–3x in 0.05 steps with
+/// quick presets, applying live as you drag. Replaces the old chip row.
+Future<void> showAudioSpeedSheet(
+    BuildContext context, AudioPlayerHolder holder) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+    ),
+    builder: (context) => StatefulBuilder(
+      builder: (context, setSheet) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.textSecondary.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Playback speed',
+                      style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700)),
+                  Text(audioSpeedLabel(holder.rate),
+                      style: TextStyle(
+                          color: AppColors.accent,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800)),
+                ],
+              ),
+              Slider(
+                value: holder.rate.clamp(0.5, 3.0),
+                min: 0.5,
+                max: 3.0,
+                divisions: 50,
+                activeColor: AppColors.accent,
+                inactiveColor: AppColors.surfaceAlt,
+                onChanged: (v) {
+                  final stepped = (v * 20).round() / 20; // 0.05 steps
+                  unawaited(holder.setSpeed(stepped));
+                  setSheet(() {});
+                },
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final r in const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0])
+                    ChoiceChip(
+                      label: Text(audioSpeedLabel(r)),
+                      selected: holder.rate == r,
+                      onSelected: (_) {
+                        unawaited(holder.setSpeed(r));
+                        setSheet(() {});
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }

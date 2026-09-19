@@ -243,6 +243,11 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
   /// receiver then spun forever on an unreachable address).
   int _hostIndex = 0;
 
+  /// Self-test result (null = still pinging / no hosts): proves the server
+  /// answers through its advertised IP so "link not reachable" gets a
+  /// precise culprit instead of guesswork.
+  bool? _selfOk;
+
   @override
   void initState() {
     super.initState();
@@ -266,11 +271,17 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
         return;
       }
       setState(() => _session = s);
+      // Prove the server answers through its own advertised IP (fix 3).
+      final ok = await s
+          .selfTest()
+          .timeout(const Duration(seconds: 7), onTimeout: () => false);
+      if (mounted) setState(() => _selfOk = ok);
     } catch (e) {
       CrashLog.error('quickshare.server_failed', e);
       if (mounted) {
         setState(() => _error =
-            'Could not start (port ${QuickShareSession.kPort} in use?)');
+            'Could not start the share server — close other share/download '
+            'apps and try again.');
       }
     }
   }
@@ -368,6 +379,27 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
                   ),
                 ),
               ),
+              if (_selfOk != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    _selfOk!
+                        ? '✓ Server live and answering (port ${s.port}). If '
+                            'the receiver\'s browser still can\'t open it, the '
+                            'receiver is NOT on this network: wrong Wi-Fi, '
+                            'VPN, or the router blocks device-to-device '
+                            '("AP isolation").'
+                        : '✗ The server is not answering even locally — '
+                            'toggle Wi-Fi OFF/ON (or restart the hotspot) '
+                            'and share again.',
+                    style: TextStyle(
+                        color: _selfOk!
+                            ? Colors.greenAccent
+                            : AppColors.danger,
+                        fontSize: 11),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               const Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(

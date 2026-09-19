@@ -118,12 +118,30 @@ class QuickShareSession {
     List<QuickShareFileEntry> files, {
     void Function(String event)? onEvent,
   }) async {
-    final server = await HttpServer.bind(InternetAddress.anyIPv4, kPort);
+    // Port fallback: 4747 can already be held by another share app / a
+    // previous zombie session — a blind bind failure used to kill the
+    // whole share with an unhelpful error. Try a small range instead.
+    HttpServer? server;
+    Object? bindError;
+    for (var port = kPort; port < kPort + 10; port++) {
+      try {
+        server = await HttpServer.bind(InternetAddress.anyIPv4, port);
+        break;
+      } catch (e) {
+        bindError = e;
+      }
+    }
+    final srv = server;
+    if (srv == null) {
+      CrashLog.error('quickshare.bind_failed', '$bindError');
+      throw StateError(
+          'ports $kPort-${kPort + 9} all busy (close other share apps): $bindError');
+    }
     final hosts = await _shareHosts();
-    final session = QuickShareSession._(server, files, hosts, onEvent);
-    session._sub = server.listen(session._serve);
+    final session = QuickShareSession._(srv, files, hosts, onEvent);
+    session._sub = srv.listen(session._serve);
     CrashLog.crumb('quickshare.server_started',
-        {'port': server.port, 'files': files.length, 'hosts': hosts});
+        {'port': srv.port, 'files': files.length, 'hosts': hosts});
     return session;
   }
 
@@ -159,6 +177,32 @@ class QuickShareSession {
   String get primaryUrl =>
       hosts.isEmpty ? 'http://DEVICE-IP:$port' : quickShareBaseUrl(hosts.first, port);
 
+  /// Does this server answer when called through its OWN advertised IP?
+  /// true  -> server is fine; an unreachable browser means the receiver is
+  ///          on the wrong network / VPN / router client-isolation.
+  /// false -> the ROM is blocking it (even) locally — re-toggle Wi-Fi.
+  Future<bool> selfTest() async {
+    if (hosts.isEmpty) return false;
+    final host = hosts.first;
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 3);
+    try {
+      final req = await client
+          .getUrl(Uri.parse('http://$host:$port/healthz'))
+          .timeout(const Duration(seconds: 4));
+      final res = await req.close().timeout(const Duration(seconds: 4));
+      final body = await res.transform(utf8.decoder).join();
+      final ok = res.statusCode == 200 && body.trim() == 'ok';
+      CrashLog.crumb('quickshare.selftest', {'host': host, 'ok': ok});
+      return ok;
+    } catch (e) {
+      CrashLog.error('quickshare.selftest_failed', e);
+      return false;
+    } finally {
+      client.close();
+    }
+  }
+
   Future<void> _serve(HttpRequest req) async {
     final res = req.response;
     try {
@@ -172,6 +216,11 @@ class QuickShareSession {
         res.headers.contentType =
             ContentType('application', 'json', charset: 'utf-8');
         res.write(encodeQuickShareManifest(files));
+      } else if (path == '/healthz') {
+        // Self-test: the sender's own sheet pings this through the
+        // advertised IP to prove the server answers BEFORE we blame the
+        // receiver's network for "link not reachable".
+        res.write('ok');
       } else if (path == '/file') {
         final i = int.tryParse(req.uri.queryParameters['i'] ?? '') ?? -1;
         if (i < 0 || i >= files.length) {

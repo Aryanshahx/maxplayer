@@ -39,4 +39,27 @@ void main() {
             keyEmpty: false, httpStatuses: const [503, 500], exceptionCount: 0),
         'http-503');
   });
+
+  group('aiModelCoolingDown', () {
+    test('future cutoff cools the model; past cutoff / unknown model = no',
+        () {
+      final now = DateTime(2026, 1, 1, 12);
+      final cds = <String, DateTime>{
+        'a': now.add(const Duration(seconds: 30)),
+        'b': now.subtract(const Duration(seconds: 1)),
+      };
+      expect(aiModelCoolingDown(cds, 'a', now), isTrue);
+      expect(aiModelCoolingDown(cds, 'b', now), isFalse);
+      expect(aiModelCoolingDown(cds, 'never-seen', now), isFalse);
+    });
+  });
+
+  group('aiShouldRetryRound2', () {
+    test('pure 429 wall => retry once; any other failure shape => no', () {
+      expect(aiShouldRetryRound2([429, 429], 0), isTrue);
+      expect(aiShouldRetryRound2([429, 401], 0), isFalse);
+      expect(aiShouldRetryRound2([429], 1), isFalse);
+      expect(aiShouldRetryRound2(<int>[], 0), isFalse);
+    });
+  });
 }

@@ -23,6 +23,7 @@ import '../utils/karaoke.dart';
 import '../utils/local_store.dart';
 import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
+import '../utils/queue_math.dart';
 import '../utils/resume.dart';
 import '../utils/srt.dart';
 import '../utils/video_zoom.dart';
@@ -102,6 +103,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   late String _title;
   String _currentPath = '';
   int _queueIndex = 0;
+  // v1.0.1 fix 3: queue transport modes (same buttons as the audio player).
+  bool _shuffleQueue = false;
+  AudioRepeatMode _queueRepeat = AudioRepeatMode.off;
   bool _ready = false;
   bool _failed = false;
 
@@ -265,7 +269,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           if (mounted) setState(() {});
           _emitSnack('Sleep timer — video ended');
         }
-        unawaited(_playNext());
+        unawaited(_playNext(fromCompletion: true));
       }
     });
     _errorSub = _player.stream.error.listen((e) {
@@ -451,18 +455,41 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _playPrevious() async {
-    if (!mounted || widget.queueIds.isEmpty || _queueIndex <= 0) return;
-    _queueIndex--;
+    if (!mounted || widget.queueIds.isEmpty) return;
+    final n = audioPrevIndex(
+        current: _queueIndex,
+        count: widget.queueIds.length,
+        repeat: _queueRepeat);
+    if (n < 0 || n == _queueIndex) return; // at start, repeat off
+    _queueIndex = n;
     await _openQueueIndex();
   }
 
-  Future<void> _playNext() async {
-    if (!mounted || widget.queueIds.isEmpty || _queueIndex >= widget.queueIds.length - 1) {
+  /// [fromCompletion] true = auto-advance when the video ENDS (repeat-one
+  /// replays the same video then). The manual Next BUTTON always moves on.
+  Future<void> _playNext({bool fromCompletion = false}) async {
+    if (!mounted || widget.queueIds.isEmpty) return;
+    if (fromCompletion && _queueRepeat == AudioRepeatMode.one) {
+      await _player.seek(Duration.zero);
+      await _player.play();
+      return;
+    }
+    // Manual next treats repeat-one like repeat-all (standard players).
+    final effectiveRepeat = (!fromCompletion &&
+            _queueRepeat == AudioRepeatMode.one)
+        ? AudioRepeatMode.all
+        : _queueRepeat;
+    final n = audioNextIndex(
+        current: _queueIndex,
+        count: widget.queueIds.length,
+        shuffle: _shuffleQueue,
+        repeat: effectiveRepeat);
+    if (n < 0) {
       await _resume.clear(_currentPath);
       if (mounted) Navigator.of(context).maybePop();
       return;
     }
-    _queueIndex++;
+    _queueIndex = n;
     await _openQueueIndex();
   }
 
@@ -2205,7 +2232,16 @@ class _PlayerScreenState extends State<PlayerScreen>
                       previewThumb: _scrubThumbPath,
                       canSkip: widget.queueIds.length > 1,
                       onPrevious: _playPrevious,
-                      onNext: _playNext,
+                      onNext: () => _playNext(),
+                      shuffleQueue: _shuffleQueue,
+                      queueRepeat: _queueRepeat,
+                      onToggleShuffle: () =>
+                          setState(() => _shuffleQueue = !_shuffleQueue),
+                      onCycleRepeat: () => setState(() {
+                            _queueRepeat = AudioRepeatMode.values[
+                                (_queueRepeat.index + 1) %
+                                    AudioRepeatMode.values.length];
+                          }),
                     ),
                   ),
                 ),
@@ -2476,6 +2512,10 @@ class _BottomBar extends StatefulWidget {
     required this.canSkip,
     required this.onPrevious,
     required this.onNext,
+    required this.shuffleQueue,
+    required this.queueRepeat,
+    required this.onToggleShuffle,
+    required this.onCycleRepeat,
   });
 
   final Player player;
@@ -2495,6 +2535,13 @@ class _BottomBar extends StatefulWidget {
   final bool canSkip;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
+
+  /// v1.0.1 fix 3: queue transport modes for the shuffle/repeat buttons
+  /// (identical semantics and pure math as the audio player).
+  final bool shuffleQueue;
+  final AudioRepeatMode queueRepeat;
+  final VoidCallback onToggleShuffle;
+  final VoidCallback onCycleRepeat;
 
   @override
   State<_BottomBar> createState() => _BottomBarState();
@@ -2528,6 +2575,18 @@ class _BottomBarState extends State<_BottomBar> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _iconBtn(
+                  icon: Icons.shuffle,
+                  size: 22,
+                  compact: true,
+                  active: widget.shuffleQueue,
+                  tooltip: widget.shuffleQueue
+                      ? 'Shuffle: on'
+                      : 'Shuffle: off',
+                  onTap:
+                      widget.canSkip ? widget.onToggleShuffle : null,
+                ),
+                const SizedBox(width: 8),
+                _iconBtn(
                   icon: Icons.skip_previous,
                   size: 30,
                   accentPress: true,
@@ -2543,6 +2602,17 @@ class _BottomBarState extends State<_BottomBar> {
                   accentPress: true,
                   tooltip: 'Next video',
                   onTap: widget.canSkip ? widget.onNext : null,
+                ),
+                const SizedBox(width: 8),
+                _iconBtn(
+                  icon: widget.queueRepeat == AudioRepeatMode.one
+                      ? Icons.repeat_one
+                      : Icons.repeat,
+                  size: 22,
+                  compact: true,
+                  active: widget.queueRepeat != AudioRepeatMode.off,
+                  tooltip: 'Repeat: ${widget.queueRepeat.name} — tap to cycle',
+                  onTap: widget.canSkip ? widget.onCycleRepeat : null,
                 ),
               ],
             ),

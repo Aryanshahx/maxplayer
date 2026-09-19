@@ -74,6 +74,26 @@ const List<String> kAskAiModels = [
   'google/gemma-4-26b-a4b-it:free',
 ];
 
+/// 429 cooldown memory: a model that rate-limited us sits out for 90s, so
+/// the NEXT question goes straight to a fresh model instead of burning the
+/// same congestion twice in a row. Process-lifetime only, by design.
+final Map<String, DateTime> _modelCooldowns = {};
+
+/// Pure (unit-tested): is [model] still inside its post-429 cooldown?
+bool aiModelCoolingDown(
+        Map<String, DateTime> cooldowns, String model, DateTime now) =>
+    cooldowns[model]?.isAfter(now) ?? false;
+
+/// Pure (unit-tested): worth one automatic second pass over the chain? True
+/// only when EVERY model answered 429 and nothing else went wrong — that
+/// shape means a per-minute window (often clears within seconds). A
+/// daily-cap brick wall has the same shape: the second pass costs ~8s and
+/// the honest 429 label still shows afterwards.
+bool aiShouldRetryRound2(List<int> httpStatuses, int exceptionCount) =>
+    httpStatuses.isNotEmpty &&
+    exceptionCount == 0 &&
+    httpStatuses.every((s) => s == 429);
+
 /// One-shot chat completion against OpenRouter, walking the free-model
 /// fallback chain. Never throws; an [AiResult.error] starting with 'config'
 /// means the API key isn't set (add OPENROUTER_API_KEY to GitHub secrets).
@@ -107,54 +127,84 @@ Future<AiResult> askMovieAi({
       ),
     );
   }
-  final client = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 20);
+  // One walk over the model chain; `ignoreCooldowns` is for the automatic
+  // second pass after an all-429 first pass.
+  String? answer;
   final httpStatuses = <int>[];
   var exceptionCount = 0;
 
-  for (final model in kAskAiModels) {
+  Future<String?> tryOnce({required bool ignoreCooldowns}) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 20);
     try {
-      final req = await client
-          .postUrl(Uri.parse('https://openrouter.ai/api/v1/chat/completions'))
-          .timeout(const Duration(seconds: 20));
-      req.headers
-        ..set('Authorization', 'Bearer ${AppConfig.openRouterKey}')
-        ..set('Content-Type', 'application/json')
-        ..set('Referer', 'https://github.com/Aryanshahx/maxplayer')
-        ..set('X-Title', 'Max Player');
-      req.write(jsonEncode({
-        'model': model,
-        'messages': [
-          {'role': 'system', 'content': systemPrompt},
-          {'role': 'user', 'content': question},
-        ],
-        'max_tokens': 400,
-      }));
-      final res = await req.close().timeout(const Duration(seconds: 30));
-      final body = await res
-          .transform(utf8.decoder)
-          .join()
-          .timeout(const Duration(seconds: 30));
-      if (res.statusCode != 200) {
-        httpStatuses.add(res.statusCode);
-        CrashLog.error('ai.http_${res.statusCode}', body.length);
-        continue; // rate-limited / model down -> next in the chain
-      }
-      final decoded = jsonDecode(body);
-      final choices = decoded is Map ? decoded['choices'] : null;
-      if (choices is List && choices.isNotEmpty) {
-        final msg = choices.first['message'];
-        final content = msg is Map ? msg['content'] : null;
-        if (content is String && content.trim().isNotEmpty) {
-          return AiResult(text: content.trim());
+      for (final model in kAskAiModels) {
+        if (!ignoreCooldowns &&
+            aiModelCoolingDown(_modelCooldowns, model, DateTime.now())) {
+          continue; // 429'd us <90s ago — straight to a fresh model
+        }
+        try {
+          final req = await client
+              .postUrl(
+                  Uri.parse('https://openrouter.ai/api/v1/chat/completions'))
+              .timeout(const Duration(seconds: 20));
+          req.headers
+            ..set('Authorization', 'Bearer ${AppConfig.openRouterKey}')
+            ..set('Content-Type', 'application/json')
+            ..set('Referer', 'https://github.com/Aryanshahx/maxplayer')
+            ..set('X-Title', 'Max Player');
+          req.write(jsonEncode({
+            'model': model,
+            'messages': [
+              {'role': 'system', 'content': systemPrompt},
+              {'role': 'user', 'content': question},
+            ],
+            'max_tokens': 400,
+          }));
+          final res = await req.close().timeout(const Duration(seconds: 30));
+          final body = await res
+              .transform(utf8.decoder)
+              .join()
+              .timeout(const Duration(seconds: 30));
+          if (res.statusCode != 200) {
+            httpStatuses.add(res.statusCode);
+            CrashLog.error('ai.http_${res.statusCode}', body.length);
+            if (res.statusCode == 429) {
+              _modelCooldowns[model] =
+                  DateTime.now().add(const Duration(seconds: 90));
+            }
+            continue; // rate-limited / model down -> next in the chain
+          }
+          final decoded = jsonDecode(body);
+          final choices = decoded is Map ? decoded['choices'] : null;
+          if (choices is List && choices.isNotEmpty) {
+            final msg = choices.first['message'];
+            final content = msg is Map ? msg['content'] : null;
+            if (content is String && content.trim().isNotEmpty) {
+              return content.trim();
+            }
+          }
+        } catch (e) {
+          exceptionCount++;
+          CrashLog.error('ai.model_failed', {'model': model, 'error': '$e'});
+          // network blip for this model -> try the next one
         }
       }
-    } catch (e) {
-      exceptionCount++;
-      CrashLog.error('ai.model_failed', {'model': model, 'error': '$e'});
-      // network blip for this model -> try the next one
+      return null;
+    } finally {
+      client.close();
     }
   }
+
+  answer = await tryOnce(ignoreCooldowns: false);
+  if (answer == null && aiShouldRetryRound2(httpStatuses, exceptionCount)) {
+    // Pure per-minute 429 wall: wait one beat and walk the chain once more
+    // ignoring cooldowns. Free OpenRouter keys cap at ~20 requests/min.
+    CrashLog.crumb('ai.round2_wait', {'statuses': [...httpStatuses]});
+    await Future<void>.delayed(const Duration(seconds: 8));
+    answer = await tryOnce(ignoreCooldowns: true);
+  }
+  if (answer != null) return AiResult(text: answer);
+
   // Every model failed or the phone is offline -> rule-based local answer.
   final reason = aiFallbackReason(
       keyEmpty: false,

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
@@ -9,43 +8,32 @@ import 'app_volume.dart';
 import 'crash_log.dart';
 import 'player_settings.dart';
 
-enum AudioRepeatMode { off, all, one }
+// v1.0.1 fix 3: the repeat-mode enum and the pure next/prev queue math moved
+// to queue_math.dart so the VIDEO player can use the exact same logic (it now
+// has shuffle/repeat buttons too). Re-exported here — every existing import
+// of this file keeps compiling untouched.
+import 'queue_math.dart';
 
-/// Pure next-track math (unit-tested — no engine involved).
-/// Returns -1 when playback should STOP after the current track.
-/// [rand] is injected for tests: it must map [count) -> 0..count-1.
-int audioNextIndex({
-  required int current,
-  required int count,
-  required bool shuffle,
-  required AudioRepeatMode repeat,
-  int Function(int maxExclusive)? rand,
-}) {
-  if (count <= 0 || current < 0) return -1;
-  if (repeat == AudioRepeatMode.one) return current;
-  if (shuffle) {
-    final r = rand ?? Random().nextInt;
-    var next = r(count);
-    // Avoid the "shuffle plays the same song again" anti-feel when there
-    // is more than one candidate.
-    if (count > 1 && next == current) next = (next + 1) % count;
-    return next;
+export 'queue_math.dart';
+
+
+/// Pure (unit-tested): raw mpv/engine errors ("Error decoding audio",
+/// decoder init failures…) mapped to something an actual human can act on.
+/// The raw text always lands in CrashLog regardless.
+String describeAudioEngineError(String raw) {
+  final r = raw.toLowerCase();
+  if (r.contains('decod') || r.contains('codec') || r.contains('format')) {
+    return 'Decode hiccup — auto-resuming. If this file keeps failing, it '
+        'may be corrupt or use a codec this device build lacks.';
   }
-  final n = current + 1;
-  if (n >= count) return repeat == AudioRepeatMode.all ? 0 : -1;
-  return n;
-}
-
-/// Pure previous-track math: classic player semantics — wrap to the last
-/// track from the first only under repeat-all, otherwise stay at 0.
-int audioPrevIndex({
-  required int current,
-  required int count,
-  required AudioRepeatMode repeat,
-}) {
-  if (count <= 0 || current < 0) return -1;
-  if (current > 0) return current - 1;
-  return repeat == AudioRepeatMode.all ? count - 1 : 0;
+  if (r.contains('timed out') || r.contains('timeout') || r.contains('eof')) {
+    return 'The file stopped responding mid-play (corrupt or truncated?).';
+  }
+  if (r.contains('network') || r.contains('socket') || r.contains('http')) {
+    return 'Connection problem while playing.';
+  }
+  final t = raw.trim();
+  return t.isEmpty ? 'Playback error' : t;
 }
 
 /// Process-lifetime audio playback engine (v1.0.21): created once, kept
@@ -62,6 +50,7 @@ class AudioPlayerHolder extends ChangeNotifier {
   final List<StreamSubscription<dynamic>> _subs = [];
   final Map<String, String> _pathCache = {};
   int _token = 0;
+  int _engineRecoveries = 0;
 
   List<AssetEntity> _queue = const [];
   int currentIndex = -1;
@@ -85,6 +74,13 @@ class AudioPlayerHolder extends ChangeNotifier {
     _player = p;
     _subs.add(p.stream.playing.listen((v) {
       playing = v;
+      if (v && error != null) {
+        // Playback recovered — drop the stale ⚠ badge. Before this, ONE
+        // mid-song decoder hiccup left "Error decoding audio" on screen
+        // forever even though music was playing again.
+        error = null;
+        _engineRecoveries = 0;
+      }
       notifyListeners();
     }));
     _subs.add(p.stream.position.listen((v) {
@@ -115,8 +111,9 @@ class AudioPlayerHolder extends ChangeNotifier {
       }
     }));
     _subs.add(p.stream.error.listen((e) {
-      error = e;
+      error = describeAudioEngineError(e);
       CrashLog.error('audio.engine_error', e);
+      _recoverFromEngineError();
       notifyListeners();
     }));
   }
@@ -140,6 +137,7 @@ class AudioPlayerHolder extends ChangeNotifier {
     await _ensureEngine();
     final asset = _queue[index];
     error = null;
+    _engineRecoveries = 0;
     try {
       var path = _pathCache[asset.id];
       path ??= (await asset.file)?.path;
@@ -167,6 +165,23 @@ class AudioPlayerHolder extends ChangeNotifier {
       }
       notifyListeners();
     }
+  }
+
+  /// mpv on Android throws "Error decoding audio" mid-song on decoder
+  /// resets (bluetooth/focus changes, edgy codecs) — a seek+play nudge at
+  /// the current position recovers almost every time. Bounded at 2 tries
+  /// per track so a genuinely dead file can't loop forever.
+  void _recoverFromEngineError() {
+    final p = _player;
+    if (p == null || !hasTrack || !playing || _engineRecoveries >= 2) return;
+    _engineRecoveries++;
+    final at = position;
+    unawaited(Future<void>.delayed(const Duration(milliseconds: 600), () {
+      if (_player != p || !hasTrack) return;
+      CrashLog.crumb(
+          'audio.recover_attempt', {'at_ms': at.inMilliseconds});
+      p.seek(at).then((_) => p.play());
+    }));
   }
 
   Future<void> _mpvSetProp(Player p, String key, String value) async {

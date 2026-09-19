@@ -312,7 +312,11 @@ String _localLabel(String? reason) {
     case 'http-402':
       return '${prefix}OpenRouter has no free credits left (402).';
     case 'http-429':
-      return '${prefix}AI rate-limited (429) — try again in a minute.';
+      return '${prefix}AI rate-limited (429) — all free models are maxed '
+          'out right now. Free OpenRouter keys allow ~20 requests per minute '
+          'and ~50 per DAY without credits (the day cap resets daily; \$10 '
+          'credit at openrouter.ai raises it to 1000/day). We already retried '
+          'the whole chain once automatically — wait a minute and try again.';
     default:
       return reason != null && reason.startsWith('http-')
           ? '$prefix AI error ($reason).'
