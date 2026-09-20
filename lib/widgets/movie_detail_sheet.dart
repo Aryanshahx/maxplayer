@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../utils/amazon_affiliate.dart';
+
 import '../theme.dart';
 import '../utils/tmdb.dart';
 import '../utils/tmdb_image.dart';
@@ -297,7 +299,11 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                     _ScreenshotsRow(paths: full.screenshots),
                   _AllDataBlock(extras: full.extras),
                   _DetailedStoryBlock(movie: movie, extras: full.extras),
-                  if (!full.watch.isEmpty) _WatchBlock(info: full.watch),
+                  if (!full.watch.isEmpty)
+                    _WatchBlock(
+                        info: full.watch,
+                        title: movie.title,
+                        year: movie.year),
                   if (full.extras.castMembers.isNotEmpty)
                     _TopCastSlider(cast: full.extras.castMembers),
                   if (isTv && full.seasons.isNotEmpty)
@@ -803,7 +809,12 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
 class _WatchBlock extends StatelessWidget {
   final TmdbWatchInfo info;
 
-  const _WatchBlock({required this.info});
+  /// Title + year power the Amazon affiliate search (v1.0.1+6); when empty
+  /// the CTA simply doesn't render.
+  final String title;
+  final int? year;
+
+  const _WatchBlock({required this.info, this.title = '', this.year});
 
   @override
   Widget build(BuildContext context) {
@@ -858,6 +869,12 @@ class _WatchBlock extends StatelessWidget {
           row('Stream', info.stream, const Color(0xFF4ade80)),
           row('Rent', info.rent, const Color(0xFFfacc15)),
           row('Buy', info.buy, const Color(0xFF60a5fa)),
+          // v1.0.1+6: affiliate CTA, ONLY when TMDB confirms Prime India
+          // actually carries this title (per user: no dead-end links).
+          if (title.isNotEmpty && tmdbWatchHasPrime(info)) ...[
+            const SizedBox(height: 4),
+            _PrimeCta(title: title, year: year),
+          ],
         ],
       ),
     );
@@ -1018,6 +1035,65 @@ class _AllDataBlock extends StatelessWidget {
             row('Languages', extras.allLanguages.join(', ')),
         ],
       ),
+    );
+  }
+}
+
+
+/// "Watch on Prime Video" affiliate CTA (v1.0.1+6). Opens a tagged
+/// Prime-Video-scoped amazon.in search. The disclosure line is REQUIRED by
+/// the Amazon Associates Operating Agreement and therefore travels with
+/// the button — do not strip it.
+class _PrimeCta extends StatelessWidget {
+  const _PrimeCta({required this.title, required this.year});
+
+  final String title;
+  final int? year;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Material(
+          color: const Color(0xFF00A8E1), // Prime Video blue
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () {
+              final uri =
+                  Uri.parse(amazonPrimeSearchUrl(title, year: year));
+              launchUrl(uri, mode: LaunchMode.externalApplication);
+            },
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.play_circle_fill_rounded,
+                      color: Colors.white, size: 20),
+                  SizedBox(width: 8),
+                  Text('Watch on Prime Video',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13.5)),
+                  SizedBox(width: 6),
+                  Icon(Icons.open_in_new_rounded,
+                      color: Colors.white70, size: 14),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          'Partner link — as an Amazon Associate, Max Player earns from '
+          'qualifying purchases.',
+          style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.35), fontSize: 9.5),
+        ),
+      ],
     );
   }
 }
