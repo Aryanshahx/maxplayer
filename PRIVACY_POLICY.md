@@ -94,6 +94,13 @@ The app collects no data from anyone, including children.
 Any change to this policy is published in this file in the public repository
 with a new effective date.
 
+## Affiliate links
+
+The app shows clearly-labelled "Partner link" buttons (for example Prime
+Video and pCloud). Tapping one opens that service's website; we may earn a
+commission at no extra cost to you. These links carry only our public
+partner tag — no personal data is sent through them.
+
 ## Contact
 
 Questions: open an issue on github.com/Aryanshahx/maxplayer

@@ -26,6 +26,19 @@ bool tmdbWatchHasPrime(TmdbWatchInfo info) {
   return hit(info.stream) || hit(info.rent) || hit(info.buy);
 }
 
+/// Pure: open the title in the PRIME VIDEO APP or, when not installed, the
+/// primevideo.com website (user request — go to Prime, not the Amazon
+/// shopping app). NOTE: primevideo.com carries NO Associates tag (Amazon
+/// only credits amazon.* shopping-domain links), so the tagged shopping
+/// link below is kept as the secondary "buy or rent" path.
+String primeVideoSearchUrl(String title, {int? year}) {
+  final trimmed = title.trim();
+  final phrase = (year != null && year > 0) ? '$trimmed $year' : trimmed;
+  return Uri.https('www.primevideo.com', '/search', <String, String>{
+    'phrase': phrase,
+  }).toString();
+}
+
 /// Pure: the commissionable link for a title.
 /// TMDB does not expose per-title Prime page IDs (they're Amazon GTIs, not
 /// ASINs), so we land a TAGGED Prime-Video-scoped search — Associates rules

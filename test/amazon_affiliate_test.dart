@@ -45,4 +45,20 @@ void main() {
       expect(uri.queryParameters['k'], 'Dangal movie');
     });
   });
+
+  group('primeVideoSearchUrl (opens PV app/website, carries no tag)', () {
+    test('goes to primevideo.com search with title+year phrase', () {
+      final uri = Uri.parse(primeVideoSearchUrl('3 Idiots', year: 2009));
+      expect(uri.host, 'www.primevideo.com');
+      expect(uri.path, '/search');
+      expect(uri.queryParameters['phrase'], '3 Idiots 2009');
+      // Commission lives ONLY on the amazon.in shopping link — never here.
+      expect(uri.queryParameters.containsKey('tag'), isFalse);
+    });
+
+    test('no year => trimmed title only', () {
+      final uri = Uri.parse(primeVideoSearchUrl('  Dangal  '));
+      expect(uri.queryParameters['phrase'], 'Dangal');
+    });
+  });
 }
