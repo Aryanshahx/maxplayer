@@ -1040,12 +1040,12 @@ class _AllDataBlock extends StatelessWidget {
 }
 
 
-/// "Watch on Prime Video" CTA (v1.0.1+7). PRIMARY tap opens the Prime
-/// Video APP (or primevideo.com website) — user request, better UX.
-/// Amazon never credits those links, so a secondary, clearly-labelled
-/// TAGGED "Buy or rent on Amazon.in" row keeps the commission path alive.
-/// The disclosure line is REQUIRED by the Associates Operating Agreement
-/// and travels with the tagged link — do not strip it.
+/// "Watch on Prime Video" CTA (v1.0.1+8). Business rule (user call): the
+/// ONLY redirect is the TAGGED amazon.in link — that is the path that
+/// earns (24h Associates attribution on anything bought). The untagged
+/// primevideo.com button was removed because those taps pay nothing. The
+/// disclosure line is REQUIRED by the Associates Operating Agreement and
+/// travels with the button — do not strip it.
 class _PrimeCta extends StatelessWidget {
   const _PrimeCta({required this.title, required this.year});
 
@@ -1063,8 +1063,8 @@ class _PrimeCta extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(10),
             onTap: () {
-              // Prime Video app if installed, primevideo.com otherwise.
-              final uri = Uri.parse(primeVideoSearchUrl(title, year: year));
+              final uri =
+                  Uri.parse(amazonPrimeSearchUrl(title, year: year));
               launchUrl(uri, mode: LaunchMode.externalApplication);
             },
             child: const Padding(
@@ -1088,40 +1088,10 @@ class _PrimeCta extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 6),
-        InkWell(
-          onTap: () {
-            // Tagged shopping link — the actual commission path.
-            final uri =
-                Uri.parse(amazonPrimeSearchUrl(title, year: year));
-            launchUrl(uri, mode: LaunchMode.externalApplication);
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.shopping_bag_outlined,
-                    color: Colors.white.withValues(alpha: 0.6), size: 14),
-                const SizedBox(width: 6),
-                Text(
-                  'Buy or rent on Amazon.in',
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.75),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(width: 4),
-                Icon(Icons.open_in_new_rounded,
-                    color: Colors.white.withValues(alpha: 0.5), size: 12),
-              ],
-            ),
-          ),
-        ),
         const SizedBox(height: 3),
         Text(
           'Partner link — as an Amazon Associate, Max Player earns from '
-          'qualifying purchases made via "Buy or rent on Amazon.in".',
+          'qualifying purchases.',
           style: TextStyle(
               color: Colors.white.withValues(alpha: 0.35), fontSize: 9.5),
         ),
