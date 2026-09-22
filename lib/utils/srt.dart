@@ -217,3 +217,43 @@ Duration? computeSkipCredits(List<SrtCue> cues, {int? durationMs}) {
 const int _creditsMinCues = 8;
 const int _creditsLineMs = 3500;
 const int _creditsRunMs = 90000; // the run rolls within 1.5 min
+
+/// Karaoke-style expansion (v1.0.1+10): turns each spoken cue into short
+/// word-group micro-cues ([groupSize] words each), every micro-cue timed
+/// by its WORD SHARE of the parent cue's duration — the classic
+/// word-flow karaoke look in ANY player, from the same whisper segments.
+/// Pure + unit-tested. Word order is preserved end-to-end; the last
+/// micro-cue ends exactly where the parent cue ended.
+List<SrtCue> karaokeStyleCues(List<SrtCue> cues, {int groupSize = 3}) {
+  if (groupSize < 1) groupSize = 1;
+  final out = <SrtCue>[];
+  final splitter = RegExp(r'\s+');
+  for (final c in cues) {
+    final words = c.text
+        .trim()
+        .split(splitter)
+        .where((w) => w.isNotEmpty)
+        .toList(growable: false);
+    if (words.isEmpty) continue;
+    if (words.length <= 2) {
+      // Already karaoke-short; keep timing untouched.
+      out.add(c);
+      continue;
+    }
+    final dur = c.endMs - c.startMs;
+    final safeDur = dur > 0 ? dur : words.length * 400;
+    var used = 0;
+    for (var g = 0; g * groupSize < words.length; g++) {
+      final hi = (g + 1) * groupSize > words.length
+          ? words.length
+          : (g + 1) * groupSize;
+      final chunk = words.sublist(g * groupSize, hi);
+      final s = c.startMs + (safeDur * used) ~/ words.length;
+      used += chunk.length;
+      var e = c.startMs + (safeDur * used) ~/ words.length;
+      if (e <= s) e = s + 1; // players reject zero-length cues
+      out.add(SrtCue(s, e, chunk.join(' ')));
+    }
+  }
+  return out;
+}

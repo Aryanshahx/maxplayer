@@ -1726,19 +1726,26 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
-    // Only the accurate models stay ("tiny" removed for good). Speed comes
-    // from all-core threading instead of a weaker model. Unknown ids
-    // (including a "tiny" id saved by older builds) fall back to "base".
+    // "tiny" stays removed for good (user call: keep only accurate models).
+    // Speed now comes from all-core threading PLUS the quantized "fast"
+    // model. Unknown ids (including a "tiny" id saved by older builds)
+    // fall back to "base".
+    // v1.0.1+9: "fast" = the QUANTIZED base model (ggml-base-q5_1, 59.7 MB)
+    // — ~1.5x quicker than fp16 base and 60% smaller to download, with a
+    // barely measurable subtitle-accuracy delta. whisper.cpp loads it
+    // through the same ggml loader, no engine change needed.
     private fun modelFileFor(name: String): File {
-        val safe = when (name) {
-            "base", "small" -> name
-            else -> "base"
+        return when (name) {
+            "fast" -> File(filesDir, "models/ggml-base-q5_1.bin")
+            "small" -> File(filesDir, "models/ggml-small.bin")
+            else -> File(filesDir, "models/ggml-base.bin")
         }
-        return File(filesDir, "models/ggml-$safe.bin")
     }
 
     private fun modelUrlFor(name: String): String {
         return when (name) {
+            "fast" ->
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin"
             "small" ->
                 "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
             else ->
@@ -1825,15 +1832,22 @@ class MainActivity : FlutterFragmentActivity() {
                 var model: WhisperModel? = null
                 try {
                     model = Whisper.loadModel(this@MainActivity, modelFile.absolutePath)
-                    val pcmData = readWavPcm(wav) ?: ByteArray(0)
-                    val spans = speechSpans(pcmData)
+                    // v1.0.1+10 memory safety: the old readWavPcm loaded the
+                    // WHOLE extracted WAV into RAM (~700 MB peak for a 3 h
+                    // movie) and Android killed the app right around audio
+                    // extraction — the "closes by itself mid-generation"
+                    // bug. Now the audio is STREAMED: a few MB peak for
+                    // any duration.
+                    val vadFrame = 400
+                    val spans = speechSpansFromRms(
+                        wavRmsEnergies(wav, vadFrame), vadFrame)
                     // spans empty = no voice anywhere -> empty result, and
                     // Dart shows its friendly "No speech detected" snack.
                     spans.forEachIndexed { i, span ->
                         if (aiCancelled) return@forEachIndexed
                         val spanWav = File(cacheDir, "ai_span_${jobId}_$i.wav")
                         try {
-                            writeSpanWav(spanWav, pcmData, span[0], span[1])
+                            writeSpanWavFromFile(wav, spanWav, span[0], span[1])
                             // The user can pin a language ("hi", "ur", "en",
                             // ...) in the Generate dialog; "auto" = detect
                             // it. Pinning is noticeably more accurate.
@@ -2196,82 +2210,102 @@ class MainActivity : FlutterFragmentActivity() {
         raf.write(intLe(dataLen))
     }
 
-    /** Reads the PCM data section of a 16 kHz mono 16-bit WAV we wrote
-     * (i.e. everything after the 44-byte header). Null if unreadable. */
-    private fun readWavPcm(wav: File): ByteArray? {
-        return try {
-            val bytes = wav.readBytes()
-            if (bytes.size <= 44) null else bytes.copyOfRange(44, bytes.size)
-        } catch (e: Exception) {
-            null
+    /**
+     * Per-frame RMS energies of a 16 kHz mono 16-bit WAV, computed in a
+     * STREAMED pass (v1.0.1+10): a few MB peak for ANY duration — replaces
+     * the full-file read that OOM-killed long-movie generations.
+     */
+    private fun wavRmsEnergies(wav: File, frame: Int): DoubleArray {
+        val guessed = (((wav.length() - 44) / 2) / frame).toInt().coerceAtLeast(0)
+        val rms = DoubleArray(guessed)
+        val frameBytes = frame * 2
+        val block = ByteArray(2 * 1024 * 1024)
+        val carry = ByteArray(frameBytes)
+        var carryLen = 0
+        var frameIdx = 0
+        RandomAccessFile(wav, "r").use { raf ->
+            raf.seek(44)
+            while (true) {
+                val n = raf.read(block)
+                if (n <= 0) break
+                var p = 0
+                while (p < n) {
+                    val take = minOf(frameBytes - carryLen, n - p)
+                    System.arraycopy(block, p, carry, carryLen, take)
+                    carryLen += take
+                    p += take
+                    if (carryLen == frameBytes) {
+                        var sum = 0.0
+                        var j = 0
+                        while (j < frame) {
+                            val idx = j * 2
+                            val v = ((carry[idx + 1].toInt() shl 8) or
+                                (carry[idx].toInt() and 0xFF)).toShort().toInt()
+                            sum += v * v
+                            j++
+                        }
+                        if (frameIdx < rms.size) {
+                            rms[frameIdx] = kotlin.math.sqrt(sum / frame)
+                        }
+                        frameIdx++
+                        carryLen = 0
+                    }
+                }
+            }
         }
+        return if (frameIdx == rms.size) rms else rms.copyOf(frameIdx)
     }
 
     /**
-     * Writes [pcm] samples in [fromSample, toSample) as a standalone 16 kHz
-     * mono 16-bit WAV (header + raw little-endian data).
+     * v1.0.1+10: writes samples [fromSample, toSample) of [srcWav] as a
+     * standalone 16 kHz mono 16-bit WAV, copying 64 KB at a time — peak
+     * memory one span chunk, not the whole track.
      */
-    private fun writeSpanWav(out: File, pcm: ByteArray, fromSample: Int, toSample: Int) {
-        val from = fromSample * 2
-        val to = minOf(toSample * 2, pcm.size)
-        val raf = RandomAccessFile(out, "rw")
+    private fun writeSpanWavFromFile(
+        srcWav: File, out: File, fromSample: Int, toSample: Int,
+    ) {
+        val from = fromSample * 2L
+        val to = toSample * 2L
+        val rafOut = RandomAccessFile(out, "rw")
         try {
-            raf.setLength(0)
-            writeWavHeader(raf, 16000, (to - from).toLong())
-            raf.write(pcm, from, to - from)
+            rafOut.setLength(0)
+            writeWavHeader(rafOut, 16000, to - from)
+            RandomAccessFile(srcWav, "r").use { rafIn ->
+                rafIn.seek(44 + from)
+                val buf = ByteArray(64 * 1024)
+                var left = to - from
+                while (left > 0) {
+                    val n = rafIn.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                    if (n <= 0) break
+                    rafOut.write(buf, 0, n)
+                    left -= n
+                }
+            }
         } finally {
-            raf.close()
+            rafOut.close()
         }
     }
 
     /**
-     * Speech-gate for the AI pipeline: finds voiced spans in 16 kHz mono
-     * 16-bit PCM (raw little-endian bytes, no header) and returns them as
-     * [startSample, endSample) pairs - padded, gap-merged and chunked to
-     * <=30 s so slices stay small and fast to transcribe.
-     *
-     * Conservative by design: only true near-silence is dropped. The
-     * threshold sits at ~2x the adaptive noise floor with a very low
-     * absolute floor, so quiet speech is kept while digital/room silence is
-     * skipped. Music is far above this floor and is therefore NEVER gated
-     * out (speech over loud background music still gets transcribed).
+     * Speech-gate for the AI pipeline (v1.0.1+10, streamed): takes the
+     * per-25 ms frame RMS energies computed by [wavRmsEnergies] and
+     * returns voiced sample ranges — padded, gap-merged and chunked to
+     * <=30 s. IDENTICAL heuristics to the previous in-memory version:
+     * conservative threshold (~2.2x the adaptive noise floor with a low
+     * absolute floor), music is never gated out.
      */
-    private fun speechSpans(pcm: ByteArray): List<IntArray> {
-        val frame = 400 // 25 ms at 16 kHz
-        val totalSamples = pcm.size / 2
-        val totalFrames = totalSamples / frame
+    private fun speechSpansFromRms(rms: DoubleArray, frame: Int): List<IntArray> {
+        val totalFrames = rms.size
+        val totalSamples = totalFrames * frame
         if (totalFrames < 8) return emptyList() // under 0.2 s of audio at all
 
-        // RMS energy per 25 ms frame, straight from the raw bytes.
-        val rms = DoubleArray(totalFrames)
-        var i = 0
-        while (i < totalFrames) {
-            var sum = 0.0
-            var j = 0
-            val base = i * frame
-            while (j < frame) {
-                val idx = (base + j) * 2
-                val s =
-                    ((pcm[idx + 1].toInt() shl 8) or (pcm[idx].toInt() and 0xFF))
-                        .toShort()
-                        .toInt()
-                sum += s * s
-                j++
-            }
-            rms[i] = kotlin.math.sqrt(sum / frame)
-            i++
-        }
-
-        // Adaptive threshold: ~2.2x the 20th-percentile frame energy (the
-        // noise floor), but never below a conservative absolute floor.
         val sorted = rms.sorted()
         val noise = sorted[(totalFrames * 0.2).toInt().coerceIn(0, totalFrames - 1)]
         val threshold = maxOf(noise * 2.2, 260.0)
 
-        // Voiced frames -> raw spans.
         val raw = mutableListOf<IntArray>()
         var start = -1
-        i = 0
+        var i = 0
         while (i < totalFrames) {
             if (rms[i] >= threshold) {
                 if (start < 0) start = i

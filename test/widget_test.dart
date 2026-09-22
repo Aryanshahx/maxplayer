@@ -434,14 +434,17 @@ void main() {
   });
 
   group('AiSubtitleRunner (AI subtitles)', () {
-    test('normalizeModelId falls back to base', () {
-      expect(AiSubtitleRunner.normalizeModelId(null), 'base');
-      expect(AiSubtitleRunner.normalizeModelId('tiny'), 'base');
+    test('normalizeModelId: fast is the default, saved picks respected', () {
+      expect(AiSubtitleRunner.normalizeModelId(null), 'fast');
+      expect(AiSubtitleRunner.normalizeModelId('tiny'), 'fast');
+      expect(AiSubtitleRunner.normalizeModelId('fast'), 'fast');
+      expect(AiSubtitleRunner.normalizeModelId('base'), 'base');
       expect(AiSubtitleRunner.normalizeModelId('small'), 'small');
     });
-    test('modelSizeLabel maps small vs default', () {
+    test('modelSizeLabel maps every model id', () {
       expect(AiSubtitleRunner.modelSizeLabel('small'), '~466 MB');
       expect(AiSubtitleRunner.modelSizeLabel('base'), '~142 MB');
+      expect(AiSubtitleRunner.modelSizeLabel('fast'), '~60 MB');
     });
   });
 
