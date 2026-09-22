@@ -99,10 +99,10 @@ class AiSubtitleRunner {
   /// back to the default model — which is the FAST quantized one. Saved
   /// "base"/"small" picks are respected.
   static String normalizeModelId(String? id) => switch (id) {
-        'small' => 'small',
-        'base' => 'base',
-        _ => 'fast',
-      };
+    'small' => 'small',
+    'base' => 'base',
+    _ => 'fast',
+  };
 
   /// Language choices: whisper code -> label; 'auto' = detect.
   static const Map<String, String> languageChoices = {
@@ -141,10 +141,10 @@ class AiSubtitleRunner {
 
   /// Approximate download size label per model (for the progress dialog).
   static String modelSizeLabel(String model) => switch (model) {
-        'small' => '~466 MB',
-        'base' => '~142 MB',
-        _ => '~60 MB',
-      };
+    'small' => '~466 MB',
+    'base' => '~142 MB',
+    _ => '~60 MB',
+  };
 
   // ---- active-job state (one job at a time) ----
 
@@ -201,24 +201,28 @@ class AiSubtitleRunner {
     required Player player,
   }) async {
     if (isStream || path.contains('://')) {
-      _snack(context,
-          'AI subtitles work on local video files (not network streams)');
+      _snack(
+        context,
+        'AI subtitles work on local video files (not network streams)',
+      );
       return;
     }
 
     // Ask for quality + language + output mode first (choices remembered).
     final prefs = await SharedPreferences.getInstance();
     if (!context.mounted) return;
-    final options = await showDialog<
-        ({String model, String language, bool translate, bool karaoke})>(
-      context: context,
-      builder: (_) => _AiOptionsDialog(
-        initialModel: normalizeModelId(prefs.getString(_kModelKey)),
-        initialLanguage: prefs.getString(_kLanguageKey) ?? 'auto',
-        initialTranslate: prefs.getString(_kTranslateKey) == 'true',
-        initialKaraoke: prefs.getString(_kKaraokeKey) == 'true',
-      ),
-    );
+    final options =
+        await showDialog<
+          ({String model, String language, bool translate, bool karaoke})
+        >(
+          context: context,
+          builder: (_) => _AiOptionsDialog(
+            initialModel: normalizeModelId(prefs.getString(_kModelKey)),
+            initialLanguage: prefs.getString(_kLanguageKey) ?? 'auto',
+            initialTranslate: prefs.getString(_kTranslateKey) == 'true',
+            initialKaraoke: prefs.getString(_kKaraokeKey) == 'true',
+          ),
+        );
     if (options == null || !context.mounted) return;
     unawaited(prefs.setString(_kModelKey, options.model));
     unawaited(prefs.setString(_kLanguageKey, options.language));
@@ -241,6 +245,25 @@ class AiSubtitleRunner {
     _progress = progress;
     _segments = null;
     _error = null;
+
+    // v1.0.1+11: generation saturates every CPU core (whisper) — pause
+    // playback so the video does not freeze/stutter during the run, and
+    // resume afterwards only if it was playing. Also start a watchdog: if
+    // the native engine never reports ANY progress within 25 s, surface a
+    // real error instead of spinning at "Preparing…" forever.
+    final wasPlaying = player.state.playing;
+    if (wasPlaying) {
+      unawaited(player.pause());
+    }
+    Timer? watchdog;
+    watchdog = Timer(const Duration(seconds: 25), () {
+      if (dialogOpen && progress.value.$1 == 'starting') {
+        error =
+            'The AI engine did not respond in time. Please close and reopen Max Player, then try again.';
+        unawaited(_channel.invokeMethod('aiSubtitleCancel'));
+        closeDialog();
+      }
+    });
     _onDone = () {
       segments = _segments;
       closeDialog();
@@ -290,8 +313,10 @@ class AiSubtitleRunner {
       }
       if (error == 'cancelled') return;
       if (segments == null || segments!.isEmpty) {
-        _snack(context,
-            'No speech was detected in this video - nothing to write');
+        _snack(
+          context,
+          'No speech was detected in this video - nothing to write',
+        );
         return;
       }
 
@@ -302,8 +327,10 @@ class AiSubtitleRunner {
           if (!isMusicOnlyCaption(s.text)) SrtCue(s.startMs, s.endMs, s.text),
       ];
       if (rawCues.isEmpty) {
-        _snack(context,
-            'Only background music was detected - no subtitles to write');
+        _snack(
+          context,
+          'Only background music was detected - no subtitles to write',
+        );
         return;
       }
       // v1.0.1+10: karaoke-style toggle (default OFF) — ON: writes the
@@ -331,6 +358,10 @@ class AiSubtitleRunner {
         _snack(context, 'AI subtitles ready - pick them in the subtitle list');
       }
     } finally {
+      watchdog.cancel();
+      if (wasPlaying) {
+        unawaited(player.play());
+      }
       _progress = null;
       _segments = null;
       _error = null;
@@ -341,10 +372,7 @@ class AiSubtitleRunner {
 
   static void _snack(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-      ),
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 }
@@ -392,7 +420,8 @@ class _AiProgressDialog extends StatelessWidget {
         valueListenable: progress,
         builder: (context, value, _) {
           final (stage, percent) = value;
-          final determinate = stage == 'downloading' ||
+          final determinate =
+              stage == 'downloading' ||
               stage == 'extracting' ||
               stage == 'transcribing';
           return Column(
@@ -420,12 +449,7 @@ class _AiProgressDialog extends StatelessWidget {
           );
         },
       ),
-      actions: [
-        TextButton(
-          onPressed: onCancel,
-          child: const Text('Cancel'),
-        ),
-      ],
+      actions: [TextButton(onPressed: onCancel, child: const Text('Cancel'))],
     );
   }
 }
@@ -473,18 +497,21 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
               color: AppColors.accent.withValues(alpha: 0.16),
               borderRadius: BorderRadius.circular(10),
             ),
-            child:
-                Icon(Icons.auto_awesome, color: AppColors.accent, size: 18),
+            child: Icon(Icons.auto_awesome, color: AppColors.accent, size: 18),
           ),
           const SizedBox(width: 10),
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('AI subtitles',
-                    style: TextStyle(color: Colors.white, fontSize: 17)),
-                Text('On-device Whisper · works offline · free',
-                    style: TextStyle(color: Colors.white38, fontSize: 11)),
+                Text(
+                  'AI subtitles',
+                  style: TextStyle(color: Colors.white, fontSize: 17),
+                ),
+                Text(
+                  'On-device Whisper · works offline · free',
+                  style: TextStyle(color: Colors.white38, fontSize: 11),
+                ),
               ],
             ),
           ),
@@ -497,8 +524,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           _section('AI MODEL'),
           const SizedBox(height: 6),
           for (final e in AiSubtitleRunner.modelChoices.entries)
-            _modelCard(e.key, e.value.$1, e.value.$2,
-                isFast: e.key == 'fast'),
+            _modelCard(e.key, e.value.$1, e.value.$2, isFast: e.key == 'fast'),
           const SizedBox(height: 14),
           _section('SPOKEN LANGUAGE'),
           const SizedBox(height: 6),
@@ -566,13 +592,18 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
               dense: true,
               contentPadding: const EdgeInsets.only(left: 12, right: 4),
               activeThumbColor: AppColors.accent,
-              title: const Text('Karaoke style',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600)),
-              subtitle: const Text('Word-by-word flow subtitles',
-                  style: TextStyle(color: Colors.white38, fontSize: 11)),
+              title: const Text(
+                'Karaoke style',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: const Text(
+                'Word-by-word flow subtitles',
+                style: TextStyle(color: Colors.white38, fontSize: 11),
+              ),
               value: _karaoke,
               onChanged: (v) => setState(() => _karaoke = v),
             ),
@@ -588,11 +619,14 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
                   side: const BorderSide(color: Colors.white24),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel',
-                    style: TextStyle(color: Colors.white70)),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.white70),
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -604,17 +638,20 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
                   foregroundColor: AppColors.onAccent,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 onPressed: () => Navigator.of(context).pop((
-                      model: _model,
-                      language: _language,
-                      translate: _translate,
-                      karaoke: _karaoke,
-                    )),
+                  model: _model,
+                  language: _language,
+                  translate: _translate,
+                  karaoke: _karaoke,
+                )),
                 icon: const Icon(Icons.auto_awesome, size: 16),
-                label: Text(_translate ? 'Translate' : 'Generate',
-                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                label: Text(
+                  _translate ? 'Translate' : 'Generate',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
             ),
           ],
@@ -624,17 +661,21 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
   }
 
   Widget _section(String label) => Text(
-        label,
-        style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.45),
-          fontSize: 10.5,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.1,
-        ),
-      );
+    label,
+    style: TextStyle(
+      color: Colors.white.withValues(alpha: 0.45),
+      fontSize: 10.5,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1.1,
+    ),
+  );
 
-  Widget _modelCard(String id, String label, String detail,
-      {bool isFast = false}) {
+  Widget _modelCard(
+    String id,
+    String label,
+    String detail, {
+    bool isFast = false,
+  }) {
     final selected = _model == id;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -656,9 +697,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           child: Row(
             children: [
               Icon(
-                selected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_off,
+                selected ? Icons.radio_button_checked : Icons.radio_button_off,
                 size: 18,
                 color: selected ? AppColors.accent : Colors.white38,
               ),
@@ -670,34 +709,47 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
                     Row(
                       children: [
                         Flexible(
-                          child: Text(label,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w700)),
+                          child: Text(
+                            label,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                         if (isFast) ...[
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 1.5),
+                              horizontal: 5,
+                              vertical: 1.5,
+                            ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF4ade80)
-                                  .withValues(alpha: 0.18),
+                              color: const Color(
+                                0xFF4ade80,
+                              ).withValues(alpha: 0.18),
                               borderRadius: BorderRadius.circular(5),
                             ),
-                            child: const Text('QUICK',
-                                style: TextStyle(
-                                    color: Color(0xFF4ade80),
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w900)),
+                            child: const Text(
+                              'QUICK',
+                              style: TextStyle(
+                                color: Color(0xFF4ade80),
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                           ),
                         ],
                       ],
                     ),
-                    Text(detail,
-                        style: const TextStyle(
-                            color: Colors.white38, fontSize: 11)),
+                    Text(
+                      detail,
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 11,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -731,9 +783,11 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon,
-                size: 16,
-                color: selected ? AppColors.accent : Colors.white54),
+            Icon(
+              icon,
+              size: 16,
+              color: selected ? AppColors.accent : Colors.white54,
+            ),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
@@ -741,8 +795,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
                 style: TextStyle(
                   color: selected ? Colors.white : Colors.white70,
                   fontSize: 12.5,
-                  fontWeight:
-                      selected ? FontWeight.w700 : FontWeight.normal,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),

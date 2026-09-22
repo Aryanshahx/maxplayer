@@ -65,6 +65,12 @@ class MainActivity : FlutterFragmentActivity() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val executor = Executors.newSingleThreadExecutor()
+    // v1.0.1+11: the AI subtitle pipeline gets its OWN single-thread
+    // executor. Everything else (thumbnail strips, import copies, gallery
+    // saves) shares [executor]; if one of those is still grinding away on
+    // a big file, an AI job queued behind it would sit at "Preparing..."
+    // forever with zero progress events — the stuck-spinner bug.
+    private val aiExecutor = Executors.newSingleThreadExecutor()
 
     // AI subtitles (on-device whisper.cpp) job state. One job at a time;
     // the Dart side refuses to start a second while one is running.
@@ -372,7 +378,7 @@ class MainActivity : FlutterFragmentActivity() {
                     } else {
                         aiCancelled = false
                         val jobId = ++aiJobCounter
-                        executor.execute {
+                        aiExecutor.execute {
                             runAiPipeline(
                                 jobId, videoPath, model, language, translate
                             )
