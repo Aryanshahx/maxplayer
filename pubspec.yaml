@@ -1,7 +1,7 @@
 name: maxplayer
 description: "MaxPlayer — local-first MPV video player."
 publish_to: 'none'
-version: 1.0.1+13
+version: 1.0.1+14
 environment:
   sdk: ^3.12.0
 
@@ -22,6 +22,7 @@ dependencies:
   share_plus: ^13.3.0
   qr_flutter: ^4.1.0
   url_launcher: ^6.3.2
+  youtube_player_iframe: ^5.2.1
 
 dev_dependencies:
   flutter_test:
@@ -32,5 +33,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon.png
+
 
 

@@ -21,7 +21,7 @@ import '../utils/fit.dart';
 import '../utils/format.dart';
 import '../utils/karaoke.dart';
 import '../utils/local_store.dart';
-import '../utils/iptv.dart' show kMaxPlayerUserAgent;
+import '../utils/network_headers.dart' show kMaxPlayerUserAgent, kVlcFallbackUserAgent;
 import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
 import '../utils/queue_math.dart';
@@ -172,6 +172,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   DateTime? _sleepEndsAt;
   Timer? _sleepTick;
   bool _softwareDecodeRetried = false;
+  bool _uaRetried = false;
   bool _resumePromptOpen = false;
 
   // Scrub thumbnail strip (native MediaMetadataRetriever frames).
@@ -297,15 +298,17 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// v1.0.1+12: network URLs get a browser-style User-Agent — many IPTV
   /// endpoints 403 (or hang, then mpv errors "can't be played") the default
   /// libmpv agent. Resolved once per Media cache-entry.
-  Media _mediaFor(String path) {
+  Media _mediaFor(String path, {String? userAgent}) {
     final u = Uri.tryParse(path);
     if (u != null && (u.isScheme('http') || u.isScheme('https'))) {
       return Media(
         path,
-        httpHeaders: const {
-          'User-Agent': kMaxPlayerUserAgent,
+        httpHeaders: {
+          'User-Agent': userAgent ?? kMaxPlayerUserAgent,
           'Accept': '*/*',
           'Connection': 'keep-alive',
+          // Same-origin Referer — a lot of IPTV CDNs fingerprint on it.
+          'Referer': '${u.scheme}://${u.host}/',
         },
       );
     }
@@ -540,6 +543,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       await _resume.clear(_currentPath);
       _currentPath = file.path;
       _softwareDecodeRetried = false;
+      _uaRetried = false;
       _title = asset?.title ?? 'Video';
       if (mounted) setState(() {});
       await _player.open(Media(file.path), play: true);
@@ -566,6 +570,21 @@ class _PlayerScreenState extends State<PlayerScreen>
         return;
       } catch (e2) {
         CrashLog.error('player.sw_fallback_failed', e2);
+      }
+    }
+    if (!_uaRetried) {
+      // v1.0.1+14: some CDNs still 403 the branded UA — last resort is a
+      // plain VLC agent, the most-whitelisted player agent on IPTV feeds.
+      _uaRetried = true;
+      try {
+        await _player.open(
+            _mediaFor(_currentPath, userAgent: kVlcFallbackUserAgent),
+            play: true);
+        unawaited(_player.setRate(_settings.playbackRate));
+        if (mounted) setState(() => _ready = true);
+        return;
+      } catch (e3) {
+        CrashLog.error('player.ua_fallback_failed', e3);
       }
     }
     _failed = true;
@@ -3643,4 +3662,5 @@ class _KaraokeOverlay extends StatelessWidget {
     );
   }
 }
+
 

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'trailer_player_screen.dart';
+
 import '../utils/amazon_affiliate.dart';
 
 import '../theme.dart';
@@ -84,10 +86,10 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
   }
 
   Future<void> _openTrailer(String key) async {
-    final uri = Uri.parse('https://www.youtube.com/watch?v=$key');
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {}
+    // v1.0.1+14: trailers play INSIDE the app (YouTube iframe) instead of
+    // kicking the user out to the YouTube app.
+    await TrailerPlayerScreen.open(widget.hostContext, key,
+        widget.movie.title);
   }
 
   @override
@@ -1099,3 +1101,4 @@ class _PrimeCta extends StatelessWidget {
     );
   }
 }
+

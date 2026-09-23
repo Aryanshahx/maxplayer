@@ -89,6 +89,11 @@ const List<DiscoverFilter> kDiscoverFilters = [
   DiscoverFilter(key: 'bollywood', label: 'Bollywood', language: 'hi'),
   DiscoverFilter(key: 'tamil', label: 'Tamil', language: 'ta'),
   DiscoverFilter(key: 'telugu', label: 'Telugu', language: 'te'),
+  DiscoverFilter(key: 'malayalam', label: 'Malayalam', language: 'ml'),
+  DiscoverFilter(key: 'kannada', label: 'Kannada', language: 'kn'),
+  DiscoverFilter(key: 'bengali', label: 'Bengali', language: 'bn'),
+  DiscoverFilter(key: 'marathi', label: 'Marathi', language: 'mr'),
+  DiscoverFilter(key: 'punjabi', label: 'Punjabi', language: 'pa'),
   DiscoverFilter(key: 'action', label: 'Action', genreId: 28),
   DiscoverFilter(key: 'comedy', label: 'Comedy', genreId: 35),
   DiscoverFilter(key: 'drama', label: 'Drama', genreId: 18),
@@ -103,6 +108,10 @@ const List<DiscoverFilter> kDiscoverFilters = [
 const List<DiscoverFilter> kSeriesFilters = [
   DiscoverFilter(key: 'tv_hindi', label: 'Hindi', language: 'hi', tv: true),
   DiscoverFilter(key: 'tv_english', label: 'English', language: 'en', tv: true),
+  DiscoverFilter(key: 'tv_tamil', label: 'Tamil', language: 'ta', tv: true),
+  DiscoverFilter(key: 'tv_telugu', label: 'Telugu', language: 'te', tv: true),
+  DiscoverFilter(
+      key: 'tv_malayalam', label: 'Malayalam', language: 'ml', tv: true),
   DiscoverFilter(key: 'tv_korean', label: 'K-Drama', language: 'ko', tv: true),
   DiscoverFilter(key: 'tv_anime', label: 'Anime', language: 'ja', tv: true),
 ];
@@ -1171,4 +1180,5 @@ class TmdbClient {
     return body == null ? const [] : parseTmdbList(body, kind: kind);
   }
 }
+
 

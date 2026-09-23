@@ -10,6 +10,8 @@ import 'package:maxplayer/utils/fit.dart';
 import 'package:maxplayer/utils/format.dart';
 import 'package:maxplayer/utils/iptv.dart' show kMaxPlayerUserAgent;
 import 'package:maxplayer/utils/m3u.dart';
+import 'package:maxplayer/utils/network_headers.dart'
+    show kVlcFallbackUserAgent;
 import 'package:maxplayer/utils/ab_loop.dart';
 import 'package:maxplayer/utils/ai_subtitles.dart'
     show AiSubtitleRunner, isMusicOnlyCaption;
@@ -598,6 +600,35 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(chans[1].group, 'Entertainment');
       expect(chans[2].group, 'News');
       expect(chans[0].logo, 'https://x/a.png');
+    });
+  });
+
+  group('stream headers ladder (v1.0.1+14)', () {
+    test('VLC fallback UA is the classic whitelisted agent', () {
+      expect(kVlcFallbackUserAgent.startsWith('VLC/'), true);
+      expect(kVlcFallbackUserAgent.contains('LibVLC'), true);
+    });
+
+    test('indian regional + serial rails are registered', () {
+      final movieKeys = {for (final f in kDiscoverFilters) f.key};
+      final seriesKeys = {for (final f in kSeriesFilters) f.key};
+      for (final k in const [
+        'malayalam',
+        'kannada',
+        'bengali',
+        'marathi',
+        'punjabi',
+      ]) {
+        expect(movieKeys.contains(k), true, reason: k);
+      }
+      for (final k in const [
+        'tv_hindi',
+        'tv_tamil',
+        'tv_telugu',
+        'tv_malayalam',
+      ]) {
+        expect(seriesKeys.contains(k), true, reason: k);
+      }
     });
   });
 
@@ -1307,5 +1338,6 @@ group('gestureTickFor (v1.0.17 swipe haptics)', () {
   });
 });
 }
+
 
 

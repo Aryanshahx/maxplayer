@@ -3,11 +3,12 @@ import 'dart:io';
 
 import 'crash_log.dart';
 import 'm3u.dart';
+import 'network_headers.dart' show kMaxPlayerUserAgent;
 
-/// Browser-style UA: several playlist/CDN hosts 403-empty the default
-/// Dart/11 HttpClient agent (iptv-org mirrors included).
-const String kMaxPlayerUserAgent =
-    'MaxPlayer/1.0 (Linux; Android) like MX Player';
+export 'network_headers.dart' show kMaxPlayerUserAgent;
+
+/// Browser-style UA lives in network_headers.dart; several playlist/CDN
+/// hosts 403-empty the default Dart/11 HttpClient agent.
 
 /// Fetch an M3U playlist URL and return parsed channels.
 /// Never throws — returns an empty list on network/parse failure and logs
@@ -37,4 +38,5 @@ Future<List<IptvChannel>> fetchM3uChannels(String url) async {
     return [];
   }
 }
+
 

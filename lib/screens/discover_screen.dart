@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:photo_manager/photo_manager.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
 
 import '../services/recommendations.dart';
@@ -12,7 +13,8 @@ import '../utils/movie_match.dart';
 import '../utils/tmdb.dart';
 import '../utils/tmdb_image.dart';
 import '../widgets/ai_suggest_sheet.dart';
-import '../widgets/movie_detail_sheet.dart';
+import '../services/native_bridge.dart';
+import 'movie_detail_screen.dart';
 
 /// "Discover" — OTT-app home screen:
 ///
@@ -82,6 +84,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   bool _booting = true;
   bool _keyMissing = false;
+  bool _voiceSearching = false;
   int _token = 0; // stale-response guard
   bool get _searching => _query.isNotEmpty;
 
@@ -306,7 +309,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   void _openMovie(TmdbMovie movie) {
     final match = findLocalMovie(movie.title, movie.year, widget.videos);
-    MovieDetailSheet.show(
+    // v1.0.1+14: tapping a banner/poster opens a proper separate screen
+    // (full-page detail, like Netflix/Prime) — not a bottom sheet.
+    MovieDetailScreen.open(
       context,
       movie: movie,
       localMatch: match,
@@ -317,6 +322,32 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   Future<void> _aiSuggest() async {
     final movie = await AiSuggestSheet.show(context);
     if (movie != null && mounted) _openMovie(movie);
+  }
+
+  /// Voice search (restored v1.0.1+14): mic permission -> system Google
+  /// speech dialog -> recognized text into the search bar.
+  Future<void> _startVoiceSearch() async {
+    if (_voiceSearching) return;
+    final mic = await Permission.microphone.request();
+    if (!mounted) return;
+    if (!mic.isGranted) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Microphone needed for voice search'),
+            duration: Duration(milliseconds: 1800),
+          ),
+        );
+      return;
+    }
+    setState(() => _voiceSearching = true);
+    final query = await NativeBridge.launchSystemVoiceSearch();
+    if (!mounted) return;
+    setState(() => _voiceSearching = false);
+    if (query == null || query.isEmpty) return;
+    _searchCtrl.text = query;
+    _onSearchChanged(query);
   }
 
   Future<void> _refreshAll() async {
@@ -345,29 +376,24 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d12),
-      floatingActionButton: _searching
-          ? null
-          : FloatingActionButton.small(
-              heroTag: 'ai-suggest',
-              backgroundColor: AppColors.accent,
-              foregroundColor: AppColors.onAccent,
-              tooltip: 'AI Suggestor',
-              onPressed: _aiSuggest,
-              child: const Text('✨', style: TextStyle(fontSize: 16)),
-            ),
       body: _keyMissing
           ? _buildKeyMissing()
           : SafeArea(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildSearchBar(),
-                  Expanded(
-                    child: _searching ? _buildSearchResults() : _buildOttHome(),
-                  ),
-                ],
-              ),
+              child: _searching ? _buildSearchingBody() : _buildOttHome(),
             ),
+    );
+  }
+
+  /// Search mode keeps the search bar pinned so the keyboard works; on the
+  /// OTT home it slides away as the FIRST sliver while scrolling — the
+  /// "remove the search bar area on scroll down" behaviour from Netflix.
+  Widget _buildSearchingBody() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSearchBar(),
+        Expanded(child: _buildSearchResults()),
+      ],
     );
   }
 
@@ -400,6 +426,37 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 ),
                 onChanged: _onSearchChanged,
               ),
+            ),
+            // Voice search (restored) right after the field…
+            IconButton(
+              icon: _voiceSearching
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: Colors.white54,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.mic_none_rounded,
+                      color: Colors.white54,
+                      size: 20,
+                    ),
+              tooltip: 'Voice search',
+              onPressed: _startVoiceSearch,
+            ),
+            // …and the ✨ AI Suggestor next to it (was a floating button).
+            IconButton(
+              icon: Text(
+                '✨',
+                style: TextStyle(
+                  color: AppColors.accent.withValues(alpha: 0.95),
+                  fontSize: 16,
+                ),
+              ),
+              tooltip: 'AI Suggestor',
+              onPressed: _aiSuggest,
             ),
             if (_searchCtrl.text.isNotEmpty)
               IconButton(
@@ -597,7 +654,7 @@ class _HeroCarousel extends StatelessWidget {
     return Column(
       children: [
         SizedBox(
-          height: 218,
+          height: 246,
           child: PageView.builder(
             controller: controller,
             itemCount: items.length,
@@ -654,9 +711,10 @@ class _HeroCarousel extends StatelessWidget {
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       color: Colors.white,
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w800,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w900,
                                       height: 1.1,
+                                      letterSpacing: 0.2,
                                     ),
                                   ),
                                 ],
@@ -927,21 +985,26 @@ class _PosterCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              movie.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11.5,
-                height: 1.15,
+            SizedBox(
+              height: 32, // two full lines at 11.5/1.15 — never clipped
+              child: Text(
+                movie.title,
+                maxLines: 2,
+                softWrap: true,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  height: 1.15,
+                ),
               ),
             ),
-            if (movie.year != null)
-              Text(
-                '${movie.year}',
-                style: const TextStyle(color: Colors.white38, fontSize: 10),
-              ),
+            const SizedBox(height: 2),
+            Text(
+              movie.year != null ? '${movie.year}' : ' ',
+              maxLines: 1,
+              style: const TextStyle(color: Colors.white38, fontSize: 10),
+            ),
           ],
         ),
       ),
