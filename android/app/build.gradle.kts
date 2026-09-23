@@ -23,6 +23,12 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // v1.0.1+16 hotfix: Google Mobile Ads SDK 25.4.0 (pulled in by
+        // google_mobile_ads 9.x) uses Java 8+ library APIs missing below
+        // API 26. With minSdk 24 and no desugaring the ads init provider
+        // died with NoClassDefFoundError ~1s after launch (app instantly
+        // closes). Enable core library desugaring.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -102,6 +108,10 @@ dependencies {
     // MIUI/OneUI/ColorOS lock screens).
     implementation("androidx.media:media:1.7.0")
     implementation("androidx.core:core:1.13.1")
+
+    // Companion to isCoreLibraryDesugaringEnabled above — required by
+    // GMA SDK 25.x on minSdk 24/25 devices (crash-on-launch otherwise).
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
 
 kotlin {

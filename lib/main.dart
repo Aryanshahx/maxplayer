@@ -29,7 +29,7 @@ Future<void> main() async {
   NativeBridge.ensureNativeHandler();
   // v1.0.1+16: AdMob (test ids until the real unit ids are pasted into
   // lib/utils/ads.dart). Fire-and-forget — ads can never block startup.
-  unawaited(MaxAds.init());
+  MaxAds.init(); // schedules the SDK init for after the first frame
   CrashLog.crumb('app.start');
   runApp(const MaxPlayerApp());
 }

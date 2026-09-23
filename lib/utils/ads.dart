@@ -58,13 +58,30 @@ class MaxAds {
   /// guard everything so no platform channel is ever touched there.
   static bool get supported => !kIsWeb && Platform.isAndroid;
 
-  static bool _initStarted = false;
+  static bool _scheduled = false;
+  static Future<void>? _ready;
 
-  /// Called once from main(). Idempotent and failure-proof — ads must
-  /// never be able to break app startup.
-  static Future<void> init() async {
-    if (_initStarted || !supported) return;
-    _initStarted = true;
+  /// Called once from main(). Only SCHEDULES the SDK init for after the
+  /// first frame — startup frames must never wait on (or race) ads, and
+  /// any plugin failure is swallowed. Ad loaders await [ensureReady] and
+  /// only create/load ads once it completes.
+  static void init() {
+    if (_scheduled || !supported) return;
+    _scheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ready ??= _doInit();
+    });
+  }
+
+  /// Every Banner/Interstitial creation awaits this before touching the
+  /// SDK — loading an ad before initialize() finished was a crash window.
+  static Future<void> ensureReady() {
+    if (!supported) return Future<void>.value();
+    return _ready ??= _doInit();
+  }
+
+  static Future<void> _doInit() async {
+    if (!supported) return;
     try {
       await MobileAds.instance.initialize();
     } catch (_) {}
@@ -88,20 +105,25 @@ class _AdBannerState extends State<AdBanner> {
   void initState() {
     super.initState();
     if (!MaxAds.supported) return;
-    _ad = BannerAd(
-      adUnitId: MaxAds.bannerUnitId,
-      size: AdSize.banner,
-      request: const AdRequest(),
-      listener: BannerAdListener(
-        onAdLoaded: (ad) {
-          if (mounted) setState(() => _loaded = true);
-        },
-        onAdFailedToLoad: (ad, error) {
-          ad.dispose();
-          if (identical(ad, _ad)) _ad = null;
-        },
-      ),
-    )..load();
+    // Never load before MobileAds.initialize() has finished (see
+    // MaxAds.ensureReady docs) — that race was a startup crash window.
+    unawaited(MaxAds.ensureReady().then((_) {
+      if (!mounted) return;
+      _ad = BannerAd(
+        adUnitId: MaxAds.bannerUnitId,
+        size: AdSize.banner,
+        request: const AdRequest(),
+        listener: BannerAdListener(
+          onAdLoaded: (ad) {
+            if (mounted) setState(() => _loaded = true);
+          },
+          onAdFailedToLoad: (ad, error) {
+            ad.dispose();
+            if (identical(ad, _ad)) _ad = null;
+          },
+        ),
+      )..load();
+    }));
   }
 
   @override
@@ -142,6 +164,11 @@ class ExitInterstitial {
   static void preload() {
     if (!MaxAds.supported || _ad != null || _loading || _onCooldown) return;
     _loading = true;
+    // Same initialize() ordering guarantee as the banner.
+    unawaited(MaxAds.ensureReady().then((_) => _loadNow()));
+  }
+
+  static void _loadNow() {
     InterstitialAd.load(
       adUnitId: MaxAds.interstitialUnitId,
       request: const AdRequest(),
