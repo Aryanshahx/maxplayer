@@ -21,6 +21,7 @@ import '../utils/fit.dart';
 import '../utils/format.dart';
 import '../utils/karaoke.dart';
 import '../utils/local_store.dart';
+import '../utils/iptv.dart' show kMaxPlayerUserAgent;
 import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
 import '../utils/queue_math.dart';
@@ -45,10 +46,10 @@ class PlayerScreen extends StatefulWidget {
     super.key,
     required this.path,
     required this.title,
-  })  : queueIds = const [],
-        queueStart = 0,
-        isStream = true,
-        meta = const {};
+  }) : queueIds = const [],
+       queueStart = 0,
+       isStream = true,
+       meta = const {};
 
   final String path;
   final String title;
@@ -75,7 +76,8 @@ class _SleepChoice {
   const _SleepChoice._(this.kind, [this.minutes]);
   const _SleepChoice.off() : this._(_SleepChoiceKind.off);
   const _SleepChoice.untilEnd() : this._(_SleepChoiceKind.untilEnd);
-  const _SleepChoice.minutes(int value) : this._(_SleepChoiceKind.minutes, value);
+  const _SleepChoice.minutes(int value)
+    : this._(_SleepChoiceKind.minutes, value);
 
   final _SleepChoiceKind kind;
   final int? minutes;
@@ -146,8 +148,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   int _lastSeekSecond = -1;
 
   AbState _ab = AbState.off;
-  final List<double> _bands =
-      List<double>.from(equalizerPresets['Flat'] ?? const [0, 0, 0, 0, 0]);
+  final List<double> _bands = List<double>.from(
+    equalizerPresets['Flat'] ?? const [0, 0, 0, 0, 0],
+  );
   bool _dialogueBoost = false;
   bool _enhance = false;
   bool _karaoke = false;
@@ -193,8 +196,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (!mounted) return;
       setState(() {});
       // v1.0.11: mirror the boost toggle into the volume store.
-      unawaited(AppVolume.instance
-          .setBoostEnabled(_settings.volumeBoost));
+      unawaited(AppVolume.instance.setBoostEnabled(_settings.volumeBoost));
       if (_settings.autoHide && _player.state.playing) {
         _scheduleHide();
       } else if (!_settings.autoHide) {
@@ -225,17 +227,19 @@ class _PlayerScreenState extends State<PlayerScreen>
     unawaited(NativeBridge.setVolumeKeyIntercept(true));
     // mpv caps `volume` at 100 unless told otherwise — the boost ceiling is
     // (re)applied AFTER open() in _open(); never call _mpvSet from here.
-    unawaited(_settings.load().then((_) {
-      if (!mounted) return;
-      // Start the session in the fit mode chosen in Settings (default: Fit).
-      setState(() {
-        _fitMode =
-            FitMode.values[_settings.defaultFit.clamp(0, FitMode.values.length - 1)];
-      });
-      // Re-apply the remembered playback speed (it races _open() below, so
-      // _open() re-applies it again once the file is actually loaded).
-      unawaited(_player.setRate(_settings.playbackRate));
-    }));
+    unawaited(
+      _settings.load().then((_) {
+        if (!mounted) return;
+        // Start the session in the fit mode chosen in Settings (default: Fit).
+        setState(() {
+          _fitMode = FitMode
+              .values[_settings.defaultFit.clamp(0, FitMode.values.length - 1)];
+        });
+        // Re-apply the remembered playback speed (it races _open() below, so
+        // _open() re-applies it again once the file is actually loaded).
+        unawaited(_player.setRate(_settings.playbackRate));
+      }),
+    );
     _open(_currentPath, offerResume: true);
     _playingSub = _player.stream.playing.listen((playing) {
       if (playing) {
@@ -249,8 +253,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         // already clamped by a lost/ignored ceiling.
         if (!_volumeMaxArmed) {
           _volumeMaxArmed = true;
-          unawaited(_mpvSet('volume-max', '200')
-              .then((_) => _applyVolume()));
+          unawaited(_mpvSet('volume-max', '200').then((_) => _applyVolume()));
         }
       } else {
         WakelockPlus.disable();
@@ -280,19 +283,40 @@ class _PlayerScreenState extends State<PlayerScreen>
       // Watch-time statistics (same 5s tick as the old player): count a
       // bucket whenever a local video is actually playing.
       if (_player.state.playing && !widget.isStream) {
-        unawaited(WatchStatsStore.instance
-            .recordPlay(5, path: _currentPath, title: _title));
+        unawaited(
+          WatchStatsStore.instance.recordPlay(
+            5,
+            path: _currentPath,
+            title: _title,
+          ),
+        );
       }
     });
   }
 
-
+  /// v1.0.1+12: network URLs get a browser-style User-Agent — many IPTV
+  /// endpoints 403 (or hang, then mpv errors "can't be played") the default
+  /// libmpv agent. Resolved once per Media cache-entry.
+  Media _mediaFor(String path) {
+    final u = Uri.tryParse(path);
+    if (u != null && (u.isScheme('http') || u.isScheme('https'))) {
+      return Media(
+        path,
+        httpHeaders: const {
+          'User-Agent': kMaxPlayerUserAgent,
+          'Accept': '*/*',
+          'Connection': 'keep-alive',
+        },
+      );
+    }
+    return Media(path);
+  }
 
   Future<void> _open(String path, {required bool offerResume}) async {
     CrashLog.crumb('player.open', {'path': path});
     _volumeMaxArmed = false;
     try {
-      await _player.open(Media(path), play: true);
+      await _player.open(_mediaFor(path), play: true);
       // Keep the remembered playback speed across videos (v29): mpv can
       // reset the rate while a new file loads, so re-apply it here too.
       unawaited(_player.setRate(_settings.playbackRate));
@@ -306,9 +330,15 @@ class _PlayerScreenState extends State<PlayerScreen>
       // ever clamps the boost region to 100/130, the evidence lands in
       // events.jsonl ('set' vs 'read' mismatch) instead of silence.
       final requestedGain = AppVolume.instance.mpvGain.round();
-      unawaited(_mpvGet('volume').then((read) => CrashLog.crumb(
-          'player.volume_verify',
-          {'set': requestedGain, 'read': read, 'path': path})));
+      unawaited(
+        _mpvGet('volume').then(
+          (read) => CrashLog.crumb('player.volume_verify', {
+            'set': requestedGain,
+            'read': read,
+            'path': path,
+          }),
+        ),
+      );
       unawaited(_ensureThumbStrip(path));
       unawaited(_applyPerformanceMode());
       if (offerResume && !widget.isStream) {
@@ -394,7 +424,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-
   Future<void> _offerResume() async {
     try {
       // A fresh open races the settings load — read the REAL resume
@@ -407,7 +436,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (duration <= Duration.zero) {
         duration = await _player.stream.duration
             .firstWhere((d) => d > Duration.zero)
-            .timeout(const Duration(seconds: 5), onTimeout: () => Duration.zero);
+            .timeout(
+              const Duration(seconds: 5),
+              onTimeout: () => Duration.zero,
+            );
       }
       final target = resumeTargetMs(saved, duration.inMilliseconds);
       if (target == null || !mounted) return;
@@ -423,8 +455,10 @@ class _PlayerScreenState extends State<PlayerScreen>
             borderRadius: BorderRadius.circular(16),
             side: const BorderSide(color: AppColors.border),
           ),
-          title: const Text('Resume playback?',
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 17)),
+          title: const Text(
+            'Resume playback?',
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 17),
+          ),
           content: Text(
             'Continue from ${formatDuration(Duration(milliseconds: target))}?',
             style: const TextStyle(color: AppColors.textSecondary),
@@ -457,9 +491,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _playPrevious() async {
     if (!mounted || widget.queueIds.isEmpty) return;
     final n = audioPrevIndex(
-        current: _queueIndex,
-        count: widget.queueIds.length,
-        repeat: _queueRepeat);
+      current: _queueIndex,
+      count: widget.queueIds.length,
+      repeat: _queueRepeat,
+    );
     if (n < 0 || n == _queueIndex) return; // at start, repeat off
     _queueIndex = n;
     await _openQueueIndex();
@@ -475,15 +510,16 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     // Manual next treats repeat-one like repeat-all (standard players).
-    final effectiveRepeat = (!fromCompletion &&
-            _queueRepeat == AudioRepeatMode.one)
+    final effectiveRepeat =
+        (!fromCompletion && _queueRepeat == AudioRepeatMode.one)
         ? AudioRepeatMode.all
         : _queueRepeat;
     final n = audioNextIndex(
-        current: _queueIndex,
-        count: widget.queueIds.length,
-        shuffle: _shuffleQueue,
-        repeat: effectiveRepeat);
+      current: _queueIndex,
+      count: widget.queueIds.length,
+      shuffle: _shuffleQueue,
+      repeat: effectiveRepeat,
+    );
     if (n < 0) {
       await _resume.clear(_currentPath);
       if (mounted) Navigator.of(context).maybePop();
@@ -524,7 +560,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       _softwareDecodeRetried = true;
       try {
         await _mpvSet('hwdec', 'no');
-        await _player.open(Media(_currentPath), play: true);
+        await _player.open(_mediaFor(_currentPath), play: true);
         unawaited(_player.setRate(_settings.playbackRate));
         if (mounted) setState(() => _ready = true);
         return;
@@ -642,7 +678,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-
   /// v1.0.10: apply the AppVolume store to the engine. Everything that
   /// moves the volume (swipe, hardware keys, settings slider, mute button)
   /// writes to the store; the listener registered in initState lands here.
@@ -650,8 +685,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     // v1.0.13: hard no-op until open() has completed.
     if (!_ready || _failed) return;
     try {
-      unawaited(_mpvSet(
-          'volume', AppVolume.instance.mpvGain.round().toString()));
+      unawaited(
+        _mpvSet('volume', AppVolume.instance.mpvGain.round().toString()),
+      );
       if (mounted) setState(() {});
     } catch (e) {
       CrashLog.error('player.volume_apply_failed', e);
@@ -674,8 +710,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _toggleMute() async {
     await AppVolume.instance.setMuted(!AppVolume.instance.muted);
     final v = AppVolume.instance.level.round();
-    _showIndicator(AppVolume.instance.muted ? 'Muted' : 'Volume $v%',
-        AppVolume.instance.muted ? Icons.volume_off : Icons.volume_up);
+    _showIndicator(
+      AppVolume.instance.muted ? 'Muted' : 'Volume $v%',
+      AppVolume.instance.muted ? Icons.volume_off : Icons.volume_up,
+    );
   }
 
   bool get _muted => AppVolume.instance.muted;
@@ -684,7 +722,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     // No boost (and no badge) while the video is paused - old-player rule.
     if (on && !_player.state.playing) return;
     _boost = on;
-    unawaited(_player.setRate(on ? _settings.longPressRate : _settings.playbackRate));
+    unawaited(
+      _player.setRate(on ? _settings.longPressRate : _settings.playbackRate),
+    );
     if (mounted) setState(() {});
   }
 
@@ -705,7 +745,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   Widget _fitFrame({required Widget child}) {
     final asp = _fitMode.aspectRatio;
     if (asp == null) return child;
-    return Center(child: AspectRatio(aspectRatio: asp, child: child));
+    return Center(
+      child: AspectRatio(aspectRatio: asp, child: child),
+    );
   }
 
   /// Asks the native side for a strip of small JPEG frames (idempotent;
@@ -741,8 +783,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// Two-finger tap: back to the user's default fit with any pinch
   /// zoom/pan undone.
   void _resetToFitScreen() {
-    final fit =
-        FitMode.values[_settings.defaultFit.clamp(0, FitMode.values.length - 1)];
+    final fit = FitMode
+        .values[_settings.defaultFit.clamp(0, FitMode.values.length - 1)];
     if (_zoom != 1.0 || _pan != Offset.zero || _fitMode != fit) {
       setState(() {
         _zoom = 1.0;
@@ -790,7 +832,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       if (!_settings.pinchZoom) {
         final pos = fitLadderPosFor(
-            basePos: _ladderBaseIndex.toDouble(), scale: d.scale);
+          basePos: _ladderBaseIndex.toDouble(),
+          scale: d.scale,
+        );
         final nextIndex = wrapFitLadderPos(pos, FitMode.values.length);
         if (nextIndex != _fitMode.index) {
           setState(() {
@@ -807,14 +851,16 @@ class _PlayerScreenState extends State<PlayerScreen>
       // v1.0.15: anchor the pinch exactly under the fingers — the scale
       // pivot is the child CENTER, not the origin (old formula drifted).
       final pan = _clampPan(
-          pinchPanFor(
-              startFocal: _focalBase,
-              liveFocal: d.localFocalPoint,
-              startPan: _panBase,
-              startZoom: _zoomBase,
-              zoom: z,
-              size: screenSize),
-          z);
+        pinchPanFor(
+          startFocal: _focalBase,
+          liveFocal: d.localFocalPoint,
+          startPan: _panBase,
+          startZoom: _zoomBase,
+          zoom: z,
+          size: screenSize,
+        ),
+        z,
+      );
       if (z == _zoom && pan == _pan) return;
       setState(() {
         _zoom = z;
@@ -831,8 +877,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     if (_drag == _DragMode.pan) {
       if (_zoom <= 1.0) return;
-      final pan =
-          _clampPan(_panBase + (d.localFocalPoint - _focalBase), _zoom);
+      final pan = _clampPan(_panBase + (d.localFocalPoint - _focalBase), _zoom);
       if (pan != _pan) setState(() => _pan = pan);
       return;
     }
@@ -882,10 +927,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     final width = screenSize.width;
     if (_drag == _DragMode.brightness) {
       // Old player: a 300px sweep covers the full brightness range.
-      final v =
-          (_brightnessStart - (d.focalPoint.dy - _dragStart.dy) / 300.0)
-              .clamp(0.0, 1.0)
-              .toDouble();
+      final v = (_brightnessStart - (d.focalPoint.dy - _dragStart.dy) / 300.0)
+          .clamp(0.0, 1.0)
+          .toDouble();
       try {
         await ScreenBrightness.instance.setApplicationScreenBrightness(v);
       } catch (e) {
@@ -895,25 +939,34 @@ class _PlayerScreenState extends State<PlayerScreen>
       // Tick at the brightness bounds (0 / 100) + soft tick per percent.
       final pct = (v * 100).round();
       if (pct != _lastBrightnessPct) {
-        _gestureHaptic(gestureTickFor(
-            _lastBrightnessPct < 0 ? null : _lastBrightnessPct, pct, 0, 100));
+        _gestureHaptic(
+          gestureTickFor(
+            _lastBrightnessPct < 0 ? null : _lastBrightnessPct,
+            pct,
+            0,
+            100,
+          ),
+        );
         _lastBrightnessPct = pct;
       }
-      _showIndicatorThrottled('Brightness $pct%',
-          Icons.brightness_6_outlined);
+      _showIndicatorThrottled('Brightness $pct%', Icons.brightness_6_outlined);
     } else if (_drag == _DragMode.volume) {
-      final v = swipeAppVolume(
-          _volumeStart, d.focalPoint.dy - _dragStart.dy);
+      final v = swipeAppVolume(_volumeStart, d.focalPoint.dy - _dragStart.dy);
       unawaited(AppVolume.instance.setLevel(v));
       // Stored level is the truth (setLevel clamps at the boost ceiling);
       // the ceiling also changes where the edge tap lands.
       final pct = AppVolume.instance.level.round();
-      final ceil = (AppVolume.instance.boostEnabled
-              ? kAppVolumeMax
-              : kBoostStart)
-          .round();
-      _gestureHaptic(gestureTickFor(
-          _lastVolumePct < 0 ? null : _lastVolumePct, pct, 0, ceil));
+      final ceil =
+          (AppVolume.instance.boostEnabled ? kAppVolumeMax : kBoostStart)
+              .round();
+      _gestureHaptic(
+        gestureTickFor(
+          _lastVolumePct < 0 ? null : _lastVolumePct,
+          pct,
+          0,
+          ceil,
+        ),
+      );
       _lastVolumePct = pct;
       final icon = switch (appVolumeIconName(v, AppVolume.instance.muted)) {
         'off' => Icons.volume_off,
@@ -921,8 +974,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         _ => Icons.volume_up,
       };
       _levelValue = v;
-      _showIndicatorThrottled(
-          pct <= 0 ? 'Muted' : 'Volume $pct%', icon);
+      _showIndicatorThrottled(pct <= 0 ? 'Muted' : 'Volume $pct%', icon);
     } else if (_drag == _DragMode.seek) {
       final duration = _player.state.duration;
       if (duration <= Duration.zero) return;
@@ -1078,7 +1130,8 @@ class _PlayerScreenState extends State<PlayerScreen>
               _SheetHandle(),
               _extraAction(
                 icon: Icons.subtitles_rounded,
-                title: 'Subtitles ${tracks.subtitle.isEmpty ? '(none)' : '(on)'}',
+                title:
+                    'Subtitles ${tracks.subtitle.isEmpty ? '(none)' : '(on)'}',
                 onTap: () async {
                   Navigator.of(context).pop();
                   await _showTrackPicker(subtitle: true);
@@ -1128,15 +1181,20 @@ class _PlayerScreenState extends State<PlayerScreen>
                 leading: SizedBox(
                   width: 30,
                   child: Center(
-                    child: Text('HDR',
-                        style: TextStyle(
-                            color: AppColors.accent,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800)),
+                    child: Text(
+                      'HDR',
+                      style: TextStyle(
+                        color: AppColors.accent,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
                 ),
-                title: const Text('HDR tone-mapping',
-                    style: TextStyle(color: AppColors.textPrimary)),
+                title: const Text(
+                  'HDR tone-mapping',
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
                 subtitle: const Text(
                   'How HDR10/Dolby sources fit your screen',
                   style: TextStyle(color: AppColors.textSecondary),
@@ -1188,12 +1246,16 @@ class _PlayerScreenState extends State<PlayerScreen>
   }) {
     final tile = ListTile(
       leading: Icon(icon, color: AppColors.accent, size: 24),
-      title: Text(title,
-          style: const TextStyle(color: AppColors.textPrimary, fontSize: 16)),
+      title: Text(
+        title,
+        style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+      ),
       subtitle: subtitle == null
           ? null
-          : Text(subtitle,
-              style: const TextStyle(color: AppColors.textSecondary)),
+          : Text(
+              subtitle,
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
       onTap: onTap,
       onLongPress: onLongPress,
     );
@@ -1209,10 +1271,14 @@ class _PlayerScreenState extends State<PlayerScreen>
   }) {
     return ListTile(
       leading: Icon(icon, color: AppColors.accent, size: 24),
-      title: Text(title,
-          style: const TextStyle(color: AppColors.textPrimary, fontSize: 16)),
-      subtitle: Text(subtitle,
-          style: const TextStyle(color: AppColors.textSecondary)),
+      title: Text(
+        title,
+        style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(color: AppColors.textSecondary),
+      ),
       trailing: Switch(value: value, onChanged: onChanged),
       onTap: () => onChanged(!value),
     );
@@ -1222,7 +1288,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     final tracks = subtitle
         ? _player.state.tracks.subtitle
         : _player.state.tracks.audio;
-    final selected = subtitle ? _player.state.track.subtitle : _player.state.track.audio;
+    final selected = subtitle
+        ? _player.state.track.subtitle
+        : _player.state.track.audio;
     // The AI runner needs a context that outlives this sheet (the player
     // screen's own), so capture it before the sheet builder shadows it.
     final rootContext = context;
@@ -1240,11 +1308,14 @@ class _PlayerScreenState extends State<PlayerScreen>
             _SheetHandle(),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Text(subtitle ? 'Subtitles' : 'Audio track',
-                  style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700)),
+              child: Text(
+                subtitle ? 'Subtitles' : 'Audio track',
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
             if (subtitle)
               _trackRow(
@@ -1271,8 +1342,11 @@ class _PlayerScreenState extends State<PlayerScreen>
             if (subtitle) ...[
               const Divider(height: 16, color: Colors.white12),
               ListTile(
-                leading: Icon(Icons.auto_awesome,
-                    size: 20, color: AppColors.accent),
+                leading: Icon(
+                  Icons.auto_awesome,
+                  size: 20,
+                  color: AppColors.accent,
+                ),
                 title: const Text(
                   'Generate with AI ✨',
                   style: TextStyle(
@@ -1283,7 +1357,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ),
                 subtitle: const Text(
                   'On-device · free · works offline after a one-time setup',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
                 ),
                 onTap: () {
                   Navigator.of(context).pop();
@@ -1322,12 +1399,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     required Future<void> Function() onTap,
   }) {
     return ListTile(
-      title: Text(name,
-          style: const TextStyle(color: AppColors.textPrimary, fontSize: 16)),
+      title: Text(
+        name,
+        style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+      ),
       trailing: selected
           ? Icon(Icons.check_circle_rounded, color: AppColors.accent)
-          : const Icon(Icons.radio_button_off_rounded,
-              color: AppColors.textSecondary),
+          : const Icon(
+              Icons.radio_button_off_rounded,
+              color: AppColors.textSecondary,
+            ),
       onTap: () => unawaited(onTap()),
     );
   }
@@ -1376,9 +1457,11 @@ class _PlayerScreenState extends State<PlayerScreen>
           await _loadKaraokeSidecar();
         }
       }
-      _emitSnack(_karaokeHasSource
-          ? 'Karaoke subtitles on'
-          : 'Karaoke on — no subtitles found in this video');
+      _emitSnack(
+        _karaokeHasSource
+            ? 'Karaoke subtitles on'
+            : 'Karaoke on — no subtitles found in this video',
+      );
     } else {
       _emitSnack('Karaoke subtitles off');
     }
@@ -1413,9 +1496,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         startMs =
             ((double.tryParse(await _mpvGet('sub-start') ?? '') ?? 0) * 1000)
                 .round();
-        endMs =
-            ((double.tryParse(await _mpvGet('sub-end') ?? '') ?? 0) * 1000)
-                .round();
+        endMs = ((double.tryParse(await _mpvGet('sub-end') ?? '') ?? 0) * 1000)
+            .round();
       } catch (_) {}
       if (endMs <= startMs) endMs = startMs + 2000; // sane fallback
       if (mounted) {
@@ -1483,10 +1565,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _applyAudioFilters() async {
-    final base = combineAudioFilters(
-      _bands,
-      dialogueBoost: _dialogueBoost,
-    );
+    final base = combineAudioFilters(_bands, dialogueBoost: _dialogueBoost);
     await _mpvSet('af', base);
     if (mounted) setState(() {});
   }
@@ -1508,11 +1587,14 @@ class _PlayerScreenState extends State<PlayerScreen>
               shrinkWrap: true,
               children: [
                 _SheetHandle(),
-                const Text('Equalizer & Audio FX',
-                    style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700)),
+                const Text(
+                  'Equalizer & Audio FX',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
@@ -1521,8 +1603,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     for (final name in equalizerPresets.keys)
                       ChoiceChip(
                         label: Text(name),
-                        selected: listEquals(
-                            _bands, equalizerPresets[name]!),
+                        selected: listEquals(_bands, equalizerPresets[name]!),
                         onSelected: (_) {
                           for (var i = 0; i < _bands.length; i++) {
                             _bands[i] = equalizerPresets[name]![i];
@@ -1539,9 +1620,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                     children: [
                       SizedBox(
                         width: 56,
-                        child: Text(labels[i],
-                            style: const TextStyle(
-                                color: AppColors.textSecondary, fontSize: 12)),
+                        child: Text(
+                          labels[i],
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
                       Expanded(
                         child: Slider(
@@ -1562,7 +1647,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                           '${_bands[i] >= 0 ? '+' : ''}${_bands[i].toStringAsFixed(0)} dB',
                           textAlign: TextAlign.right,
                           style: const TextStyle(
-                              color: AppColors.textSecondary, fontSize: 12),
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ],
@@ -1580,13 +1667,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     final rows = <MapEntry<String, String>>[
       ...widget.meta.entries,
       MapEntry('Source', widget.isStream ? 'Network stream' : _currentPath),
-      MapEntry('Position',
-          '${formatDuration(state.position)} / ${formatDuration(state.duration)}'),
+      MapEntry(
+        'Position',
+        '${formatDuration(state.position)} / ${formatDuration(state.duration)}',
+      ),
       MapEntry('Remaining', formatDuration(state.duration - state.position)),
       MapEntry('Playback speed', '${state.rate}x'),
       if (state.videoParams.w != null && state.videoParams.h != null)
-        MapEntry('Resolution',
-            '${state.videoParams.w} × ${state.videoParams.h}'),
+        MapEntry(
+          'Resolution',
+          '${state.videoParams.w} × ${state.videoParams.h}',
+        ),
       if (state.audioBitrate != null)
         MapEntry('Audio bitrate', '${state.audioBitrate} bit/s'),
     ];
@@ -1641,61 +1732,85 @@ class _PlayerScreenState extends State<PlayerScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(row.key,
-                                style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 11.5)),
+                            Text(
+                              row.key,
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11.5,
+                              ),
+                            ),
                             const SizedBox(height: 2),
-                            SelectableText(row.value,
-                                style: const TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 12.5)),
+                            SelectableText(
+                              row.value,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 12.5,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     const Divider(color: AppColors.border),
                     if (state.tracks.video.isNotEmpty)
-                      const Text('Video tracks',
-                          style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w700)),
+                      const Text(
+                        'Video tracks',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     for (final track in state.tracks.video)
                       Padding(
                         padding: const EdgeInsets.only(top: 5),
-                        child: Text(_trackLabel(track),
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12)),
+                        child: Text(
+                          _trackLabel(track),
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
                     if (state.tracks.audio.isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      const Text('Audio tracks',
-                          style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w700)),
+                      const Text(
+                        'Audio tracks',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ],
                     for (final track in state.tracks.audio)
                       Padding(
                         padding: const EdgeInsets.only(top: 5),
-                        child: Text(_trackLabel(track),
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12)),
+                        child: Text(
+                          _trackLabel(track),
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
                     if (state.tracks.subtitle.isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      const Text('Subtitle tracks',
-                          style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w700)),
+                      const Text(
+                        'Subtitle tracks',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ],
                     for (final track in state.tracks.subtitle)
                       Padding(
                         padding: const EdgeInsets.only(top: 5),
-                        child: Text(_trackLabel(track),
-                            style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12)),
+                        child: Text(
+                          _trackLabel(track),
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -1779,42 +1894,52 @@ class _PlayerScreenState extends State<PlayerScreen>
       builder: (context) => SafeArea(
         child: SingleChildScrollView(
           child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _SheetHandle(),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 6, 20, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Sleep timer',
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _SheetHandle(),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 6, 20, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Sleep timer',
                     style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700)),
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
               ),
-            ),
-            if (_sleepTimer != null || _sleepUntilEnd)
+              if (_sleepTimer != null || _sleepUntilEnd)
+                ListTile(
+                  title: const Text(
+                    'Turn off timer',
+                    style: TextStyle(color: AppColors.textPrimary),
+                  ),
+                  onTap: () => Navigator.of(context).pop(_SleepChoice.off()),
+                ),
+              for (final min in mins)
+                ListTile(
+                  title: Text(
+                    '$min minutes',
+                    style: const TextStyle(color: AppColors.textPrimary),
+                  ),
+                  onTap: () =>
+                      Navigator.of(context).pop(_SleepChoice.minutes(min)),
+                ),
               ListTile(
-                title: const Text('Turn off timer',
-                    style: TextStyle(color: AppColors.textPrimary)),
-                onTap: () => Navigator.of(context).pop(_SleepChoice.off()),
-              ),
-            for (final min in mins)
-              ListTile(
-                title: Text('$min minutes',
-                    style: const TextStyle(color: AppColors.textPrimary)),
-                onTap: () => Navigator.of(context).pop(_SleepChoice.minutes(min)),
-              ),
-            ListTile(
-              title: const Text('Until end',
-                  style: TextStyle(color: AppColors.textPrimary)),
-              subtitle: const Text(
+                title: const Text(
+                  'Until end',
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
+                subtitle: const Text(
                   'Pause when this video reaches the end',
-                  style: TextStyle(color: AppColors.textSecondary)),
-              onTap: () =>
-                  Navigator.of(context).pop(_SleepChoice.untilEnd()),
-            ),
-          ],
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+                onTap: () => Navigator.of(context).pop(_SleepChoice.untilEnd()),
+              ),
+            ],
           ),
         ),
       ),
@@ -1907,19 +2032,25 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// Plays [asset] (from a playlist) with that playlist as the new queue.
   Future<void> _playPlaylistVideo(
-      AssetEntity asset, List<AssetEntity> queue) async {
+    AssetEntity asset,
+    List<AssetEntity> queue,
+  ) async {
     final file = await asset.file;
     if (!mounted) return;
     if (file == null || !file.existsSync()) {
       _emitSnack('Could not open this video');
       return;
     }
-    unawaited(LocalStore().addRecent(RecentItem(
-      id: asset.id,
-      title: asset.title ?? 'Video',
-      path: file.path,
-      ts: DateTime.now().millisecondsSinceEpoch,
-    )));
+    unawaited(
+      LocalStore().addRecent(
+        RecentItem(
+          id: asset.id,
+          title: asset.title ?? 'Video',
+          path: file.path,
+          ts: DateTime.now().millisecondsSinceEpoch,
+        ),
+      ),
+    );
     final ids = queue.map((e) => e.id).toList();
     var start = ids.indexOf(asset.id);
     if (start < 0) start = 0;
@@ -1931,10 +2062,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           title: asset.title ?? 'Video',
           queueIds: ids,
           queueStart: start,
-          meta: {
-            'File': file.path,
-            'Size': formatBytes(file.lengthSync()),
-          },
+          meta: {'File': file.path, 'Size': formatBytes(file.lengthSync())},
         ),
       ),
     );
@@ -1952,8 +2080,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         setState(() => _rotationLocked = false);
         _showIndicator('Auto-rotate on', Icons.screen_rotation);
       } else {
-        final landscape = MediaQuery.of(context).orientation ==
-            Orientation.landscape;
+        final landscape =
+            MediaQuery.of(context).orientation == Orientation.landscape;
         await _native.invokeMethod<bool>('lockRotation', {
           'landscape': landscape,
         });
@@ -1969,7 +2097,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _emitSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -2011,243 +2141,291 @@ class _PlayerScreenState extends State<PlayerScreen>
       // keeps decoding the last frame; pause so nothing blares).
       if (_player.state.playing) unawaited(_player.pause());
     }
-    if (state == AppLifecycleState.resumed &&
-        _player.state.playing) {
+    if (state == AppLifecycleState.resumed && _player.state.playing) {
       unawaited(WakelockPlus.enable());
     }
   }
 
+  /// v1.0.1+12 — Android TV / remote & external keyboard support.
+  /// DPAD CENTER / space = play-pause, DPAD LEFT/RIGHT = seek ±step,
+  /// DPAD UP/DOWN or OK toggles the control bar, MEDIA buttons honored.
+  /// Back button is retained by the framework (pops the player).
+  KeyEventResult _handleRemoteKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final k = event.logicalKey;
+    if (k == LogicalKeyboardKey.select ||
+        k == LogicalKeyboardKey.enter ||
+        k == LogicalKeyboardKey.numpadEnter ||
+        k == LogicalKeyboardKey.space ||
+        k == LogicalKeyboardKey.mediaPlayPause) {
+      final wasPlaying = _player.state.playing;
+      unawaited(_player.playOrPause());
+      _showIndicator(
+        wasPlaying ? 'Paused' : 'Playing',
+        wasPlaying ? Icons.pause_circle_outline : Icons.play_circle_outline,
+      );
+      setState(() => _controlsVisible = true);
+      if (_settings.autoHide) _scheduleHide();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.arrowLeft ||
+        k == LogicalKeyboardKey.mediaRewind) {
+      _seekRelative(-_settings.seekStep);
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.arrowRight ||
+        k == LogicalKeyboardKey.mediaFastForward) {
+      _seekRelative(_settings.seekStep);
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.arrowUp || k == LogicalKeyboardKey.arrowDown) {
+      setState(() => _controlsVisible = true);
+      if (_settings.autoHide) _scheduleHide();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        // While locked every gesture collapses to a lock hint (old player).
-        onTap: _onTap,
-        onDoubleTapDown: _locked
-            ? null
-            : (d) => _lastDoubleTapDx = d.localPosition.dx,
-        onDoubleTap: _locked ? null : _onDoubleTap,
-        onLongPressStart: _locked ? null : (_) => _setBoost(true),
-        onLongPressEnd: _locked ? null : (_) => _setBoost(false),
-        onLongPressCancel: _locked ? null : () => _setBoost(false),
-        onScaleStart: _locked ? (_) => _showLockHint() : _onScaleStart,
-        onScaleUpdate: _locked
-            ? null
-            : (details) => unawaited(_onScaleUpdate(details)),
-        onScaleEnd: _locked ? null : _onScaleEnd,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (_ready && !_failed)
-              ClipRect(
-                child: Transform.translate(
-                  offset: _pan,
-                  child: Transform.scale(
-                    scale: _zoom,
-                    child: _fitFrame(
-                      child: Video(
-                        controller: _controller,
-                        fit: _fitMode.boxFit,
-                        aspectRatio: null,
-                        controls: NoVideoControls,
-                        // Karaoke hides media_kit's own subtitle overlay (the
-                        // word-level overlay below takes over) — same idea as
-                        // the old app's sub-visibility=no.
-                        subtitleViewConfiguration:
-                            SubtitleViewConfiguration(visible: !_karaoke),
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _locked ? null : _handleRemoteKey,
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          // While locked every gesture collapses to a lock hint (old player).
+          onTap: _onTap,
+          onDoubleTapDown: _locked
+              ? null
+              : (d) => _lastDoubleTapDx = d.localPosition.dx,
+          onDoubleTap: _locked ? null : _onDoubleTap,
+          onLongPressStart: _locked ? null : (_) => _setBoost(true),
+          onLongPressEnd: _locked ? null : (_) => _setBoost(false),
+          onLongPressCancel: _locked ? null : () => _setBoost(false),
+          onScaleStart: _locked ? (_) => _showLockHint() : _onScaleStart,
+          onScaleUpdate: _locked
+              ? null
+              : (details) => unawaited(_onScaleUpdate(details)),
+          onScaleEnd: _locked ? null : _onScaleEnd,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (_ready && !_failed)
+                ClipRect(
+                  child: Transform.translate(
+                    offset: _pan,
+                    child: Transform.scale(
+                      scale: _zoom,
+                      child: _fitFrame(
+                        child: Video(
+                          controller: _controller,
+                          fit: _fitMode.boxFit,
+                          aspectRatio: null,
+                          controls: NoVideoControls,
+                          // Karaoke hides media_kit's own subtitle overlay (the
+                          // word-level overlay below takes over) — same idea as
+                          // the old app's sub-visibility=no.
+                          subtitleViewConfiguration: SubtitleViewConfiguration(
+                            visible: !_karaoke,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              )
-            else
-              const Center(child: CircularProgressIndicator(color: Colors.white)),
-            if (_buffering && _ready)
-              const Center(
-                child: SizedBox(
-                  width: 44,
-                  height: 44,
+                )
+              else
+                const Center(
                   child: CircularProgressIndicator(color: Colors.white),
                 ),
-              ),
-            // Transient indicator (seek / brightness / zoom /
-            // resume / fit / play-pause / lock) - the old player's
-            // full-width centred pill at top: 64, popping in with
-            // scale+fade.
-            Positioned(
-              top: 64,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                child: Center(
-                  child: AnimatedScale(
-                    scale: _indicatorText != null ? 1.0 : 0.85,
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOutBack,
-                    child: AnimatedOpacity(
+              if (_buffering && _ready)
+                const Center(
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                ),
+              // Transient indicator (seek / brightness / zoom /
+              // resume / fit / play-pause / lock) - the old player's
+              // full-width centred pill at top: 64, popping in with
+              // scale+fade.
+              Positioned(
+                top: 64,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  child: Center(
+                    child: AnimatedScale(
+                      scale: _indicatorText != null ? 1.0 : 0.85,
                       duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOutCubic,
-                      opacity: _indicatorText != null ? 1.0 : 0.0,
-                      child: _IndicatorPill(
-                        icon: _indicatorIcon,
-                        label: _indicatorText ?? '',
+                      curve: Curves.easeOutBack,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOutCubic,
+                        opacity: _indicatorText != null ? 1.0 : 0.0,
+                        child: _IndicatorPill(
+                          icon: _indicatorIcon,
+                          label: _indicatorText ?? '',
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-            // v20: BIG centred speed sign for the WHOLE long-press boost
-            // (old look: accent pill + fast-forward icon, scale+fade in/out).
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Center(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 160),
-                    transitionBuilder: (child, anim) => FadeTransition(
-                      opacity: anim,
-                      child: ScaleTransition(scale: anim, child: child),
-                    ),
-                    child: _boost
-                        ? _BoostBadge(
-                            key: const ValueKey('speedBadge'),
-                            label: '${_settings.longPressRate}x',
-                          )
-                        : const SizedBox.shrink(key: ValueKey('noSpeedBadge')),
-                  ),
-                ),
-              ),
-            ),
-            // Screen-lock ENTER chip (left edge, shown with the controls,
-            // MX-Player style).
-            Positioned(
-              left: 4,
-              top: 0,
-              bottom: 0,
-              child: IgnorePointer(
-                ignoring: !(_controlsVisible &&
-                    !_locked &&
-                    _settings.screenLock),
-                child: AnimatedOpacity(
-                  opacity: (_controlsVisible && !_locked && _settings.screenLock)
-                      ? 1.0
-                      : 0.0,
-                  duration: const Duration(milliseconds: 180),
+              // v20: BIG centred speed sign for the WHOLE long-press boost
+              // (old look: accent pill + fast-forward icon, scale+fade in/out).
+              Positioned.fill(
+                child: IgnorePointer(
                   child: Center(
-                    child: _LockChip(
-                      icon: Icons.lock_open_outlined,
-                      onTap: _lockScreen,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 160),
+                      transitionBuilder: (child, anim) => FadeTransition(
+                        opacity: anim,
+                        child: ScaleTransition(scale: anim, child: child),
+                      ),
+                      child: _boost
+                          ? _BoostBadge(
+                              key: const ValueKey('speedBadge'),
+                              label: '${_settings.longPressRate}x',
+                            )
+                          : const SizedBox.shrink(
+                              key: ValueKey('noSpeedBadge'),
+                            ),
                     ),
                   ),
                 ),
               ),
-            ),
-            // Screen-lock EXIT chip (right edge, always visible while locked).
-            if (_locked)
+              // Screen-lock ENTER chip (left edge, shown with the controls,
+              // MX-Player style).
               Positioned(
-                right: 4,
+                left: 4,
                 top: 0,
                 bottom: 0,
-                child: Center(
-                  child: _LockChip(
-                    icon: Icons.lock,
-                    onTap: _showLockHint,
-                    onDoubleTap: _unlockScreen,
-                    onLongPress: _unlockScreen,
-                  ),
-                ),
-              ),
-            // Top bar: slides down + fades in/out with the controls.
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                ignoring: !_controlsVisible,
-                child: AnimatedSlide(
-                  offset: (_controlsVisible && !_locked)
-                      ? Offset.zero
-                      : const Offset(0, -0.5),
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
+                child: IgnorePointer(
+                  ignoring:
+                      !(_controlsVisible && !_locked && _settings.screenLock),
                   child: AnimatedOpacity(
-                    opacity: (_controlsVisible && !_locked) ? 1.0 : 0.0,
+                    opacity:
+                        (_controlsVisible && !_locked && _settings.screenLock)
+                        ? 1.0
+                        : 0.0,
                     duration: const Duration(milliseconds: 180),
-                    child: _TopBar(
-                      title: _title,
-                      sleepLabel: _sleepLabel,
-                      sleepMenuLabel: _sleepMenuLabel,
-                      onSettings: _showPlayerSettings,
-                      onMenu: (action) => unawaited(_onMenuAction(action)),
+                    child: Center(
+                      child: _LockChip(
+                        icon: Icons.lock_open_outlined,
+                        onTap: _lockScreen,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            // Karaoke word-level subtitle overlay (old player parity): words
-            // light up one by one as they're spoken. Rendered only while
-            // karaoke mode is on; media_kit's own subtitle view is hidden.
-            if (_karaoke && !_locked)
+              // Screen-lock EXIT chip (right edge, always visible while locked).
+              if (_locked)
+                Positioned(
+                  right: 4,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: _LockChip(
+                      icon: Icons.lock,
+                      onTap: _showLockHint,
+                      onDoubleTap: _unlockScreen,
+                      onLongPress: _unlockScreen,
+                    ),
+                  ),
+                ),
+              // Top bar: slides down + fades in/out with the controls.
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  ignoring: !_controlsVisible,
+                  child: AnimatedSlide(
+                    offset: (_controlsVisible && !_locked)
+                        ? Offset.zero
+                        : const Offset(0, -0.5),
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    child: AnimatedOpacity(
+                      opacity: (_controlsVisible && !_locked) ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 180),
+                      child: _TopBar(
+                        title: _title,
+                        sleepLabel: _sleepLabel,
+                        sleepMenuLabel: _sleepMenuLabel,
+                        onSettings: _showPlayerSettings,
+                        onMenu: (action) => unawaited(_onMenuAction(action)),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // Karaoke word-level subtitle overlay (old player parity): words
+              // light up one by one as they're spoken. Rendered only while
+              // karaoke mode is on; media_kit's own subtitle view is hidden.
+              if (_karaoke && !_locked)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 24,
+                  child: IgnorePointer(
+                    child: _KaraokeOverlay(
+                      player: _player,
+                      liveCue: _karaokeLiveCue,
+                      sidecarCues: _karaokeSidecar,
+                    ),
+                  ),
+                ),
+              // Bottom controls: slide up + fade in/out with the controls.
               Positioned(
                 left: 0,
                 right: 0,
-                bottom: 24,
+                bottom: 0,
                 child: IgnorePointer(
-                  child: _KaraokeOverlay(
-                    player: _player,
-                    liveCue: _karaokeLiveCue,
-                    sidecarCues: _karaokeSidecar,
-                  ),
-                ),
-              ),
-            // Bottom controls: slide up + fade in/out with the controls.
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: IgnorePointer(
-                ignoring: !_controlsVisible,
-                child: AnimatedSlide(
-                  offset: (_controlsVisible && !_locked)
-                      ? Offset.zero
-                      : const Offset(0, 0.45),
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  child: AnimatedOpacity(
-                    opacity: (_controlsVisible && !_locked) ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 180),
-                    child: _BottomBar(
-                      player: _player,
-                      isMuted: _muted,
-                      tracksActive: _tracksActive,
-                      onTrackSheet: _showTrackSheet,
-                      onQueue: _showPlaylistSheet,
-                      onRotate: _toggleRotationLock,
-                      rotationLocked: _rotationLocked,
-                      onFit: _cycleFit,
-                      onMute: _toggleMute,
-                      onScrubbing: _onScrubChanged,
-                      previewThumb: _scrubThumbPath,
-                      canSkip: widget.queueIds.length > 1,
-                      onPrevious: _playPrevious,
-                      onNext: () => _playNext(),
-                      shuffleQueue: _shuffleQueue,
-                      queueRepeat: _queueRepeat,
-                      onToggleShuffle: () =>
-                          setState(() => _shuffleQueue = !_shuffleQueue),
-                      onCycleRepeat: () => setState(() {
-                            _queueRepeat = AudioRepeatMode.values[
-                                (_queueRepeat.index + 1) %
-                                    AudioRepeatMode.values.length];
-                          }),
+                  ignoring: !_controlsVisible,
+                  child: AnimatedSlide(
+                    offset: (_controlsVisible && !_locked)
+                        ? Offset.zero
+                        : const Offset(0, 0.45),
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    child: AnimatedOpacity(
+                      opacity: (_controlsVisible && !_locked) ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 180),
+                      child: _BottomBar(
+                        player: _player,
+                        isMuted: _muted,
+                        tracksActive: _tracksActive,
+                        onTrackSheet: _showTrackSheet,
+                        onQueue: _showPlaylistSheet,
+                        onRotate: _toggleRotationLock,
+                        rotationLocked: _rotationLocked,
+                        onFit: _cycleFit,
+                        onMute: _toggleMute,
+                        onScrubbing: _onScrubChanged,
+                        previewThumb: _scrubThumbPath,
+                        canSkip: widget.queueIds.length > 1,
+                        onPrevious: _playPrevious,
+                        onNext: () => _playNext(),
+                        shuffleQueue: _shuffleQueue,
+                        queueRepeat: _queueRepeat,
+                        onToggleShuffle: () =>
+                            setState(() => _shuffleQueue = !_shuffleQueue),
+                        onCycleRepeat: () => setState(() {
+                          _queueRepeat =
+                              AudioRepeatMode.values[(_queueRepeat.index + 1) %
+                                  AudioRepeatMode.values.length];
+                        }),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -2278,91 +2456,113 @@ class _TopBar extends StatelessWidget {
         right: 2,
         bottom: 14,
       ),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withValues(alpha: 0.75),
-              Colors.transparent,
-            ],
-          ),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.black.withValues(alpha: 0.75), Colors.transparent],
         ),
-        child: Row(
-          children: [
-            IconButton(
-              tooltip: 'Back',
-              icon: Icon(Icons.arrow_back, size: 22, color: AppColors.accent),
-              onPressed: () => Navigator.of(context).maybePop(),
-            ),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _LoopingTitle(title: title),
-                  if (sleepLabel != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.bedtime_outlined,
-                              size: 11, color: AppColors.accent),
-                          const SizedBox(width: 4),
-                          Text(
-                            sleepLabel!,
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.accent,
-                            ),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'Back',
+            icon: Icon(Icons.arrow_back, size: 22, color: AppColors.accent),
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _LoopingTitle(title: title),
+                if (sleepLabel != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.bedtime_outlined,
+                          size: 11,
+                          color: AppColors.accent,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          sleepLabel!,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.accent,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                ],
-              ),
-            ),
-            PopupMenuButton<_PlayerMenuAction>(
-              tooltip: 'More actions',
-              icon: Icon(Icons.more_vert, size: 22, color: AppColors.accent),
-              color: const Color(0xFF1a1a24),
-              elevation: 8,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              onSelected: onMenu,
-              itemBuilder: (context) => [
-                _topMenuItem(_PlayerMenuAction.info,
-                    Icons.info_outline, 'Video info'),
-                _topMenuItem(_PlayerMenuAction.eq,
-                    Icons.graphic_eq, 'Equalizer & Audio FX'),
-                _topMenuItem(_PlayerMenuAction.screenshot,
-                    Icons.camera_alt_outlined, 'Screenshot'),
-                _topMenuItem(
-                    _PlayerMenuAction.cast, Icons.cast_outlined, 'Cast to TV'),
-                _topMenuItem(_PlayerMenuAction.pip,
-                    Icons.picture_in_picture_alt_outlined, 'Picture-in-Picture'),
-                _topMenuItem(
-                    _PlayerMenuAction.sleep,
-                    Icons.bedtime_outlined,
-                    sleepMenuLabel ?? 'Sleep timer'),
+                  ),
               ],
             ),
-            IconButton(
-              tooltip: 'Player settings',
-              icon: Icon(Icons.settings_outlined,
-                  size: 22, color: AppColors.accent),
-              onPressed: onSettings,
+          ),
+          PopupMenuButton<_PlayerMenuAction>(
+            tooltip: 'More actions',
+            icon: Icon(Icons.more_vert, size: 22, color: AppColors.accent),
+            color: const Color(0xFF1a1a24),
+            elevation: 8,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
             ),
-          ],
-        ),
-      );
+            onSelected: onMenu,
+            itemBuilder: (context) => [
+              _topMenuItem(
+                _PlayerMenuAction.info,
+                Icons.info_outline,
+                'Video info',
+              ),
+              _topMenuItem(
+                _PlayerMenuAction.eq,
+                Icons.graphic_eq,
+                'Equalizer & Audio FX',
+              ),
+              _topMenuItem(
+                _PlayerMenuAction.screenshot,
+                Icons.camera_alt_outlined,
+                'Screenshot',
+              ),
+              _topMenuItem(
+                _PlayerMenuAction.cast,
+                Icons.cast_outlined,
+                'Cast to TV',
+              ),
+              _topMenuItem(
+                _PlayerMenuAction.pip,
+                Icons.picture_in_picture_alt_outlined,
+                'Picture-in-Picture',
+              ),
+              _topMenuItem(
+                _PlayerMenuAction.sleep,
+                Icons.bedtime_outlined,
+                sleepMenuLabel ?? 'Sleep timer',
+              ),
+            ],
+          ),
+          IconButton(
+            tooltip: 'Player settings',
+            icon: Icon(
+              Icons.settings_outlined,
+              size: 22,
+              color: AppColors.accent,
+            ),
+            onPressed: onSettings,
+          ),
+        ],
+      ),
+    );
   }
 
   PopupMenuItem<_PlayerMenuAction> _topMenuItem(
-      _PlayerMenuAction value, IconData icon, String label) {
+    _PlayerMenuAction value,
+    IconData icon,
+    String label,
+  ) {
     return PopupMenuItem(
       value: value,
       height: 44,
@@ -2451,8 +2651,7 @@ class _LoopingTitleState extends State<_LoopingTitle>
             if (_scrolling) {
               final distance = _textWidth + _gap;
               _controller.duration = Duration(
-                milliseconds:
-                    (distance / 34 * 1000).round().clamp(5000, 16000),
+                milliseconds: (distance / 34 * 1000).round().clamp(5000, 16000),
               );
               if (!_controller.isAnimating) _controller.repeat();
             } else {
@@ -2554,115 +2753,109 @@ class _BottomBarState extends State<_BottomBar> {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.transparent,
-              Colors.black.withValues(alpha: 0.85),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)],
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _progressBar(),
+          // Row 1: previous / play-pause / next — the transport trio. These
+          // three stay white; the theme accent shows only as the press flash
+          // behind them (old-player look).
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _iconBtn(
+                icon: Icons.shuffle,
+                size: 22,
+                compact: true,
+                active: widget.shuffleQueue,
+                tooltip: widget.shuffleQueue ? 'Shuffle: on' : 'Shuffle: off',
+                onTap: widget.canSkip ? widget.onToggleShuffle : null,
+              ),
+              const SizedBox(width: 8),
+              _iconBtn(
+                icon: Icons.skip_previous,
+                size: 30,
+                accentPress: true,
+                tooltip: 'Previous video',
+                onTap: widget.canSkip ? widget.onPrevious : null,
+              ),
+              const SizedBox(width: 22),
+              _playPause(),
+              const SizedBox(width: 22),
+              _iconBtn(
+                icon: Icons.skip_next,
+                size: 30,
+                accentPress: true,
+                tooltip: 'Next video',
+                onTap: widget.canSkip ? widget.onNext : null,
+              ),
+              const SizedBox(width: 8),
+              _iconBtn(
+                icon: widget.queueRepeat == AudioRepeatMode.one
+                    ? Icons.repeat_one
+                    : Icons.repeat,
+                size: 22,
+                compact: true,
+                active: widget.queueRepeat != AudioRepeatMode.off,
+                tooltip: 'Repeat: ${widget.queueRepeat.name} — tap to cycle',
+                onTap: widget.canSkip ? widget.onCycleRepeat : null,
+              ),
             ],
           ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _progressBar(),
-            // Row 1: previous / play-pause / next — the transport trio. These
-            // three stay white; the theme accent shows only as the press flash
-            // behind them (old-player look).
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _iconBtn(
-                  icon: Icons.shuffle,
-                  size: 22,
-                  compact: true,
-                  active: widget.shuffleQueue,
-                  tooltip: widget.shuffleQueue
-                      ? 'Shuffle: on'
-                      : 'Shuffle: off',
-                  onTap:
-                      widget.canSkip ? widget.onToggleShuffle : null,
-                ),
-                const SizedBox(width: 8),
-                _iconBtn(
-                  icon: Icons.skip_previous,
-                  size: 30,
-                  accentPress: true,
-                  tooltip: 'Previous video',
-                  onTap: widget.canSkip ? widget.onPrevious : null,
-                ),
-                const SizedBox(width: 22),
-                _playPause(),
-                const SizedBox(width: 22),
-                _iconBtn(
-                  icon: Icons.skip_next,
-                  size: 30,
-                  accentPress: true,
-                  tooltip: 'Next video',
-                  onTap: widget.canSkip ? widget.onNext : null,
-                ),
-                const SizedBox(width: 8),
-                _iconBtn(
-                  icon: widget.queueRepeat == AudioRepeatMode.one
-                      ? Icons.repeat_one
-                      : Icons.repeat,
-                  size: 22,
-                  compact: true,
-                  active: widget.queueRepeat != AudioRepeatMode.off,
-                  tooltip: 'Repeat: ${widget.queueRepeat.name} — tap to cycle',
-                  onTap: widget.canSkip ? widget.onCycleRepeat : null,
-                ),
-              ],
-            ),
-            // Row 2 (compact): mute speed tracks | queue fit rotate.
-            Row(
-              children: [
-                _iconBtn(
-                  icon: widget.isMuted ? Icons.volume_off : Icons.volume_up,
-                  active: widget.isMuted,
-                  tooltip: 'Mute',
-                  onTap: widget.onMute,
-                  compact: true,
-                ),
-                _speedMenu(),
-                _iconBtn(
-                  tooltip: 'Subtitles, audio tracks, A-B loop, karaoke',
-                  icon: Icons.tune,
-                  active: widget.tracksActive,
-                  onTap: widget.onTrackSheet,
-                  compact: true,
-                ),
-                const Spacer(),
-                _iconBtn(
-                  icon: Icons.playlist_play,
-                  tooltip: 'Playlists',
-                  onTap: widget.onQueue,
-                  compact: true,
-                ),
-                _iconBtn(
-                  tooltip: 'Fit: Fit / Crop / Stretch / 16:9 / 4:3 / Original',
-                  icon: Icons.aspect_ratio,
-                  onTap: widget.onFit,
-                  compact: true,
-                ),
-                _iconBtn(
-                  tooltip: widget.rotationLocked
-                      ? 'Rotation locked - tap for auto'
-                      : 'Auto-rotate - tap to lock',
-                  icon: widget.rotationLocked
-                      ? Icons.screen_lock_rotation
-                      : Icons.screen_rotation,
-                  active: widget.rotationLocked,
-                  onTap: widget.onRotate,
-                  compact: true,
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
+          // Row 2 (compact): mute speed tracks | queue fit rotate.
+          Row(
+            children: [
+              _iconBtn(
+                icon: widget.isMuted ? Icons.volume_off : Icons.volume_up,
+                active: widget.isMuted,
+                tooltip: 'Mute',
+                onTap: widget.onMute,
+                compact: true,
+              ),
+              _speedMenu(),
+              _iconBtn(
+                tooltip: 'Subtitles, audio tracks, A-B loop, karaoke',
+                icon: Icons.tune,
+                active: widget.tracksActive,
+                onTap: widget.onTrackSheet,
+                compact: true,
+              ),
+              const Spacer(),
+              _iconBtn(
+                icon: Icons.playlist_play,
+                tooltip: 'Playlists',
+                onTap: widget.onQueue,
+                compact: true,
+              ),
+              _iconBtn(
+                tooltip: 'Fit: Fit / Crop / Stretch / 16:9 / 4:3 / Original',
+                icon: Icons.aspect_ratio,
+                onTap: widget.onFit,
+                compact: true,
+              ),
+              _iconBtn(
+                tooltip: widget.rotationLocked
+                    ? 'Rotation locked - tap for auto'
+                    : 'Auto-rotate - tap to lock',
+                icon: widget.rotationLocked
+                    ? Icons.screen_lock_rotation
+                    : Icons.screen_rotation,
+                active: widget.rotationLocked,
+                onTap: widget.onRotate,
+                compact: true,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _playPause() {
@@ -2672,9 +2865,7 @@ class _BottomBarState extends State<_BottomBar> {
       builder: (context, snapshot) {
         final playing = snapshot.data ?? false;
         return _iconBtn(
-          icon: playing
-              ? Icons.pause_circle_filled
-              : Icons.play_circle_filled,
+          icon: playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
           size: 46,
           accentPress: true,
           onTap: widget.player.playOrPause,
@@ -2697,8 +2888,10 @@ class _BottomBarState extends State<_BottomBar> {
           onTap: _showSpeedSheet,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-            child: Text('${rate}x',
-                style: TextStyle(color: AppColors.accent, fontSize: 11)),
+            child: Text(
+              '${rate}x',
+              style: TextStyle(color: AppColors.accent, fontSize: 11),
+            ),
           ),
         );
       },
@@ -2732,11 +2925,14 @@ class _BottomBarState extends State<_BottomBar> {
                     padding: EdgeInsets.fromLTRB(4, 0, 4, 2),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: Text('Playback speed',
-                          style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700)),
+                      child: Text(
+                        'Playback speed',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ),
                   Text(
@@ -2761,7 +2957,9 @@ class _BottomBarState extends State<_BottomBar> {
                       // and never lost when the gesture ends abruptly.
                       unawaited(widget.player.setRate(snapped));
                       // v29: remember the choice so it survives this video.
-                      unawaited(PlayerSettings.instance.setPlaybackRate(snapped));
+                      unawaited(
+                        PlayerSettings.instance.setPlaybackRate(snapped),
+                      );
                     },
                     onChangeEnd: (v) {
                       final snapped = nearestPlaybackRate(v);
@@ -2774,14 +2972,20 @@ class _BottomBarState extends State<_BottomBar> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('0.5×',
-                            style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 11.5)),
-                        Text('4.0×',
-                            style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 11.5)),
+                        Text(
+                          '0.5×',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 11.5,
+                          ),
+                        ),
+                        Text(
+                          '4.0×',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 11.5,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -2792,7 +2996,15 @@ class _BottomBarState extends State<_BottomBar> {
                     children: [
                       // The old app's exact preset list (0.5× .. 3.0×).
                       for (final r in const [
-                        0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0,
+                        0.5,
+                        0.75,
+                        1.0,
+                        1.25,
+                        1.5,
+                        1.75,
+                        2.0,
+                        2.5,
+                        3.0,
                       ])
                         _speedChip(
                           rate: r,
@@ -2814,8 +3026,11 @@ class _BottomBarState extends State<_BottomBar> {
     );
   }
 
-  Widget _speedChip(
-      {required double rate, required bool active, required VoidCallback onTap}) {
+  Widget _speedChip({
+    required double rate,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: onTap,
@@ -2859,16 +3074,20 @@ class _BottomBarState extends State<_BottomBar> {
             final position = posSnapshot.data ?? Duration.zero;
             final duration = durSnapshot.data ?? Duration.zero;
             final totalMs = duration.inMilliseconds.clamp(1, 1 << 62);
-            final value = _dragValue ??
+            final value =
+                _dragValue ??
                 (position.inMilliseconds / totalMs).clamp(0.0, 1.0);
-            final shownMs = (_dragValue != null
-                    ? _dragValue! * totalMs
-                    : position.inMilliseconds)
-                .round();
+            final shownMs =
+                (_dragValue != null
+                        ? _dragValue! * totalMs
+                        : position.inMilliseconds)
+                    .round();
             return Row(
               children: [
-                Text(formatDuration(Duration(milliseconds: shownMs)),
-                    style: _timeStyle),
+                Text(
+                  formatDuration(Duration(milliseconds: shownMs)),
+                  style: _timeStyle,
+                ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: LayoutBuilder(
@@ -2890,12 +3109,15 @@ class _BottomBarState extends State<_BottomBar> {
                             data: SliderTheme.of(context).copyWith(
                               trackHeight: 3,
                               thumbShape: const RoundSliderThumbShape(
-                                  enabledThumbRadius: 6),
+                                enabledThumbRadius: 6,
+                              ),
                               overlayShape: const RoundSliderOverlayShape(
-                                  overlayRadius: 14),
+                                overlayRadius: 14,
+                              ),
                               activeTrackColor: AppColors.accent,
-                              inactiveTrackColor:
-                                  Colors.white.withValues(alpha: 0.15),
+                              inactiveTrackColor: Colors.white.withValues(
+                                alpha: 0.15,
+                              ),
                               thumbColor: AppColors.accent,
                             ),
                             child: Slider(
@@ -2904,11 +3126,11 @@ class _BottomBarState extends State<_BottomBar> {
                                 widget.onScrubbing(true);
                                 setState(() => _dragValue = v);
                               },
-                              onChanged: (v) =>
-                                  setState(() => _dragValue = v),
+                              onChanged: (v) => setState(() => _dragValue = v),
                               onChangeEnd: (v) {
-                                widget.player.seek(Duration(
-                                    milliseconds: (v * totalMs).round()));
+                                widget.player.seek(
+                                  Duration(milliseconds: (v * totalMs).round()),
+                                );
                                 setState(() => _dragValue = null);
                                 widget.onScrubbing(false);
                               },
@@ -2921,8 +3143,9 @@ class _BottomBarState extends State<_BottomBar> {
                               child: IgnorePointer(
                                 child: _ScrubBubble(
                                   time: Duration(milliseconds: shownMs),
-                                  thumbPath: widget.previewThumb
-                                      ?.call(_dragValue!),
+                                  thumbPath: widget.previewThumb?.call(
+                                    _dragValue!,
+                                  ),
                                 ),
                               ),
                             ),
@@ -2967,8 +3190,9 @@ class _BottomBarState extends State<_BottomBar> {
       highlightColor: accentPress ? accent.withValues(alpha: 0.28) : null,
       style: active
           ? ButtonStyle(
-              backgroundColor:
-                  WidgetStateProperty.all(accent.withValues(alpha: 0.22)),
+              backgroundColor: WidgetStateProperty.all(
+                accent.withValues(alpha: 0.22),
+              ),
             )
           : null,
       constraints: compact
@@ -3077,11 +3301,7 @@ class _NoThumb extends StatelessWidget {
     return Container(
       color: const Color(0xFF1e1e2a),
       alignment: Alignment.center,
-      child: const Icon(
-        Icons.movie_outlined,
-        color: Colors.white24,
-        size: 18,
-      ),
+      child: const Icon(Icons.movie_outlined, color: Colors.white24, size: 18),
     );
   }
 }
@@ -3200,7 +3420,7 @@ class _PlaylistsSheetView extends StatefulWidget {
   final LocalStore store;
   final Map<String, List<String>> playlists;
   final Future<void> Function(AssetEntity asset, List<AssetEntity> queue)
-      onPlay;
+  onPlay;
 
   @override
   State<_PlaylistsSheetView> createState() => _PlaylistsSheetViewState();
@@ -3250,10 +3470,11 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
                   if (_open != null)
                     IconButton(
                       tooltip: 'All playlists',
-                      icon: const Icon(Icons.arrow_back_rounded,
-                          color: AppColors.textSecondary),
-                      onPressed: () =>
-                          setState(() => _open = null),
+                      icon: const Icon(
+                        Icons.arrow_back_rounded,
+                        color: AppColors.textSecondary,
+                      ),
+                      onPressed: () => setState(() => _open = null),
                     ),
                   Expanded(
                     child: Text(
@@ -3300,17 +3521,26 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
         final count = widget.playlists[name]?.length ?? 0;
         return ListTile(
           leading: Icon(Icons.playlist_play_rounded, color: AppColors.accent),
-          title: Text(name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.w600)),
-          subtitle: Text('$count video${count == 1 ? '' : 's'}',
-              style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 12)),
-          trailing: const Icon(Icons.chevron_right_rounded,
-              color: AppColors.textSecondary),
+          title: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          subtitle: Text(
+            '$count video${count == 1 ? '' : 's'}',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+          trailing: const Icon(
+            Icons.chevron_right_rounded,
+            color: AppColors.textSecondary,
+          ),
           onTap: () => _openPlaylist(name),
         );
       },
@@ -3319,8 +3549,7 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
 
   Widget _detail() {
     if (_resolving) {
-      return Center(
-          child: CircularProgressIndicator(color: AppColors.accent));
+      return Center(child: CircularProgressIndicator(color: AppColors.accent));
     }
     if (_videos.isEmpty) {
       return const Center(
@@ -3339,12 +3568,16 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
       itemBuilder: (context, i) {
         final a = _videos[i];
         return ListTile(
-          leading: const Icon(Icons.play_circle_outline_rounded,
-              color: AppColors.textSecondary),
-          title: Text(a.title ?? 'Video',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppColors.textPrimary)),
+          leading: const Icon(
+            Icons.play_circle_outline_rounded,
+            color: AppColors.textSecondary,
+          ),
+          title: Text(
+            a.title ?? 'Video',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: AppColors.textPrimary),
+          ),
           onTap: () => _play(a),
         );
       },
@@ -3391,8 +3624,7 @@ class _KaraokeOverlay extends StatelessWidget {
               style: TextStyle(
                 color: i <= activeIdx ? AppColors.accent : baseColor,
                 fontSize: 17,
-                fontWeight:
-                    i == activeIdx ? FontWeight.w800 : FontWeight.w500,
+                fontWeight: i == activeIdx ? FontWeight.w800 : FontWeight.w500,
                 shadows: shadow,
                 height: 1.35,
               ),
@@ -3411,3 +3643,4 @@ class _KaraokeOverlay extends StatelessWidget {
     );
   }
 }
+

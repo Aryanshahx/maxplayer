@@ -8,6 +8,7 @@ import 'package:maxplayer/utils/badges.dart';
 import 'package:maxplayer/utils/collections.dart';
 import 'package:maxplayer/utils/fit.dart';
 import 'package:maxplayer/utils/format.dart';
+import 'package:maxplayer/utils/iptv.dart' show kMaxPlayerUserAgent;
 import 'package:maxplayer/utils/m3u.dart';
 import 'package:maxplayer/utils/ab_loop.dart';
 import 'package:maxplayer/utils/ai_subtitles.dart'
@@ -559,6 +560,51 @@ plain-list-url.mp4
 
     test('CRLF tolerated', () {
       expect(parseM3u('#EXTM3U\r\n#EXTINF:-1,A\r\nhttp://a/b\r\n').length, 1);
+    });
+
+    test('group-title parsed (iptv-org format)', () {
+      final chans = parseM3u(list);
+      expect(chans[0].group, 'News');
+      expect(chans[1].group, isNull);
+      expect(chans[2].group, isNull);
+    });
+
+    test('json round-trip keeps group', () {
+      const c = IptvChannel(
+          name: 'Aaj Tak', url: 'http://x/y.m3u8', logo: 'l.png', group: 'News');
+      final b = IptvChannel.fromJson(c.toJson());
+      expect(b.group, 'News');
+      expect(b.name, 'Aaj Tak');
+      // old dumped json without group still parses
+      expect(IptvChannel.fromJson({'name': 'n', 'url': 'u'}).group, isNull);
+    });
+  });
+
+  group('iptv-org index sample (v1.0.1+12)', () {
+    const iptvOrg = '''
+#EXTM3U
+#EXTINF:-1 tvg-id="AajTak.in" status="online" tvg-logo="https://x/a.png" group-title="News",Aaj Tak (720p)
+https://feeds.intoday.in/aajtak/api/aajtakhd/master.m3u8
+#EXTINF:-1 tvg-id="SonySATHD.in" tvg-logo="https://x/b.png" group-title="Entertainment",Sony SAB HD
+https://pubads.g.doubleclick.net/ssai/xyz/master.m3u8
+#EXTINF:-1 tvg-id="AlJazeera.qa" tvg-logo="https://x/c.png" group-title="News",Al Jazeera English (1080p)
+https://linear-xyz.frequency.mtv/munge/master.m3u8
+''';
+    test('parses big-list records incl groups', () {
+      final chans = parseM3u(iptvOrg);
+      expect(chans.length, 3);
+      expect(chans[0].name, 'Aaj Tak (720p)');
+      expect(chans[0].group, 'News');
+      expect(chans[1].group, 'Entertainment');
+      expect(chans[2].group, 'News');
+      expect(chans[0].logo, 'https://x/a.png');
+    });
+  });
+
+  group('stream user-agent default (v1.0.1+12)', () {
+    test('UA looks browser-like, not dart default', () {
+      expect(kMaxPlayerUserAgent.isNotEmpty, true);
+      expect(kMaxPlayerUserAgent.toLowerCase().contains('http'), false);
     });
   });
 
@@ -1258,3 +1304,4 @@ group('gestureTickFor (v1.0.17 swipe haptics)', () {
   });
 });
 }
+
