@@ -9,33 +9,15 @@ import '../utils/local_store.dart';
 import '../utils/m3u.dart';
 import 'player_screen.dart';
 
-/// iptv-org public playlists (https://github.com/iptv-org/iptv) — one-tap
-/// channel lists near the top of the screen, before the manual URL field.
-/// index.m3u is the full ~10k+ channel index; the per-category/country
-/// ones are the fast way onto live TV.
-const String _iptvOrgBase = 'https://iptv-org.github.io/iptv';
-const List<({String label, String url})> _iptvOrgPlaylists = [
-  (label: '🌏 All channels (10k+)', url: '$_iptvOrgBase/index.m3u'),
-  (label: '🇮🇳 India', url: '$_iptvOrgBase/countries/in.m3u'),
-  (label: '🇺🇸 USA', url: '$_iptvOrgBase/countries/us.m3u'),
-  (label: '🇬🇧 UK', url: '$_iptvOrgBase/countries/uk.m3u'),
-  (label: '📰 News', url: '$_iptvOrgBase/categories/news.m3u'),
-  (label: '⚽ Sports', url: '$_iptvOrgBase/categories/sports.m3u'),
-  (label: '🎬 Movies', url: '$_iptvOrgBase/categories/movies.m3u'),
-  (label: '🎵 Music', url: '$_iptvOrgBase/categories/music.m3u'),
-  (label: '👶 Kids', url: '$_iptvOrgBase/categories/kids.m3u'),
-  (label: '💻 Tech', url: '$_iptvOrgBase/categories/science.m3u'),
-  (label: '😂 Comedy', url: '$_iptvOrgBase/categories/comedy.m3u'),
-];
-
 /// Old-app parity: prefetching thousands of rows on first paint kills the
 /// screen — page the channel list in chunks of this many tiles.
 const int _channelPageSize = 50;
 
 /// Open Stream (IPTV) — old-app parity: protocol chips, clipboard paste,
 /// optional title, saved & recent streams, and .m3u/.m3u8 channel lists.
-/// v1.0.1+12: one-tap iptv-org playlists, channel search & group filter,
-/// and a paged channel list that survives 10k+ channel indexes.
+/// NO channels or playlists ship with the app — the user pastes their own
+/// M3U link. v1.0.1+13: channel search & group filter, and a paged
+/// channel list that survives 10k+ channel indexes.
 class OpenStreamScreen extends StatefulWidget {
   const OpenStreamScreen({super.key});
 
@@ -209,47 +191,6 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // iptv-org quick playlists
-          Row(
-            children: [
-              Icon(Icons.public, color: accent, size: 15),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Free live TV — iptv-org playlists',
-                  style: TextStyle(
-                    color: accent,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final p in _iptvOrgPlaylists)
-                ActionChip(
-                  label: Text(
-                    p.label,
-                    style: const TextStyle(color: Colors.white, fontSize: 11.5),
-                  ),
-                  backgroundColor: Colors.white.withValues(alpha: 0.06),
-                  side: BorderSide(color: accent.withValues(alpha: 0.35)),
-                  onPressed: _loadingPlaylist
-                      ? null
-                      : () {
-                          _urlCtrl.text = p.url;
-                          _titleCtrl.clear();
-                          _loadPlaylist(p.url);
-                        },
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
           // Protocols row
           Wrap(
             spacing: 6,

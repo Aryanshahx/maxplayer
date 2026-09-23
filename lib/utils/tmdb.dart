@@ -46,16 +46,16 @@ class TmdbMovie {
   });
 
   TmdbMovie copyWith({String? trailerKey, String? kind}) => TmdbMovie(
-        id: id,
-        title: title,
-        rating: rating,
-        year: year,
-        posterPath: posterPath,
-        backdropPath: backdropPath,
-        overview: overview,
-        trailerKey: trailerKey ?? this.trailerKey,
-        kind: kind ?? this.kind,
-      );
+    id: id,
+    title: title,
+    rating: rating,
+    year: year,
+    posterPath: posterPath,
+    backdropPath: backdropPath,
+    overview: overview,
+    trailerKey: trailerKey ?? this.trailerKey,
+    kind: kind ?? this.kind,
+  );
 }
 
 /// One user-selectable filter chip. Exactly ONE of [trending], [language]
@@ -122,27 +122,27 @@ String discoverCacheName(DiscoverFilter f, int page) =>
 String tmdbEndpointPath(DiscoverFilter f) => f.trending
     ? (f.tv ? '/3/trending/tv/week' : '/3/trending/movie/week')
     : f.upcoming
-        ? '/3/movie/upcoming'
-        : (f.tv ? '/3/discover/tv' : '/3/discover/movie');
+    ? '/3/movie/upcoming'
+    : (f.tv ? '/3/discover/tv' : '/3/discover/movie');
 
 /// Query params for one page of a NON-trending filter. Pure.
 Map<String, String> tmdbDiscoverQuery(DiscoverFilter f, int page) => {
-      'language': 'en-US',
-      'page': '$page',
-      'include_adult': 'false',
-      'sort_by': 'popularity.desc',
-      'vote_count.gte': '8',
-      if (f.language.isNotEmpty) 'with_original_language': f.language,
-      if (f.genreId != null) 'with_genres': '${f.genreId}',
-    };
+  'language': 'en-US',
+  'page': '$page',
+  'include_adult': 'false',
+  'sort_by': 'popularity.desc',
+  'vote_count.gte': '8',
+  if (f.language.isNotEmpty) 'with_original_language': f.language,
+  if (f.genreId != null) 'with_genres': '${f.genreId}',
+};
 
 /// Query params for one SEARCH page. Pure.
 Map<String, String> tmdbSearchQuery(String query, int page) => {
-      'language': 'en-US',
-      'query': query,
-      'include_adult': 'false',
-      'page': '$page',
-    };
+  'language': 'en-US',
+  'query': query,
+  'include_adult': 'false',
+  'page': '$page',
+};
 
 /// Deterministic cache file name for a search (31-fold hash of code units,
 /// never Dart's unstable String.hashCode). Pure.
@@ -276,11 +276,14 @@ class TmdbFull {
   final List<TmdbReview> reviews;
   final List<TmdbSeason> seasons;
 
-  const TmdbFull(this.movie, this.extras,
-      {this.screenshots = const [],
-      this.watch = const TmdbWatchInfo(),
-      this.reviews = const [],
-      this.seasons = const []});
+  const TmdbFull(
+    this.movie,
+    this.extras, {
+    this.screenshots = const [],
+    this.watch = const TmdbWatchInfo(),
+    this.reviews = const [],
+    this.seasons = const [],
+  });
 }
 
 /// One part (season) of a web series.
@@ -332,8 +335,13 @@ String tmdbRatingText(double rating) => rating.toStringAsFixed(1);
 /// Full poster URL for a TMDB `poster_path` (w342 grid / w500 detail). Pure.
 String tmdbPosterUrl(String? path, {bool big = false}) =>
     (path == null || path.isEmpty)
-        ? ''
-        : 'https://image.tmdb.org/t/p/${big ? 'w500' : 'w342'}$path';
+    ? ''
+    : 'https://image.tmdb.org/t/p/${big ? 'w500' : 'w342'}$path';
+
+/// w780 backdrop URL — wide 16:9 art for the OTT hero carousel. Pure.
+String tmdbBackdropUrl(String? path) => (path == null || path.isEmpty)
+    ? ''
+    : 'https://image.tmdb.org/t/p/w780$path';
 
 /// w500 backdrop URL — the movie "screenshots" (scene stills). Pure.
 String tmdbScreenshotUrl(String path) =>
@@ -446,7 +454,11 @@ TmdbPage parseTmdbMultiPage(String jsonBody) {
       for (final e in results) {
         if (e is! Map) continue;
         final type = '${e['media_type'] ?? ''}';
-        final kind = type == 'tv' ? 'tv' : type == 'movie' ? 'movie' : null;
+        final kind = type == 'tv'
+            ? 'tv'
+            : type == 'movie'
+            ? 'movie'
+            : null;
         if (kind == null) continue;
         final m = _movieFromMap(e, kind: kind);
         if (m != null) items.add(m);
@@ -514,11 +526,13 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
           final prof = c['profile_path']?.toString();
           if (name.isNotEmpty) {
             cast.add(name);
-            castMembers.add(TmdbCastMember(
-              name: name,
-              character: character,
-              profilePath: prof,
-            ));
+            castMembers.add(
+              TmdbCastMember(
+                name: name,
+                character: character,
+                profilePath: prof,
+              ),
+            );
           }
           if (castMembers.length >= 20) break;
         }
@@ -548,8 +562,9 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
       director: director,
       cast: cast,
       castMembers: castMembers,
-      runtimeMinutes:
-          decoded['runtime'] is num ? (decoded['runtime'] as num).toInt() : 0,
+      runtimeMinutes: decoded['runtime'] is num
+          ? (decoded['runtime'] as num).toInt()
+          : 0,
       genres: genres,
       tagline: '${decoded['tagline'] ?? ''}'.trim(),
       voteCount: decoded['vote_count'] is num
@@ -560,9 +575,12 @@ TmdbDetailExtras parseTmdbExtras(String jsonBody) {
           '${decoded['release_date'] ?? decoded['first_air_date'] ?? ''}'
               .trim(),
       originalTitle: '${decoded['original_title'] ?? ''}'.trim(),
-      budgetUsd: decoded['budget'] is num ? (decoded['budget'] as num).toInt() : 0,
-      revenueUsd:
-          decoded['revenue'] is num ? (decoded['revenue'] as num).toInt() : 0,
+      budgetUsd: decoded['budget'] is num
+          ? (decoded['budget'] as num).toInt()
+          : 0,
+      revenueUsd: decoded['revenue'] is num
+          ? (decoded['revenue'] as num).toInt()
+          : 0,
       companies: _namesList(decoded['production_companies']),
       countries: _namesList(decoded['production_countries']),
       certification: _certification(decoded),
@@ -611,8 +629,11 @@ TmdbWatchInfo parseTmdbWatchProviders(String jsonBody, {String region = 'IN'}) {
 
 /// Real TMDB user reviews (author, optional 0..10 rating, full text).
 /// Never throws. Pure.
-List<TmdbReview> parseTmdbReviews(String jsonBody,
-    {int count = 20, int maxChars = 4000}) {
+List<TmdbReview> parseTmdbReviews(
+  String jsonBody, {
+  int count = 20,
+  int maxChars = 4000,
+}) {
   try {
     final decoded = jsonDecode(jsonBody);
     if (decoded is! Map) return const [];
@@ -686,13 +707,15 @@ List<TmdbSeason> parseTmdbSeasons(String jsonBody) {
       final vote = e['vote_average'] is num
           ? (e['vote_average'] as num).toDouble()
           : 0.0;
-      out.add(TmdbSeason(
-        number: n,
-        name: name.isEmpty ? (n == 0 ? 'Specials' : 'Season $n') : name,
-        episodes: eps,
-        year: air.length >= 4 ? int.tryParse(air.substring(0, 4)) : null,
-        rating: vote,
-      ));
+      out.add(
+        TmdbSeason(
+          number: n,
+          name: name.isEmpty ? (n == 0 ? 'Specials' : 'Season $n') : name,
+          episodes: eps,
+          year: air.length >= 4 ? int.tryParse(air.substring(0, 4)) : null,
+          rating: vote,
+        ),
+      );
     }
     if (out.isEmpty) {
       final ns = decoded['number_of_seasons'] is num
@@ -702,11 +725,13 @@ List<TmdbSeason> parseTmdbSeasons(String jsonBody) {
           ? (decoded['number_of_episodes'] as num).toInt()
           : 0;
       if (ns > 0) {
-        out.add(TmdbSeason(
-          number: ns,
-          name: '$ns season${ns == 1 ? '' : 's'} in total',
-          episodes: ne,
-        ));
+        out.add(
+          TmdbSeason(
+            number: ns,
+            name: '$ns season${ns == 1 ? '' : 's'} in total',
+            episodes: ne,
+          ),
+        );
       }
     }
     return out;
@@ -715,7 +740,10 @@ List<TmdbSeason> parseTmdbSeasons(String jsonBody) {
   }
 }
 
-TmdbSeasonDetail? parseTmdbSeasonDetail(String jsonBody, {int seasonNumber = 1}) {
+TmdbSeasonDetail? parseTmdbSeasonDetail(
+  String jsonBody, {
+  int seasonNumber = 1,
+}) {
   try {
     final decoded = jsonDecode(jsonBody);
     if (decoded is! Map) return null;
@@ -737,21 +765,24 @@ TmdbSeasonDetail? parseTmdbSeasonDetail(String jsonBody, {int seasonNumber = 1})
         final epVote = ep['vote_average'] is num
             ? (ep['vote_average'] as num).toDouble()
             : 0.0;
-        final epRuntime =
-            ep['runtime'] is num ? (ep['runtime'] as num).toInt() : 0;
+        final epRuntime = ep['runtime'] is num
+            ? (ep['runtime'] as num).toInt()
+            : 0;
         final epOverview = '${ep['overview'] ?? ''}'.trim();
         final epStill = ep['still_path']?.toString();
         final epAir = ep['air_date']?.toString();
 
-        episodes.add(TmdbEpisode(
-          episodeNumber: epNum,
-          name: epName,
-          overview: epOverview,
-          rating: epVote,
-          runtimeMinutes: epRuntime,
-          stillPath: epStill,
-          airDate: epAir,
-        ));
+        episodes.add(
+          TmdbEpisode(
+            episodeNumber: epNum,
+            name: epName,
+            overview: epOverview,
+            rating: epVote,
+            runtimeMinutes: epRuntime,
+            stillPath: epStill,
+            airDate: epAir,
+          ),
+        );
       }
     }
 
@@ -770,16 +801,45 @@ TmdbSeasonDetail? parseTmdbSeasonDetail(String jsonBody, {int seasonNumber = 1})
 /// Common ISO-639-1 codes -> readable language names. Pure.
 String tmdbLanguageName(String code) {
   const names = {
-    'en': 'English', 'hi': 'Hindi', 'ta': 'Tamil', 'te': 'Telugu',
-    'ml': 'Malayalam', 'kn': 'Kannada', 'bn': 'Bengali', 'mr': 'Marathi',
-    'pa': 'Punjabi', 'ur': 'Urdu', 'ar': 'Arabic', 'es': 'Spanish',
-    'fr': 'French', 'de': 'German', 'it': 'Italian', 'pt': 'Portuguese',
-    'ru': 'Russian', 'ja': 'Japanese', 'ko': 'Korean', 'zh': 'Chinese',
-    'cn': 'Chinese', 'th': 'Thai', 'tr': 'Turkish', 'id': 'Indonesian',
-    'vi': 'Vietnamese', 'nl': 'Dutch', 'sv': 'Swedish', 'pl': 'Polish',
-    'ms': 'Malay', 'fa': 'Persian', 'he': 'Hebrew', 'uk': 'Ukrainian',
-    'cs': 'Czech', 'da': 'Danish', 'fi': 'Finnish', 'no': 'Norwegian',
-    'el': 'Greek', 'hu': 'Hungarian', 'ro': 'Romanian',
+    'en': 'English',
+    'hi': 'Hindi',
+    'ta': 'Tamil',
+    'te': 'Telugu',
+    'ml': 'Malayalam',
+    'kn': 'Kannada',
+    'bn': 'Bengali',
+    'mr': 'Marathi',
+    'pa': 'Punjabi',
+    'ur': 'Urdu',
+    'ar': 'Arabic',
+    'es': 'Spanish',
+    'fr': 'French',
+    'de': 'German',
+    'it': 'Italian',
+    'pt': 'Portuguese',
+    'ru': 'Russian',
+    'ja': 'Japanese',
+    'ko': 'Korean',
+    'zh': 'Chinese',
+    'cn': 'Chinese',
+    'th': 'Thai',
+    'tr': 'Turkish',
+    'id': 'Indonesian',
+    'vi': 'Vietnamese',
+    'nl': 'Dutch',
+    'sv': 'Swedish',
+    'pl': 'Polish',
+    'ms': 'Malay',
+    'fa': 'Persian',
+    'he': 'Hebrew',
+    'uk': 'Ukrainian',
+    'cs': 'Czech',
+    'da': 'Danish',
+    'fi': 'Finnish',
+    'no': 'Norwegian',
+    'el': 'Greek',
+    'hu': 'Hungarian',
+    'ro': 'Romanian',
   };
   return names[code] ?? code.toUpperCase();
 }
@@ -891,8 +951,10 @@ class TmdbClient {
   Future<String> _get(Uri uri) async {
     Object? lastError;
     for (var round = 0; round < 2; round++) {
-      for (final host
-          in [_activeHost, ..._hosts.where((h) => h != _activeHost)]) {
+      for (final host in [
+        _activeHost,
+        ..._hosts.where((h) => h != _activeHost),
+      ]) {
         try {
           final req = await _http
               .getUrl(uri.replace(host: host))
@@ -922,8 +984,11 @@ class TmdbClient {
   }
 
   /// Fresh cache (<= ttl) -> network (write cache) -> stale cache -> null.
-  Future<String?> _fetch(String cacheName, Uri uri,
-      {Duration ttl = const Duration(hours: 24)}) async {
+  Future<String?> _fetch(
+    String cacheName,
+    Uri uri, {
+    Duration ttl = const Duration(hours: 24),
+  }) async {
     final f = _cacheFile(cacheName);
     try {
       if (f != null && await f.exists()) {
@@ -948,8 +1013,11 @@ class TmdbClient {
   }
 
   /// One page for the filter chips (paging gives thousands more).
-  Future<TmdbPage> browse(DiscoverFilter f,
-      {int page = 1, bool force = false}) async {
+  Future<TmdbPage> browse(
+    DiscoverFilter f, {
+    int page = 1,
+    bool force = false,
+  }) async {
     if (AppConfig.tmdbToken.isEmpty) return const TmdbPage();
     final cacheName = discoverCacheName(f, page);
     final Uri uri;
@@ -964,8 +1032,11 @@ class TmdbClient {
         ...tmdbDiscoverQuery(f, page),
       });
     }
-    final body = await _fetch(cacheName, uri,
-        ttl: force ? Duration.zero : const Duration(hours: 24));
+    final body = await _fetch(
+      cacheName,
+      uri,
+      ttl: force ? Duration.zero : const Duration(hours: 24),
+    );
     return body == null
         ? const TmdbPage()
         : parseTmdbPage(body, kind: f.tv ? 'tv' : 'movie');
@@ -979,8 +1050,10 @@ class TmdbClient {
       if (dir == null) return null;
       final file = File('${dir.path}/${discoverCacheName(f, 1)}');
       if (!await file.exists()) return null;
-      final page = parseTmdbPage(await file.readAsString(),
-          kind: f.tv ? 'tv' : 'movie');
+      final page = parseTmdbPage(
+        await file.readAsString(),
+        kind: f.tv ? 'tv' : 'movie',
+      );
       return page.items.isEmpty ? null : page;
     } catch (_) {
       return null;
@@ -988,50 +1061,67 @@ class TmdbClient {
   }
 
   /// The Discover SEARCH bar — searches TMDB's whole catalogue.
-  Future<TmdbPage> searchMovies(String query,
-      {int page = 1, bool force = false}) async {
+  Future<TmdbPage> searchMovies(
+    String query, {
+    int page = 1,
+    bool force = false,
+  }) async {
     final q = query.trim();
     if (AppConfig.tmdbToken.isEmpty || q.isEmpty) return const TmdbPage();
     final uri = Uri.https(_host, '/3/search/movie', {
       ...tmdbSearchQuery(q, page),
     });
-    final body = await _fetch(tmdbSearchCacheName(q, page), uri,
-        ttl: force ? Duration.zero : const Duration(hours: 24));
+    final body = await _fetch(
+      tmdbSearchCacheName(q, page),
+      uri,
+      ttl: force ? Duration.zero : const Duration(hours: 24),
+    );
     return body == null ? const TmdbPage() : parseTmdbPage(body);
   }
 
   /// ONE multi-search across movies AND series (people are dropped in the
   /// parser).
-  Future<TmdbPage> searchMulti(String query,
-      {int page = 1, bool force = false}) async {
+  Future<TmdbPage> searchMulti(
+    String query, {
+    int page = 1,
+    bool force = false,
+  }) async {
     final q = query.trim();
     if (AppConfig.tmdbToken.isEmpty || q.isEmpty) return const TmdbPage();
     final uri = Uri.https(_host, '/3/search/multi', {
       ...tmdbSearchQuery(q, page),
     });
-    final body = await _fetch(tmdbSearchCacheName('multi_$q', page), uri,
-        ttl: force ? Duration.zero : const Duration(hours: 24));
+    final body = await _fetch(
+      tmdbSearchCacheName('multi_$q', page),
+      uri,
+      ttl: force ? Duration.zero : const Duration(hours: 24),
+    );
     return body == null ? const TmdbPage() : parseTmdbMultiPage(body);
   }
 
   /// One call brings videos+credits+images+watch-providers+reviews and
   /// (for TV) the full seasons list. Cache name _v5 matches old app.
-  Future<TmdbFull?> fullDetail(int id,
-      {String kind = 'movie', bool force = false}) async {
+  Future<TmdbFull?> fullDetail(
+    int id, {
+    String kind = 'movie',
+    bool force = false,
+  }) async {
     if (AppConfig.tmdbToken.isEmpty) return null;
     final isTv = kind == 'tv';
     final uri = Uri.https(_host, '/3/$kind/$id', {
       'language': 'en-US',
       'append_to_response': isTv
           ? 'videos,credits,images,watch/providers,reviews,'
-              'content_ratings,translations'
+                'content_ratings,translations'
           : 'videos,credits,images,watch/providers,reviews,'
-              'release_dates,translations',
+                'release_dates,translations',
       'include_image_language': 'en,null',
     });
     final body = await _fetch(
-        isTv ? 'tmdb_tv_v5_$id.json' : 'tmdb_movie_v5_$id.json', uri,
-        ttl: force ? Duration.zero : const Duration(hours: 24));
+      isTv ? 'tmdb_tv_v5_$id.json' : 'tmdb_movie_v5_$id.json',
+      uri,
+      ttl: force ? Duration.zero : const Duration(hours: 24),
+    );
     if (body == null) return null;
     final parsed = parseTmdbDetail(body);
     if (parsed == null) return null;
@@ -1046,30 +1136,39 @@ class TmdbClient {
     );
   }
 
-  Future<TmdbSeasonDetail?> seasonDetail(int tvId, int seasonNumber,
-      {bool force = false}) async {
+  Future<TmdbSeasonDetail?> seasonDetail(
+    int tvId,
+    int seasonNumber, {
+    bool force = false,
+  }) async {
     if (AppConfig.tmdbToken.isEmpty) return null;
     final cacheName = 'tmdb_tv_${tvId}_s${seasonNumber}_detail.json';
     final uri = Uri.https(_host, '/3/tv/$tvId/season/$seasonNumber', {
       'language': 'en-US',
     });
-    final body = await _fetch(cacheName, uri,
-        ttl: force ? Duration.zero : const Duration(hours: 24));
+    final body = await _fetch(
+      cacheName,
+      uri,
+      ttl: force ? Duration.zero : const Duration(hours: 24),
+    );
     if (body == null) return null;
     return parseTmdbSeasonDetail(body, seasonNumber: seasonNumber);
   }
 
   /// RELATED movies/series — TMDB's similar endpoint. Cached 24h.
-  Future<List<TmdbMovie>> similar(int id,
-      {String kind = 'movie', bool force = false}) async {
+  Future<List<TmdbMovie>> similar(
+    int id, {
+    String kind = 'movie',
+    bool force = false,
+  }) async {
     if (AppConfig.tmdbToken.isEmpty) return const [];
-    final uri = Uri.https(_host, '/3/$kind/$id/similar', {
-      'language': 'en-US',
-    });
+    final uri = Uri.https(_host, '/3/$kind/$id/similar', {'language': 'en-US'});
     final body = await _fetch(
-        kind == 'tv' ? 'tmdb_tv_similar_$id.json' : 'tmdb_similar_$id.json',
-        uri,
-        ttl: force ? Duration.zero : const Duration(hours: 24));
+      kind == 'tv' ? 'tmdb_tv_similar_$id.json' : 'tmdb_similar_$id.json',
+      uri,
+      ttl: force ? Duration.zero : const Duration(hours: 24),
+    );
     return body == null ? const [] : parseTmdbList(body, kind: kind);
   }
 }
+

@@ -710,6 +710,9 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(list.length, 2);
       expect(tmdbScreenshotUrl(list.first),
           'https://image.tmdb.org/t/p/w500/1.jpg');
+      expect(tmdbBackdropUrl('/hero.jpg'),
+          'https://image.tmdb.org/t/p/w780/hero.jpg');
+      expect(tmdbBackdropUrl(null), '');
     });
 
     test('parseTmdbSeasons reads per-season ratings', () {
@@ -1304,4 +1307,5 @@ group('gestureTickFor (v1.0.17 swipe haptics)', () {
   });
 });
 }
+
 
