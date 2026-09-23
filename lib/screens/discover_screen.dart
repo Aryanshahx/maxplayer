@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:photo_manager/photo_manager.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:photo_manager/photo_manager.dart';
 
+import '../services/native_bridge.dart';
 import '../services/recommendations.dart';
 import '../theme.dart';
 import '../utils/config.dart';
@@ -13,25 +14,24 @@ import '../utils/movie_match.dart';
 import '../utils/tmdb.dart';
 import '../utils/tmdb_image.dart';
 import '../widgets/ai_suggest_sheet.dart';
-import '../services/native_bridge.dart';
 import 'movie_detail_screen.dart';
 
-/// "Discover" — OTT-app home screen:
+/// "Discover" — OTT platform home, rebuilt from scratch (v1.0.1+15).
 ///
-/// A Netflix / Prime-Video style front page: a big auto-trending HERO
-/// carousel on top (backdrop + title + rating), then horizontal POSTER
-/// RAILS — one per section (Trending, Upcoming, Hollywood, Bollywood,
-/// Action… plus series rails) — each with its own lazy page loading when
-/// it reaches the end. A search bar at the top fully replaces the home
-/// with an infinite-scrolling results grid while you type. Tapping any
-/// card opens the shared movie detail sheet. ✨ AI Suggestor lives as a
-/// floating button.
+/// Layout, top to bottom:
+///   1. PINNED Search bar row — always on screen: search field + mic
+///      (voice search) + ✨ AI Suggestor. Never scrolls away, never hides.
+///   2. Full-bleed HERO carousel of trending titles (16:9-ish backdrop,
+///      title + chips + Details button, dot indicators, auto-advance).
+///   3. Horizontal poster rails, one per TMDB section (now also: Indian
+///      regional movies + Indian serial/TV rails).
+///   4. While typing, the home swaps for an infinite results grid.
 ///
-/// Written fresh for v1.0.1+13 — shares only the data layer (TmdbClient,
-/// TmdbImage disk cache, MovieDetailSheet) with the rest of the app.
+/// Cards are laid out with FULLY-reserved text space (2 title lines + year
+/// line) so titles can't be clipped, on ALL display sizes.
 class DiscoverScreen extends StatefulWidget {
-  /// The already-scanned local library — used ONLY for "In my library"
-  /// matching (read-only; the video scan is never touched).
+  /// The already-scanned local library, used ONLY for "in my library"
+  /// matching on tap (read-only; the scan itself is never touched).
   final List<AssetEntity> videos;
 
   const DiscoverScreen({super.key, required this.videos});
@@ -40,10 +40,10 @@ class DiscoverScreen extends StatefulWidget {
   State<DiscoverScreen> createState() => _DiscoverScreenState();
 }
 
-/// Mutable state bucket per horizontal rail.
+/// Per-rail mutable state.
 class _RailState {
   final DiscoverFilter filter;
-  final ScrollController scroll;
+  final ScrollController scroll = ScrollController();
   final List<TmdbMovie> items = [];
   final Set<int> seen = {};
   int page = 0;
@@ -51,7 +51,7 @@ class _RailState {
   bool loading = false;
   bool failed = false;
 
-  _RailState(this.filter) : scroll = ScrollController();
+  _RailState(this.filter);
 
   String get title => filter.tv ? '${filter.label} • Series' : filter.label;
 }
@@ -59,39 +59,39 @@ class _RailState {
 class _DiscoverScreenState extends State<DiscoverScreen> {
   final TmdbClient _client = TmdbClient();
   final TextEditingController _searchCtrl = TextEditingController();
-  final PageController _heroCtrl = PageController(viewportFraction: 0.92);
+  final PageController _heroCtrl = PageController();
+  final ScrollController _homeScroll = ScrollController();
   Timer? _searchDebounce;
   Timer? _heroTimer;
 
-  /// Hero pages: trending titles that carry a backdrop image.
   List<TmdbMovie> _hero = [];
   int _heroIndex = 0;
 
   final List<_RailState> _rails = [for (final f in kAllFilters) _RailState(f)];
 
-  // Search grid (home is hidden while searching, OTT-style "Search" tab).
-  final ScrollController _grid = ScrollController();
+  RecentItem? _anchor;
+  List<TmdbMovie> _pickedForYou = const [];
+
+  // Search-mode state
+  String _query = '';
   final List<TmdbMovie> _results = [];
   final Set<int> _resultIds = {};
-  String _query = '';
   int _queryPage = 0;
   int _queryTotalPages = 1;
   bool _queryLoading = false;
-  List<TmdbMovie> _similar = const [];
-
-  RecentItem? _anchor;
-  List<TmdbMovie> _pickedForYou = const [];
+  final ScrollController _gridScroll = ScrollController();
 
   bool _booting = true;
   bool _keyMissing = false;
   bool _voiceSearching = false;
-  int _token = 0; // stale-response guard
+  int _token = 0;
+
   bool get _searching => _query.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
-    _grid.addListener(_onGridEnd);
+    _gridScroll.addListener(_onGridEnd);
     _bootstrap();
   }
 
@@ -100,15 +100,16 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     _searchDebounce?.cancel();
     _heroTimer?.cancel();
     _heroCtrl.dispose();
+    _homeScroll.dispose();
+    _gridScroll.dispose();
     _searchCtrl.dispose();
-    _grid.dispose();
     for (final r in _rails) {
       r.scroll.dispose();
     }
     super.dispose();
   }
 
-  // ---------------------------------------------------------------- boot
+  // ------------------------------------------------------------- data ---
 
   Future<void> _bootstrap() async {
     final cachePath = await TmdbImage.initCacheDir();
@@ -123,7 +124,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       return;
     }
 
-    // Instant first paint from TMDB's 24h disk cache (one per rail).
+    // First paint: whatever TMDB's 24h disk cache holds (stale-ok).
     for (final r in _rails) {
       final cached = await _client.cachedBrowseFirstPage(r.filter);
       if (!mounted) return;
@@ -139,9 +140,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     }
     setState(() => _booting = false);
     _rebuildHero();
-
-    // Live refresh of every rail — chunked so the first (Trending) rail
-    // lands before the network fan-out continues.
     unawaited(_loadFirstPages());
     unawaited(_loadRecommendations());
   }
@@ -150,11 +148,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     final token = _token;
     const chunk = 4;
     for (var i = 0; i < _rails.length; i += chunk) {
-      final slice = _rails.sublist(
-        i,
-        (i + chunk) > _rails.length ? _rails.length : (i + chunk),
-      );
-      await Future.wait(slice.map((r) => _fillRail(r, 1)));
+      final end = (i + chunk) > _rails.length ? _rails.length : (i + chunk);
+      await Future.wait(_rails.sublist(i, end).map((r) => _fillRail(r, 1)));
       if (!mounted || token != _token) return;
       _rebuildHero();
     }
@@ -174,10 +169,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     } catch (_) {}
   }
 
-  // ---------------------------------------------------------------- rails
-
   Future<void> _fillRail(_RailState r, int page) async {
-    if (r.loading || (page != 1 && r.page >= r.totalPages)) return;
+    if (r.loading || (page != 1 && (r.page >= r.totalPages || page > 2))) {
+      return;
+    }
     r.loading = true;
     TmdbPage result;
     try {
@@ -201,25 +196,33 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     });
   }
 
-  void _attachRailEndProbing(_RailState r) {
-    if (!r.scroll.hasClients) return;
-    final pos = r.scroll.position;
-    if (pos.pixels > pos.maxScrollExtent - 250 &&
-        r.page < r.totalPages &&
-        !r.loading) {
-      _fillRail(r, r.page + 1);
-    }
+  Future<void> _refreshAll() async {
+    _token++;
+    setState(() {
+      for (final r in _rails) {
+        r.items.clear();
+        r.seen.clear();
+        r.page = 0;
+        r.totalPages = 1;
+        r.failed = false;
+      }
+      _hero = const [];
+      _pickedForYou = const [];
+    });
+    await Future.wait([
+      for (final r in _rails) _fillRail(r, 1),
+      _loadRecommendations(),
+    ]);
+    _rebuildHero();
   }
 
   void _rebuildHero() {
-    // Hero carries trending titles that have a TRUE backdrop (16:9) —
-    // posters would crop badly in the wide frame.
     final trending = _rails.isEmpty ? const <TmdbMovie>[] : _rails.first.items;
     final withBackdrop = trending
         .where((m) => (m.backdropPath ?? '').isNotEmpty)
         .toList();
-    if (withBackdrop.length > _hero.length || _hero.isEmpty) {
-      setState(() => _hero = withBackdrop.take(6).toList());
+    if (withBackdrop.length >= _hero.length || _hero.isEmpty) {
+      setState(() => _hero = withBackdrop.take(7).toList());
       _restartHeroTimer();
     }
   }
@@ -229,6 +232,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     if (_hero.length < 2) return;
     _heroTimer = Timer.periodic(const Duration(seconds: 6), (_) {
       if (!mounted || !_heroCtrl.hasClients || _hero.isEmpty) return;
+      // If the user is currently interacting, skip this frame.
+      if (_heroCtrl.position.isScrollingNotifier.value) return;
       final next = (_heroIndex + 1) % _hero.length;
       _heroCtrl.animateToPage(
         next,
@@ -238,14 +243,39 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     });
   }
 
-  // --------------------------------------------------------------- search
+  // ----------------------------------------------------------- search ---
 
   void _onSearchChanged(String v) {
+    setState(() {}); // swap clear-button visibility instantly
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 350), () {
       final q = v.trim();
       if (q != _query) _startSearch(q);
     });
+  }
+
+  Future<void> _startVoiceSearch() async {
+    if (_voiceSearching) return;
+    final mic = await Permission.microphone.request();
+    if (!mounted) return;
+    if (!mic.isGranted) {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Microphone needed for voice search'),
+            duration: Duration(milliseconds: 1800),
+          ),
+        );
+      return;
+    }
+    setState(() => _voiceSearching = true);
+    final query = await NativeBridge.launchSystemVoiceSearch();
+    if (!mounted) return;
+    setState(() => _voiceSearching = false);
+    if (query == null || query.isEmpty) return;
+    _searchCtrl.text = query;
+    _onSearchChanged(query);
   }
 
   Future<void> _startSearch(String q) async {
@@ -255,22 +285,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       _resultIds.clear();
       _queryPage = 0;
       _queryTotalPages = 1;
-      _similar = const [];
     });
     if (q.isEmpty) return;
     await _searchMore(1);
-    if (_results.isNotEmpty && mounted) {
-      final first = _results.first;
-      List<TmdbMovie> sim;
-      try {
-        sim = await _client.similar(first.id, kind: first.kind);
-      } catch (_) {
-        sim = const [];
-      }
-      if (mounted && _query == q) {
-        setState(() => _similar = sim.take(12).toList());
-      }
-    }
   }
 
   Future<void> _searchMore(int page) async {
@@ -298,19 +315,17 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 
   void _onGridEnd() {
-    if (!_grid.hasClients || _queryLoading) return;
-    final pos = _grid.position;
+    if (!_gridScroll.hasClients || _queryLoading) return;
+    final pos = _gridScroll.position;
     if (pos.pixels >= pos.maxScrollExtent - 350) {
       _searchMore(_queryPage + 1);
     }
   }
 
-  // --------------------------------------------------------------- detail
+  // -------------------------------------------------------- navigation ---
 
   void _openMovie(TmdbMovie movie) {
     final match = findLocalMovie(movie.title, movie.year, widget.videos);
-    // v1.0.1+14: tapping a banner/poster opens a proper separate screen
-    // (full-page detail, like Netflix/Prime) — not a bottom sheet.
     MovieDetailScreen.open(
       context,
       movie: movie,
@@ -324,111 +339,107 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     if (movie != null && mounted) _openMovie(movie);
   }
 
-  /// Voice search (restored v1.0.1+14): mic permission -> system Google
-  /// speech dialog -> recognized text into the search bar.
-  Future<void> _startVoiceSearch() async {
-    if (_voiceSearching) return;
-    final mic = await Permission.microphone.request();
-    if (!mounted) return;
-    if (!mic.isGranted) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('Microphone needed for voice search'),
-            duration: Duration(milliseconds: 1800),
-          ),
-        );
-      return;
-    }
-    setState(() => _voiceSearching = true);
-    final query = await NativeBridge.launchSystemVoiceSearch();
-    if (!mounted) return;
-    setState(() => _voiceSearching = false);
-    if (query == null || query.isEmpty) return;
-    _searchCtrl.text = query;
-    _onSearchChanged(query);
-  }
-
-  Future<void> _refreshAll() async {
-    _token++;
-    setState(() {
-      for (final r in _rails) {
-        r.items.clear();
-        r.seen.clear();
-        r.page = 0;
-        r.totalPages = 1;
-        r.failed = false;
-      }
-      _hero = const [];
-      _pickedForYou = const [];
-    });
-    await Future.wait([
-      for (final r in _rails) _fillRail(r, 1),
-      _loadRecommendations(),
-    ]);
-    _rebuildHero();
-  }
-
-  // ----------------------------------------------------------------- ui
+  // ----------------------------------------------------------------- ui ---
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0d0d12),
+      backgroundColor: const Color(0xFF0a0a10),
       body: _keyMissing
-          ? _buildKeyMissing()
+          ? const _NoKeyBody()
           : SafeArea(
-              child: _searching ? _buildSearchingBody() : _buildOttHome(),
-            ),
-    );
-  }
-
-  /// Search mode keeps the search bar pinned so the keyboard works; on the
-  /// OTT home it slides away as the FIRST sliver while scrolling — the
-  /// "remove the search bar area on scroll down" behaviour from Netflix.
-  Widget _buildSearchingBody() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildSearchBar(),
-        Expanded(child: _buildSearchResults()),
-      ],
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(
-            color: _searching
-                ? AppColors.accent.withValues(alpha: 0.6)
-                : Colors.white10,
-          ),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.search, color: Colors.white54, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: TextField(
-                controller: _searchCtrl,
-                style: const TextStyle(color: Colors.white, fontSize: 14.5),
-                decoration: const InputDecoration(
-                  hintText: 'Search movies & series…',
-                  hintStyle: TextStyle(color: Colors.white30, fontSize: 14),
-                  border: InputBorder.none,
-                ),
-                onChanged: _onSearchChanged,
+              child: Column(
+                children: [
+                  _buildSearchBar(),
+                  Expanded(
+                    child: _searching ? _buildSearchResults() : _buildOttHome(),
+                  ),
+                ],
               ),
             ),
-            // Voice search (restored) right after the field…
-            IconButton(
+    );
+  }
+
+  /// Pinned top bar — a fixed-height row, always on screen no matter how
+  /// far the OTT home scrolls: search field, voice mic, ✨ AI Suggestor.
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0a0a10),
+        border: Border(
+          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Search field
+          Expanded(
+            child: Container(
+              height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: _searching
+                      ? AppColors.accent.withValues(alpha: 0.6)
+                      : Colors.white10,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.search,
+                    color: _searching ? AppColors.accent : Colors.white54,
+                    size: 19,
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtrl,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14.5,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: 'Search movies, series…',
+                        hintStyle: TextStyle(
+                          color: Colors.white30,
+                          fontSize: 14,
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
+                      onChanged: _onSearchChanged,
+                    ),
+                  ),
+                  if (_searchCtrl.text.isNotEmpty)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        _searchCtrl.clear();
+                        _startSearch('');
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(3),
+                        child: Icon(
+                          Icons.close,
+                          color: Colors.white54,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          // Voice search
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: IconButton(
               icon: _voiceSearching
                   ? const SizedBox(
                       width: 18,
@@ -440,85 +451,58 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     )
                   : const Icon(
                       Icons.mic_none_rounded,
-                      color: Colors.white54,
-                      size: 20,
+                      color: Colors.white70,
+                      size: 21,
                     ),
               tooltip: 'Voice search',
               onPressed: _startVoiceSearch,
             ),
-            // …and the ✨ AI Suggestor next to it (was a floating button).
-            IconButton(
-              icon: Text(
-                '✨',
-                style: TextStyle(
-                  color: AppColors.accent.withValues(alpha: 0.95),
-                  fontSize: 16,
+          ),
+          // AI Suggestor
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: IconButton(
+              icon: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.13),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.accent.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: const Center(
+                  child: Text('✨', style: TextStyle(fontSize: 14)),
                 ),
               ),
               tooltip: 'AI Suggestor',
               onPressed: _aiSuggest,
             ),
-            if (_searchCtrl.text.isNotEmpty)
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.white54, size: 19),
-                onPressed: () {
-                  _searchCtrl.clear();
-                  _startSearch('');
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildKeyMissing() {
-    return const SafeArea(
-      child: Center(
-        child: Padding(
-          padding: EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.vpn_key_off, color: Colors.white24, size: 46),
-              SizedBox(height: 14),
-              Text(
-                'TMDB key missing',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Build with --dart-define=TMDB_TOKEN=… to enable the OTT home.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white38, fontSize: 12.5),
-              ),
-            ],
           ),
-        ),
+        ],
       ),
     );
   }
 
-  // ------------------------------------------------------------ OTT home
+  // ------------------------------------------------------------ home ---
 
   Widget _buildOttHome() {
-    if (_booting && _hero.isEmpty && _rails.every((r) => r.items.isEmpty)) {
-      return const _OttSkeleton();
-    }
+    final contentEmpty = _hero.isEmpty && _rails.every((r) => r.items.isEmpty);
+    if (_booting && contentEmpty) return const _OttSkeleton();
+
     return RefreshIndicator(
       onRefresh: _refreshAll,
       color: AppColors.accent,
       backgroundColor: const Color(0xFF1a1a22),
       child: CustomScrollView(
+        controller: _homeScroll,
         slivers: [
           SliverToBoxAdapter(
             child: _hero.isEmpty
                 ? const SizedBox(
-                    height: 210,
+                    height: 236,
                     child: Center(
                       child: CircularProgressIndicator(color: Colors.white24),
                     ),
@@ -544,7 +528,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 onNotification: (n) {
                   if (n is ScrollUpdateNotification ||
                       n is ScrollEndNotification) {
-                    _attachRailEndProbing(r);
+                    if (r.scroll.hasClients) {
+                      final pos = r.scroll.position;
+                      if (pos.pixels > pos.maxScrollExtent - 250 &&
+                          r.page < r.totalPages &&
+                          !r.loading) {
+                        _fillRail(r, r.page + 1);
+                      }
+                    }
                   }
                   return false;
                 },
@@ -561,9 +552,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 22),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 26),
               child: Text(
-                'Posters & data via TMDB — tiles you own play in-app.',
+                'Posters & metadata via TMDB.',
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.25),
                   fontSize: 10.5,
@@ -576,7 +567,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     );
   }
 
-  // -------------------------------------------------------- search grid
+  // -------------------------------------------------------- results ---
 
   Widget _buildSearchResults() {
     if (_results.isEmpty && !_queryLoading) {
@@ -591,29 +582,20 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       );
     }
     return CustomScrollView(
-      controller: _grid,
+      controller: _gridScroll,
       slivers: [
-        if (_similar.isNotEmpty)
-          SliverToBoxAdapter(
-            child: _PosterRail(
-              title: 'Similar to ${_results.first.title}',
-              movies: _similar,
-              onTap: _openMovie,
-            ),
-          ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(14, 4, 14, 20),
           sliver: SliverGrid(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
-              childAspectRatio: 0.55,
+              childAspectRatio: 0.56,
               mainAxisSpacing: 10,
               crossAxisSpacing: 10,
             ),
-            delegate: SliverChildBuilderDelegate((context, i) {
-              final m = _results[i];
-              return _PosterCard(movie: m, onTap: () => _openMovie(m));
-            }, childCount: _results.length),
+            delegate: SliverChildBuilderDelegate(
+              (context, i) => _PosterCard(movie: _results[i]),
+            ),
           ),
         ),
         if (_queryLoading)
@@ -630,12 +612,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 }
 
-// ============================================================================
-// OTT visual blocks — all built fresh for this screen.
-// ============================================================================
+// ==========================================================================
+// visual parts (all fresh code for this screen)
+// ==========================================================================
 
-/// Auto-rotating 16:9 backdrop carousel — the "billboard" every OTT app
-/// opens with (backdrop art, gradient scrim, title, rating, dots).
+/// Full-width auto-rotating trending billboard: backdrop art, gradient
+/// scrim, title + chips + Details CTA, plus dot indicators under it.
 class _HeroCarousel extends StatelessWidget {
   final PageController controller;
   final List<TmdbMovie> items;
@@ -652,9 +634,10 @@ class _HeroCarousel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
-          height: 246,
+          height: 222,
           child: PageView.builder(
             controller: controller,
             itemCount: items.length,
@@ -664,15 +647,15 @@ class _HeroCarousel extends StatelessWidget {
               final url = tmdbBackdropUrl(m.backdropPath);
               return Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 5,
+                  horizontal: 14,
                   vertical: 10,
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(18),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Container(color: const Color(0xFF1a1a24)),
+                      Container(color: const Color(0xFF181822)),
                       if (url.isNotEmpty)
                         TmdbImage(url: url, fit: BoxFit.cover),
                       // bottom scrim
@@ -682,43 +665,61 @@ class _HeroCarousel extends StatelessWidget {
                             gradient: LinearGradient(
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
+                              stops: const [0.35, 1.0],
                               colors: [
                                 Colors.transparent,
-                                Colors.black.withValues(alpha: 0.78),
+                                Colors.black.withValues(alpha: 0.85),
                               ],
                             ),
                           ),
                         ),
                       ),
-                      // title / meta / tap
+                      // content
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
                           onTap: () => onTap(m),
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-                            child: Align(
-                              alignment: Alignment.bottomLeft,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _MetaChips(movie: m),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    m.title,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 22,
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Spacer(),
+                                _MetaChips(movie: m),
+                                const SizedBox(height: 7),
+                                Text(
+                                  m.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 21,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.1,
+                                    letterSpacing: 0.15,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Text(
+                                    'DETAILS',
+                                    style: TextStyle(
+                                      color: Colors.black,
+                                      fontSize: 10.5,
                                       fontWeight: FontWeight.w900,
-                                      height: 1.1,
-                                      letterSpacing: 0.2,
+                                      letterSpacing: 1.1,
                                     ),
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -763,35 +764,44 @@ class _HeroDotsState extends State<_HeroDots> {
   void _onScroll() {
     if (!mounted || !widget.controller.hasClients) return;
     final p = widget.controller.page;
-    if (p != null && p.round() != _index) {
-      setState(() => _index = p.round().clamp(0, widget.count - 1));
+    if (p != null) {
+      final idx = p.round().clamp(0, widget.count - 1);
+      if (idx != _index) setState(() => _index = idx);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        for (var i = 0; i < widget.count; i++)
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            margin: const EdgeInsets.symmetric(horizontal: 2.5),
-            width: i == _index ? 18 : 6,
-            height: 6,
-            decoration: BoxDecoration(
-              color: i == _index ? AppColors.accent : Colors.white24,
-              borderRadius: BorderRadius.circular(3),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (var i = 0; i < widget.count; i++)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              margin: const EdgeInsets.symmetric(horizontal: 2.5),
+              width: i == _index ? 16 : 5,
+              height: 5,
+              decoration: BoxDecoration(
+                color: i == _index
+                    ? AppColors.accent
+                    : Colors.white.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(3),
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-/// One horizontal rail of posters with a section header. Cards show
-/// poster art (disk-cached via TmdbImage), title, rating.
+/// One horizontal rail of posters, sized so TWO title lines + year always
+/// fit: poster(130*1.5=195) + 6 + title(30) + 2 + year(11) = 244.
 class _PosterRail extends StatelessWidget {
+  static const double cardWidth = 130;
+  static const double cardHeight = 244;
+
   final String title;
   final List<TmdbMovie> movies;
   final ScrollController? scrollController;
@@ -813,36 +823,7 @@ class _PosterRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (movies.isEmpty && failed) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _RailHeader(title: title),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 4, 14, 18),
-            child: InkWell(
-              onTap: onRetry,
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                height: 96,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.03),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white12),
-                ),
-                child: Text(
-                  'Tap to retry',
-                  style: TextStyle(
-                    color: AppColors.accent.withValues(alpha: 0.85),
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
+      return _RailError(title: title, onRetry: onRetry);
     }
     if (movies.isEmpty) {
       return Column(
@@ -850,12 +831,12 @@ class _PosterRail extends StatelessWidget {
         children: [
           _RailHeader(title: title),
           SizedBox(
-            height: 196,
+            height: _PosterRail.cardHeight,
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               scrollDirection: Axis.horizontal,
-              itemCount: 6,
-              itemBuilder: (_, _) => const _PosterSkeletonCard(),
+              itemCount: 5,
+              itemBuilder: (_, _) => const _PosterSkeleton(),
               separatorBuilder: (_, _) => const SizedBox(width: 10),
             ),
           ),
@@ -865,23 +846,17 @@ class _PosterRail extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _RailHeader(title: title, onRefresh: null),
+        _RailHeader(title: title),
         SizedBox(
-          height: 196,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (_) => false,
-            child: ListView.builder(
-              controller: scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              scrollDirection: Axis.horizontal,
-              itemCount: movies.length,
-              itemBuilder: (context, i) {
-                final m = movies[i];
-                return Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: _PosterCard(movie: m, onTap: () => onTap(m)),
-                );
-              },
+          height: _PosterRail.cardHeight,
+          child: ListView.builder(
+            controller: scrollController,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            scrollDirection: Axis.horizontal,
+            itemCount: movies.length,
+            itemBuilder: (context, i) => Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: _PosterCard(movie: movies[i]),
             ),
           ),
         ),
@@ -892,21 +867,20 @@ class _PosterRail extends StatelessWidget {
 
 class _RailHeader extends StatelessWidget {
   final String title;
-  final VoidCallback? onRefresh;
-  const _RailHeader({required this.title, this.onRefresh});
+  const _RailHeader({required this.title});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 9),
       child: Row(
         children: [
           Container(
-            width: 10,
-            height: 10,
+            width: 11,
+            height: 11,
             decoration: BoxDecoration(
               color: AppColors.accent,
-              borderRadius: BorderRadius.circular(2),
+              borderRadius: BorderRadius.circular(2.5),
             ),
           ),
           const SizedBox(width: 8),
@@ -917,108 +891,170 @@ class _RailHeader extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 14.5,
+                fontSize: 15,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 0.2,
               ),
             ),
           ),
-          if (onRefresh != null)
-            Icon(Icons.chevron_right, color: AppColors.accent, size: 19),
+          Icon(
+            Icons.chevron_right,
+            color: Colors.white.withValues(alpha: 0.35),
+            size: 18,
+          ),
         ],
       ),
     );
   }
 }
 
+class _RailError extends StatelessWidget {
+  final String title;
+  final VoidCallback? onRetry;
+  const _RailError({required this.title, this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _RailHeader(title: title),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 4, 14, 16),
+          child: InkWell(
+            onTap: onRetry,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              height: 84,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.03),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Text(
+                'Could not load — tap to retry',
+                style: TextStyle(
+                  color: AppColors.accent.withValues(alpha: 0.85),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Poster card used on rails and in the search grid: art + EXACTLY two
+/// reserved title lines + one year line. Tap goes to the detail screen via
+/// the shared helper below.
 class _PosterCard extends StatelessWidget {
   final TmdbMovie movie;
-  final VoidCallback onTap;
 
-  const _PosterCard({required this.movie, required this.onTap});
+  const _PosterCard({required this.movie});
 
   @override
   Widget build(BuildContext context) {
     final posterUrl = tmdbPosterUrl(movie.posterPath);
     return SizedBox(
-      width: 122,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AspectRatio(
-              aspectRatio: 2 / 3,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Container(color: const Color(0xFF1c1c26)),
-                    if (posterUrl.isNotEmpty)
-                      TmdbImage(url: posterUrl, fit: BoxFit.cover),
-                    if (movie.rating > 0)
-                      Positioned(
-                        bottom: 6,
-                        left: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.55),
-                            borderRadius: BorderRadius.circular(5),
-                          ),
-                          child: Text(
-                            '★ ${tmdbRatingText(movie.rating)}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
+      width: _PosterRail.cardWidth,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _openMovieDefault(context, movie),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AspectRatio(
+                aspectRatio: 2 / 3,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Container(color: const Color(0xFF1a1a26)),
+                      if (posterUrl.isNotEmpty)
+                        TmdbImage(url: posterUrl, fit: BoxFit.cover),
+                      if (movie.rating > 0)
+                        Positioned(
+                          bottom: 6,
+                          left: 6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            child: Text(
+                              '★ ${tmdbRatingText(movie.rating)}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 32, // two full lines at 11.5/1.15 — never clipped
-              child: Text(
-                movie.title,
-                maxLines: 2,
-                softWrap: true,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11.5,
-                  height: 1.15,
+              const SizedBox(height: 6),
+              SizedBox(
+                // exactly two full lines at 11.5/1.15 — never clipped
+                height: 30,
+                child: Text(
+                  movie.title,
+                  maxLines: 2,
+                  softWrap: true,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11.5,
+                    height: 1.15,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              movie.year != null ? '${movie.year}' : ' ',
-              maxLines: 1,
-              style: const TextStyle(color: Colors.white38, fontSize: 10),
-            ),
-          ],
+              const SizedBox(height: 2),
+              SizedBox(
+                height: 11,
+                child: Text(
+                  movie.year != null ? '${movie.year}' : ' ',
+                  maxLines: 1,
+                  style: const TextStyle(color: Colors.white38, fontSize: 10),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _PosterSkeletonCard extends StatelessWidget {
-  const _PosterSkeletonCard();
+/// Default tap when the card is used without a custom handler (search grid
+/// cases where the state object isn't visible to the handler): opens the
+/// detail page through a BuildContext that carries the scanned library.
+void _openMovieDefault(BuildContext context, TmdbMovie movie) {
+  final state = context.findAncestorStateOfType<_DiscoverScreenState>();
+  if (state != null) {
+    state._openMovie(movie);
+  }
+}
+
+class _PosterSkeleton extends StatelessWidget {
+  const _PosterSkeleton();
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 122,
+      width: _PosterRail.cardWidth,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1031,19 +1067,19 @@ class _PosterSkeletonCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Container(
-            height: 11,
+            height: 10,
             width: 90,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(4),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 5),
           Container(
-            height: 9,
-            width: 34,
+            height: 10,
+            width: 60,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.03),
+              color: Colors.white.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(4),
             ),
           ),
@@ -1053,21 +1089,20 @@ class _PosterSkeletonCard extends StatelessWidget {
   }
 }
 
-/// The splash shown while the very first paint assembles — Netflix-style
-/// "skeleton" home with a big hero block + three placeholder rails.
+/// Splash skeleton while first paint assembles.
 class _OttSkeleton extends StatelessWidget {
   const _OttSkeleton();
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 6, 14, 16),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 16),
       child: Column(
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
             child: Container(
-              height: 198,
+              height: 202,
               color: Colors.white.withValues(alpha: 0.03),
             ),
           ),
@@ -1080,7 +1115,7 @@ class _OttSkeleton extends StatelessWidget {
                 children: [
                   Container(
                     height: 12,
-                    width: 120,
+                    width: 130,
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(4),
@@ -1089,10 +1124,10 @@ class _OttSkeleton extends StatelessWidget {
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      for (var i = 0; i < 4; i++)
+                      for (var i = 0; i < 3; i++)
                         Expanded(
                           child: Padding(
-                            padding: EdgeInsets.only(right: i == 3 ? 0 : 8),
+                            padding: EdgeInsets.only(right: i == 2 ? 0 : 8),
                             child: AspectRatio(
                               aspectRatio: 2 / 3,
                               child: ClipRRect(
@@ -1115,7 +1150,6 @@ class _OttSkeleton extends StatelessWidget {
   }
 }
 
-/// Year + score + kind badges under the hero title.
 class _MetaChips extends StatelessWidget {
   final TmdbMovie movie;
   const _MetaChips({required this.movie});
@@ -1137,13 +1171,49 @@ class _MetaChips extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
+        color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: Colors.white24),
       ),
       child: Text(
         text,
         style: const TextStyle(color: Colors.white, fontSize: 10.5),
+      ),
+    );
+  }
+}
+
+class _NoKeyBody extends StatelessWidget {
+  const _NoKeyBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SafeArea(
+      child: Center(
+        child: Padding(
+          padding: EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.vpn_key_off, color: Colors.white24, size: 46),
+              SizedBox(height: 14),
+              Text(
+                'TMDB key missing',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Build with --dart-define=TMDB_TOKEN=… to enable Discover.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white38, fontSize: 12.5),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

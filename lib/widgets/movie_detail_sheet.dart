@@ -86,10 +86,11 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
   }
 
   Future<void> _openTrailer(String key) async {
-    // v1.0.1+14: trailers play INSIDE the app (YouTube iframe) instead of
-    // kicking the user out to the YouTube app.
+    // v1.0.1+15: trailers play INSIDE the app in MaxPlayer's own MPV
+    // player via youtube_explode URL resolution (iframed WebView was
+    // blocked by YouTube with error 152-4).
     await TrailerPlayerScreen.open(widget.hostContext, key,
-        widget.movie.title);
+        '${widget.movie.title} — Trailer');
   }
 
   @override
@@ -1101,4 +1102,5 @@ class _PrimeCta extends StatelessWidget {
     );
   }
 }
+
 

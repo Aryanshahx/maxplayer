@@ -1,82 +1,70 @@
 import 'package:flutter/material.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-/// In-app trailer player (YouTube iframe) — trailers never redirect the
-/// user out of MaxPlayer to the YouTube app anymore (old UX complaint).
-class TrailerPlayerScreen extends StatefulWidget {
-  final String videoKey;
-  final String title;
+import '../screens/player_screen.dart';
+import '../utils/crash_log.dart';
 
-  const TrailerPlayerScreen({
-    super.key,
-    required this.videoKey,
-    required this.title,
-  });
+/// In-app trailer playback — YouTube embedding (WebView/iframe) gets blocked
+/// on many videos (152-4 "content unavailable"), so instead the direct
+/// progressive stream URL is resolved with youtube_explode and the trailer
+/// plays in MaxPlayer's own MPV player. Falls back to the YouTube app/tab
+/// only when every resolver path fails. v1.0.1+15.
+class TrailerPlayerScreen {
+  TrailerPlayerScreen._();
 
   static Future<void> open(
-      BuildContext context, String videoKey, String title) {
-    return Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => TrailerPlayerScreen(videoKey: videoKey, title: title),
-    ));
-  }
-
-  @override
-  State<TrailerPlayerScreen> createState() => _TrailerPlayerScreenState();
-}
-
-class _TrailerPlayerScreenState extends State<TrailerPlayerScreen> {
-  late final YoutubePlayerController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = YoutubePlayerController.fromVideoId(
-      videoId: widget.videoKey,
-      autoPlay: true,
-      params: const YoutubePlayerParams(
-        showFullscreenButton: true,
-        mute: false,
-      ),
+    BuildContext context,
+    String videoKey,
+    String title,
+  ) async {
+    final loading = showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          const Center(child: CircularProgressIndicator(color: Colors.white)),
     );
-  }
+    String? directUrl;
+    try {
+      final yt = YoutubeExplode();
+      try {
+        final manifest = await yt.videos.streams.getManifest(videoKey);
+        // muxed (progressive 360p/720p with audio) is what mpv needs.
+        final best = manifest.muxed.withHighestBitrate();
+        directUrl = best.url.toString();
+      } catch (e) {
+        CrashLog.error('trailer.resolve_failed', e, {'key': videoKey});
+      }
+      yt.close();
+    } catch (e) {
+      CrashLog.error('trailer.resolve_hard_failed', e, {'key': videoKey});
+    }
 
-  @override
-  void dispose() {
-    _controller.close();
-    super.dispose();
-  }
+    // Close the spinner regardless of outcome.
+    if (context.mounted) Navigator.of(context, rootNavigator: true).maybePop();
+    await loading;
 
-  @override
-  Widget build(BuildContext context) {
-    return YoutubePlayerScaffold(
-      controller: _controller,
-      builder: (context, player) => Scaffold(
-        backgroundColor: Colors.black,
-        appBar: AppBar(
-          backgroundColor: Colors.black,
-          title: Text(widget.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 16)),
+    if (directUrl != null && directUrl.isNotEmpty) {
+      if (!context.mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PlayerScreen.stream(path: directUrl!, title: title),
         ),
-        body: SafeArea(
-          child: Column(
-            children: [
-              Expanded(
-                child: Center(child: player),
-              ),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 12),
-                child: Text(
-                  'Trailer via YouTube — played inside MaxPlayer',
-                  style: TextStyle(color: Colors.white30, fontSize: 11),
-                ),
-              ),
-            ],
-          ),
+      );
+      return;
+    }
+    // Hard fallback: hand off to the YouTube app/browser (resolver failed).
+    final uri = Uri.parse('https://www.youtube.com/watch?v=$videoKey');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('In-app trailer failed — opening YouTube instead'),
         ),
-      ),
-    );
+      );
+    }
   }
 }
 
