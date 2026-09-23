@@ -17,6 +17,7 @@ import android.graphics.Rect
 import android.graphics.drawable.Icon
 import android.hardware.SensorManager
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -256,6 +257,24 @@ class MainActivity : FlutterFragmentActivity() {
                     interceptVolumeKeys =
                         call.argument<Boolean>("enabled") ?: false
                     result.success(true)
+                }
+
+                "maxOutMediaVolume" -> {
+                    // v1.0.1+16: the in-app 0..200% scale is only ABSOLUTE
+                    // when the Android media stream itself is at maximum —
+                    // otherwise in-app 100% sounded like ~50% whenever the
+                    // user's system volume sat at half. Players call this
+                    // once when they open; from then on the in-app scale
+                    // (mpv software gain) is the only control.
+                    try {
+                        val am =
+                            getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                        am.setStreamVolume(AudioManager.STREAM_MUSIC, max, 0)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
                 }
 
                 "enableSensorRotate" -> {
@@ -2388,3 +2407,4 @@ class MainActivity : FlutterFragmentActivity() {
         return chunked
     }
 }
+

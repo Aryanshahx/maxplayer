@@ -26,12 +26,18 @@ class MovieDetailSheet extends StatefulWidget {
 
   final Future<TmdbFull?> Function() detailLoader;
 
+  /// The bottom-sheet drag handle only makes sense when this widget is
+  /// shown AS a bottom sheet. Embedded in the full detail page it reads
+  /// as a stray "notch" at the top — the page passes false. (v1.0.1+16)
+  final bool showHandle;
+
   const MovieDetailSheet({
     super.key,
     required this.movie,
     required this.localMatch,
     required this.hostContext,
     required this.detailLoader,
+    this.showHandle = true,
   });
 
   static Future<void> show(
@@ -89,8 +95,11 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
     // v1.0.1+15: trailers play INSIDE the app in MaxPlayer's own MPV
     // player via youtube_explode URL resolution (iframed WebView was
     // blocked by YouTube with error 152-4).
-    await TrailerPlayerScreen.open(widget.hostContext, key,
-        '${widget.movie.title} — Trailer');
+    await TrailerPlayerScreen.open(
+      widget.hostContext,
+      key,
+      '${widget.movie.title} — Trailer',
+    );
   }
 
   @override
@@ -104,17 +113,19 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
+          if (widget.showHandle) ...[
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 14),
+            const SizedBox(height: 14),
+          ],
 
           // Header: Poster + Title + Rating + Kind badge
           Row(
@@ -125,7 +136,9 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                 height: 155,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: TmdbImage(url: tmdbPosterUrl(movie.posterPath, big: true)),
+                  child: TmdbImage(
+                    url: tmdbPosterUrl(movie.posterPath, big: true),
+                  ),
                 ),
               ),
               const SizedBox(width: 14),
@@ -147,12 +160,15 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.accent.withValues(alpha: 0.18),
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
-                                color: AppColors.accent.withValues(alpha: 0.4)),
+                              color: AppColors.accent.withValues(alpha: 0.4),
+                            ),
                           ),
                           child: Text(
                             isTv ? 'SERIES' : 'MOVIE',
@@ -168,7 +184,9 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                           Text(
                             '${movie.year}',
                             style: const TextStyle(
-                                color: Colors.white70, fontSize: 13),
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
                           ),
                         const SizedBox(width: 8),
                         Text(
@@ -180,14 +198,6 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Rating & data via TMDB',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.35),
-                        fontSize: 11,
-                      ),
                     ),
                   ],
                 ),
@@ -206,14 +216,18 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                     backgroundColor: AppColors.accent.withValues(alpha: 0.18),
                     foregroundColor: AppColors.accent,
                     side: BorderSide(
-                        color: AppColors.accent.withValues(alpha: 0.4)),
+                      color: AppColors.accent.withValues(alpha: 0.4),
+                    ),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                   onPressed: () => AskAiSheet.show(context, movie: movie),
                   icon: const Icon(Icons.auto_awesome, size: 16),
-                  label: const Text('Ask AI',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  label: const Text(
+                    'Ask AI',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -227,14 +241,17 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                         backgroundColor: AppColors.accent,
                         foregroundColor: AppColors.onAccent,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
                       onPressed: (key != null && key.isNotEmpty)
                           ? () => _openTrailer(key)
                           : null,
                       icon: const Icon(Icons.play_circle_outline, size: 16),
-                      label: const Text('Trailer',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      label: const Text(
+                        'Trailer',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     );
                   },
                 ),
@@ -251,7 +268,8 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                   backgroundColor: Colors.white.withValues(alpha: 0.08),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 onPressed: () => _playLocal(context),
                 icon: Icon(Icons.video_library, color: AppColors.accent),
@@ -289,7 +307,9 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                         ),
                       ),
                       TextButton(
-                          onPressed: _retryDetail, child: const Text('Retry')),
+                        onPressed: _retryDetail,
+                        child: const Text('Retry'),
+                      ),
                     ],
                   ),
                 );
@@ -304,9 +324,10 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                   _DetailedStoryBlock(movie: movie, extras: full.extras),
                   if (!full.watch.isEmpty)
                     _WatchBlock(
-                        info: full.watch,
-                        title: movie.title,
-                        year: movie.year),
+                      info: full.watch,
+                      title: movie.title,
+                      year: movie.year,
+                    ),
                   if (full.extras.castMembers.isNotEmpty)
                     _TopCastSlider(cast: full.extras.castMembers),
                   if (isTv && full.seasons.isNotEmpty)
@@ -403,7 +424,9 @@ class _DetailedStoryBlock extends StatelessWidget {
                   for (final g in extras.genres)
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(14),
@@ -412,7 +435,9 @@ class _DetailedStoryBlock extends StatelessWidget {
                       child: Text(
                         g,
                         style: const TextStyle(
-                            color: Colors.white70, fontSize: 11.5),
+                          color: Colors.white70,
+                          fontSize: 11.5,
+                        ),
                       ),
                     ),
                 ],
@@ -421,14 +446,21 @@ class _DetailedStoryBlock extends StatelessWidget {
           const Text(
             'Storyline',
             style: TextStyle(
-                color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
             movie.overview.isNotEmpty
                 ? movie.overview
                 : 'No full synopsis available for this title.',
-            style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 13,
+              height: 1.5,
+            ),
           ),
           if (extras.director.isNotEmpty)
             Padding(
@@ -436,9 +468,10 @@ class _DetailedStoryBlock extends StatelessWidget {
               child: Text(
                 'Director: ${extras.director}',
                 style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600),
+                  color: Colors.white70,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
         ],
@@ -494,18 +527,18 @@ class _TopCastSlider extends StatelessWidget {
                         child: ClipOval(
                           child:
                               c.profilePath != null && c.profilePath!.isNotEmpty
-                                  ? TmdbImage(
-                                      url:
-                                          'https://image.tmdb.org/t/p/w185${c.profilePath}',
-                                    )
-                                  : Container(
-                                      color: Colors.white12,
-                                      child: const Icon(
-                                        Icons.person,
-                                        color: Colors.white38,
-                                        size: 32,
-                                      ),
-                                    ),
+                              ? TmdbImage(
+                                  url:
+                                      'https://image.tmdb.org/t/p/w185${c.profilePath}',
+                                )
+                              : Container(
+                                  color: Colors.white12,
+                                  child: const Icon(
+                                    Icons.person,
+                                    color: Colors.white38,
+                                    size: 32,
+                                  ),
+                                ),
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -616,8 +649,9 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
               itemBuilder: (context, i) {
                 final s = seasons[i];
                 final isSelected = s.number == _selectedSeason;
-                final ratingStr =
-                    s.rating > 0 ? ' ⭐ ${s.rating.toStringAsFixed(1)}' : '';
+                final ratingStr = s.rating > 0
+                    ? ' ⭐ ${s.rating.toStringAsFixed(1)}'
+                    : '';
                 return ChoiceChip(
                   label: Text('${s.name}$ratingStr'),
                   selected: isSelected,
@@ -625,7 +659,9 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                   labelStyle: TextStyle(
                     color: isSelected ? AppColors.onAccent : Colors.white70,
                     fontSize: 12,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                   ),
                   backgroundColor: Colors.white.withValues(alpha: 0.06),
                   side: BorderSide(
@@ -709,13 +745,15 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                   const Divider(height: 1, color: Colors.white10),
               itemBuilder: (context, i) {
                 final ep = _seasonDetail!.episodes[i];
-                final ratingText =
-                    ep.rating > 0 ? '⭐ ${ep.rating.toStringAsFixed(1)}' : '';
-                final durationText =
-                    ep.runtimeMinutes > 0 ? '⏱️ ${ep.runtimeMinutes}m' : '';
+                final ratingText = ep.rating > 0
+                    ? '⭐ ${ep.rating.toStringAsFixed(1)}'
+                    : '';
+                final durationText = ep.runtimeMinutes > 0
+                    ? '⏱️ ${ep.runtimeMinutes}m'
+                    : '';
                 final metaLine = [
                   if (ratingText.isNotEmpty) ratingText,
-                  if (durationText.isNotEmpty) durationText
+                  if (durationText.isNotEmpty) durationText,
                 ].join('  ·  ');
 
                 return Padding(
@@ -747,8 +785,9 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                             child: Text(
                               'E${ep.episodeNumber}',
                               style: const TextStyle(
-                                  color: Colors.white38,
-                                  fontWeight: FontWeight.bold),
+                                color: Colors.white38,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
@@ -773,7 +812,9 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                                 child: Text(
                                   metaLine,
                                   style: const TextStyle(
-                                      color: Colors.amberAccent, fontSize: 11),
+                                    color: Colors.amberAccent,
+                                    fontSize: 11,
+                                  ),
                                 ),
                               ),
                             if (ep.overview.isNotEmpty)
@@ -782,9 +823,10 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                                 child: Text(
                                   ep.overview,
                                   style: const TextStyle(
-                                      color: Colors.white54,
-                                      fontSize: 11.5,
-                                      height: 1.3),
+                                    color: Colors.white54,
+                                    fontSize: 11.5,
+                                    height: 1.3,
+                                  ),
                                 ),
                               ),
                           ],
@@ -839,7 +881,10 @@ class _WatchBlock extends StatelessWidget {
                 label,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    color: color, fontSize: 10, fontWeight: FontWeight.w700),
+                  color: color,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -847,7 +892,10 @@ class _WatchBlock extends StatelessWidget {
               child: Text(
                 names.join(' · '),
                 style: const TextStyle(
-                    color: Colors.white70, fontSize: 12, height: 1.4),
+                  color: Colors.white70,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
               ),
             ),
           ],
@@ -931,14 +979,16 @@ class _ReviewsBlock extends StatelessWidget {
                     children: [
                       CircleAvatar(
                         radius: 14,
-                        backgroundColor:
-                            AppColors.accent.withValues(alpha: 0.2),
+                        backgroundColor: AppColors.accent.withValues(
+                          alpha: 0.2,
+                        ),
                         child: Text(
                           r.author.isNotEmpty ? r.author[0].toUpperCase() : 'U',
                           style: TextStyle(
-                              color: AppColors.accent,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold),
+                            color: AppColors.accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -955,7 +1005,9 @@ class _ReviewsBlock extends StatelessWidget {
                       if (r.rating != null)
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.amber.withValues(alpha: 0.18),
                             borderRadius: BorderRadius.circular(6),
@@ -963,9 +1015,10 @@ class _ReviewsBlock extends StatelessWidget {
                           child: Text(
                             '⭐ ${tmdbRatingText(r.rating!)}',
                             style: const TextStyle(
-                                color: Colors.amberAccent,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.bold),
+                              color: Colors.amberAccent,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                     ],
@@ -996,27 +1049,29 @@ class _AllDataBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget row(String l, String v) => Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 85,
-                child: Text(
-                  l,
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
-                      fontSize: 11.5),
-                ),
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 85,
+            child: Text(
+              l,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 11.5,
               ),
-              Expanded(
-                child: Text(v,
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 12)),
-              ),
-            ],
+            ),
           ),
-        );
+          Expanded(
+            child: Text(
+              v,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1042,7 +1097,6 @@ class _AllDataBlock extends StatelessWidget {
   }
 }
 
-
 /// "Watch on Prime Video" CTA (v1.0.1+8). Business rule (user call): the
 /// ONLY redirect is the TAGGED amazon.in link — that is the path that
 /// earns (24h Associates attribution on anything bought). The untagged
@@ -1066,8 +1120,7 @@ class _PrimeCta extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(10),
             onTap: () {
-              final uri =
-                  Uri.parse(amazonPrimeSearchUrl(title, year: year));
+              final uri = Uri.parse(amazonPrimeSearchUrl(title, year: year));
               launchUrl(uri, mode: LaunchMode.externalApplication);
             },
             child: const Padding(
@@ -1075,17 +1128,26 @@ class _PrimeCta extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.play_circle_fill_rounded,
-                      color: Colors.white, size: 20),
+                  Icon(
+                    Icons.play_circle_fill_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                   SizedBox(width: 8),
-                  Text('Watch on Prime Video',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13.5)),
+                  Text(
+                    'Watch on Prime Video',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                    ),
+                  ),
                   SizedBox(width: 6),
-                  Icon(Icons.open_in_new_rounded,
-                      color: Colors.white70, size: 14),
+                  Icon(
+                    Icons.open_in_new_rounded,
+                    color: Colors.white70,
+                    size: 14,
+                  ),
                 ],
               ),
             ),
@@ -1096,11 +1158,12 @@ class _PrimeCta extends StatelessWidget {
           'Partner link — as an Amazon Associate, Max Player earns from '
           'qualifying purchases.',
           style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.35), fontSize: 9.5),
+            color: Colors.white.withValues(alpha: 0.35),
+            fontSize: 9.5,
+          ),
         ),
       ],
     );
   }
 }
-
 

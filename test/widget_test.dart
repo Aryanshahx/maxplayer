@@ -18,7 +18,8 @@ import 'package:maxplayer/utils/ai_subtitles.dart'
 import 'package:maxplayer/utils/mpv_filters.dart';
 import 'package:maxplayer/utils/local_store.dart';
 import 'package:maxplayer/utils/resume.dart';
-import 'package:maxplayer/utils/settings.dart' show accentPalette, defaultAccentIndex;
+import 'package:maxplayer/utils/settings.dart'
+    show accentPalette, defaultAccentIndex;
 import 'package:maxplayer/utils/sha256.dart';
 import 'package:maxplayer/utils/sort.dart';
 import 'package:maxplayer/utils/srt.dart';
@@ -32,6 +33,7 @@ import 'package:maxplayer/services/recommendations.dart';
 import 'package:maxplayer/services/ai_suggest.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:maxplayer/utils/ads.dart';
 import 'package:maxplayer/utils/app_volume.dart';
 import 'package:maxplayer/utils/movie_match.dart';
 import 'package:maxplayer/utils/player_settings.dart';
@@ -47,8 +49,10 @@ void main() {
       expect(formatDuration(const Duration(minutes: 1, seconds: 5)), '1:05');
     });
     test('hours', () {
-      expect(formatDuration(const Duration(hours: 1, minutes: 2, seconds: 3)),
-          '1:02:03');
+      expect(
+        formatDuration(const Duration(hours: 1, minutes: 2, seconds: 3)),
+        '1:02:03',
+      );
     });
     test('negative clamps to zero', () {
       expect(formatDuration(const Duration(seconds: -5)), '0:00');
@@ -204,8 +208,10 @@ void main() {
       expect(resumeTargetMs(3600000 - endMarginMs + 1, 3600000), isNull);
     });
     test('just outside end margin -> prompt', () {
-      expect(resumeTargetMs(3600000 - endMarginMs, 3600000),
-          3600000 - endMarginMs);
+      expect(
+        resumeTargetMs(3600000 - endMarginMs, 3600000),
+        3600000 - endMarginMs,
+      );
     });
     test('unknown duration (0) -> prompt for big save', () {
       expect(resumeTargetMs(60000, 0), 60000);
@@ -308,8 +314,11 @@ void main() {
         SrtCue(5000, 6000, 'later'),
         SrtCue(1000, 2000, 'first'),
       ]);
-      expect(srt, '1\n00:00:01,000 --> 00:00:02,000\nfirst\n\n'
-          '2\n00:00:05,000 --> 00:00:06,000\nlater\n\n');
+      expect(
+        srt,
+        '1\n00:00:01,000 --> 00:00:02,000\nfirst\n\n'
+        '2\n00:00:05,000 --> 00:00:06,000\nlater\n\n',
+      );
     });
     test('drops empty-text cues', () {
       expect(buildSrt(const [SrtCue(1000, 2000, '  ')]), '');
@@ -322,10 +331,7 @@ void main() {
 
   group('parseSrt (AI subtitles)', () {
     test('round-trips buildSrt', () {
-      const cues = [
-        SrtCue(1000, 2000, 'hello'),
-        SrtCue(5000, 6000, 'world'),
-      ];
+      const cues = [SrtCue(1000, 2000, 'hello'), SrtCue(5000, 6000, 'world')];
       final parsed = parseSrt(buildSrt(cues));
       expect(parsed.length, 2);
       expect(parsed[0].text, 'hello');
@@ -333,24 +339,29 @@ void main() {
       expect(parsed[1].endMs, 6000);
     });
     test('joins multi-line cue text', () {
-      final parsed = parseSrt('1\n00:00:01,000 --> 00:00:02,000\nline one\n'
-          'line two\n\n');
+      final parsed = parseSrt(
+        '1\n00:00:01,000 --> 00:00:02,000\nline one\n'
+        'line two\n\n',
+      );
       expect(parsed.single.text, 'line one line two');
     });
     test('ignores garbage lines', () {
-      final parsed = parseSrt('garbage\n1\n00:00:01,000 --> 00:00:02,000\nok\n\n');
+      final parsed = parseSrt(
+        'garbage\n1\n00:00:01,000 --> 00:00:02,000\nok\n\n',
+      );
       expect(parsed.single.text, 'ok');
     });
   });
 
   group('srtPathForVideo (AI subtitles)', () {
     test('swaps extension for .maxai.srt next to the video', () {
-      expect(srtPathForVideo('/sdcard/Movies/clip.mp4'),
-          '/sdcard/Movies/clip.maxai.srt');
+      expect(
+        srtPathForVideo('/sdcard/Movies/clip.mp4'),
+        '/sdcard/Movies/clip.maxai.srt',
+      );
     });
     test('handles windows separators', () {
-      expect(srtPathForVideo(r'C:\vids\clip.mkv'),
-          'C:/vids/clip.maxai.srt');
+      expect(srtPathForVideo(r'C:\vids\clip.mkv'), 'C:/vids/clip.maxai.srt');
     });
     test('no extension still gets the suffix', () {
       expect(srtPathForVideo('/vids/clip'), '/vids/clip.maxai.srt');
@@ -359,17 +370,19 @@ void main() {
 
   group('sidecarSrtCandidates (AI subtitles)', () {
     test('exact match first, then language suffixes', () {
-      final picks = sidecarSrtCandidates(
-        ['movie.en.srt', 'movie.srt', 'other.srt'],
-        '/vids/movie.mp4',
-      );
+      final picks = sidecarSrtCandidates([
+        'movie.en.srt',
+        'movie.srt',
+        'other.srt',
+      ], '/vids/movie.mp4');
       expect(picks, ['movie.srt', 'movie.en.srt']);
     });
     test('excludes the AI sidecar and non-subs', () {
-      final picks = sidecarSrtCandidates(
-        ['movie.maxai.srt', 'movie.srt', 'poster.jpg'],
-        '/vids/movie.mp4',
-      );
+      final picks = sidecarSrtCandidates([
+        'movie.maxai.srt',
+        'movie.srt',
+        'poster.jpg',
+      ], '/vids/movie.mp4');
       expect(picks, ['movie.srt']);
     });
   });
@@ -401,17 +414,21 @@ void main() {
 
   group('computeSkipCredits (AI subtitles)', () {
     List<SrtCue> creditRun() => [
-          for (var i = 0; i < 8; i++)
-            SrtCue(1_800_000 + i * 2000, 1_800_000 + i * 2000 + 800,
-                'Name ${i + 1}'),
-        ];
+      for (var i = 0; i < 8; i++)
+        SrtCue(
+          1_800_000 + i * 2000,
+          1_800_000 + i * 2000 + 800,
+          'Name ${i + 1}',
+        ),
+    ];
     test('returns null for normal dialogue', () {
       expect(
-          computeSkipCredits(const [
-            SrtCue(1000, 2000, 'A normal line of spoken dialogue here'),
-            SrtCue(3000, 4000, 'Another normal line of spoken dialogue'),
-          ]),
-          isNull);
+        computeSkipCredits(const [
+          SrtCue(1000, 2000, 'A normal line of spoken dialogue here'),
+          SrtCue(3000, 4000, 'Another normal line of spoken dialogue'),
+        ]),
+        isNull,
+      );
     });
     test('detects a dense trailing credit run', () {
       final skip = computeSkipCredits(creditRun(), durationMs: 2_000_000);
@@ -526,8 +543,10 @@ void main() {
       expect(movies[0].title, 'Cool Movie');
       expect(movies[0].year, 2026);
       expect(movies[0].rating, 8.4);
-      expect(tmdbPosterUrl(movies[0].posterPath),
-          'https://image.tmdb.org/t/p/w342/abc.jpg');
+      expect(
+        tmdbPosterUrl(movies[0].posterPath),
+        'https://image.tmdb.org/t/p/w342/abc.jpg',
+      );
     });
 
     test('falls back to name, empty poster ok', () {
@@ -573,7 +592,11 @@ plain-list-url.mp4
 
     test('json round-trip keeps group', () {
       const c = IptvChannel(
-          name: 'Aaj Tak', url: 'http://x/y.m3u8', logo: 'l.png', group: 'News');
+        name: 'Aaj Tak',
+        url: 'http://x/y.m3u8',
+        logo: 'l.png',
+        group: 'News',
+      );
       final b = IptvChannel.fromJson(c.toJson());
       expect(b.group, 'News');
       expect(b.name, 'Aaj Tak');
@@ -652,14 +675,12 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(f.endsWith(']'), isTrue);
     });
     test('dialogue boost combines with EQ', () {
-      final f = combineAudioFilters(const [0, 0, 0, 0, 0],
-          dialogueBoost: true);
+      final f = combineAudioFilters(const [0, 0, 0, 0, 0], dialogueBoost: true);
       expect(f.contains('f=1200'), isTrue);
       expect(f.contains('f=3200'), isTrue);
     });
     test('wrong band count throws', () {
-      expect(() => buildEqualizerFilter(const [1, 2]),
-          throwsArgumentError);
+      expect(() => buildEqualizerFilter(const [1, 2]), throwsArgumentError);
     });
   });
 
@@ -684,14 +705,17 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     test('labels describe phases', () {
       expect(AbState.off.describe(), contains('mark point A'));
       expect(AbState.off.advance(1).describe(), contains('mark B'));
-      expect(AbState.off.advance(1).advance(2).describe(),
-          contains('Looping A → B'));
+      expect(
+        AbState.off.advance(1).advance(2).describe(),
+        contains('Looping A → B'),
+      );
     });
   });
 
   group('TMDB deep parsers (Discover port)', () {
     test('parseTmdbDetail fills trailer key via pickTrailerKey', () {
-      const d = '{"id":1,"title":"Spider","release_date":"2026-07-29",'
+      const d =
+          '{"id":1,"title":"Spider","release_date":"2026-07-29",'
           '"vote_average":7.9,"videos":{"results":['
           '{"site":"YouTube","type":"Trailer","official":true,"key":"bbb"},'
           '{"site":"YouTube","type":"Teaser","key":"aaa"}]}}';
@@ -726,7 +750,8 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
 
     test('parseTmdbReviews keeps rating + author', () {
-      final r = '{"reviews":{"results":[{"author":"Manuel",'
+      final r =
+          '{"reviews":{"results":[{"author":"Manuel",'
           '"author_details":{"rating":9.0},"content":"Great!"}]}}';
       final list = parseTmdbReviews(r);
       expect(list.single.rating, 9.0);
@@ -735,19 +760,25 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
 
     test('parseTmdbScreenshots builds w500 urls', () {
-      const i = '{"images":{"backdrops":[{"file_path":"/1.jpg"},'
+      const i =
+          '{"images":{"backdrops":[{"file_path":"/1.jpg"},'
           '{"file_path":"/2.jpg"}]}}';
       final list = parseTmdbScreenshots(i);
       expect(list.length, 2);
-      expect(tmdbScreenshotUrl(list.first),
-          'https://image.tmdb.org/t/p/w500/1.jpg');
-      expect(tmdbBackdropUrl('/hero.jpg'),
-          'https://image.tmdb.org/t/p/w780/hero.jpg');
+      expect(
+        tmdbScreenshotUrl(list.first),
+        'https://image.tmdb.org/t/p/w500/1.jpg',
+      );
+      expect(
+        tmdbBackdropUrl('/hero.jpg'),
+        'https://image.tmdb.org/t/p/w780/hero.jpg',
+      );
       expect(tmdbBackdropUrl(null), '');
     });
 
     test('parseTmdbSeasons reads per-season ratings', () {
-      const s = '{"seasons":[{"season_number":1,"name":"Season 1",'
+      const s =
+          '{"seasons":[{"season_number":1,"name":"Season 1",'
           '"episode_count":8,"air_date":"2020-01-01","vote_average":8.4},'
           '{"season_number":0,"episode_count":2}]}';
       final list = parseTmdbSeasons(s);
@@ -758,7 +789,8 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
 
     test('parseTmdbSeasonDetail maps episodes', () {
-      const s = '{"name":"Season 1","vote_average":8.1,'
+      const s =
+          '{"name":"Season 1","vote_average":8.1,'
           '"overview":"About.","episodes":[{"episode_number":1,'
           '"name":"Pilot","vote_average":7.5,"runtime":48,'
           '"still_path":"/e.jpg"}]}';
@@ -770,7 +802,8 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
 
     test('parseTmdbWatchProviders splits stream/rent/buy for IN', () {
-      const w = '{"watch/providers":{"results":{"IN":{'
+      const w =
+          '{"watch/providers":{"results":{"IN":{'
           '"flatrate":[{"provider_name":"Netflix"}],'
           '"rent":[{"provider_name":"Amazon"}],'
           '"buy":[{"provider_name":"Apple"}]}}}}';
@@ -782,7 +815,8 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
 
     test('parseTmdbMultiPage keeps movies+tv, drops people', () {
-      const m = '{"results":[{"media_type":"movie","id":1,"title":"A"},'
+      const m =
+          '{"results":[{"media_type":"movie","id":1,"title":"A"},'
           '{"media_type":"tv","id":2,"name":"B"},'
           '{"media_type":"person","id":3,"name":"C"}]}';
       final page = parseTmdbMultiPage(m);
@@ -792,22 +826,34 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
 
     test('discover cache names + endpoints are deterministic', () {
-      expect(discoverCacheName(kDiscoverFilters.first, 1),
-          'tmdb_disc_trending_p1.json');
-      expect(discoverCacheName(kSeriesFilters.first, 2),
-          'tmdb_disc_tv_hindi_tv_p2.json');
-      expect(tmdbEndpointPath(kDiscoverFilters.first),
-          '/3/trending/movie/week');
+      expect(
+        discoverCacheName(kDiscoverFilters.first, 1),
+        'tmdb_disc_trending_p1.json',
+      );
+      expect(
+        discoverCacheName(kSeriesFilters.first, 2),
+        'tmdb_disc_tv_hindi_tv_p2.json',
+      );
+      expect(
+        tmdbEndpointPath(kDiscoverFilters.first),
+        '/3/trending/movie/week',
+      );
       expect(tmdbEndpointPath(kSeriesFilters.last), '/3/discover/tv');
-      expect(tmdbDiscoverQuery(kDiscoverFilters[4], 3),
-          containsPair('with_original_language', 'hi'));
-      expect(tmdbSearchCacheName('Hello World', 1),
-          startsWith('tmdb_search_hello_world_'));
+      expect(
+        tmdbDiscoverQuery(kDiscoverFilters[4], 3),
+        containsPair('with_original_language', 'hi'),
+      );
+      expect(
+        tmdbSearchCacheName('Hello World', 1),
+        startsWith('tmdb_search_hello_world_'),
+      );
     });
 
     test('kAllFilters merges movie + series chips', () {
-      expect(kAllFilters.length,
-          kDiscoverFilters.length + kSeriesFilters.length);
+      expect(
+        kAllFilters.length,
+        kDiscoverFilters.length + kSeriesFilters.length,
+      );
       expect(kAllFilters.first.key, 'trending');
       expect(kAllFilters.last.key, 'tv_anime');
     });
@@ -820,15 +866,20 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
   group('Discover helpers (port)', () {
     test('normalizeTitle strips rip junk + years + brackets', () {
       expect(
-          Recommendations.normalizeTitle(
-              'The.Dark.Knight.2008.1080p.BluRay.x265'),
-          'dark knight');
-      expect(Recommendations.normalizeTitle('[YTS] Inception (2010) [1080p]'),
-          'inception');
+        Recommendations.normalizeTitle(
+          'The.Dark.Knight.2008.1080p.BluRay.x265',
+        ),
+        'dark knight',
+      );
+      expect(
+        Recommendations.normalizeTitle('[YTS] Inception (2010) [1080p]'),
+        'inception',
+      );
     });
 
     test('parseAiSuggestionJson survives prose + fences', () {
-      const raw = 'Sure! Here you go: ```json [{"title":"3 Idiots",'
+      const raw =
+          'Sure! Here you go: ```json [{"title":"3 Idiots",'
           '"year":2009},{"title":"Dhoom 2","year":2006}] ``` enjoy!';
       final picks = parseAiSuggestionJson(raw);
       expect(picks.length, 2);
@@ -838,20 +889,24 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
 
     test('tmdbImageCacheName keeps size folder + real name', () {
-      final name =
-          tmdbImageCacheName('https://image.tmdb.org/t/p/w342/abc.jpg');
+      final name = tmdbImageCacheName(
+        'https://image.tmdb.org/t/p/w342/abc.jpg',
+      );
       expect(name, startsWith('tmdb_img_w342_'));
       expect(name, endsWith('_abc.jpg'));
-      expect(tmdbImageCacheName('https://image.tmdb.org/t/p/w500/abc.jpg'),
-          isNot(equals(name)));
+      expect(
+        tmdbImageCacheName('https://image.tmdb.org/t/p/w500/abc.jpg'),
+        isNot(equals(name)),
+      );
     });
 
     test('normalizeMovieTitle strips rip junk', () {
-      expect(normalizeMovieTitle('Interstellar.2014.1080p.BluRay.x265'),
-          'interstellar');
+      expect(
+        normalizeMovieTitle('Interstellar.2014.1080p.BluRay.x265'),
+        'interstellar',
+      );
     });
   });
-
 
   group('SavedLink round-trip (v0.7)', () {
     test('json round trip', () {
@@ -866,7 +921,11 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     test('white accent is default, surfaces are true black', () {
       expect(accentPalette[defaultAccentIndex], const Color(0xFFFFFFFF));
       expect(AppColors.accent.toARGB32(), 0xFFFFFFFF);
-      expect((AppColors.background.r * 255).round() <= (AppColors.background.b * 255).round(), isTrue);
+      expect(
+        (AppColors.background.r * 255).round() <=
+            (AppColors.background.b * 255).round(),
+        isTrue,
+      );
       expect(AppColors.onAccent, const Color(0xFF0B0B0E));
     });
   });
@@ -913,10 +972,12 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
   });
 
   testWidgets('theme applies dark design language', (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      theme: buildAppTheme(),
-      home: const Scaffold(body: Text('ok')),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildAppTheme(),
+        home: const Scaffold(body: Text('ok')),
+      ),
+    );
     expect(find.text('ok'), findsOneWidget);
     final theme = Theme.of(tester.element(find.text('ok')));
     expect(theme.scaffoldBackgroundColor, AppColors.background);
@@ -980,7 +1041,8 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
 
     test('parseNetworkLocationsJson drops malformed rows', () {
       final list = parseNetworkLocationsJson(
-          '[{"host":"a"},{"name":"no host"}, 42, {"host":"b","protocol":"ftp"}]');
+        '[{"host":"a"},{"name":"no host"}, 42, {"host":"b","protocol":"ftp"}]',
+      );
       expect(list.length, 2);
       expect(list.first.host, 'a');
       expect(list.last.host, 'b');
@@ -994,15 +1056,24 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
 
   group('SavedServer (open stream)', () {
     test('addSavedServer dedupes by url', () {
-      final list = addSavedServer(const [], const SavedServer(name: 'a', url: 'http://x'));
+      final list = addSavedServer(
+        const [],
+        const SavedServer(name: 'a', url: 'http://x'),
+      );
       expect(list.length, 1);
-      final deduped = addSavedServer(list, const SavedServer(name: 'b', url: 'http://x'));
+      final deduped = addSavedServer(
+        list,
+        const SavedServer(name: 'b', url: 'http://x'),
+      );
       expect(deduped.length, 1);
       expect(deduped.single.name, 'a');
     });
 
     test('serversToJson / parseServersJson round-trip', () {
-      const servers = [SavedServer(name: 's1', url: 'http://a'), SavedServer(name: 's2', url: 'http://b')];
+      const servers = [
+        SavedServer(name: 's1', url: 'http://a'),
+        SavedServer(name: 's2', url: 'http://b'),
+      ];
       final json = serversToJson(servers);
       final back = parseServersJson(json);
       expect(back.length, 2);
@@ -1010,7 +1081,9 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
 
     test('parseServersJson drops entries without url', () {
-      final list = parseServersJson('[{"name":"no url"},{"name":"ok","url":"http://y"}]');
+      final list = parseServersJson(
+        '[{"name":"no url"},{"name":"ok","url":"http://y"}]',
+      );
       expect(list.length, 1);
       expect(list.single.url, 'http://y');
     });
@@ -1190,154 +1263,176 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(appVolumeIconName(100, true), 'off');
     });
 
-    test('setLevel clamps, unmutes on raise, no-op writes stay silent',
-        () async {
-      SharedPreferences.setMockInitialValues({});
-      final av = AppVolume.instance;
-      var pings = 0;
-      void onChange() => pings++;
-      av.addListener(onChange);
-      try {
-        await av.setMuted(true);
-        pings = 0;
-        await av.setLevel(240); // over the boost ceiling -> clamps to 200
-        expect(av.level, 200);
-        expect(av.muted, isFalse); // raising the volume unmutes
-        expect(pings, 1);
-        await av.setLevel(200); // no-op
-        expect(pings, 1);
-      } finally {
-        av.removeListener(onChange);
-        await av.setMuted(false);
-        await av.setLevel(100);
-      }
+    test(
+      'setLevel clamps, unmutes on raise, no-op writes stay silent',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        final av = AppVolume.instance;
+        var pings = 0;
+        void onChange() => pings++;
+        av.addListener(onChange);
+        try {
+          await av.setMuted(true);
+          pings = 0;
+          await av.setLevel(240); // over the boost ceiling -> clamps to 200
+          expect(av.level, 200);
+          expect(av.muted, isFalse); // raising the volume unmutes
+          expect(pings, 1);
+          await av.setLevel(200); // no-op
+          expect(pings, 1);
+        } finally {
+          av.removeListener(onChange);
+          await av.setMuted(false);
+          await av.setLevel(100);
+        }
+      },
+    );
+  });
+
+  group('clampPanFor (v1.0.14 pinch-zoom pan)', () {
+    const size = Size(360, 800);
+
+    test('zoom 1x: any pan collapses to zero', () {
+      expect(
+        clampPanFor(pan: const Offset(99, -99), zoom: 1, size: size),
+        Offset.zero,
+      );
+    });
+
+    test('zoom 2x: full symmetric range reachable', () {
+      const half = Offset(180, 400); // (z-1)*size/2
+      expect(
+        clampPanFor(pan: const Offset(9999, 9999), zoom: 2, size: size),
+        half,
+      );
+      expect(
+        clampPanFor(pan: const Offset(-9999, -9999), zoom: 2, size: size),
+        -half,
+      );
+    });
+
+    test('inside range passes through untouched', () {
+      expect(
+        clampPanFor(pan: const Offset(50, -60), zoom: 2, size: size),
+        const Offset(50, -60),
+      );
     });
   });
 
+  group('pinchPanFor (v1.0.15 focal hinge)', () {
+    const size = Size(360, 800);
 
-group('clampPanFor (v1.0.14 pinch-zoom pan)', () {
-  const size = Size(360, 800);
+    test('anchor under the fingers does not move while spreading', () {
+      const startFocal = Offset(180, 400);
+      // Touch-down at screen center, pan 0, zoom 1 -> zoom 2 keeping fingers.
+      final pan = pinchPanFor(
+        startFocal: startFocal,
+        liveFocal: startFocal,
+        startPan: Offset.zero,
+        startZoom: 1,
+        zoom: 2,
+        size: size,
+      );
+      // center-facing (child-center pivot): pan must stay ZERO — the center
+      // of the child IS the pivot, no drift off the finger.
+      expect(pan, Offset.zero);
+      // Old (origin-pivot) formula would have produced (-180,-400) == drift.
+    });
 
-  test('zoom 1x: any pan collapses to zero', () {
-    expect(clampPanFor(pan: const Offset(99, -99), zoom: 1, size: size),
-        Offset.zero);
+    test('off-center anchor tracks exactly under the fingers', () {
+      const startFocal = Offset(90, 200); // top-left quarter
+      const liveFocal = Offset(100, 210); // fingers moved slightly
+      final pan = pinchPanFor(
+        startFocal: startFocal,
+        liveFocal: liveFocal,
+        startPan: Offset.zero,
+        startZoom: 1,
+        zoom: 2,
+        size: size,
+      );
+      // Child point under the initial touch: c* in child coords =
+      // C + (focal - C)/1 = focal (pan 0, zoom 1 == identity).
+      // After zoom 2 about the center, that point lands at:
+      //   screen = pan + C + (c* - C) * 2
+      // We require screen == liveFocal exactly.
+      const c = Offset(180, 400);
+      final expected = liveFocal - c - (startFocal - c) * 2;
+      expect(pan.dx, closeTo(expected.dx, 1e-6));
+      expect(pan.dy, closeTo(expected.dy, 1e-6));
+      // Sanity against the old formula (from-origin pivot):
+      final old = liveFocal - (startFocal - Offset.zero) * 2;
+      expect((pan - old).distance, greaterThan(10)); // not the old behavior
+    });
+
+    test('anchor works when already zoomed (recursive hinge)', () {
+      // Already at zoom 2 with pan P; pinch again to 3.
+      const startPan = Offset(30, 40);
+      const startZoom = 2.0;
+      const startFocal = Offset(200, 300);
+      const liveFocal = Offset(220, 300);
+      final pan = pinchPanFor(
+        startFocal: startFocal,
+        liveFocal: liveFocal,
+        startPan: startPan,
+        startZoom: startZoom,
+        zoom: 3.0,
+        size: size,
+      );
+      // Content point anchored at second-touch-down:
+      const c = Offset(180, 400);
+      final contentC = c + (startFocal - startPan - c) / startZoom;
+      final expected = liveFocal - c - (contentC - c) * 3.0;
+      expect(pan.dx, closeTo(expected.dx, 1e-6));
+      expect(pan.dy, closeTo(expected.dy, 1e-6));
+    });
   });
 
-  test('zoom 2x: full symmetric range reachable', () {
-    const half = Offset(180, 400); // (z-1)*size/2
-    expect(
-        clampPanFor(pan: const Offset(9999, 9999), zoom: 2, size: size),
-        half);
-    expect(
-        clampPanFor(pan: const Offset(-9999, -9999), zoom: 2, size: size),
-        -half);
-  });
+  group('gestureTickFor (v1.0.17 swipe haptics)', () {
+    test('per-percent movement ticks (both directions)', () {
+      expect(gestureTickFor(40, 41, 0, 100), GestureTick.tick);
+      expect(gestureTickFor(41, 40, 0, 100), GestureTick.tick);
+    });
 
-  test('inside range passes through untouched', () {
-    expect(
-        clampPanFor(pan: const Offset(50, -60), zoom: 2, size: size),
-        const Offset(50, -60));
-  });
-});
+    test('no movement or finger-arrival: no buzz', () {
+      expect(gestureTickFor(50, 50, 0, 100), GestureTick.none);
+      expect(gestureTickFor(null, 50, 0, 100), GestureTick.none);
+    });
 
-group('pinchPanFor (v1.0.15 focal hinge)', () {
-  const size = Size(360, 800);
+    test('hitting 0: edgeLow fires once, then silence', () {
+      expect(gestureTickFor(1, 0, 0, 100), GestureTick.edgeLow);
+      expect(gestureTickFor(0, 0, 0, 100), GestureTick.none);
+      expect(gestureTickFor(1, -3, 0, 100), GestureTick.edgeLow);
+      expect(gestureTickFor(-3, -3, 0, 100), GestureTick.none);
+    });
 
-  test('anchor under the fingers does not move while spreading', () {
-    const startFocal = Offset(180, 400);
-    // Touch-down at screen center, pan 0, zoom 1 -> zoom 2 keeping fingers.
-    final pan = pinchPanFor(
-      startFocal: startFocal,
-      liveFocal: startFocal,
-      startPan: Offset.zero,
-      startZoom: 1,
-      zoom: 2,
-      size: size,
-    );
-    // center-facing (child-center pivot): pan must stay ZERO — the center
-    // of the child IS the pivot, no drift off the finger.
-    expect(pan, Offset.zero);
-    // Old (origin-pivot) formula would have produced (-180,-400) == drift.
-  });
+    test('hitting the 200 ceiling: edgeHigh once, then silence', () {
+      expect(gestureTickFor(199, 200, 0, 200), GestureTick.edgeHigh);
+      expect(gestureTickFor(200, 200, 0, 200), GestureTick.none);
+      expect(gestureTickFor(199, 210, 0, 200), GestureTick.edgeHigh);
+    });
 
-  test('off-center anchor tracks exactly under the fingers', () {
-    const startFocal = Offset(90, 200); // top-left quarter
-    const liveFocal = Offset(100, 210); // fingers moved slightly
-    final pan = pinchPanFor(
-      startFocal: startFocal,
-      liveFocal: liveFocal,
-      startPan: Offset.zero,
-      startZoom: 1,
-      zoom: 2,
-      size: size,
-    );
-    // Child point under the initial touch: c* in child coords =
-    // C + (focal - C)/1 = focal (pan 0, zoom 1 == identity).
-    // After zoom 2 about the center, that point lands at:
-    //   screen = pan + C + (c* - C) * 2
-    // We require screen == liveFocal exactly.
-    const c = Offset(180, 400);
-    final expected = liveFocal - c - (startFocal - c) * 2;
-    expect(pan.dx, closeTo(expected.dx, 1e-6));
-    expect(pan.dy, closeTo(expected.dy, 1e-6));
-    // Sanity against the old formula (from-origin pivot):
-    final old = liveFocal - (startFocal - Offset.zero) * 2;
-    expect((pan - old).distance, greaterThan(10)); // not the old behavior
+    test('boost OFF: 100 IS the ceiling', () {
+      expect(gestureTickFor(98, 110, 0, 100), GestureTick.edgeHigh);
+      expect(gestureTickFor(98, 99, 0, 100), GestureTick.tick);
+    });
   });
+  group('AdMob wiring (v1.0.1+16)', () {
+    test('ships with Google demo ids until real units are pasted', () {
+      // The app must never go live still pointing at demo units: this pair
+      // of getters is the ONLY source of unit ids used by the banner and
+      // the exit interstitial.
+      expect(MaxAds.kUseTestAds, isTrue);
+      expect(MaxAds.bannerUnitId, contains('3940256099942544/6300978111'));
+      expect(
+        MaxAds.interstitialUnitId,
+        contains('3940256099942544/1033173712'),
+      );
+      expect(MaxAds.bannerUnitId, isNot(MaxAds.interstitialUnitId));
+    });
 
-  test('anchor works when already zoomed (recursive hinge)', () {
-    // Already at zoom 2 with pan P; pinch again to 3.
-    const startPan = Offset(30, 40);
-    const startZoom = 2.0;
-    const startFocal = Offset(200, 300);
-    const liveFocal = Offset(220, 300);
-    final pan = pinchPanFor(
-      startFocal: startFocal,
-      liveFocal: liveFocal,
-      startPan: startPan,
-      startZoom: startZoom,
-      zoom: 3.0,
-      size: size,
-    );
-    // Content point anchored at second-touch-down:
-    const c = Offset(180, 400);
-    final contentC = c + (startFocal - startPan - c) / startZoom;
-    final expected = liveFocal - c - (contentC - c) * 3.0;
-    expect(pan.dx, closeTo(expected.dx, 1e-6));
-    expect(pan.dy, closeTo(expected.dy, 1e-6));
+    test('exit interstitial hard cooldown is 3 minutes', () {
+      expect(ExitInterstitial.cooldown, const Duration(minutes: 3));
+    });
   });
-});
-
-group('gestureTickFor (v1.0.17 swipe haptics)', () {
-  test('per-percent movement ticks (both directions)', () {
-    expect(gestureTickFor(40, 41, 0, 100), GestureTick.tick);
-    expect(gestureTickFor(41, 40, 0, 100), GestureTick.tick);
-  });
-
-  test('no movement or finger-arrival: no buzz', () {
-    expect(gestureTickFor(50, 50, 0, 100), GestureTick.none);
-    expect(gestureTickFor(null, 50, 0, 100), GestureTick.none);
-  });
-
-  test('hitting 0: edgeLow fires once, then silence', () {
-    expect(gestureTickFor(1, 0, 0, 100), GestureTick.edgeLow);
-    expect(gestureTickFor(0, 0, 0, 100), GestureTick.none);
-    expect(gestureTickFor(1, -3, 0, 100), GestureTick.edgeLow);
-    expect(gestureTickFor(-3, -3, 0, 100), GestureTick.none);
-  });
-
-  test('hitting the 200 ceiling: edgeHigh once, then silence', () {
-    expect(gestureTickFor(199, 200, 0, 200), GestureTick.edgeHigh);
-    expect(gestureTickFor(200, 200, 0, 200), GestureTick.none);
-    expect(gestureTickFor(199, 210, 0, 200), GestureTick.edgeHigh);
-  });
-
-  test('boost OFF: 100 IS the ceiling', () {
-    expect(gestureTickFor(98, 110, 0, 100), GestureTick.edgeHigh);
-    expect(gestureTickFor(98, 99, 0, 100), GestureTick.tick);
-  });
-});
 }
-
-
 

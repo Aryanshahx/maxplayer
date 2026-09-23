@@ -77,8 +77,9 @@ class NativeBridge {
   static Future<Map<String, dynamic>?> pickVideoDocument() async {
     _ensureHandler();
     try {
-      final res =
-          await _channel.invokeMethod<Map<Object?, Object?>>('pickVideoDocument');
+      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'pickVideoDocument',
+      );
       if (res == null) return null;
       return {
         for (final e in res.entries)
@@ -99,15 +100,13 @@ class NativeBridge {
     String? relativePath,
   }) async {
     try {
-      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'saveDocumentToDevice',
-        {
-          'sourceUri': sourceUri,
-          'cachePath': cachePath,
-          'name': name,
-          'relativePath': relativePath,
-        },
-      );
+      final res = await _channel
+          .invokeMethod<Map<Object?, Object?>>('saveDocumentToDevice', {
+            'sourceUri': sourceUri,
+            'cachePath': cachePath,
+            'name': name,
+            'relativePath': relativePath,
+          });
       if (res == null) return null;
       return {
         for (final e in res.entries)
@@ -123,8 +122,20 @@ class NativeBridge {
   /// enables this when opened and disables on dispose.
   static Future<void> setVolumeKeyIntercept(bool enabled) async {
     try {
-      await _nativeChannel
-          .invokeMethod('setVolumeKeyIntercept', {'enabled': enabled});
+      await _nativeChannel.invokeMethod('setVolumeKeyIntercept', {
+        'enabled': enabled,
+      });
+    } catch (_) {}
+  }
+
+  /// v1.0.1+16: raise the Android media stream to maximum. The in-app
+  /// volume is mpv software gain on top of the system stream — if the
+  /// system stream sat at 50%, in-app 100% sounded like half loudness.
+  /// Players call this once when they open, turning the 0..200% in-app
+  /// scale into an absolute one like classic players (MX/VLC) do.
+  static Future<void> maxOutMediaVolume() async {
+    try {
+      await _nativeChannel.invokeMethod<bool>('maxOutMediaVolume');
     } catch (_) {}
   }
 
@@ -143,10 +154,10 @@ class NativeBridge {
   /// failure (e.g. permission-less provider).
   static Future<Map<String, dynamic>?> resolveSharedVideo(String uri) async {
     try {
-      final res = await _nativeChannel
-          .invokeMethod<Map<Object?, Object?>>('resolveSharedVideo', {
-        'uri': uri,
-      });
+      final res = await _nativeChannel.invokeMethod<Map<Object?, Object?>>(
+        'resolveSharedVideo',
+        {'uri': uri},
+      );
       if (res == null) return null;
       return res.map((k, v) => MapEntry(k.toString(), v));
     } catch (_) {
@@ -163,8 +174,11 @@ class NativeBridge {
     String kind = 'video',
   }) async {
     try {
-      final ok = await _nativeChannel.invokeMethod<bool>(
-          'saveToGallery', {'path': path, 'name': name, 'kind': kind});
+      final ok = await _nativeChannel.invokeMethod<bool>('saveToGallery', {
+        'path': path,
+        'name': name,
+        'kind': kind,
+      });
       return ok ?? false;
     } catch (_) {
       return false;
@@ -184,8 +198,9 @@ class NativeBridge {
   /// originals are gone; false when the user declines or deletion fails.
   static Future<bool> requestMediaDelete(List<String> paths) async {
     try {
-      final res = await _channel
-          .invokeMethod<bool>('requestMediaDelete', {'paths': paths});
+      final res = await _channel.invokeMethod<bool>('requestMediaDelete', {
+        'paths': paths,
+      });
       return res ?? false;
     } catch (_) {
       return false;
@@ -212,10 +227,11 @@ class NativeBridge {
   /// because a raw `File.rename` fails with "protected or in use"; on older
   /// Android / app-owned files the file itself is renamed on disk. True on
   /// success.
-  static Future<bool> renameVideo(
-      {required String id,
-      required String path,
-      required String newName}) async {
+  static Future<bool> renameVideo({
+    required String id,
+    required String path,
+    required String newName,
+  }) async {
     try {
       final res = await _nativeChannel.invokeMethod<bool>('renameVideo', {
         'id': id,
@@ -228,15 +244,14 @@ class NativeBridge {
     }
   }
 
-
-
   /// Launches Android's speech recognition (in-app SpeechRecognizer first,
   /// system dialog as fallback) and returns the recognised query, or null on
   /// cancel/error. Callers must request the microphone permission first.
   static Future<String?> launchSystemVoiceSearch() async {
     try {
-      final res =
-          await _nativeChannel.invokeMethod<String>('launchSystemVoiceSearch');
+      final res = await _nativeChannel.invokeMethod<String>(
+        'launchSystemVoiceSearch',
+      );
       return (res != null && res.trim().isNotEmpty) ? res.trim() : null;
     } catch (_) {
       return null;
@@ -269,10 +284,10 @@ class NativeBridge {
   /// MKV / WebM / AVI files).
   static Future<(int, int)?> videoDimensions(String path) async {
     try {
-      final res = await _channel
-          .invokeMethod<Map<Object?, Object?>>('videoDimensions', {
-        'path': path,
-      });
+      final res = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'videoDimensions',
+        {'path': path},
+      );
       final w = (res?['w'] as num?)?.toInt();
       final h = (res?['h'] as num?)?.toInt();
       if (w != null && h != null && w > 0 && h > 0) return (w, h);
@@ -281,11 +296,6 @@ class NativeBridge {
       return null;
     }
   }
-
-
-
-
-
 
   /// v31: on-device facts for the About → Diagnostics sheet (support).
   static Future<Map<String, dynamic>> diagnostics() async {
@@ -300,7 +310,6 @@ class NativeBridge {
       return const {};
     }
   }
-
 
   // -------------------------------------------------------------------------
   // Single dispatcher for `maxplayer/native` INCOMING events. There must be
@@ -377,3 +386,4 @@ class NativeBridge {
     });
   }
 }
+

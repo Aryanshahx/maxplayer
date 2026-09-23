@@ -13,6 +13,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/native_bridge.dart';
 import '../theme.dart';
 import '../utils/ab_loop.dart';
+import '../utils/ads.dart';
 import '../utils/gesture_ticks.dart';
 import '../utils/app_volume.dart';
 import '../utils/ai_subtitles.dart';
@@ -21,7 +22,8 @@ import '../utils/fit.dart';
 import '../utils/format.dart';
 import '../utils/karaoke.dart';
 import '../utils/local_store.dart';
-import '../utils/network_headers.dart' show kMaxPlayerUserAgent, kVlcFallbackUserAgent;
+import '../utils/network_headers.dart'
+    show kMaxPlayerUserAgent, kVlcFallbackUserAgent;
 import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
 import '../utils/queue_math.dart';
@@ -226,6 +228,13 @@ class _PlayerScreenState extends State<PlayerScreen>
       unawaited(_onVolumeKey(dir));
     };
     unawaited(NativeBridge.setVolumeKeyIntercept(true));
+    // v1.0.1+16: raise the Android media stream to max ONCE per player
+    // session — before this, an in-app volume of 100% was capped by the
+    // untouched system stream ("100% feels like 50%").
+    unawaited(NativeBridge.maxOutMediaVolume());
+    // v1.0.1+16: preload the exit interstitial while the video plays so
+    // showing it on close is instant (capped by a 3-minute cooldown).
+    ExitInterstitial.preload();
     // mpv caps `volume` at 100 unless told otherwise — the boost ceiling is
     // (re)applied AFTER open() in _open(); never call _mpvSet from here.
     unawaited(
@@ -332,12 +341,13 @@ class _PlayerScreenState extends State<PlayerScreen>
       // asked for vs what the engine actually has — if a device's mpv
       // ever clamps the boost region to 100/130, the evidence lands in
       // events.jsonl ('set' vs 'read' mismatch) instead of silence.
-      final requestedGain = AppVolume.instance.mpvGain.round();
+      final gainNow = AppVolume.instance.mpvGain;
       unawaited(
         _mpvGet('volume').then(
           (read) => CrashLog.crumb('player.volume_verify', {
-            'set': requestedGain,
-            'read': read,
+            'gain': gainNow.round(),
+            'mode': gainNow > 100.5 ? 'boost_af' : 'softvol',
+            'volume_prop_read': read,
             'path': path,
           }),
         ),
@@ -578,8 +588,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       _uaRetried = true;
       try {
         await _player.open(
-            _mediaFor(_currentPath, userAgent: kVlcFallbackUserAgent),
-            play: true);
+          _mediaFor(_currentPath, userAgent: kVlcFallbackUserAgent),
+          play: true,
+        );
         unawaited(_player.setRate(_settings.playbackRate));
         if (mounted) setState(() => _ready = true);
         return;
@@ -700,17 +711,99 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// v1.0.10: apply the AppVolume store to the engine. Everything that
   /// moves the volume (swipe, hardware keys, settings slider, mute button)
   /// writes to the store; the listener registered in initState lands here.
+  /// Raw mpv command transport (af/cycle style commands), same soft-fail
+  /// logging discipline as [_mpvSet].
+  Future<void> _mpvCmd(List<String> args) async {
+    try {
+      final platform = _player.platform;
+      if (platform != null) {
+        await (platform as dynamic).command(args);
+      }
+    } catch (e) {
+      CrashLog.error('player.mpv_cmd_failed', e, {'args': args.join(' ')});
+      rethrow;
+    }
+  }
+
+  // ------------------------------------------------------ volume boost ---
+
+  /// v1.0.1+16 volume rework. Two real bugs were reported:
+  ///   1. "100% feels like 50%" — fixed where the player opens by raising
+  ///      the untouched Android media stream to max (see initState).
+  ///   2. "200% fully distorted" — mpv `volume` >100 clips the decoded PCM
+  ///      hard. The boost region now amplifies INSIDE the audio filter
+  ///      chain (builtin `volume` filter at unity master volume) followed
+  ///      by an ffmpeg peak limiter — same loudness, without the harsh
+  ///      digital clipping. If lavfi is unavailable in a given mpv build,
+  ///      the boost still applies (old behaviour), only the limiting is
+  ///      skipped.
+  bool _boostFiltersArmed = false;
+  double _lastAppliedBoostFactor = -1;
+  Future<void> _volumeChain = Future<void>.value();
+
   void _applyVolume() {
     // v1.0.13: hard no-op until open() has completed.
     if (!_ready || _failed) return;
-    try {
-      unawaited(
-        _mpvSet('volume', AppVolume.instance.mpvGain.round().toString()),
-      );
-      if (mounted) setState(() {});
-    } catch (e) {
-      CrashLog.error('player.volume_apply_failed', e);
+    unawaited(_applyVolumeAsync(AppVolume.instance.mpvGain));
+    if (mounted) setState(() {});
+  }
+
+  /// Serialize engine volume ops — swipe ticks would otherwise interleave
+  /// af add/del and the `volume` property write into a mess.
+  Future<void> _applyVolumeAsync(double gain) {
+    final run = _volumeChain.then((_) async {
+      try {
+        await _applyGain(gain);
+      } catch (e) {
+        CrashLog.error('player.volume_apply_failed', e);
+      }
+    });
+    _volumeChain = run;
+    return run;
+  }
+
+  Future<void> _applyGain(double gain) async {
+    if (gain > 100.5) {
+      final factor = gain / 100;
+      if (_boostFiltersArmed &&
+          (factor - _lastAppliedBoostFactor).abs() < 0.03) {
+        return; // swipe micro-updates: nothing meaningful changed
+      }
+      _lastAppliedBoostFactor = factor;
+      await _mpvSet('volume', '100');
+      if (_boostFiltersArmed) await _delBoostFilters();
+      await _mpvCmd([
+        'af',
+        'add',
+        '@boost:volume=${factor.toStringAsFixed(2)}',
+      ]);
+      try {
+        await _mpvCmd([
+          'af',
+          'add',
+          '@lim:lavfi=[alimiter=limit=0.95:level=false]',
+        ]);
+      } catch (_) {
+        // Limiter unavailable — boost works without it (old behaviour).
+      }
+      _boostFiltersArmed = true;
+    } else {
+      _lastAppliedBoostFactor = -1;
+      if (_boostFiltersArmed) {
+        await _delBoostFilters();
+        _boostFiltersArmed = false;
+      }
+      await _mpvSet('volume', gain.round().toString());
     }
+  }
+
+  Future<void> _delBoostFilters() async {
+    try {
+      await _mpvCmd(['af', 'del', '@boost']);
+    } catch (_) {}
+    try {
+      await _mpvCmd(['af', 'del', '@lim']);
+    } catch (_) {}
   }
 
   Future<void> _onVolumeKey(String dir) async {
@@ -2148,6 +2241,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     unawaited(_savePosition());
     unawaited(_player.dispose());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    // v1.0.1+16: AdMob exit interstitial (if preloaded; 3-min cooldown).
+    ExitInterstitial.maybeShow();
     super.dispose();
   }
 
@@ -3662,5 +3757,4 @@ class _KaraokeOverlay extends StatelessWidget {
     );
   }
 }
-
 

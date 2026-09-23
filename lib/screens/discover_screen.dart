@@ -8,6 +8,7 @@ import 'package:photo_manager/photo_manager.dart';
 import '../services/native_bridge.dart';
 import '../services/recommendations.dart';
 import '../theme.dart';
+import '../utils/ads.dart';
 import '../utils/config.dart';
 import '../utils/local_store.dart';
 import '../utils/movie_match.dart';
@@ -19,8 +20,9 @@ import 'movie_detail_screen.dart';
 /// "Discover" — OTT platform home, rebuilt from scratch (v1.0.1+15).
 ///
 /// Layout, top to bottom:
-///   1. PINNED Search bar row — always on screen: search field + mic
-///      (voice search) + ✨ AI Suggestor. Never scrolls away, never hides.
+///   1. Search bar row — search field + mic (voice search) + gradient
+///      "AI" Suggestor pill. Auto-hides while scrolling the feed down and
+///      reappears on scroll-up; ALWAYS visible while search is focused.
 ///   2. Full-bleed HERO carousel of trending titles (16:9-ish backdrop,
 ///      title + chips + Details button, dot indicators, auto-advance).
 ///   3. Horizontal poster rails, one per TMDB section (now also: Indian
@@ -59,10 +61,17 @@ class _RailState {
 class _DiscoverScreenState extends State<DiscoverScreen> {
   final TmdbClient _client = TmdbClient();
   final TextEditingController _searchCtrl = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
   final PageController _heroCtrl = PageController();
   final ScrollController _homeScroll = ScrollController();
   Timer? _searchDebounce;
   Timer? _heroTimer;
+
+  /// Top bar auto-hide: slides away while scrolling down, instantly back
+  /// when scrolling up (and always visible while the search field has
+  /// focus or a query is active). v1.0.1+16.
+  bool _topBarVisible = true;
+  double _lastHomePixels = 0;
 
   List<TmdbMovie> _hero = [];
   int _heroIndex = 0;
@@ -92,6 +101,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   void initState() {
     super.initState();
     _gridScroll.addListener(_onGridEnd);
+    _homeScroll.addListener(_onHomeScroll);
+    _searchFocus.addListener(_onSearchFocus);
     _bootstrap();
   }
 
@@ -102,6 +113,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     _heroCtrl.dispose();
     _homeScroll.dispose();
     _gridScroll.dispose();
+    _searchFocus.dispose();
     _searchCtrl.dispose();
     for (final r in _rails) {
       r.scroll.dispose();
@@ -245,6 +257,23 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   // ----------------------------------------------------------- search ---
 
+  void _onSearchFocus() {
+    if (mounted) setState(() {});
+  }
+
+  /// Auto-hide top bar on downward scroll; always re-shows on the way up.
+  void _onHomeScroll() {
+    if (!_homeScroll.hasClients) return;
+    final pixels = _homeScroll.position.pixels;
+    final delta = pixels - _lastHomePixels;
+    if (delta.abs() < 8) return;
+    _lastHomePixels = pixels;
+    final shouldShow = delta < 0 || pixels < 80;
+    if (shouldShow != _topBarVisible) {
+      setState(() => _topBarVisible = shouldShow);
+    }
+  }
+
   void _onSearchChanged(String v) {
     setState(() {}); // swap clear-button visibility instantly
     _searchDebounce?.cancel();
@@ -350,10 +379,28 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           : SafeArea(
               child: Column(
                 children: [
-                  _buildSearchBar(),
-                  Expanded(
-                    child: _searching ? _buildSearchResults() : _buildOttHome(),
+                  // Top bar slides away when scrolling the home feed
+                  // down and returns the moment the user scrolls back
+                  // up. NEVER hides while search is focused/active.
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeInOutCubic,
+                    alignment: Alignment.topCenter,
+                    child:
+                        (_topBarVisible || _searching || _searchFocus.hasFocus)
+                        ? _buildSearchBar()
+                        : const SizedBox(width: double.infinity),
                   ),
+                  Expanded(
+                    child: _searching
+                        ? _buildSearchResults()
+                        : (_searchFocus.hasFocus
+                              ? _buildHotSearches()
+                              : _buildOttHome()),
+                  ),
+                  // v1.0.1+16: slim AdMob banner pinned to the bottom of
+                  // Discover (invisible until loaded / on non-Android).
+                  const AdBanner(),
                 ],
               ),
             ),
@@ -398,6 +445,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   Expanded(
                     child: TextField(
                       controller: _searchCtrl,
+                      focusNode: _searchFocus,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 14.5,
@@ -458,27 +506,48 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               onPressed: _startVoiceSearch,
             ),
           ),
-          // AI Suggestor
-          SizedBox(
-            width: 40,
-            height: 40,
-            child: IconButton(
-              icon: Container(
-                width: 30,
-                height: 30,
+          // AI Suggestor — gradient pill (redesigned v1.0.1+16; the small
+          // ✨-in-a-circle read as an accident, not a button).
+          Tooltip(
+            message: 'AI Suggestor',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(22),
+              onTap: _aiSuggest,
+              child: Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 13),
                 decoration: BoxDecoration(
-                  color: AppColors.accent.withValues(alpha: 0.13),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.accent.withValues(alpha: 0.45),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF7B61FF), Color(0xFFE553B3)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF7B61FF).withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
                 ),
-                child: const Center(
-                  child: Text('✨', style: TextStyle(fontSize: 14)),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.auto_awesome, color: Colors.white, size: 16),
+                    SizedBox(width: 6),
+                    Text(
+                      'AI',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              tooltip: 'AI Suggestor',
-              onPressed: _aiSuggest,
             ),
           ),
         ],
@@ -550,18 +619,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 ),
               ),
             ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 26),
-              child: Text(
-                'Posters & metadata via TMDB.',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.25),
-                  fontSize: 10.5,
-                ),
-              ),
-            ),
-          ),
+          // v1.0.1+16: TMDB credit line removed per request — plain
+          // bottom padding instead.
+          const SliverToBoxAdapter(child: SizedBox(height: 26)),
         ],
       ),
     );
@@ -569,8 +629,124 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   // -------------------------------------------------------- results ---
 
+  /// 🔥 Hot searches — shown the moment the search field gets focus,
+  /// before anything is typed: TMDB's current trending titles. Fixes the
+  /// "tapping search shows a blank container" complaint (v1.0.1+16).
+  Widget _buildHotSearches() {
+    final source = _hero.isNotEmpty
+        ? _hero
+        : (_rails.isNotEmpty ? _rails.first.items : const <TmdbMovie>[]);
+    if (source.isEmpty) return _buildOttHome();
+    final items = source.take(12).toList();
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 24),
+      itemCount: items.length + 1,
+      itemBuilder: (context, i) {
+        if (i == 0) {
+          return const Padding(
+            padding: EdgeInsets.fromLTRB(4, 4, 4, 10),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.local_fire_department_rounded,
+                  color: Colors.deepOrangeAccent,
+                  size: 21,
+                ),
+                SizedBox(width: 7),
+                Text(
+                  'Hot searches',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        final m = items[i - 1];
+        final hot = i <= 3;
+        return InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () {
+            _searchCtrl.text = m.title;
+            _onSearchChanged(m.title);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 30,
+                  child: hot
+                      ? const Icon(
+                          Icons.local_fire_department_rounded,
+                          color: Colors.deepOrangeAccent,
+                          size: 17,
+                        )
+                      : Text(
+                          '$i',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.35),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    m.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      fontSize: 13.5,
+                      fontWeight: hot ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${m.kind == 'tv' ? 'Series' : 'Movie'}'
+                  '${m.year != null ? ' • ${m.year}' : ''}',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.35),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Placeholder poster grid while the first search page loads — the old
+  /// code left a big blank container with a spinner at the bottom.
+  Widget _buildSearchSkeleton() {
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        childAspectRatio: 0.56,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+      ),
+      itemCount: 9,
+      itemBuilder: (_, i) => const _SearchSkeletonTile(),
+    );
+  }
+
   Widget _buildSearchResults() {
-    if (_results.isEmpty && !_queryLoading) {
+    if (_results.isEmpty && _queryLoading) {
+      return _buildSearchSkeleton();
+    }
+    if (_results.isEmpty) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(28),
@@ -1215,6 +1391,51 @@ class _NoKeyBody extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Placeholder tile used by the search skeleton grid (v1.0.1+16) — same
+/// 2:3-ish card proportions as the real poster cards.
+class _SearchSkeletonTile extends StatelessWidget {
+  const _SearchSkeletonTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        FractionallySizedBox(
+          widthFactor: 0.75,
+          child: Container(
+            height: 12,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(5),
+            ),
+          ),
+        ),
+        const SizedBox(height: 5),
+        FractionallySizedBox(
+          widthFactor: 0.4,
+          child: Container(
+            height: 9,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
