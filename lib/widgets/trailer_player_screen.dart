@@ -458,58 +458,15 @@ Future<TrailerStreams> deviceOrderedTrailerStreams(TrailerStreams s) async {
 /// v1.0.1+29: build stamp shown on the trailer card so a screenshot
 /// PROVES which build is installed (kills "did the fix even reach the
 /// phone?" ambiguity forever).
-const kAppVersionLabel = 'MaxPlayer 1.0.1+31';
+const kAppVersionLabel = 'MaxPlayer 1.0.1+32';
 
-/// v1.0.1+30: the parent ORIGIN the WebView page is served from. YouTube
-/// rejects embedded players whose hosting page has no Referer/Origin
-/// (error 153 "Video player configuration error") — serving the page
-/// from the official base URL makes the embed legitimate.
-const kTrailerEmbedBaseUrl = 'https://www.youtube.com';
-
-/// v1.0.1+30: LOCAL html hosting the official iframe embed for video
-/// [key]. Fixes the on-device error 153 and the "Watch video on YouTube"
-/// takeover: the player lives inside an iframe on a page we control, so
-/// the tiny card can't be hijacked by YouTube's UI. `fs=0` hides the
-/// fullscreen button (Android WebView's custom-view fullscreen is not
-/// wired, so a fullscreen tap would otherwise blank).
-///
-/// v1.0.1+31: host switched to plain `www.youtube.com` with
-/// `enablejsapi=1&origin=<baseUrl>&widget_referrer=<baseUrl>` — the exact
-/// parameter set of the youtube_player_flutter reference implementation.
-/// Native WebViews get error 152-4 ("This video is unavailable") when the
-/// embed can't verify its origin identity (capacitor-youtube-player #49);
-/// declaring the origin explicitly is the documented fix, and the nocookie
-/// edge proved strictly more gated than www on-device.
-String trailerEmbedHtml(String key) =>
-    '''
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-html,body{margin:0;padding:0;background:#000;height:100%;overflow:hidden}
-iframe{border:0;position:absolute;inset:0;width:100%;height:100%}
-</style>
-</head>
-<body>
-<iframe id="ytplayer" src="https://www.youtube.com/embed/$key?playsinline=1&rel=0&modestbranding=1&autoplay=1&fs=0&enablejsapi=1&origin=https%3A%2F%2Fwww.youtube.com&widget_referrer=https%3A%2F%2Fwww.youtube.com%2F" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
-</body>
-</html>''';
-
-/// v1.0.1+28: the OFFICIAL YouTube embedded-player URL for a video
-/// [key]. Embedded playback is YouTube's own sanctioned in-app path —
-/// completely immune to the direct-stream IP gates / PO-token lockouts
-/// that kept killing device-side resolution. `playsinline` keeps it
-/// inside the detail card; autoplay is safe because we only load it in
-/// response to a user tap. v1.0.1+29: [hostIdx] 0 = youtube-nocookie
-/// (default), 1 = www.youtube.com fallback when the nocookie edge fails
-/// on a given network/WebView.
-String youtubeEmbedUrl(String key, [int hostIdx = 0]) {
-  const hosts = ['www.youtube-nocookie.com', 'www.youtube.com'];
-  final host = hosts[hostIdx.clamp(0, hosts.length - 1)];
-  return 'https://$host/embed/$key'
-      '?playsinline=1&rel=0&modestbranding=1&autoplay=1';
-}
+/// v1.0.1+32: the plain YouTube WATCH url — the card's hand-off target.
+/// The in-app WebView embed helpers were removed after the +31 field
+/// verdict: YouTube hard-gates embedded playback inside this app's
+/// WebView (error 152-4 on every video, every network, every origin
+/// recipe) while the watch page works everywhere. The watch URL opens in
+/// YouTube's own app — playback that cannot be webview-gated.
+String youtubeWatchUrl(String key) => 'https://www.youtube.com/watch?v=$key';
 
 /// Big YouTube thumbnail URL for a video [key] — `maxresdefault.jpg`
 /// (1280x720; callers fall back to `hqdefault.jpg` on error). Pure.
@@ -551,9 +508,8 @@ Future<bool> showTrailerUnavailable(
                     ytThumbUrl(thumbKey),
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) => Image.network(
-                      ytThumbUrl(
-                        thumbKey,
-                      ).replaceAll('maxresdefault', 'hqdefault'),
+                      ytThumbUrl(thumbKey)
+                          .replaceAll('maxresdefault', 'hqdefault'),
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => const SizedBox.shrink(),
                     ),

@@ -1,7 +1,7 @@
 name: maxplayer
 description: "MaxPlayer — local-first MPV video player."
 publish_to: 'none'
-version: 1.0.1+31
+version: 1.0.1+32
 environment:
   sdk: ^3.12.0
 
@@ -22,11 +22,6 @@ dependencies:
   share_plus: ^13.3.0
   qr_flutter: ^4.1.0
   url_launcher: ^6.3.2
-  webview_flutter: ^4.13.0
-  # Platform package pinned explicitly: autoplay-with-sound needs
-  # AndroidWebViewController.setMediaPlaybackRequiresUserGesture (moved
-  # off the platform-agnostic controller in webview_flutter 4.14).
-  webview_flutter_android: ^4.14.1
   youtube_explode_dart: ^3.1.0
 
 dev_dependencies:

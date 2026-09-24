@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -82,17 +80,20 @@ class MovieDetailSheet extends StatefulWidget {
 class _MovieDetailSheetState extends State<MovieDetailSheet> {
   late Future<TmdbFull?> _detailFuture = widget.detailLoader();
 
-  // v1.0.1+28: INLINE trailer playback via the OFFICIAL YouTube embed
-  // player. No MPV, no direct googlevideo URLs, no device-side signature
-  // gates: the same playback path every production app uses for YouTube —
-  // it survives the per-IP bot gating that killed direct streams.
-  WebViewController? _inlineWebView;
-  List<TrailerVariant> _inlineVariants = const [];
+  // v1.0.1+32: trailer HAND-OFF to the YouTube app. The in-app WebView
+  // embed is hard-gated by YouTube on the field devices: error 152-4 on
+  // EVERY video, on Wi-Fi AND mobile data alike, while the normal watch
+  // page plays fine in Chrome (field-tested across +29/+30/+31 origin
+  // recipes — nocookie, www, enablejsapi+origin+widget_referrer). YouTube
+  // refuses embedded playback inside this WebView regardless; the watch
+  // URL opened externally is the only playback path YouTube controls
+  // end-to-end, so that is what the card launches on tap. The language
+  // chips now re-aim the launch target (and swap the thumbnail) BEFORE
+  // the tap.
   String? _inlineKey;
   bool _inlineTrailerLoading = false;
   bool _inlineTrailerFailed = false;
   String _inlineTrailerFailDetail = '';
-  int _inlineTrailerReqId = 0;
 
   void _retryDetail() {
     setState(() {
@@ -100,139 +101,82 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
     });
   }
 
-  @override
-  void dispose() {
-    _inlineTrailerReqId++; // late callbacks can no longer touch state
-    unawaited(_inlineWebView?.loadRequest(Uri.parse('about:blank')));
-    super.dispose();
-  }
-
-  /// v1.0.1+28: tap the top trailer card -> play the OFFICIAL embed IN
-  /// PLACE. WebView page-load failures land in the card's error state
-  /// with the exact description — never an MPV screen, never a vague
-  /// panel.
-  Future<void> _playInlineTrailer(TmdbMovie detailMovie) async {
-    if (_inlineWebView != null || _inlineTrailerLoading) return;
-    final req = ++_inlineTrailerReqId;
+  /// v1.0.1+32: tap the top trailer card -> open the trailer in the
+  /// YouTube app (or browser). The WebView embed path is dead on the
+  /// field devices (see the field block note), so the card hands the
+  /// plain watch URL to Android, which resolves it to YouTube's own app —
+  /// the one player YouTube never 152-4s. A launch failure lands in the
+  /// card's error state with the exact detail — never an MPV screen,
+  /// never a vague panel.
+  Future<void> _launchTrailer(TmdbMovie detailMovie) async {
+    if (_inlineTrailerLoading) return;
     final variants = detailMovie.trailerVariants;
-    final key = variants.isNotEmpty
-        ? variants.first.key
-        : (detailMovie.trailerKey ?? '');
+    final key =
+        _inlineKey ??
+        (variants.isNotEmpty
+            ? variants.first.key
+            : (detailMovie.trailerKey ?? ''));
     if (key.isEmpty) return;
     setState(() {
       _inlineTrailerLoading = true;
       _inlineTrailerFailed = false;
       _inlineTrailerFailDetail = '';
     });
-    final controller =
-        WebViewController.fromPlatformCreationParams(
-            AndroidWebViewControllerCreationParams(),
-          )
-          ..setJavaScriptMode(JavaScriptMode.unrestricted)
-          ..setBackgroundColor(const Color(0xFF000000))
-          ..setNavigationDelegate(
-            NavigationDelegate(
-              onPageFinished: (_) {
-                if (mounted && req == _inlineTrailerReqId) {
-                  setState(() => _inlineTrailerLoading = false);
-                }
-              },
-              onWebResourceError: (err) {
-                if (err.isForMainFrame != true || !mounted) return;
-                if (req != _inlineTrailerReqId) return;
-                CrashLog.error(
-                  'trailer.embed_error',
-                  '${err.errorCode} ${err.description}',
-                );
-                setState(() {
-                  _inlineTrailerLoading = false;
-                  _inlineTrailerFailed = true;
-                  _inlineTrailerFailDetail =
-                      '${err.errorCode}: ${err.description}';
-                });
-              },
-              onNavigationRequest: (navReq) {
-                // v1.0.1+30: the card is SEALED. The main frame only ever
-                // holds our local iframe page (its load isn't a navigation
-                // request), so ANY main-frame navigation — including the
-                // "Watch video on YouTube" takeover that junked the card
-                // — is refused. The publisher-block message stays inside
-                // the tiny player, exactly like every other app.
-                if (!navReq.isMainFrame) return NavigationDecision.navigate;
-                if (navReq.url == 'about:blank') {
-                  return NavigationDecision.navigate;
-                }
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('This trailer is restricted by its owner'),
-                    ),
-                  );
-                }
-                return NavigationDecision.prevent;
-              },
-            ),
-          )
-          ..loadHtmlString(
-            trailerEmbedHtml(key),
-            baseUrl: kTrailerEmbedBaseUrl,
-          );
-    // Sound-on autoplay after the user's tap (moved to the Android
-    // platform controller in webview_flutter 4.14).
-    unawaited(
-      (controller.platform as AndroidWebViewController)
-          .setMediaPlaybackRequiresUserGesture(false),
-    );
-    if (!mounted || req != _inlineTrailerReqId) return;
+    final uri = Uri.parse(youtubeWatchUrl(key));
+    var ok = false;
+    String? errorDetail;
+    try {
+      ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      errorDetail = '$e';
+    }
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _inlineTrailerLoading = false);
+      CrashLog.crumb('trailer.youtube_handoff', {'key': key});
+      return;
+    }
+    final detail = errorDetail ?? 'No app accepted the YouTube link';
+    CrashLog.error('trailer.youtube_handoff', detail);
     setState(() {
-      _inlineWebView = controller;
-      _inlineVariants = variants;
-      _inlineKey = key;
+      _inlineTrailerLoading = false;
+      _inlineTrailerFailed = true;
+      _inlineTrailerFailDetail = detail;
     });
   }
 
-  /// v1.0.1+28: switch the playing embed to another language variant
-  /// (the chip row under the card) — just reloads the player URL.
-  void _switchInlineVariant(TrailerVariant v) {
+  /// v1.0.1+32: re-aim the card at another language variant — the chips
+  /// swap the thumbnail AND the launch target before the tap.
+  void _selectVariant(TrailerVariant v) {
     if (v.key.isEmpty || v.key == _inlineKey) return;
     setState(() {
       _inlineKey = v.key;
-      _inlineTrailerLoading = true;
-    });
-    unawaited(
-      _inlineWebView?.loadHtmlString(
-        trailerEmbedHtml(v.key),
-        baseUrl: kTrailerEmbedBaseUrl,
-      ),
-    );
-  }
-
-  /// v1.0.1+26: stop the inline trailer; the card returns to its
-  /// clickable-thumbnail state.
-  void _stopInlineTrailer() {
-    _inlineTrailerReqId++;
-    final c = _inlineWebView;
-    _inlineWebView = null;
-    _inlineVariants = const [];
-    _inlineKey = null;
-    if (c != null) unawaited(c.loadRequest(Uri.parse('about:blank')));
-    setState(() {
       _inlineTrailerFailed = false;
       _inlineTrailerFailDetail = '';
     });
   }
 
-  /// v1.0.1+28: the TOP-OF-DETAILS trailer card — thumbnail by default,
-  /// the official YouTube embed player while playing (in place), a
-  /// spinner while loading, and an in-card error (with retry) when the
-  /// page itself can't load.
+  /// v1.0.1+32: clear the card's error state back to the thumbnail.
+  void _clearTrailerError() {
+    setState(() {
+      _inlineTrailerLoading = false;
+      _inlineTrailerFailed = false;
+      _inlineTrailerFailDetail = '';
+    });
+  }
+
+  /// v1.0.1+32: the TOP-OF-DETAILS trailer card — the selected variant's
+  /// thumbnail with a play affordance; tapping launches the trailer in
+  /// the YouTube app, the chips below pick WHICH variant launches, and a
+  /// launch failure lands in the card with the exact detail + RETRY.
   Widget _inlineTrailerCard(TmdbMovie detailMovie) {
     final variants = detailMovie.trailerVariants;
-    final thumbKey = variants.isNotEmpty
-        ? variants.first.key
-        : (detailMovie.trailerKey ?? '');
-    if (thumbKey.isEmpty) return const SizedBox.shrink();
-    final playing = _inlineWebView != null;
+    final selectedKey =
+        _inlineKey ??
+        (variants.isNotEmpty
+            ? variants.first.key
+            : (detailMovie.trailerKey ?? ''));
+    if (selectedKey.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -246,27 +190,20 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                 fit: StackFit.expand,
                 children: [
                   Container(color: Colors.black),
-                  if (playing)
-                    WebViewWidget(controller: _inlineWebView!)
-                  else
-                    _trailerThumbImage(thumbKey),
+                  _trailerThumbImage(selectedKey),
                   // Tap-to-start surface (thumbnail state only — while
                   // playing, YouTube's own controls own the gestures).
-                  if (!playing &&
-                      !_inlineTrailerLoading &&
-                      !_inlineTrailerFailed)
+                  if (!_inlineTrailerLoading && !_inlineTrailerFailed)
                     Positioned.fill(
                       child: Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: () => _playInlineTrailer(detailMovie),
+                          onTap: () => _launchTrailer(detailMovie),
                           child: const SizedBox.expand(),
                         ),
                       ),
                     ),
-                  if (!playing &&
-                      !_inlineTrailerLoading &&
-                      !_inlineTrailerFailed) ...[
+                  if (!_inlineTrailerLoading && !_inlineTrailerFailed) ...[
                     const IgnorePointer(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
@@ -396,10 +333,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                       bottom: 10,
                       right: 12,
                       child: TextButton.icon(
-                        onPressed: () {
-                          _stopInlineTrailer();
-                          _playInlineTrailer(detailMovie);
-                        },
+                        onPressed: () => _launchTrailer(detailMovie),
                         icon: const Icon(Icons.refresh, size: 16),
                         label: const Text('RETRY'),
                       ),
@@ -412,7 +346,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                         shape: const CircleBorder(),
                         child: InkWell(
                           customBorder: const CircleBorder(),
-                          onTap: _stopInlineTrailer,
+                          onTap: _clearTrailerError,
                           child: const Padding(
                             padding: EdgeInsets.all(6),
                             child: Icon(
@@ -425,47 +359,26 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                       ),
                     ),
                   ],
-                  if (playing && !_inlineTrailerLoading)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Material(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        shape: const CircleBorder(),
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: _stopInlineTrailer,
-                          child: const Padding(
-                            padding: EdgeInsets.all(6),
-                            child: Icon(
-                              Icons.close_rounded,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
           ),
         ),
-        if (playing && _inlineVariants.length > 1)
+        if (variants.length > 1)
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: SizedBox(
               height: 30,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: _inlineVariants.length,
+                itemCount: variants.length,
                 separatorBuilder: (_, _) => const SizedBox(width: 6),
                 itemBuilder: (context, i) {
-                  final v = _inlineVariants[i];
-                  final selected = v.key == _inlineKey;
+                  final v = variants[i];
+                  final selected = v.key == selectedKey;
                   return ChoiceChip(
                     selected: selected,
-                    onSelected: (_) => _switchInlineVariant(v),
+                    onSelected: (_) => _selectVariant(v),
                     visualDensity: VisualDensity.compact,
                     labelPadding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -523,8 +436,9 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
             const SizedBox(height: 14),
           ],
 
-          // v1.0.1+26: TRAILER CARD AT THE TOP of the details — tapping
-          // it plays the trailer IN PLACE (no dedicated player screen).
+          // v1.0.1+32: TRAILER CARD AT THE TOP of the details — tapping
+          // it hands the trailer to the YouTube app (no dedicated player
+          // screen; the in-app WebView embed is hard-gated 152-4 here).
           FutureBuilder<TmdbFull?>(
             future: _detailFuture,
             builder: (context, snap) {
