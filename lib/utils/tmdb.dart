@@ -981,7 +981,14 @@ String? pickTrailerKey(Object? videos) {
 class TrailerStreams {
   final String videoUrl;
   final String? audioUrl;
-  const TrailerStreams(this.videoUrl, [this.audioUrl]);
+
+  /// v1.0.1+24: set ONLY on the video-only DASH branch — the best MUXED
+  /// (<=360p) stream of the same video. The player degrades to it when
+  /// the engine rejects the 720p+ video-only + separate-audio pair
+  /// (googlevideo throttling on a flaky network) so a trailer NEVER ends
+  /// in "this video can't be played".
+  final String? fallbackUrl;
+  const TrailerStreams(this.videoUrl, [this.audioUrl, this.fallbackUrl]);
 }
 
 /// Ordering: [preferred] language first (the app's trailer default is

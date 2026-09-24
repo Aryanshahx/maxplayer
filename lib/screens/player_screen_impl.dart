@@ -48,6 +48,7 @@ class PlayerScreen extends StatefulWidget {
     this.trailerCurrentKey,
     this.trailerResolver,
     this.trailerAudioUrl,
+    this.trailerFallbackUrl,
     this.trailerThumbUrl,
   });
 
@@ -59,6 +60,7 @@ class PlayerScreen extends StatefulWidget {
     this.trailerCurrentKey,
     this.trailerResolver,
     this.trailerAudioUrl,
+    this.trailerFallbackUrl,
     this.trailerThumbUrl,
   }) : queueIds = const [],
        queueStart = 0,
@@ -86,6 +88,11 @@ class PlayerScreen extends StatefulWidget {
   /// (a >=720p DASH stream) so its audio arrives as a separate track
   /// that mpv attaches via the `audio-file` property.
   final String? trailerAudioUrl;
+
+  /// v1.0.1+24: muxed (<=360p) safety-net URL for the same trailer —
+  /// opened once when the engine rejects the video-only + separate-audio
+  /// pair, so a trailer degrades instead of ending in "can't be played".
+  final String? trailerFallbackUrl;
 
   /// v1.0.1+23: YouTube thumbnail shown as a poster while the trailer
   /// stream opens/buffers (TRAILER-ONLY — never set for device videos).
@@ -134,7 +141,15 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// v1.0.1+19 trailer language switching state (null for device videos).
   String? _trailerKey;
   String? _trailerAudioUrl;
+  String? _trailerFallbackUrl;
   String? _trailerThumbUrl;
+  bool _trailerMuxedFallbackTried = false;
+  bool _appliedTrailerAudio = false;
+
+  /// v1.0.1+25: engine error lines collected during a TRAILER playback,
+  /// surfaced verbatim in the failure dialog (COPY REPORT) so bug
+  /// reports carry the REAL mpv error instead of a generic snack.
+  final List<String> _trailerEngineErrors = [];
   bool _trailerSwitching = false;
   Timer? _hideTimer;
   Timer? _saveTimer;
@@ -231,6 +246,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _title = widget.title;
     _trailerKey = widget.trailerCurrentKey;
     _trailerAudioUrl = widget.trailerAudioUrl;
+    _trailerFallbackUrl = widget.trailerFallbackUrl;
     _trailerThumbUrl = widget.trailerThumbUrl;
     _currentPath = widget.path;
     _queueIndex = widget.queueStart;
@@ -359,7 +375,10 @@ class _PlayerScreenState extends State<PlayerScreen>
           'Accept': '*/*',
           'Connection': 'keep-alive',
           // Same-origin Referer — a lot of IPTV CDNs fingerprint on it.
-          'Referer': '${u.scheme}://${u.host}/',
+          // v1.0.1+24: EXCEPT googlevideo — a self-Referer there trips its
+          // hotlink/throttle heuristics on some networks.
+          if (!u.host.endsWith('googlevideo.com'))
+            'Referer': '${u.scheme}://${u.host}/',
         },
       );
     }
@@ -374,8 +393,16 @@ class _PlayerScreenState extends State<PlayerScreen>
       // v1.0.1+20: trailer-only — attach (or clear) the separate audio
       // track that 720p+ video-only DASH streams arrive with. Device
       // videos never take this branch.
-      if (widget.trailerVariants != null || _trailerAudioUrl != null) {
-        await _mpvSet('audio-file', _trailerAudioUrl ?? '');
+      // v1.0.1+24: never send an EMPTY 'audio-file' set — it adds no
+      // reliability and produced junk error lines from mpv. Apply only a
+      // real audio track; clear ONCE when returning to a muxed stream.
+      final trailerAudio = _trailerAudioUrl;
+      if (trailerAudio != null && trailerAudio.isNotEmpty) {
+        await _mpvSet('audio-file', trailerAudio);
+        _appliedTrailerAudio = true;
+      } else if (_appliedTrailerAudio) {
+        await _mpvSet('audio-file', '');
+        _appliedTrailerAudio = false;
       }
       // Keep the remembered playback speed across videos (v29): mpv can
       // reset the rate while a new file loads, so re-apply it here too.
@@ -614,6 +641,11 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _onError(Object e) {
     if (_failed) return;
+    // v1.0.1+25: record every engine line for trailers (dialog report).
+    if ((widget.trailerVariants != null || widget.trailerAudioUrl != null) &&
+        _trailerEngineErrors.length < 6) {
+      _trailerEngineErrors.add(e.toString());
+    }
     // v1.0.1+18: media_kit forwards EVERY mpv error-level log line here,
     // including harmless command/property/filter noise (the v16 boost
     // bug). Only genuine open/decode failures earn the recovery ladder;
@@ -626,6 +658,35 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _recoverOrFail(Object e) async {
+    // v1.0.1+24: TRAILER SAFETY NET. When this playback is a trailer
+    // whose 720p+ video-only stream (plus separate audio) was rejected
+    // by googlevideo/mpv on this device+network, degrade ONCE straight to
+    // the pre-resolved muxed <=360p URL before any retry ladder — lower
+    // quality that ACTUALLY plays in-app beats an error dialog.
+    final isTrailerPlayback =
+        widget.trailerVariants != null || widget.trailerAudioUrl != null;
+    final muxedFallback = _trailerFallbackUrl;
+    if (isTrailerPlayback &&
+        muxedFallback != null &&
+        muxedFallback.isNotEmpty &&
+        muxedFallback != _currentPath &&
+        !_trailerMuxedFallbackTried) {
+      _trailerMuxedFallbackTried = true;
+      _trailerAudioUrl = null;
+      _currentPath = muxedFallback;
+      CrashLog.crumb('player.trailer_muxed_fallback', {'err': e.toString()});
+      try {
+        await _player.open(_mediaFor(muxedFallback), play: true);
+        unawaited(_player.setRate(_settings.playbackRate));
+        if (mounted) {
+          setState(() => _ready = true);
+          _emitSnack('Trailer: switched to compatible quality');
+        }
+        return;
+      } catch (e2) {
+        CrashLog.error('player.trailer_muxed_fallback_failed', e2);
+      }
+    }
     if (!_softwareDecodeRetried) {
       _softwareDecodeRetried = true;
       try {
@@ -657,8 +718,94 @@ class _PlayerScreenState extends State<PlayerScreen>
     _failed = true;
     CrashLog.error('player.open_failed', e, {'path': _currentPath});
     if (!mounted) return;
+    // v1.0.1+25: trailers never end in a bare "can't be played" snack —
+    // show the REAL engine errors with a COPY REPORT button so the exact
+    // cause (HTTP 403, timeout, unsupported codec, ...) is visible and
+    // shareable. Device videos keep the compact snack.
+    if (widget.trailerVariants != null || widget.trailerAudioUrl != null) {
+      unawaited(_showTrailerFailureDialog(e));
+      return;
+    }
     _emitSnack("This video can't be played by MPV");
     Navigator.of(context).maybePop();
+  }
+
+  /// v1.0.1+25: trailer failure dialog — thumbnail, the real collected
+  /// engine errors (selectable), and a COPY REPORT action.
+  Future<void> _showTrailerFailureDialog(Object lastError) async {
+    final errors = _trailerEngineErrors.toList();
+    final le = lastError.toString();
+    if (!errors.contains(le)) errors.add(le);
+    final report = StringBuffer('MaxPlayer v1.0.1+25 trailer failure report\n');
+    final uri = Uri.tryParse(_currentPath);
+    if (uri != null) report.writeln('host: ${uri.host}');
+    for (final err in errors) {
+      report.writeln('- ${err.length > 300 ? err.substring(0, 300) : err}');
+    }
+    final thumb = _trailerThumbUrl;
+    await showDialog<void>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF16161f),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text(
+          'Trailer could not be played',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+        ),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (thumb != null && thumb.isNotEmpty) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Image.network(
+                      thumb,
+                      fit: BoxFit.cover,
+                      errorBuilder: (a, b, c) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 160),
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    report.toString(),
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: report.toString()));
+              if (mounted) {
+                _emitSnack('Report copied — paste it to me');
+              }
+            },
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('COPY REPORT'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dlgCtx).pop(),
+            child: const Text('CLOSE'),
+          ),
+        ],
+      ),
+    );
+    if (mounted) Navigator.of(context).maybePop();
   }
 
   void _toggleControls() {
@@ -1507,6 +1654,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     _trailerAudioUrl = streams.audioUrl;
+    _trailerFallbackUrl = streams.fallbackUrl;
+    _trailerMuxedFallbackTried = false;
     _trailerKey = v.key;
     _trailerThumbUrl = 'https://i.ytimg.com/vi/${v.key}/maxresdefault.jpg';
     _currentPath = streams.videoUrl;
@@ -2281,9 +2430,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _emitSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override

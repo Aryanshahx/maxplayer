@@ -1616,4 +1616,64 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       );
     });
   });
+
+  group('trailer muxed safety net (v1.0.1+24)', () {
+    test('TrailerStreams carries an optional muxed fallbackUrl', () {
+      const plain = TrailerStreams('https://v');
+      expect(plain.audioUrl, isNull);
+      expect(plain.fallbackUrl, isNull);
+
+      const withAudio = TrailerStreams('https://v', 'https://a');
+      expect(withAudio.audioUrl, 'https://a');
+      expect(withAudio.fallbackUrl, isNull);
+
+      const withFallback = TrailerStreams(
+        'https://v',
+        'https://a',
+        'https://m',
+      );
+      expect(withFallback.videoUrl, 'https://v');
+      expect(withFallback.audioUrl, 'https://a');
+      expect(withFallback.fallbackUrl, 'https://m');
+    });
+
+    test('TrailerStreams fallbackUrl never changes positional order', () {
+      // (videoUrl, audioUrl, fallbackUrl) order is contractual: the
+      // resolver passes the muxed <=360p url as the 3rd positional arg.
+      const s = TrailerStreams('a', 'b', 'c');
+      expect([s.videoUrl, s.audioUrl, s.fallbackUrl], ['a', 'b', 'c']);
+    });
+  });
+
+  group('trailer device preflight chooser (v1.0.1+25)', () {
+    test('keeps the 720p pair untouched when the device accepts it', () {
+      const s = TrailerStreams('https://v', 'https://a', 'https://m');
+      final out = pickPlayableTrailerStreams(s, videoOk: true);
+      expect(identical(out, s), isTrue);
+    });
+
+    test('degrades to muxed fallback and drops the separate audio', () {
+      const s = TrailerStreams('https://v', 'https://a', 'https://m');
+      final out = pickPlayableTrailerStreams(
+        s,
+        videoOk: false,
+        fallbackOk: true,
+      );
+      expect(out, isNotNull);
+      expect(out!.videoUrl, 'https://m');
+      expect(out.audioUrl, isNull);
+      expect(out.fallbackUrl, isNull);
+    });
+
+    test('returns null when the device rejects everything', () {
+      const s = TrailerStreams('https://v', 'https://a', 'https://m');
+      expect(pickPlayableTrailerStreams(s, videoOk: false), isNull);
+      expect(
+        pickPlayableTrailerStreams(s, videoOk: false, fallbackOk: false),
+        isNull,
+      );
+      const noFallback = TrailerStreams('https://v');
+      expect(pickPlayableTrailerStreams(noFallback, videoOk: false), isNull);
+    });
+  });
 }

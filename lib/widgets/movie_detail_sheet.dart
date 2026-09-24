@@ -219,6 +219,120 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
 
           const SizedBox(height: 14),
 
+          // v1.0.1+24: big CLICKABLE TRAILER THUMBNAIL (16:9) in the
+          // detail section — tapping opens the trailer in-app (language
+          // variants ride along). Rendered once TMDB detail confirms a
+          // trailer actually exists.
+          FutureBuilder<TmdbFull?>(
+            future: _detailFuture,
+            builder: (context, snap) {
+              final detailMovie = snap.data?.movie;
+              if (detailMovie == null) return const SizedBox.shrink();
+              final variants = detailMovie.trailerVariants;
+              final thumbKey = variants.isNotEmpty
+                  ? variants.first.key
+                  : (detailMovie.trailerKey ?? '');
+              if (thumbKey.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => _openTrailer(detailMovie),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Container(color: const Color(0xFF16161f)),
+                            _trailerThumbImage(thumbKey),
+                            const DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.bottomCenter,
+                                  end: Alignment(0, 0.25),
+                                  colors: [Colors.black87, Colors.transparent],
+                                ),
+                              ),
+                            ),
+                            Center(
+                              child: Container(
+                                width: 58,
+                                height: 58,
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.55),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.85),
+                                    width: 2,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.play_arrow_rounded,
+                                  color: Colors.white,
+                                  size: 36,
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left: 12,
+                              bottom: 10,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.accent,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'TRAILER',
+                                  style: TextStyle(
+                                    color: AppColors.onAccent,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (variants.length > 1)
+                              Positioned(
+                                right: 12,
+                                bottom: 10,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.6),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '${variants.length} languages',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+
           // Action Buttons: Ask AI + Watch Trailer
           Row(
             children: [
@@ -1181,4 +1295,19 @@ class _PrimeCta extends StatelessWidget {
       ],
     );
   }
+}
+
+/// v1.0.1+24: trailer thumbnail for the clickable detail-section card.
+/// maxresdefault (1280x720) first; older/small videos only publish
+/// hqdefault, so fall back to that on HTTP error.
+Widget _trailerThumbImage(String key) {
+  return Image.network(
+    ytThumbUrl(key),
+    fit: BoxFit.cover,
+    errorBuilder: (ctx, err, stack) => Image.network(
+      'https://i.ytimg.com/vi/$key/hqdefault.jpg',
+      fit: BoxFit.cover,
+      errorBuilder: (a, b, c) => const SizedBox.shrink(),
+    ),
+  );
 }

@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../screens/player_screen.dart';
 import '../utils/crash_log.dart';
+import '../utils/iptv.dart' show kMaxPlayerUserAgent;
 import '../utils/tmdb.dart';
 
 /// In-app trailer playback — YouTube embedding (WebView/iframe) gets blocked
@@ -75,20 +77,29 @@ class TrailerPlayerScreen {
 
     final streams = await resolveTrailerStreams(videoKey);
 
+    // v1.0.1+25: DEVICE-SIDE PREFLIGHT — probe what the phone's own
+    // network accepts (1KB range GET) and pick the first playable
+    // candidate (720p+ pair first, muxed <=360p safety second) BEFORE
+    // MPV ever sees a URL. The spinner stays up during the probe.
+    var playStreams = streams != null && streams.videoUrl.isNotEmpty
+        ? await preflightedTrailerStreams(streams)
+        : null;
+
     // Close the spinner regardless of outcome (and never pop the wrong
     // route if the user already cancelled).
     closeDialog();
     unawaited(dialogFuture);
     if (canceled || !context.mounted) return;
 
-    if (streams != null && streams.videoUrl.isNotEmpty) {
+    if (playStreams != null) {
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => PlayerScreen.stream(
-            path: streams.videoUrl,
+            path: playStreams.videoUrl,
             title: title,
-            trailerAudioUrl: streams.audioUrl,
+            trailerAudioUrl: playStreams.audioUrl,
             trailerThumbUrl: ytThumbUrl(videoKey),
+            trailerFallbackUrl: playStreams.fallbackUrl,
           ),
         ),
       );
@@ -170,12 +181,17 @@ class TrailerPlayerScreen {
     // (very common for Hindi dubs) must not sink the trailer into the
     // YouTube fallback.
     final hit = await resolveFirstPlayableTrailer(variants);
+    // v1.0.1+25: device-side preflight (see open()) — the spinner is
+    // still up, so the probe is honest UI time.
+    final playStreams = hit != null && hit.streams.videoUrl.isNotEmpty
+        ? await preflightedTrailerStreams(hit.streams)
+        : null;
     closeDialog();
     unawaited(dialogFuture);
     if (canceled || !context.mounted) return;
 
-    if (hit != null) {
-      final streams = hit.streams;
+    if (hit != null && playStreams != null) {
+      final streams = playStreams;
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => PlayerScreen.stream(
@@ -186,6 +202,7 @@ class TrailerPlayerScreen {
             trailerResolver: resolveTrailerStreams,
             trailerAudioUrl: streams.audioUrl,
             trailerThumbUrl: ytThumbUrl(hit.key),
+            trailerFallbackUrl: streams.fallbackUrl,
           ),
         ),
       );
@@ -249,7 +266,16 @@ Future<TrailerStreams?> resolveTrailerStreams(String videoKey) async {
         return TrailerStreams(muxed.first.url.toString());
       }
       final audio = manifest.audioOnly.withHighestBitrate();
-      return TrailerStreams(best.url.toString(), audio.url.toString());
+      // v1.0.1+24: also capture the best MUXED (<=360p) stream as an
+      // in-app safety net — if mpv can't open the 720p+ video-only +
+      // separate-audio pair on the user's connection, the player
+      // degrades to this instead of failing with "can't be played".
+      final fallbackUrl = muxed.isNotEmpty ? muxed.first.url.toString() : null;
+      return TrailerStreams(
+        best.url.toString(),
+        audio.url.toString(),
+        fallbackUrl,
+      );
     }
 
     if (muxed.isNotEmpty) return TrailerStreams(muxed.first.url.toString());
@@ -293,6 +319,86 @@ Future<({TrailerStreams streams, String key})?> resolveFirstPlayableTrailer(
     }
   }
   return null;
+}
+
+/// Outcome of a device-side 1KB range probe against a resolved stream URL.
+typedef TrailerPreflight = ({bool ok, int? status, String? error});
+
+/// v1.0.1+25 — the anti-guessing change. This sandbox's curl always got
+/// 206 while real phones still failed, so the DEVICE now proves each URL
+/// itself: GET with `Range: bytes=0-1023`; any 2xx = playable. Only
+/// device-verified URLs are ever handed to MPV.
+Future<TrailerPreflight> preflightStreamUrl(String url) async {
+  HttpClient? client;
+  try {
+    client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 8)
+      ..idleTimeout = const Duration(seconds: 8);
+    final req = await client
+        .getUrl(Uri.parse(url))
+        .timeout(const Duration(seconds: 10));
+    req.headers.set('User-Agent', kMaxPlayerUserAgent);
+    req.headers.set('Range', 'bytes=0-1023');
+    req.followRedirects = true;
+    final res = await req.close().timeout(const Duration(seconds: 10));
+    await res.drain<void>();
+    final status = res.statusCode;
+    final ok = status >= 200 && status < 300;
+    return ok
+        ? (ok: true, status: status, error: null)
+        : (ok: false, status: status, error: 'HTTP $status');
+  } on Object catch (e) {
+    return (ok: false, status: null, error: e.toString());
+  } finally {
+    client?.close(force: true);
+  }
+}
+
+/// Pure chooser behind [preflightedTrailerStreams] (unit-tested): keep
+/// the 720p+ pair when the device accepts it; else degrade ONCE to the
+/// muxed <=360p safety URL (whose audio is muxed in — separate audioUrl
+/// must be dropped); null when the network rejects everything.
+TrailerStreams? pickPlayableTrailerStreams(
+  TrailerStreams streams, {
+  required bool videoOk,
+  bool fallbackOk = false,
+}) {
+  if (videoOk) return streams;
+  final fb = streams.fallbackUrl;
+  if (fb != null && fb.isNotEmpty && fb != streams.videoUrl && fallbackOk) {
+    return TrailerStreams(fb);
+  }
+  return null;
+}
+
+/// Device-side driver around [pickPlayableTrailerStreams]: probes the
+/// primary URL first, and — only when it failed and a muxed fallback
+/// exists — the fallback too.
+Future<TrailerStreams?> preflightedTrailerStreams(TrailerStreams s) async {
+  final v = await preflightStreamUrl(s.videoUrl);
+  TrailerPreflight? f;
+  if (!v.ok) {
+    final fb = s.fallbackUrl;
+    if (fb != null && fb.isNotEmpty && fb != s.videoUrl) {
+      f = await preflightStreamUrl(fb);
+    }
+  }
+  final out = pickPlayableTrailerStreams(
+    s,
+    videoOk: v.ok,
+    fallbackOk: f?.ok ?? false,
+  );
+  if (out == null) {
+    CrashLog.crumb('trailer.preflight_dead', {
+      'first_status': v.status,
+      'first_error': v.error,
+      if (f != null) 'fallback_status': f.status,
+      if (f != null) 'fallback_error': f.error,
+    });
+  } else if (!v.ok) {
+    CrashLog.crumb('trailer.preflight_degraded', {'to': 'muxed'});
+  }
+  return out;
 }
 
 /// Big YouTube thumbnail URL for a video [key] — `maxresdefault.jpg`
