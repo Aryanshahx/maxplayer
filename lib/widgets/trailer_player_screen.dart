@@ -82,7 +82,7 @@ class TrailerPlayerScreen {
     // candidate (720p+ pair first, muxed <=360p safety second) BEFORE
     // MPV ever sees a URL. The spinner stays up during the probe.
     var playStreams = streams != null && streams.videoUrl.isNotEmpty
-        ? await preflightedTrailerStreams(streams)
+        ? await deviceOrderedTrailerStreams(streams)
         : null;
 
     // Close the spinner regardless of outcome (and never pop the wrong
@@ -184,7 +184,7 @@ class TrailerPlayerScreen {
     // v1.0.1+25: device-side preflight (see open()) — the spinner is
     // still up, so the probe is honest UI time.
     final playStreams = hit != null && hit.streams.videoUrl.isNotEmpty
-        ? await preflightedTrailerStreams(hit.streams)
+        ? await deviceOrderedTrailerStreams(hit.streams)
         : null;
     closeDialog();
     unawaited(dialogFuture);
@@ -354,49 +354,57 @@ Future<TrailerPreflight> preflightStreamUrl(String url) async {
   }
 }
 
-/// Pure chooser behind [preflightedTrailerStreams] (unit-tested): keep
-/// the 720p+ pair when the device accepts it; else degrade ONCE to the
-/// muxed <=360p safety URL (whose audio is muxed in — separate audioUrl
-/// must be dropped); null when the network rejects everything.
-TrailerStreams? pickPlayableTrailerStreams(
+/// v1.0.1+26: ADVISORY chooser behind [deviceOrderedTrailerStreams]
+/// (unit-tested). Dart's HttpClient stack is neither curl nor MPV — a
+/// probe false-negative must NEVER block playback. So: keep the primary
+/// when the probe accepts it (or when the probe is inconclusive on both
+/// candidates — MPV is the final arbiter); only swap to the muxed
+/// <=360p safety URL when the probe REJECTED the primary and ACCEPTED
+/// the fallback.
+TrailerStreams pickPlayableTrailerStreams(
   TrailerStreams streams, {
   required bool videoOk,
   bool fallbackOk = false,
 }) {
-  if (videoOk) return streams;
   final fb = streams.fallbackUrl;
-  if (fb != null && fb.isNotEmpty && fb != streams.videoUrl && fallbackOk) {
+  if (!videoOk &&
+      fb != null &&
+      fb.isNotEmpty &&
+      fb != streams.videoUrl &&
+      fallbackOk) {
     return TrailerStreams(fb);
   }
-  return null;
+  return streams;
 }
 
-/// Device-side driver around [pickPlayableTrailerStreams]: probes the
-/// primary URL first, and — only when it failed and a muxed fallback
-/// exists — the fallback too.
-Future<TrailerStreams?> preflightedTrailerStreams(TrailerStreams s) async {
+/// v1.0.1+25 -> +26: device-side probe over the primary URL (and, only
+/// when the primary probe failed, the muxed fallback). ADVISORY ORDERING
+/// ONLY — the returned value is always non-null: the probe reorders
+/// candidates; MPV decides. (On-device evidence: on a phone where MPV
+/// could open the streams, Dart's own probe failed for EVERY trailer —
+/// a blocking probe only produced false "couldn't be loaded" panels.)
+Future<TrailerStreams> deviceOrderedTrailerStreams(TrailerStreams s) async {
   final v = await preflightStreamUrl(s.videoUrl);
+  final fb = s.fallbackUrl;
   TrailerPreflight? f;
-  if (!v.ok) {
-    final fb = s.fallbackUrl;
-    if (fb != null && fb.isNotEmpty && fb != s.videoUrl) {
-      f = await preflightStreamUrl(fb);
-    }
+  if (!v.ok && fb != null && fb.isNotEmpty && fb != s.videoUrl) {
+    f = await preflightStreamUrl(fb);
   }
   final out = pickPlayableTrailerStreams(
     s,
     videoOk: v.ok,
     fallbackOk: f?.ok ?? false,
   );
-  if (out == null) {
-    CrashLog.crumb('trailer.preflight_dead', {
-      'first_status': v.status,
-      'first_error': v.error,
-      if (f != null) 'fallback_status': f.status,
-      if (f != null) 'fallback_error': f.error,
-    });
-  } else if (!v.ok) {
-    CrashLog.crumb('trailer.preflight_degraded', {'to': 'muxed'});
+  if (!v.ok) {
+    if (out.videoUrl == s.videoUrl) {
+      CrashLog.crumb('trailer.probe_inconclusive', {
+        'first_status': v.status,
+        'first_error': v.error,
+        if (f != null) 'fallback_status': f.status,
+      });
+    } else {
+      CrashLog.crumb('trailer.probe_degraded', {'to': 'muxed'});
+    }
   }
   return out;
 }

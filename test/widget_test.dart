@@ -1659,21 +1659,33 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
         videoOk: false,
         fallbackOk: true,
       );
-      expect(out, isNotNull);
-      expect(out!.videoUrl, 'https://m');
+      expect(out.videoUrl, 'https://m');
       expect(out.audioUrl, isNull);
       expect(out.fallbackUrl, isNull);
     });
 
-    test('returns null when the device rejects everything', () {
+    test('never blocks: inconclusive probes keep the primary (v1.0.1+26)', () {
+      // Dart's HttpClient stack is not MPV's stack — on-device the probe
+      // can fail where MPV succeeds, so the chooser must hand the primary
+      // to MPV whenever the probes can't PROVE the fallback is better.
       const s = TrailerStreams('https://v', 'https://a', 'https://m');
-      expect(pickPlayableTrailerStreams(s, videoOk: false), isNull);
       expect(
-        pickPlayableTrailerStreams(s, videoOk: false, fallbackOk: false),
-        isNull,
+        pickPlayableTrailerStreams(s, videoOk: false).videoUrl,
+        'https://v',
+      );
+      expect(
+        pickPlayableTrailerStreams(
+          s,
+          videoOk: false,
+          fallbackOk: false,
+        ).videoUrl,
+        'https://v',
       );
       const noFallback = TrailerStreams('https://v');
-      expect(pickPlayableTrailerStreams(noFallback, videoOk: false), isNull);
+      expect(
+        pickPlayableTrailerStreams(noFallback, videoOk: false).videoUrl,
+        'https://v',
+      );
     });
   });
 }

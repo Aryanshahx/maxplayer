@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -10,6 +13,8 @@ import '../utils/amazon_affiliate.dart';
 
 import '../theme.dart';
 import '../utils/tmdb.dart';
+import '../utils/crash_log.dart';
+import '../utils/iptv.dart' show kMaxPlayerUserAgent;
 import '../utils/tmdb_image.dart';
 import 'ask_ai_sheet.dart';
 import 'video_grid.dart';
@@ -78,10 +83,392 @@ class MovieDetailSheet extends StatefulWidget {
 class _MovieDetailSheetState extends State<MovieDetailSheet> {
   late Future<TmdbFull?> _detailFuture = widget.detailLoader();
 
+  // v1.0.1+26: INLINE trailer playback — tapping the top-of-details
+  // thumbnail card plays the trailer IN PLACE; no dedicated player
+  // screen, no dedicated trailer button.
+  Player? _inlineTrailerPlayer;
+  VideoController? _inlineTrailerController;
+  bool _inlineTrailerLoading = false;
+  bool _inlineTrailerPaused = false;
+  bool _inlineTrailerFailed = false;
+  String _inlineTrailerFailDetail = '';
+  int _inlineTrailerReqId = 0;
+  StreamSubscription<bool>? _inlinePlayingSub;
+  StreamSubscription<String>? _inlineErrorSub;
+
   void _retryDetail() {
     setState(() {
       _detailFuture = widget.detailLoader();
     });
+  }
+
+  @override
+  void dispose() {
+    _inlineTrailerReqId++; // late resolves can no longer touch state
+    unawaited(_inlinePlayingSub?.cancel());
+    unawaited(_inlineErrorSub?.cancel());
+    unawaited(_inlineTrailerPlayer?.dispose());
+    super.dispose();
+  }
+
+  /// v1.0.1+26: tap the top trailer card -> resolve + play IN PLACE.
+  /// The device probe is advisory (+26): MPV is the final arbiter. MPV
+  /// error lines land in the card's error state verbatim (so a report
+  /// carries the REAL cause) — never an MPV error screen.
+  Future<void> _playInlineTrailer(TmdbMovie detailMovie) async {
+    if (_inlineTrailerController != null || _inlineTrailerLoading) return;
+    final req = ++_inlineTrailerReqId;
+    setState(() {
+      _inlineTrailerLoading = true;
+      _inlineTrailerFailed = false;
+      _inlineTrailerFailDetail = '';
+    });
+    Player? player;
+    try {
+      TrailerStreams? streams;
+      if (detailMovie.trailerVariants.isNotEmpty) {
+        final hit = await resolveFirstPlayableTrailer(
+          detailMovie.trailerVariants,
+        );
+        streams = hit?.streams;
+      } else {
+        final key = detailMovie.trailerKey;
+        if (key != null && key.isNotEmpty) {
+          streams = await resolveTrailerStreams(key);
+        }
+      }
+      if (streams != null && streams.videoUrl.isNotEmpty) {
+        streams = await deviceOrderedTrailerStreams(streams);
+      }
+      if (!mounted || req != _inlineTrailerReqId) return;
+      if (streams == null || streams.videoUrl.isEmpty) {
+        CrashLog.crumb('trailer.inline_no_streams', {
+          'title': widget.movie.title,
+        });
+        setState(() {
+          _inlineTrailerLoading = false;
+          _inlineTrailerFailed = true;
+          _inlineTrailerFailDetail = 'No playable trailer stream found.';
+        });
+        return;
+      }
+
+      player = Player();
+      final controller = VideoController(player);
+      await player.open(
+        Media(
+          streams.videoUrl,
+          // googlevideo must not get a self-Referer (v1.0.1+24 rule);
+          // a plain branded UA is the safest pose.
+          httpHeaders: {'User-Agent': kMaxPlayerUserAgent},
+        ),
+        play: true,
+      );
+      final audioUrl = streams.audioUrl;
+      if (audioUrl != null && audioUrl.isNotEmpty) {
+        try {
+          final platform = player.platform;
+          if (platform != null) {
+            await (platform as dynamic).setProperty('audio-file', audioUrl);
+          }
+        } catch (e) {
+          CrashLog.error('trailer.inline_audio_attach', e);
+        }
+      }
+      _inlinePlayingSub = player.stream.playing.listen((playing) {
+        if (mounted) {
+          setState(() => _inlineTrailerPaused = !playing);
+        }
+      });
+      _inlineErrorSub = player.stream.error.listen((err) {
+        if (!mounted) return;
+        CrashLog.error('trailer.inline_engine_error', err);
+        setState(() {
+          _inlineTrailerFailed = true;
+          _inlineTrailerFailDetail = err;
+        });
+      });
+      if (!mounted || req != _inlineTrailerReqId) {
+        unawaited(player.dispose());
+        return;
+      }
+      setState(() {
+        _inlineTrailerPlayer = player;
+        _inlineTrailerController = controller;
+        _inlineTrailerLoading = false;
+      });
+      player = null; // owned by state now
+    } catch (e) {
+      CrashLog.error('trailer.inline_failed', e);
+      if (mounted) {
+        setState(() {
+          _inlineTrailerLoading = false;
+          _inlineTrailerFailed = true;
+          _inlineTrailerFailDetail = '$e';
+        });
+      }
+    } finally {
+      if (player != null) unawaited(player.dispose());
+    }
+  }
+
+  /// v1.0.1+26: stop the inline trailer; the card returns to its
+  /// clickable-thumbnail state.
+  void _stopInlineTrailer() {
+    _inlineTrailerReqId++;
+    unawaited(_inlinePlayingSub?.cancel());
+    _inlinePlayingSub = null;
+    unawaited(_inlineErrorSub?.cancel());
+    _inlineErrorSub = null;
+    final p = _inlineTrailerPlayer;
+    _inlineTrailerPlayer = null;
+    _inlineTrailerController = null;
+    if (p != null) unawaited(p.dispose());
+    setState(() {
+      _inlineTrailerPaused = false;
+      _inlineTrailerFailed = false;
+      _inlineTrailerFailDetail = '';
+    });
+  }
+
+  /// v1.0.1+26: the TOP-OF-DETAILS trailer card — thumbnail by default,
+  /// spinner while loading, the live MPV surface while playing, and an
+  /// in-card error (with retry) when the engine says no.
+  Widget _inlineTrailerCard(TmdbMovie detailMovie) {
+    final variants = detailMovie.trailerVariants;
+    final thumbKey = variants.isNotEmpty
+        ? variants.first.key
+        : (detailMovie.trailerKey ?? '');
+    if (thumbKey.isEmpty) return const SizedBox.shrink();
+    final playing = _inlineTrailerController != null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Container(color: Colors.black),
+              if (playing)
+                Video(
+                  controller: _inlineTrailerController!,
+                  controls: NoVideoControls,
+                  wakelock: false,
+                )
+              else
+                _trailerThumbImage(thumbKey),
+              Positioned.fill(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: _inlineTrailerLoading
+                        ? null
+                        : (playing
+                              ? () => _inlineTrailerPlayer?.playOrPause()
+                              : () => _playInlineTrailer(detailMovie)),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              ),
+              if (!playing &&
+                  !_inlineTrailerLoading &&
+                  !_inlineTrailerFailed) ...[
+                const IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment(0, 0.25),
+                        colors: [Colors.black87, Colors.transparent],
+                      ),
+                    ),
+                  ),
+                ),
+                IgnorePointer(
+                  child: Center(
+                    child: Container(
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          width: 2,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 36,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 12,
+                  bottom: 10,
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'TRAILER',
+                        style: TextStyle(
+                          color: AppColors.onAccent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (variants.length > 1)
+                  Positioned(
+                    right: 12,
+                    bottom: 10,
+                    child: IgnorePointer(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '${variants.length} languages',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+              if (_inlineTrailerLoading)
+                const Center(
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              if (_inlineTrailerFailed) ...[
+                Container(color: Colors.black.withValues(alpha: 0.65)),
+                IgnorePointer(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            color: Colors.white70,
+                            size: 30,
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Trailer could not be loaded right now.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (_inlineTrailerFailDetail.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              _inlineTrailerFailDetail,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 10,
+                  right: 12,
+                  child: TextButton.icon(
+                    onPressed: () => _playInlineTrailer(detailMovie),
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('RETRY'),
+                  ),
+                ),
+              ],
+              if (playing) ...[
+                if (_inlineTrailerPaused)
+                  IgnorePointer(
+                    child: Center(
+                      child: Container(
+                        width: 58,
+                        height: 58,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            width: 2,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.pause_rounded,
+                          color: Colors.white,
+                          size: 36,
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Material(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _stopInlineTrailer,
+                      child: const Padding(
+                        padding: EdgeInsets.all(6),
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _playLocal(BuildContext sheetContext) async {
@@ -89,29 +476,6 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
     if (asset == null) return;
     Navigator.of(sheetContext).pop(); // close the sheet first
     await VideoGrid.openVideo(widget.hostContext, asset);
-  }
-
-  Future<void> _openTrailer(TmdbMovie detailMovie) async {
-    // v1.0.1+15: trailers play INSIDE the app in MaxPlayer's own MPV
-    // player via youtube_explode URL resolution (iframed WebView was
-    // blocked by YouTube with error 152-4). v1.0.1+19: language variants
-    // come along (Hindi default) so the trailer-only language button can
-    // switch dubs mid-play.
-    if (detailMovie.trailerVariants.isNotEmpty) {
-      await TrailerPlayerScreen.openVariants(
-        widget.hostContext,
-        detailMovie.trailerVariants,
-        '${widget.movie.title} — Trailer',
-      );
-      return;
-    }
-    final key = detailMovie.trailerKey;
-    if (key == null || key.isEmpty) return;
-    await TrailerPlayerScreen.open(
-      widget.hostContext,
-      key,
-      '${widget.movie.title} — Trailer',
-    );
   }
 
   @override
@@ -138,6 +502,17 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
             ),
             const SizedBox(height: 14),
           ],
+
+          // v1.0.1+26: TRAILER CARD AT THE TOP of the details — tapping
+          // it plays the trailer IN PLACE (no dedicated player screen).
+          FutureBuilder<TmdbFull?>(
+            future: _detailFuture,
+            builder: (context, snap) {
+              final detailMovie = snap.data?.movie;
+              if (detailMovie == null) return const SizedBox.shrink();
+              return _inlineTrailerCard(detailMovie);
+            },
+          ),
 
           // Header: Poster + Title + Rating + Kind badge
           Row(
@@ -219,121 +594,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
 
           const SizedBox(height: 14),
 
-          // v1.0.1+24: big CLICKABLE TRAILER THUMBNAIL (16:9) in the
-          // detail section — tapping opens the trailer in-app (language
-          // variants ride along). Rendered once TMDB detail confirms a
-          // trailer actually exists.
-          FutureBuilder<TmdbFull?>(
-            future: _detailFuture,
-            builder: (context, snap) {
-              final detailMovie = snap.data?.movie;
-              if (detailMovie == null) return const SizedBox.shrink();
-              final variants = detailMovie.trailerVariants;
-              final thumbKey = variants.isNotEmpty
-                  ? variants.first.key
-                  : (detailMovie.trailerKey ?? '');
-              if (thumbKey.isEmpty) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => _openTrailer(detailMovie),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: AspectRatio(
-                        aspectRatio: 16 / 9,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Container(color: const Color(0xFF16161f)),
-                            _trailerThumbImage(thumbKey),
-                            const DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.bottomCenter,
-                                  end: Alignment(0, 0.25),
-                                  colors: [Colors.black87, Colors.transparent],
-                                ),
-                              ),
-                            ),
-                            Center(
-                              child: Container(
-                                width: 58,
-                                height: 58,
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.55),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.85),
-                                    width: 2,
-                                  ),
-                                ),
-                                child: const Icon(
-                                  Icons.play_arrow_rounded,
-                                  color: Colors.white,
-                                  size: 36,
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              left: 12,
-                              bottom: 10,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.accent,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  'TRAILER',
-                                  style: TextStyle(
-                                    color: AppColors.onAccent,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 1.2,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            if (variants.length > 1)
-                              Positioned(
-                                right: 12,
-                                bottom: 10,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.6),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    '${variants.length} languages',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-
-          // Action Buttons: Ask AI + Watch Trailer
+          // Action Buttons: Ask AI (the trailer lives in the top card).
           Row(
             children: [
               Expanded(
@@ -354,36 +615,6 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                     'Ask AI',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FutureBuilder<TmdbFull?>(
-                  future: _detailFuture,
-                  builder: (context, snap) {
-                    final detailMovie = snap.data?.movie;
-                    final hasTrailer =
-                        detailMovie != null &&
-                        (detailMovie.trailerVariants.isNotEmpty ||
-                            (detailMovie.trailerKey ?? '').isNotEmpty);
-                    return FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.accent,
-                        foregroundColor: AppColors.onAccent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      onPressed: hasTrailer
-                          ? () => _openTrailer(detailMovie)
-                          : null,
-                      icon: const Icon(Icons.play_circle_outline, size: 16),
-                      label: const Text(
-                        'Trailer',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    );
-                  },
                 ),
               ),
             ],
