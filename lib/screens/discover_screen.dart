@@ -8,7 +8,6 @@ import 'package:photo_manager/photo_manager.dart';
 import '../services/native_bridge.dart';
 import '../services/recommendations.dart';
 import '../theme.dart';
-import '../utils/ads.dart';
 import '../utils/config.dart';
 import '../utils/local_store.dart';
 import '../utils/movie_match.dart';
@@ -398,9 +397,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                               ? _buildHotSearches()
                               : _buildOttHome()),
                   ),
-                  // v1.0.1+16: slim AdMob banner pinned to the bottom of
-                  // Discover (invisible until loaded / on non-Android).
-                  const AdBanner(),
                 ],
               ),
             ),

@@ -33,7 +33,6 @@ import 'package:maxplayer/services/recommendations.dart';
 import 'package:maxplayer/services/ai_suggest.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:maxplayer/utils/ads.dart';
 import 'package:maxplayer/utils/app_volume.dart';
 import 'package:maxplayer/utils/movie_match.dart';
 import 'package:maxplayer/utils/player_settings.dart';
@@ -1415,24 +1414,5 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(gestureTickFor(98, 110, 0, 100), GestureTick.edgeHigh);
       expect(gestureTickFor(98, 99, 0, 100), GestureTick.tick);
     });
-  });
-  group('AdMob wiring (v1.0.1+16)', () {
-    test('ships with Google demo ids until real units are pasted', () {
-      // The app must never go live still pointing at demo units: this pair
-      // of getters is the ONLY source of unit ids used by the banner and
-      // the exit interstitial.
-      expect(MaxAds.kUseTestAds, isTrue);
-      expect(MaxAds.bannerUnitId, contains('3940256099942544/6300978111'));
-      expect(
-        MaxAds.interstitialUnitId,
-        contains('3940256099942544/1033173712'),
-      );
-      expect(MaxAds.bannerUnitId, isNot(MaxAds.interstitialUnitId));
-    });
-
-    test('exit interstitial hard cooldown is 3 minutes', () {
-      expect(ExitInterstitial.cooldown, const Duration(minutes: 3));
-    });
-  });
-}
+  });}
 

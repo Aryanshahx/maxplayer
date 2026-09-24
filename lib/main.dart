@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -7,7 +5,6 @@ import 'package:media_kit/media_kit.dart';
 import 'screens/library_screen.dart';
 import 'services/native_bridge.dart';
 import 'theme.dart';
-import 'utils/ads.dart';
 import 'utils/crash_log.dart';
 import 'utils/settings.dart';
 
@@ -27,9 +24,6 @@ Future<void> main() async {
   // Must be registered once, before any screen tries to handle the same
   // channel - a second setMethodCallHandler silently replaces the first.
   NativeBridge.ensureNativeHandler();
-  // v1.0.1+16: AdMob (test ids until the real unit ids are pasted into
-  // lib/utils/ads.dart). Fire-and-forget — ads can never block startup.
-  MaxAds.init(); // schedules the SDK init for after the first frame
   CrashLog.crumb('app.start');
   runApp(const MaxPlayerApp());
 }

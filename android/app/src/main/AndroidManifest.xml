@@ -90,13 +90,6 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- v1.0.1+16 AdMob. This is Google's public TEST App ID so ads
-             work out of the box. TODO(ads): replace the android:value
-             with YOUR App ID (AdMob console → Apps → App settings,
-             format: ca-app-pub-XXXXXXXXXXXXXXXX~YYYYYYYYYY). -->
-        <meta-data
-            android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713"/>
         <receiver
             android:name=".PipActionReceiver"
             android:exported="false" />

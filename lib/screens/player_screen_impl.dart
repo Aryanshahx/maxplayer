@@ -13,7 +13,6 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/native_bridge.dart';
 import '../theme.dart';
 import '../utils/ab_loop.dart';
-import '../utils/ads.dart';
 import '../utils/gesture_ticks.dart';
 import '../utils/app_volume.dart';
 import '../utils/ai_subtitles.dart';
@@ -232,9 +231,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     // session — before this, an in-app volume of 100% was capped by the
     // untouched system stream ("100% feels like 50%").
     unawaited(NativeBridge.maxOutMediaVolume());
-    // v1.0.1+16: preload the exit interstitial while the video plays so
-    // showing it on close is instant (capped by a 3-minute cooldown).
-    ExitInterstitial.preload();
     // mpv caps `volume` at 100 unless told otherwise — the boost ceiling is
     // (re)applied AFTER open() in _open(); never call _mpvSet from here.
     unawaited(
@@ -2241,8 +2237,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     unawaited(_savePosition());
     unawaited(_player.dispose());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    // v1.0.1+16: AdMob exit interstitial (if preloaded; 3-min cooldown).
-    ExitInterstitial.maybeShow();
     super.dispose();
   }
 
