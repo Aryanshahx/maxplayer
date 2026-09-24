@@ -25,7 +25,7 @@ import '../utils/local_store.dart';
 import '../utils/network_headers.dart'
     show kMaxPlayerUserAgent, kVlcFallbackUserAgent;
 import '../utils/mpv_errors.dart';
-import '../utils/tmdb.dart' show TrailerVariant;
+import '../utils/tmdb.dart' show TrailerStreams, TrailerVariant;
 import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
 import '../utils/queue_math.dart';
@@ -47,6 +47,7 @@ class PlayerScreen extends StatefulWidget {
     this.trailerVariants,
     this.trailerCurrentKey,
     this.trailerResolver,
+    this.trailerAudioUrl,
   });
 
   const PlayerScreen.stream({
@@ -56,6 +57,7 @@ class PlayerScreen extends StatefulWidget {
     this.trailerVariants,
     this.trailerCurrentKey,
     this.trailerResolver,
+    this.trailerAudioUrl,
   }) : queueIds = const [],
        queueStart = 0,
        isStream = true,
@@ -76,7 +78,12 @@ class PlayerScreen extends StatefulWidget {
   /// has 2+ entries a translate button appears in the player's top bar.
   final List<TrailerVariant>? trailerVariants;
   final String? trailerCurrentKey;
-  final Future<String?> Function(String youtubeKey)? trailerResolver;
+  final Future<TrailerStreams?> Function(String youtubeKey)? trailerResolver;
+
+  /// v1.0.1+20: non-null when the current trailer stream is video-only
+  /// (a >=720p DASH stream) so its audio arrives as a separate track
+  /// that mpv attaches via the `audio-file` property.
+  final String? trailerAudioUrl;
 
   /// v30: true while any player screen is open — the "Continue watching"
   /// deep link uses it to never stack a second player over a running one.
@@ -118,11 +125,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   StreamSubscription<String>? _errorSub;
   StreamSubscription<Tracks>? _tracksSub;
 
-  /// v1.0.1+18: the preferred-audio-language pick runs once per file.
-  bool _prefAudioApplied = false;
-
   /// v1.0.1+19 trailer language switching state (null for device videos).
   String? _trailerKey;
+  String? _trailerAudioUrl;
   bool _trailerSwitching = false;
   Timer? _hideTimer;
   Timer? _saveTimer;
@@ -218,6 +223,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     unawaited(_native.invokeMethod('enableSensorRotate'));
     _title = widget.title;
     _trailerKey = widget.trailerCurrentKey;
+    _trailerAudioUrl = widget.trailerAudioUrl;
     _currentPath = widget.path;
     _queueIndex = widget.queueStart;
     _player = Player();
@@ -312,11 +318,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     _errorSub = _player.stream.error.listen((e) {
       _onError(e);
     });
-    // v1.0.1+18: refresh track pickers when tracks change, and
-    // auto-select the preferred audio language once per file.
+    // Refresh track pickers whenever mpv reports a new track list.
     _tracksSub = _player.stream.tracks.listen((t) {
       if (mounted) setState(() {});
-      _applyPreferredAudio(t);
     });
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       unawaited(_savePosition());
@@ -358,8 +362,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     CrashLog.crumb('player.open', {'path': path});
     _volumeMaxArmed = false;
     try {
-      _prefAudioApplied = false; // v1.0.1+18: re-arm language auto-pick
       await _player.open(_mediaFor(path), play: true);
+      // v1.0.1+20: trailer-only — attach (or clear) the separate audio
+      // track that 720p+ video-only DASH streams arrive with. Device
+      // videos never take this branch.
+      if (widget.trailerVariants != null || _trailerAudioUrl != null) {
+        await _mpvSet('audio-file', _trailerAudioUrl ?? '');
+      }
       // Keep the remembered playback speed across videos (v29): mpv can
       // reset the rate while a new file loads, so re-apply it here too.
       unawaited(_player.setRate(_settings.playbackRate));
@@ -587,7 +596,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       _uaRetried = false;
       _title = asset?.title ?? 'Video';
       if (mounted) setState(() {});
-      _prefAudioApplied = false; // v1.0.1+18: re-arm language auto-pick
       await _player.open(Media(file.path), play: true);
       unawaited(_player.setRate(_settings.playbackRate));
     } catch (e) {
@@ -1483,22 +1491,23 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (resolver == null || _trailerSwitching) return;
     if (v.key == _trailerKey) return;
     setState(() => _trailerSwitching = true);
-    final url = await resolver(v.key);
+    final streams = await resolver(v.key);
     if (!mounted) return;
     setState(() => _trailerSwitching = false);
-    if (url == null || url.isEmpty) {
+    if (streams == null || streams.videoUrl.isEmpty) {
       _emitSnack('Trailer not available in ${_trailerLangLabelFor(v.lang)}');
       return;
     }
-    _currentPath = url;
-    _prefAudioApplied = false;
+    _trailerAudioUrl = streams.audioUrl;
     _trailerKey = v.key;
+    _currentPath = streams.videoUrl;
     CrashLog.crumb('player.trailer_lang_switch', {
       'key': v.key,
       'lang': v.lang,
       'title': _title,
+      'separate_audio': streams.audioUrl != null,
     });
-    await _open(url, offerResume: false);
+    await _open(_currentPath, offerResume: false);
     _emitSnack('Trailer: ${_trailerLangLabelFor(v.lang)}');
   }
 
@@ -1543,39 +1552,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           ],
         ),
       ),
-    );
-  }
-
-  /// v1.0.1+18: with Player Settings → "Preferred audio language" set,
-  /// auto-select the matching audio track once per file (manual switching
-  /// in the Audio-track picker still wins afterwards).
-  void _applyPreferredAudio(Tracks t) {
-    if (_prefAudioApplied) return;
-    final pref = _settings.preferredAudioLang;
-    if (pref == 'auto') return;
-    final idx = matchAudioTrackIndex([
-      for (final a in t.audio) (title: a.title, language: a.language),
-    ], pref);
-    if (idx < 0 || idx >= t.audio.length) {
-      _prefAudioApplied = true; // not present in this file — stop trying
-      return;
-    }
-    final track = t.audio[idx];
-    if (track.id == _player.state.track.audio.id) {
-      _prefAudioApplied = true;
-      return; // already the active track
-    }
-    _prefAudioApplied = true;
-    unawaited(
-      _player.setAudioTrack(track).then((_) {
-        CrashLog.crumb('player.pref_audio_applied', {
-          'lang': pref,
-          'track': track.id,
-          'label': _trackLabel(track),
-        });
-        // v1.0.1+19: silent on device videos — the user asked that NO
-        // language UI be shown on device videos (trailers only).
-      }),
     );
   }
 
@@ -2296,8 +2272,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _emitSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override

@@ -974,6 +974,16 @@ String? pickTrailerKey(Object? videos) {
 
 /// All YouTube trailer/teaser variants of a title, ONE per language.
 ///
+/// v1.0.1+20: a resolved trailer stream pair — [videoUrl] is what mpv
+/// opens; [audioUrl] is non-null when the video is a video-only 720p+
+/// DASH stream whose audio track must be attached separately (muxed /
+/// progressive streams already carry their own audio).
+class TrailerStreams {
+  final String videoUrl;
+  final String? audioUrl;
+  const TrailerStreams(this.videoUrl, [this.audioUrl]);
+}
+
 /// Ordering: [preferred] language first (the app's trailer default is
 /// 'hi' — "by default show the Hindi video"), then English, then the
 /// rest. Within a language, an official Trailer beats Teasers and

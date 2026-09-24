@@ -24,6 +24,7 @@ import 'package:maxplayer/utils/sha256.dart';
 import 'package:maxplayer/utils/sort.dart';
 import 'package:maxplayer/utils/srt.dart';
 import 'package:maxplayer/utils/tmdb.dart';
+import 'package:maxplayer/widgets/discover_section.dart';
 import 'package:maxplayer/utils/tmdb_image.dart';
 import 'package:maxplayer/utils/gesture_ticks.dart';
 import 'package:maxplayer/utils/video_zoom.dart';
@@ -34,7 +35,6 @@ import 'package:maxplayer/services/ai_suggest.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:maxplayer/utils/app_volume.dart';
-import 'package:maxplayer/utils/audio_lang.dart';
 import 'package:maxplayer/utils/mpv_errors.dart';
 import 'package:maxplayer/utils/movie_match.dart';
 import 'package:maxplayer/utils/player_settings.dart';
@@ -1449,33 +1449,6 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
   });
 
-  group('preferred audio language (v1.0.1+18)', () {
-    test('option lookup falls back to auto', () {
-      expect(audioLangOptionFor('hi').label, 'Hindi');
-      expect(audioLangOptionFor('zzz').code, 'auto');
-    });
-
-    test('ISO-639-2 language tags match by index', () {
-      final tracks = <({String? title, String? language})>[
-        (title: 'DD5.1', language: 'eng'),
-        (title: null, language: 'hin'),
-      ];
-      expect(matchAudioTrackIndex(tracks, 'hi'), 1);
-      expect(matchAudioTrackIndex(tracks, 'en'), 0);
-      expect(matchAudioTrackIndex(tracks, 'ta'), -1);
-      expect(matchAudioTrackIndex(tracks, 'auto'), -1);
-    });
-
-    test('title substring + ISO-639-1 tag also match', () {
-      final tracks = <({String? title, String? language})>[
-        (title: 'Tamil', language: null),
-        (title: null, language: 'hi'),
-      ];
-      expect(matchAudioTrackIndex(tracks, 'ta'), 0);
-      expect(matchAudioTrackIndex(tracks, 'hi'), 1);
-    });
-  });
-
   group('trailer language variants (v1.0.1+19)', () {
     Object? videos(List<Map<String, Object?>> items) => {'results': items};
 
@@ -1574,6 +1547,23 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(variants.single.lang, 'en');
       expect(pickTrailerVariants(null, 'hi'), isEmpty);
       expect(pickTrailerVariants({'results': 'nope'}, 'hi'), isEmpty);
+    });
+  });
+
+  group('discover + trailer streams (v1.0.1+20)', () {
+    test('catalog subtitle scales with total pages', () {
+      expect(catalogTitleCount(500), '10,000+ titles - scroll for more');
+      expect(catalogTitleCount(100), '2.0k titles - scroll for more');
+      expect(catalogTitleCount(12), '240 titles - scroll for more');
+      expect(catalogTitleCount(1), '20 titles - scroll for more');
+    });
+
+    test('TrailerStreams carries audioUrl only for video-only pairs', () {
+      const muxed = TrailerStreams('https://x/muxed720');
+      expect(muxed.videoUrl, 'https://x/muxed720');
+      expect(muxed.audioUrl, isNull);
+      const pair = TrailerStreams('https://x/v1080', 'https://x/audio');
+      expect(pair.audioUrl, 'https://x/audio');
     });
   });
 }

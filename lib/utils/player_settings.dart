@@ -48,7 +48,6 @@ class PlayerSettings extends ChangeNotifier {
   static const _kScreenLock = 'player.screenLock';
   static const _kPerformanceMode = 'player.performanceMode';
   static const _kPlaybackRate = 'player.playbackRate';
-  static const _kPreferredAudioLang = 'player.preferredAudioLang';
 
   bool doubleTapSides = true;
   bool doubleTapMiddle = true;
@@ -111,7 +110,6 @@ class PlayerSettings extends ChangeNotifier {
         : 'auto';
     final storedPlaybackRate = p.getDouble(_kPlaybackRate);
     playbackRate = nearestPlaybackRate(storedPlaybackRate ?? 1.0);
-    preferredAudioLang = p.getString(_kPreferredAudioLang) ?? 'auto';
     notifyListeners();
   }
 
@@ -144,17 +142,6 @@ class PlayerSettings extends ChangeNotifier {
   Future<void> setVolumeBoost(bool v) async {
     volumeBoost = v;
     await _saveBool(_kVolumeBoost, v);
-  }
-
-  /// v1.0.1+18: 'auto' or an ISO 639-1 code (see kAudioLangOptions in
-  /// audio_lang.dart) — the matching audio track is auto-selected when a
-  /// multi-audio video opens.
-  String preferredAudioLang = 'auto';
-
-  Future<void> setPreferredAudioLang(String v) async {
-    preferredAudioLang = v;
-    notifyListeners();
-    await _save((p) => p.setString(_kPreferredAudioLang, v));
   }
 
   Future<void> setHorizontalSeek(bool v) async {

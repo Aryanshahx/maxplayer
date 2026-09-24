@@ -73,7 +73,7 @@ class TrailerPlayerScreen {
       ),
     );
 
-    final directUrl = await resolveTrailerUrl(videoKey);
+    final streams = await resolveTrailerStreams(videoKey);
 
     // Close the spinner regardless of outcome (and never pop the wrong
     // route if the user already cancelled).
@@ -81,10 +81,14 @@ class TrailerPlayerScreen {
     unawaited(dialogFuture);
     if (canceled || !context.mounted) return;
 
-    if (directUrl != null && directUrl.isNotEmpty) {
+    if (streams != null && streams.videoUrl.isNotEmpty) {
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => PlayerScreen.stream(path: directUrl, title: title),
+          builder: (_) => PlayerScreen.stream(
+            path: streams.videoUrl,
+            title: title,
+            trailerAudioUrl: streams.audioUrl,
+          ),
         ),
       );
       return;
@@ -164,20 +168,21 @@ class TrailerPlayerScreen {
       ),
     );
 
-    final directUrl = await resolveTrailerUrl(first.key);
+    final streams = await resolveTrailerStreams(first.key);
     closeDialog();
     unawaited(dialogFuture);
     if (canceled || !context.mounted) return;
 
-    if (directUrl != null && directUrl.isNotEmpty) {
+    if (streams != null && streams.videoUrl.isNotEmpty) {
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => PlayerScreen.stream(
-            path: directUrl,
+            path: streams.videoUrl,
             title: title,
             trailerVariants: variants,
             trailerCurrentKey: first.key,
-            trailerResolver: resolveTrailerUrl,
+            trailerResolver: resolveTrailerStreams,
+            trailerAudioUrl: streams.audioUrl,
           ),
         ),
       );
@@ -201,20 +206,53 @@ class TrailerPlayerScreen {
   }
 }
 
-/// Resolve a YouTube video id to its direct progressive (muxed) stream
-/// URL with a hard 12s timeout. Shared by the initial trailer open AND
-/// the in-player language switcher. Null on any failure. Never throws.
-Future<String?> resolveTrailerUrl(String videoKey) async {
-  // muxed (progressive 360p/720p with audio) is what mpv plays directly;
-  // googlevideo URLs need no extra headers.
+/// v1.0.1+20: resolve a YouTube video id to its direct stream(s) with a
+/// hard 12s timeout — NEVER below 720p when the video has 720p or better
+/// at all. Selection order:
+///   1. muxed (audio+video) at >=720p — mpv plays it directly;
+///   2. otherwise the best video-only stream (>=720p when available)
+///      paired with the best audio track — mpv attaches the audio via
+///      its `audio-file` property in the player;
+///   3. last resort (very old <720p-only uploads): best muxed stream so
+///      playback still works instead of failing hard.
+/// Shared by the initial trailer open AND the in-player language
+/// switcher. Null on any failure. Never throws.
+Future<TrailerStreams?> resolveTrailerStreams(String videoKey) async {
   final yt = YoutubeExplode();
   try {
     final manifest = await yt.videos.streams
         .getManifest(videoKey)
         .timeout(const Duration(seconds: 12));
-    if (manifest.muxed.isNotEmpty) {
-      return manifest.muxed.withHighestBitrate().url.toString();
+
+    int byResThenBitrate(VideoStreamInfo a, VideoStreamInfo b) {
+      final r = b.videoResolution.height.compareTo(a.videoResolution.height);
+      return r != 0 ? r : b.bitrate.compareTo(a.bitrate);
     }
+
+    final muxed = manifest.muxed.toList()..sort(byResThenBitrate);
+    for (final m in muxed) {
+      if (m.videoResolution.height >= 720) {
+        return TrailerStreams(m.url.toString());
+      }
+    }
+
+    final videoOnly = manifest.videoOnly.toList()..sort(byResThenBitrate);
+    if (videoOnly.isNotEmpty && manifest.audioOnly.isNotEmpty) {
+      var best = videoOnly.firstWhere(
+        (s) => s.videoResolution.height >= 720,
+        orElse: () => videoOnly.first,
+      );
+      // If even the best video-only stream is below 720p but a muxed
+      // stream exists at the same height, prefer the one-file muxed URL.
+      if (muxed.isNotEmpty &&
+          best.videoResolution.height <= muxed.first.videoResolution.height) {
+        return TrailerStreams(muxed.first.url.toString());
+      }
+      final audio = manifest.audioOnly.withHighestBitrate();
+      return TrailerStreams(best.url.toString(), audio.url.toString());
+    }
+
+    if (muxed.isNotEmpty) return TrailerStreams(muxed.first.url.toString());
     return null;
   } on TimeoutException catch (e) {
     CrashLog.error('trailer.resolve_timeout', e, {'key': videoKey});
@@ -226,3 +264,8 @@ Future<String?> resolveTrailerUrl(String videoKey) async {
     yt.close();
   }
 }
+
+/// Back-compat wrapper for [TrailerPlayerScreen.open]: the video URL
+/// only (used when a title has no language variants).
+Future<String?> resolveTrailerUrl(String videoKey) async =>
+    (await resolveTrailerStreams(videoKey))?.videoUrl;

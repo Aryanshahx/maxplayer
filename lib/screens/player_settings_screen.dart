@@ -1,4 +1,3 @@
-import '../utils/audio_lang.dart';
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
@@ -165,7 +164,6 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 ),
                 const _SectionHeader('Sound'),
                 _BoostToggleTile(s: s),
-                _AudioLangTile(s: s),
                 const _SectionHeader('Playback'),
                 _SwitchTile(
                   icon: Icons.timer_off_outlined,
@@ -339,49 +337,6 @@ class _BoostToggleTile extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-/// v1.0.1+18: preferred audio language — videos with multiple audio
-/// tracks auto-select this language when they open.
-class _AudioLangTile extends StatelessWidget {
-  final PlayerSettings s;
-  const _AudioLangTile({required this.s});
-
-  @override
-  Widget build(BuildContext context) {
-    final opt = audioLangOptionFor(s.preferredAudioLang);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      child: Row(
-        children: [
-          const Icon(Icons.translate_rounded, color: Colors.white70, size: 22),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Preferred audio language',
-                  style: TextStyle(color: Colors.white, fontSize: 15),
-                ),
-                Text(
-                  opt.code == 'auto'
-                      ? "Plays the file's default audio track"
-                      : 'Auto-selects ${opt.label} audio when available',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          _MiniDropdown<String>(
-            value: opt.code,
-            entries: {for (final o in kAudioLangOptions) o.code: o.label},
-            onChanged: (v) => s.setPreferredAudioLang(v ?? 'auto'),
-          ),
-        ],
-      ),
     );
   }
 }
