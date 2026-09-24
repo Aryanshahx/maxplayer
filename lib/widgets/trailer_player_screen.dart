@@ -121,7 +121,6 @@ class TrailerPlayerScreen {
     String title,
   ) async {
     if (variants.isEmpty) return;
-    final first = variants.first;
     var canceled = false;
     var dialogOpen = true;
 
@@ -168,19 +167,24 @@ class TrailerPlayerScreen {
       ),
     );
 
-    final streams = await resolveTrailerStreams(first.key);
+    // v1.0.1+22: walk EVERY language variant (Hindi first) until one
+    // resolves — a single region-locked / removed / members-only key
+    // (very common for Hindi dubs) must not sink the trailer into the
+    // YouTube fallback.
+    final hit = await resolveFirstPlayableTrailer(variants);
     closeDialog();
     unawaited(dialogFuture);
     if (canceled || !context.mounted) return;
 
-    if (streams != null && streams.videoUrl.isNotEmpty) {
+    if (hit != null) {
+      final streams = hit.streams;
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => PlayerScreen.stream(
             path: streams.videoUrl,
             title: title,
             trailerVariants: variants,
-            trailerCurrentKey: first.key,
+            trailerCurrentKey: hit.key,
             trailerResolver: resolveTrailerStreams,
             trailerAudioUrl: streams.audioUrl,
           ),
@@ -199,7 +203,9 @@ class TrailerPlayerScreen {
           ),
         );
     }
-    final uri = Uri.parse('https://www.youtube.com/watch?v=${first.key}');
+    final uri = Uri.parse(
+      'https://www.youtube.com/watch?v=${variants.first.key}',
+    );
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {}
@@ -269,3 +275,28 @@ Future<TrailerStreams?> resolveTrailerStreams(String videoKey) async {
 /// only (used when a title has no language variants).
 Future<String?> resolveTrailerUrl(String videoKey) async =>
     (await resolveTrailerStreams(videoKey))?.videoUrl;
+
+/// v1.0.1+22: resolve the first playable [TrailerVariant] — keys are
+/// tried in the given order (the app's Hindi-first list), duplicates are
+/// skipped, and at most four DISTINCT keys are attempted so a dead
+/// network can't park the loading dialog for minutes. Returns the
+/// streams together with the winning YouTube key (the player must mark
+/// THAT variant as current), or null when every key fails / keys are
+/// exhausted. Injectable resolver for tests.
+Future<({TrailerStreams streams, String key})?> resolveFirstPlayableTrailer(
+  List<TrailerVariant> variants, [
+  Future<TrailerStreams?> Function(String youtubeKey)? resolver,
+]) async {
+  final res = resolver ?? resolveTrailerStreams;
+  final seen = <String>{};
+  var attempts = 0;
+  for (final v in variants) {
+    if (v.key.isEmpty || !seen.add(v.key)) continue;
+    if (++attempts > 4) break;
+    final s = await res(v.key);
+    if (s != null && s.videoUrl.isNotEmpty) {
+      return (streams: s, key: v.key);
+    }
+  }
+  return null;
+}

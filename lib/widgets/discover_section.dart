@@ -164,6 +164,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
         if (_browseIds.add(m.id)) _browse.add(m);
       }
     });
+    _prefetchDetails(result.items);
   }
 
   // ------------------------------------------------------------ search ---
@@ -225,6 +226,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
         if (_resultIds.add(m.id)) _results.add(m);
       }
     });
+    _prefetchDetails(result.items);
   }
 
   bool _onGridScroll(ScrollNotification n) {
@@ -268,6 +270,18 @@ class _DiscoverPageState extends State<DiscoverPage> {
   Future<void> _aiSuggest() async {
     final movie = await AiSuggestSheet.show(context);
     if (movie != null && mounted) _openMovie(movie);
+  }
+
+  /// v1.0.1+22: warm the 24h detail cache for the first cards of every
+  /// freshly loaded page, so tapping them opens the detail screen
+  /// instantly instead of waiting on the network ("details load very
+  /// slow"). Silent, fire-and-forget, never throws.
+  void _prefetchDetails(List<TmdbMovie> items) {
+    for (final m in items.take(6)) {
+      unawaited(
+        _client.fullDetail(m.id, kind: m.kind).catchError((Object _) => null),
+      );
+    }
   }
 
   void _openMovie(TmdbMovie movie) {

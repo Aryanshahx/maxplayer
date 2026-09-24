@@ -24,6 +24,7 @@ import 'package:maxplayer/utils/sha256.dart';
 import 'package:maxplayer/utils/sort.dart';
 import 'package:maxplayer/utils/srt.dart';
 import 'package:maxplayer/utils/tmdb.dart';
+import 'package:maxplayer/widgets/trailer_player_screen.dart';
 import 'package:maxplayer/widgets/discover_section.dart';
 import 'package:maxplayer/utils/tmdb_image.dart';
 import 'package:maxplayer/utils/gesture_ticks.dart';
@@ -1564,6 +1565,46 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(muxed.audioUrl, isNull);
       const pair = TrailerStreams('https://x/v1080', 'https://x/audio');
       expect(pair.audioUrl, 'https://x/audio');
+    });
+  });
+
+  group('trailer fallback chain (v1.0.1+22)', () {
+    final variants = [
+      const TrailerVariant('HI_BAD', 'hi', 'Hindi Trailer'),
+      const TrailerVariant('EN_GOOD', 'en', 'Official Trailer'),
+      const TrailerVariant('TA_BAD2', 'ta', 'Tamil Trailer'),
+    ];
+
+    test('skips an unavailable Hindi key and lands on English', () async {
+      final hit = await resolveFirstPlayableTrailer(
+        variants,
+        (key) async =>
+            key == 'EN_GOOD' ? const TrailerStreams('https://v/en') : null,
+      );
+      expect(hit!.key, 'EN_GOOD');
+      expect(hit.streams.videoUrl, 'https://v/en');
+    });
+
+    test('returns null when every variant fails', () async {
+      final hit = await resolveFirstPlayableTrailer(
+        variants,
+        (key) async => null,
+      );
+      expect(hit, isNull);
+    });
+
+    test('caps attempts at four distinct keys and skips dupes', () async {
+      final many = [
+        for (var i = 0; i < 6; i++) TrailerVariant('K$i', 'l$i', 'n$i'),
+        const TrailerVariant('K0', 'lx', 'dupe'),
+      ];
+      final seen = <String>[];
+      await resolveFirstPlayableTrailer(many, (key) async {
+        seen.add(key);
+        return null;
+      });
+      expect(seen.length, 4);
+      expect(seen.toSet().length, 4);
     });
   });
 }
