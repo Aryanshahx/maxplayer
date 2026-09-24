@@ -1607,4 +1607,13 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(seen.toSet().length, 4);
     });
   });
+
+  group('trailer always-in-app + thumbnail (v1.0.1+23)', () {
+    test('ytThumbUrl targets i.ytimg maxres for the given key', () {
+      expect(
+        ytThumbUrl('abc123_XY'),
+        'https://i.ytimg.com/vi/abc123_XY/maxresdefault.jpg',
+      );
+    });
+  });
 }

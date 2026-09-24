@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../screens/player_screen.dart';
@@ -18,7 +17,8 @@ import '../utils/tmdb.dart';
 ///   * hard 12s timeout on URL resolution,
 ///   * the dialog can be CANCELLED by the user (and the late resolver
 ///     result is then ignored instead of popping the wrong route),
-///   * clean snackbar + YouTube-app fallback whenever resolution fails.
+///   * v1.0.1+23: the app NEVER hands off to YouTube any more — failed
+///     resolution shows an in-app thumbnail panel with RETRY.
 class TrailerPlayerScreen {
   TrailerPlayerScreen._();
 
@@ -88,27 +88,25 @@ class TrailerPlayerScreen {
             path: streams.videoUrl,
             title: title,
             trailerAudioUrl: streams.audioUrl,
+            trailerThumbUrl: ytThumbUrl(videoKey),
           ),
         ),
       );
       return;
     }
 
-    // Hard fallback: hand off to the YouTube app/browser.
+    // v1.0.1+23: NEVER leave the app — show the in-app unavailable panel
+    // (thumbnail + RETRY) instead of handing the user to YouTube.
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('In-app trailer failed — opening YouTube instead'),
-            duration: Duration(seconds: 3),
-          ),
-        );
+      final again = await showTrailerUnavailable(
+        context,
+        title: title,
+        thumbKey: videoKey,
+      );
+      if (again && context.mounted) {
+        await open(context, videoKey, title);
+      }
     }
-    final uri = Uri.parse('https://www.youtube.com/watch?v=$videoKey');
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {}
   }
 
   /// v1.0.1+19: open a trailer with its language variants wired through
@@ -187,28 +185,24 @@ class TrailerPlayerScreen {
             trailerCurrentKey: hit.key,
             trailerResolver: resolveTrailerStreams,
             trailerAudioUrl: streams.audioUrl,
+            trailerThumbUrl: ytThumbUrl(hit.key),
           ),
         ),
       );
       return;
     }
 
+    // v1.0.1+23: NEVER leave the app.
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('In-app trailer failed — opening YouTube instead'),
-            duration: Duration(seconds: 3),
-          ),
-        );
+      final again = await showTrailerUnavailable(
+        context,
+        title: title,
+        thumbKey: variants.first.key,
+      );
+      if (again && context.mounted) {
+        await openVariants(context, variants, title);
+      }
     }
-    final uri = Uri.parse(
-      'https://www.youtube.com/watch?v=${variants.first.key}',
-    );
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {}
   }
 }
 
@@ -299,4 +293,81 @@ Future<({TrailerStreams streams, String key})?> resolveFirstPlayableTrailer(
     }
   }
   return null;
+}
+
+/// Big YouTube thumbnail URL for a video [key] — `maxresdefault.jpg`
+/// (1280x720; callers fall back to `hqdefault.jpg` on error). Pure.
+String ytThumbUrl(String key) =>
+    'https://i.ytimg.com/vi/$key/maxresdefault.jpg';
+
+/// v1.0.1+23: the in-app "trailer unavailable" panel that replaces the
+/// old YouTube hand-off — shows the trailer's thumbnail plus a RETRY
+/// button. Returns true when the user chose RETRY.
+Future<bool> showTrailerUnavailable(
+  BuildContext context, {
+  required String title,
+  required String thumbKey,
+}) async {
+  final again = await showDialog<bool>(
+    context: context,
+    builder: (dlgCtx) => AlertDialog(
+      backgroundColor: const Color(0xFF16161f),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: const Text(
+        'Trailer unavailable',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 17,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (thumbKey.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Container(
+                  color: Colors.black,
+                  child: Image.network(
+                    ytThumbUrl(thumbKey),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Image.network(
+                      ytThumbUrl(
+                        thumbKey,
+                      ).replaceAll('maxresdefault', 'hqdefault'),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          const SizedBox(height: 12),
+          Text(
+            '"$title" trailer could not be loaded right now. Check the connection and try again.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dlgCtx).pop(false),
+          child: const Text('CLOSE'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dlgCtx).pop(true),
+          child: const Text('RETRY'),
+        ),
+      ],
+    ),
+  );
+  return again ?? false;
 }

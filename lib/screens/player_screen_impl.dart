@@ -48,6 +48,7 @@ class PlayerScreen extends StatefulWidget {
     this.trailerCurrentKey,
     this.trailerResolver,
     this.trailerAudioUrl,
+    this.trailerThumbUrl,
   });
 
   const PlayerScreen.stream({
@@ -58,6 +59,7 @@ class PlayerScreen extends StatefulWidget {
     this.trailerCurrentKey,
     this.trailerResolver,
     this.trailerAudioUrl,
+    this.trailerThumbUrl,
   }) : queueIds = const [],
        queueStart = 0,
        isStream = true,
@@ -84,6 +86,10 @@ class PlayerScreen extends StatefulWidget {
   /// (a >=720p DASH stream) so its audio arrives as a separate track
   /// that mpv attaches via the `audio-file` property.
   final String? trailerAudioUrl;
+
+  /// v1.0.1+23: YouTube thumbnail shown as a poster while the trailer
+  /// stream opens/buffers (TRAILER-ONLY — never set for device videos).
+  final String? trailerThumbUrl;
 
   /// v30: true while any player screen is open — the "Continue watching"
   /// deep link uses it to never stack a second player over a running one.
@@ -128,6 +134,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// v1.0.1+19 trailer language switching state (null for device videos).
   String? _trailerKey;
   String? _trailerAudioUrl;
+  String? _trailerThumbUrl;
   bool _trailerSwitching = false;
   Timer? _hideTimer;
   Timer? _saveTimer;
@@ -224,6 +231,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _title = widget.title;
     _trailerKey = widget.trailerCurrentKey;
     _trailerAudioUrl = widget.trailerAudioUrl;
+    _trailerThumbUrl = widget.trailerThumbUrl;
     _currentPath = widget.path;
     _queueIndex = widget.queueStart;
     _player = Player();
@@ -1500,6 +1508,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     _trailerAudioUrl = streams.audioUrl;
     _trailerKey = v.key;
+    _trailerThumbUrl = 'https://i.ytimg.com/vi/${v.key}/maxresdefault.jpg';
     _currentPath = streams.videoUrl;
     CrashLog.crumb('player.trailer_lang_switch', {
       'key': v.key,
@@ -2414,6 +2423,26 @@ class _PlayerScreenState extends State<PlayerScreen>
               else
                 const Center(
                   child: CircularProgressIndicator(color: Colors.white),
+                ),
+              // v1.0.1+23: trailer thumbnail poster while the YouTube
+              // stream loads / buffers (TRAILER-ONLY).
+              if (_trailerThumbUrl != null && (!_ready || _buffering))
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black,
+                    child: Image.network(
+                      _trailerThumbUrl!,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => Image.network(
+                        _trailerThumbUrl!.replaceAll(
+                          'maxresdefault',
+                          'hqdefault',
+                        ),
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
                 ),
               if (_buffering && _ready)
                 const Center(
