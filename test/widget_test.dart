@@ -1647,6 +1647,16 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
   });
 
+  group('official embed url (v1.0.1+28)', () {
+    test('youtubeEmbedUrl targets nocookie embed, inline + autoplay', () {
+      expect(
+        youtubeEmbedUrl('abc123_XY'),
+        'https://www.youtube-nocookie.com/embed/abc123_XY'
+        '?playsinline=1&rel=0&modestbranding=1&autoplay=1',
+      );
+    });
+  });
+
   group('trailer manifest mapping (v1.0.1+27)', () {
     MuxedStreamInfo mux(int h, String name) => MuxedStreamInfo(
       VideoId('TcMBFSGVi1c'),

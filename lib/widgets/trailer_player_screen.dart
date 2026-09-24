@@ -455,6 +455,16 @@ Future<TrailerStreams> deviceOrderedTrailerStreams(TrailerStreams s) async {
   return out;
 }
 
+/// v1.0.1+28: the OFFICIAL YouTube embedded-player URL for a video
+/// [key]. Embedded playback is YouTube's own sanctioned in-app path —
+/// completely immune to the direct-stream IP gates / PO-token lockouts
+/// that kept killing device-side resolution. `playsinline` keeps it
+/// inside the detail card; autoplay is safe because we only load it in
+/// response to a user tap.
+String youtubeEmbedUrl(String key) =>
+    'https://www.youtube-nocookie.com/embed/$key'
+    '?playsinline=1&rel=0&modestbranding=1&autoplay=1';
+
 /// Big YouTube thumbnail URL for a video [key] — `maxresdefault.jpg`
 /// (1280x720; callers fall back to `hqdefault.jpg` on error). Pure.
 String ytThumbUrl(String key) =>
