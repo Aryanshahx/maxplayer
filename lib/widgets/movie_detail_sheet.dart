@@ -91,10 +91,22 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
     await VideoGrid.openVideo(widget.hostContext, asset);
   }
 
-  Future<void> _openTrailer(String key) async {
+  Future<void> _openTrailer(TmdbMovie detailMovie) async {
     // v1.0.1+15: trailers play INSIDE the app in MaxPlayer's own MPV
     // player via youtube_explode URL resolution (iframed WebView was
-    // blocked by YouTube with error 152-4).
+    // blocked by YouTube with error 152-4). v1.0.1+19: language variants
+    // come along (Hindi default) so the trailer-only language button can
+    // switch dubs mid-play.
+    if (detailMovie.trailerVariants.isNotEmpty) {
+      await TrailerPlayerScreen.openVariants(
+        widget.hostContext,
+        detailMovie.trailerVariants,
+        '${widget.movie.title} — Trailer',
+      );
+      return;
+    }
+    final key = detailMovie.trailerKey;
+    if (key == null || key.isEmpty) return;
     await TrailerPlayerScreen.open(
       widget.hostContext,
       key,
@@ -235,7 +247,11 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                 child: FutureBuilder<TmdbFull?>(
                   future: _detailFuture,
                   builder: (context, snap) {
-                    final key = snap.data?.movie.trailerKey;
+                    final detailMovie = snap.data?.movie;
+                    final hasTrailer =
+                        detailMovie != null &&
+                        (detailMovie.trailerVariants.isNotEmpty ||
+                            (detailMovie.trailerKey ?? '').isNotEmpty);
                     return FilledButton.icon(
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.accent,
@@ -244,8 +260,8 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      onPressed: (key != null && key.isNotEmpty)
-                          ? () => _openTrailer(key)
+                      onPressed: hasTrailer
+                          ? () => _openTrailer(detailMovie)
                           : null,
                       icon: const Icon(Icons.play_circle_outline, size: 16),
                       label: const Text(
@@ -1166,4 +1182,3 @@ class _PrimeCta extends StatelessWidget {
     );
   }
 }
-

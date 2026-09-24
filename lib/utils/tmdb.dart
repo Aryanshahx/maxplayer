@@ -29,6 +29,11 @@ class TmdbMovie {
   /// Filled only by the detail call (the official YouTube trailer KEY).
   final String? trailerKey;
 
+  /// v1.0.1+19: every YouTube trailer variant of this title (one per
+  /// language, Hindi first) — filled with [trailerKey] by the detail
+  /// call; drives the trailer-only language switcher in the player.
+  final List<TrailerVariant> trailerVariants;
+
   /// 'movie' or 'tv' (web series). Detail/similar calls route to the right
   /// TMDB endpoint with it; old entries default to 'movie'.
   final String kind;
@@ -42,10 +47,15 @@ class TmdbMovie {
     this.backdropPath,
     this.overview = '',
     this.trailerKey,
+    this.trailerVariants = const [],
     this.kind = 'movie',
   });
 
-  TmdbMovie copyWith({String? trailerKey, String? kind}) => TmdbMovie(
+  TmdbMovie copyWith({
+    String? trailerKey,
+    List<TrailerVariant>? trailerVariants,
+    String? kind,
+  }) => TmdbMovie(
     id: id,
     title: title,
     rating: rating,
@@ -54,8 +64,24 @@ class TmdbMovie {
     backdropPath: backdropPath,
     overview: overview,
     trailerKey: trailerKey ?? this.trailerKey,
+    trailerVariants: trailerVariants ?? this.trailerVariants,
     kind: kind ?? this.kind,
   );
+}
+
+/// One playable YouTube trailer of a title in ONE language (v1.0.1+19).
+class TrailerVariant {
+  /// YouTube video id.
+  final String key;
+
+  /// iso_639_1 language code ('hi', 'en', ...), lowercase; 'en' when the
+  /// API doesn't tag one.
+  final String lang;
+
+  /// TMDB video label ("Official Trailer", "Hindi Trailer", ...).
+  final String name;
+
+  const TrailerVariant(this.key, this.lang, this.name);
 }
 
 /// One user-selectable filter chip. Exactly ONE of [trending], [language]
@@ -111,7 +137,11 @@ const List<DiscoverFilter> kSeriesFilters = [
   DiscoverFilter(key: 'tv_tamil', label: 'Tamil', language: 'ta', tv: true),
   DiscoverFilter(key: 'tv_telugu', label: 'Telugu', language: 'te', tv: true),
   DiscoverFilter(
-      key: 'tv_malayalam', label: 'Malayalam', language: 'ml', tv: true),
+    key: 'tv_malayalam',
+    label: 'Malayalam',
+    language: 'ml',
+    tv: true,
+  ),
   DiscoverFilter(key: 'tv_korean', label: 'K-Drama', language: 'ko', tv: true),
   DiscoverFilter(key: 'tv_anime', label: 'Anime', language: 'ja', tv: true),
 ];
@@ -499,7 +529,13 @@ TmdbMovie? parseTmdbDetail(String jsonBody) {
     if (decoded is! Map) return null;
     final base = _movieFromMap(decoded);
     if (base == null) return null;
-    return base.copyWith(trailerKey: pickTrailerKey(decoded['videos']));
+    final variants = pickTrailerVariants(decoded['videos'], 'hi');
+    return base.copyWith(
+      trailerKey: variants.isNotEmpty
+          ? variants.first.key
+          : pickTrailerKey(decoded['videos']),
+      trailerVariants: variants,
+    );
   } catch (_) {
     return null;
   }
@@ -936,6 +972,52 @@ String? pickTrailerKey(Object? videos) {
   return k.isEmpty ? null : k;
 }
 
+/// All YouTube trailer/teaser variants of a title, ONE per language.
+///
+/// Ordering: [preferred] language first (the app's trailer default is
+/// 'hi' — "by default show the Hindi video"), then English, then the
+/// rest. Within a language, an official Trailer beats Teasers and
+/// fan/behind-the-scenes uploads; non-Trailer/Teaser types (Clips,
+/// Featurettes) are ignored, exactly like before — the sheet/picker only
+/// offers languages where an actual trailer exists on YouTube. Pure.
+List<TrailerVariant> pickTrailerVariants(Object? videos, String preferred) {
+  if (videos is! Map) return const [];
+  final results = videos['results'];
+  if (results is! List) return const [];
+
+  final byLang = <String, TrailerVariant>{};
+  final langScore = <String, int>{};
+  for (final v in results) {
+    if (v is! Map || v['site'] != 'YouTube') continue;
+    final type = '${v['type'] ?? ''}';
+    if (type != 'Trailer' && type != 'Teaser') continue;
+    final key = '${v['key'] ?? ''}';
+    if (key.isEmpty) continue;
+    var lang = '${v['iso_639_1'] ?? ''}'.toLowerCase().trim();
+    if (lang.isEmpty) lang = 'en';
+    final official = v['official'] == true;
+    final score = (type == 'Trailer' ? 0 : 10) + (official ? 0 : 5);
+    if (!byLang.containsKey(lang) || score < langScore[lang]!) {
+      byLang[lang] = TrailerVariant(key, lang, '${v['name'] ?? 'Trailer'}');
+      langScore[lang] = score;
+    }
+  }
+
+  int rank(String l) {
+    if (l == preferred) return 0;
+    if (l == 'en') return 1;
+    return 2;
+  }
+
+  final out = byLang.values.toList()
+    ..sort((a, b) {
+      final r = rank(a.lang).compareTo(rank(b.lang));
+      if (r != 0) return r;
+      return langScore[a.lang]!.compareTo(langScore[b.lang]!);
+    });
+  return out;
+}
+
 // ---------------- network (failover + 24h disk cache) ----------------
 
 class TmdbClient {
@@ -1180,5 +1262,3 @@ class TmdbClient {
     return body == null ? const [] : parseTmdbList(body, kind: kind);
   }
 }
-
-

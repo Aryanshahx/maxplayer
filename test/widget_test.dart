@@ -1475,4 +1475,105 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(matchAudioTrackIndex(tracks, 'hi'), 1);
     });
   });
+
+  group('trailer language variants (v1.0.1+19)', () {
+    Object? videos(List<Map<String, Object?>> items) => {'results': items};
+
+    test('Hindi first, English second, deduped one per language', () {
+      final variants = pickTrailerVariants(
+        videos([
+          {
+            'site': 'YouTube',
+            'type': 'Trailer',
+            'key': 'EN1',
+            'iso_639_1': 'en',
+            'official': true,
+            'name': 'Official Trailer',
+          },
+          {
+            'site': 'YouTube',
+            'type': 'Trailer',
+            'key': 'HI1',
+            'iso_639_1': 'hi',
+            'official': true,
+            'name': 'Hindi Trailer',
+          },
+          {
+            'site': 'YouTube',
+            'type': 'Teaser',
+            'key': 'HI2',
+            'iso_639_1': 'hi',
+            'official': false,
+            'name': 'Hindi Teaser',
+          },
+          {
+            'site': 'YouTube',
+            'type': 'Trailer',
+            'key': 'TA1',
+            'iso_639_1': 'ta',
+            'official': true,
+            'name': 'Tamil Trailer',
+          },
+        ]),
+        'hi',
+      );
+      expect([for (final v in variants) v.lang], ['hi', 'en', 'ta']);
+      expect(variants.first.key, 'HI1'); // official Trailer beats Teaser
+    });
+
+    test('only YouTube Trailer/Teaser survive; empty keys dropped', () {
+      final variants = pickTrailerVariants(
+        videos([
+          {
+            'site': 'Vimeo',
+            'type': 'Trailer',
+            'key': 'V1',
+            'iso_639_1': 'hi',
+            'name': 'x',
+          },
+          {
+            'site': 'YouTube',
+            'type': 'Clip',
+            'key': 'C1',
+            'iso_639_1': 'hi',
+            'name': 'x',
+          },
+          {
+            'site': 'YouTube',
+            'type': 'Trailer',
+            'key': '',
+            'iso_639_1': 'hi',
+            'name': 'x',
+          },
+          {
+            'site': 'YouTube',
+            'type': 'Trailer',
+            'key': 'EN9',
+            'iso_639_1': 'en',
+            'name': 'ok',
+          },
+        ]),
+        'hi',
+      );
+      expect(variants.length, 1);
+      expect(variants.single.lang, 'en');
+    });
+
+    test('missing language tag counts as English; bad input is empty', () {
+      final variants = pickTrailerVariants(
+        videos([
+          {
+            'site': 'YouTube',
+            'type': 'Trailer',
+            'key': 'K1',
+            'name': 'no lang',
+          },
+        ]),
+        'hi',
+      );
+      expect(variants.single.lang, 'en');
+      expect(pickTrailerVariants(null, 'hi'), isEmpty);
+      expect(pickTrailerVariants({'results': 'nope'}, 'hi'), isEmpty);
+    });
+  });
 }

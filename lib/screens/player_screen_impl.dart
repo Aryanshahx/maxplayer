@@ -25,6 +25,7 @@ import '../utils/local_store.dart';
 import '../utils/network_headers.dart'
     show kMaxPlayerUserAgent, kVlcFallbackUserAgent;
 import '../utils/mpv_errors.dart';
+import '../utils/tmdb.dart' show TrailerVariant;
 import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
 import '../utils/queue_math.dart';
@@ -43,12 +44,18 @@ class PlayerScreen extends StatefulWidget {
     this.queueStart = 0,
     this.isStream = false,
     this.meta = const {},
+    this.trailerVariants,
+    this.trailerCurrentKey,
+    this.trailerResolver,
   });
 
   const PlayerScreen.stream({
     super.key,
     required this.path,
     required this.title,
+    this.trailerVariants,
+    this.trailerCurrentKey,
+    this.trailerResolver,
   }) : queueIds = const [],
        queueStart = 0,
        isStream = true,
@@ -60,6 +67,16 @@ class PlayerScreen extends StatefulWidget {
   final int queueStart;
   final bool isStream;
   final Map<String, String> meta;
+
+  /// v1.0.1+19 — TRAILER-ONLY language switcher. These three are set
+  /// ONLY when the screen plays a YouTube trailer (never for device
+  /// videos): the available dub variants straight from TMDB (Hindi
+  /// first), the currently playing variant's key, and the resolver that
+  /// turns a YouTube key into a direct stream URL. When [trailerVariants]
+  /// has 2+ entries a translate button appears in the player's top bar.
+  final List<TrailerVariant>? trailerVariants;
+  final String? trailerCurrentKey;
+  final Future<String?> Function(String youtubeKey)? trailerResolver;
 
   /// v30: true while any player screen is open — the "Continue watching"
   /// deep link uses it to never stack a second player over a running one.
@@ -103,6 +120,10 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// v1.0.1+18: the preferred-audio-language pick runs once per file.
   bool _prefAudioApplied = false;
+
+  /// v1.0.1+19 trailer language switching state (null for device videos).
+  String? _trailerKey;
+  bool _trailerSwitching = false;
   Timer? _hideTimer;
   Timer? _saveTimer;
   Timer? _indicatorTimer;
@@ -196,6 +217,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     // the phone's system auto-rotate switch is OFF.
     unawaited(_native.invokeMethod('enableSensorRotate'));
     _title = widget.title;
+    _trailerKey = widget.trailerCurrentKey;
     _currentPath = widget.path;
     _queueIndex = widget.queueStart;
     _player = Player();
@@ -1438,6 +1460,92 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
+  // ------------------------------------------------- trailer language ---
+
+  String _trailerLangLabelFor(String lang) {
+    final opt = audioLangOptionFor(lang);
+    return opt.code == 'auto' ? lang.toUpperCase() : opt.label;
+  }
+
+  String? get _trailerLangLabel {
+    final key = _trailerKey;
+    if (key == null || widget.trailerVariants == null) return null;
+    for (final v in widget.trailerVariants!) {
+      if (v.key == key) return _trailerLangLabelFor(v.lang);
+    }
+    return null;
+  }
+
+  /// v1.0.1+19: TRAILERS ONLY — never shown for device videos. Resolves
+  /// the selected dub's direct URL and restarts playback on it.
+  Future<void> _switchTrailerLanguage(TrailerVariant v) async {
+    final resolver = widget.trailerResolver;
+    if (resolver == null || _trailerSwitching) return;
+    if (v.key == _trailerKey) return;
+    setState(() => _trailerSwitching = true);
+    final url = await resolver(v.key);
+    if (!mounted) return;
+    setState(() => _trailerSwitching = false);
+    if (url == null || url.isEmpty) {
+      _emitSnack('Trailer not available in ${_trailerLangLabelFor(v.lang)}');
+      return;
+    }
+    _currentPath = url;
+    _prefAudioApplied = false;
+    _trailerKey = v.key;
+    CrashLog.crumb('player.trailer_lang_switch', {
+      'key': v.key,
+      'lang': v.lang,
+      'title': _title,
+    });
+    await _open(url, offerResume: false);
+    _emitSnack('Trailer: ${_trailerLangLabelFor(v.lang)}');
+  }
+
+  /// Bottom sheet listing ONLY the languages this trailer exists in on
+  /// YouTube (list came from TMDB — Hindi default is first).
+  Future<void> _showTrailerLanguagePicker() async {
+    final variants = widget.trailerVariants;
+    if (variants == null || variants.length < 2) return;
+    _scheduleHide();
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          children: [
+            _SheetHandle(),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                'Trailer language',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            for (final v in variants)
+              _trackRow(
+                name: '${_trailerLangLabelFor(v.lang)}  •  ${v.name}',
+                selected: v.key == _trailerKey,
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  await _switchTrailerLanguage(v);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// v1.0.1+18: with Player Settings → "Preferred audio language" set,
   /// auto-select the matching audio track once per file (manual switching
   /// in the Audio-track picker still wins afterwards).
@@ -1465,7 +1573,8 @@ class _PlayerScreenState extends State<PlayerScreen>
           'track': track.id,
           'label': _trackLabel(track),
         });
-        _emitSnack('Audio: ${audioLangOptionFor(pref).label}');
+        // v1.0.1+19: silent on device videos — the user asked that NO
+        // language UI be shown on device videos (trailers only).
       }),
     );
   }
@@ -2187,9 +2296,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _emitSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -2449,6 +2557,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                         sleepMenuLabel: _sleepMenuLabel,
                         onSettings: _showPlayerSettings,
                         onMenu: (action) => unawaited(_onMenuAction(action)),
+                        // v1.0.1+19: trailer-only language button.
+                        trailerLangLabel: _trailerLangLabel,
+                        trailerSwitching: _trailerSwitching,
+                        onTrailerLang:
+                            (widget.trailerVariants != null &&
+                                widget.trailerVariants!.length >= 2)
+                            ? _showTrailerLanguagePicker
+                            : null,
                       ),
                     ),
                   ),
@@ -2530,6 +2646,9 @@ class _TopBar extends StatelessWidget {
     required this.sleepMenuLabel,
     required this.onSettings,
     required this.onMenu,
+    this.trailerLangLabel,
+    this.trailerSwitching = false,
+    this.onTrailerLang,
   });
 
   final String title;
@@ -2537,6 +2656,13 @@ class _TopBar extends StatelessWidget {
   final String? sleepMenuLabel;
   final VoidCallback onSettings;
   final ValueChanged<_PlayerMenuAction> onMenu;
+
+  /// v1.0.1+19: shown ONLY while playing a YouTube trailer with 2+
+  /// language variants — null for device videos, so the button never
+  /// appears there (explicit request).
+  final String? trailerLangLabel;
+  final bool trailerSwitching;
+  final VoidCallback? onTrailerLang;
 
   @override
   Widget build(BuildContext context) {
@@ -2593,6 +2719,29 @@ class _TopBar extends StatelessWidget {
               ],
             ),
           ),
+          if (onTrailerLang != null)
+            trailerSwitching
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  )
+                : IconButton(
+                    tooltip:
+                        'Trailer language (${trailerLangLabel ?? 'switch'})',
+                    icon: Icon(
+                      Icons.translate_rounded,
+                      size: 21,
+                      color: AppColors.accent,
+                    ),
+                    onPressed: onTrailerLang,
+                  ),
           PopupMenuButton<_PlayerMenuAction>(
             tooltip: 'More actions',
             icon: Icon(Icons.more_vert, size: 22, color: AppColors.accent),
