@@ -1647,6 +1647,47 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
   });
 
+  group('build stamp + embed host fallback (v1.0.1+29)', () {
+    test('kAppVersionLabel pinpoints the running build', () {
+      expect(kAppVersionLabel, contains('1.0.1+30'));
+    });
+
+    test('default embed host stays youtube-nocookie', () {
+      expect(
+        youtubeEmbedUrl('k9x_2Va'),
+        contains('www.youtube-nocookie.com/embed/k9x_2Va'),
+      );
+    });
+
+    test('host index 1 falls back to www.youtube.com', () {
+      expect(
+        youtubeEmbedUrl('k9x_2Va', 1),
+        contains('www.youtube.com/embed/k9x_2Va'),
+      );
+    });
+
+    test('out-of-range host index clamps to the last host', () {
+      expect(
+        youtubeEmbedUrl('k9x_2Va', 9),
+        contains('www.youtube.com/embed/k9x_2Va'),
+      );
+    });
+  });
+
+  group('iframe embed page (v1.0.1+30)', () {
+    test('embed page is served from the official youtube origin', () {
+      expect(kTrailerEmbedBaseUrl, 'https://www.youtube.com');
+    });
+
+    test('trailerEmbedHtml carries official nocookie iframe for the key', () {
+      final html = trailerEmbedHtml('k9x_2Va');
+      expect(html, contains('https://www.youtube-nocookie.com/embed/k9x_2Va'));
+      expect(html, contains('playsinline=1'));
+      expect(html, contains('autoplay=1'));
+      expect(html, contains('fs=0'));
+    });
+  });
+
   group('official embed url (v1.0.1+28)', () {
     test('youtubeEmbedUrl targets nocookie embed, inline + autoplay', () {
       expect(

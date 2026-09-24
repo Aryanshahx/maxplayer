@@ -455,15 +455,53 @@ Future<TrailerStreams> deviceOrderedTrailerStreams(TrailerStreams s) async {
   return out;
 }
 
+/// v1.0.1+29: build stamp shown on the trailer card so a screenshot
+/// PROVES which build is installed (kills "did the fix even reach the
+/// phone?" ambiguity forever).
+const kAppVersionLabel = 'MaxPlayer 1.0.1+30';
+
+/// v1.0.1+30: the parent ORIGIN the WebView page is served from. YouTube
+/// rejects embedded players whose hosting page has no Referer/Origin
+/// (error 153 "Video player configuration error") — serving the page
+/// from the official base URL makes the embed legitimate.
+const kTrailerEmbedBaseUrl = 'https://www.youtube.com';
+
+/// v1.0.1+30: LOCAL html hosting the official iframe embed for video
+/// [key]. Fixes the on-device error 153 and the "Watch video on YouTube"
+/// takeover: the player lives inside an iframe on a page we control, so
+/// the tiny card can't be hijacked by YouTube's UI. `fs=0` hides the
+/// fullscreen button (Android WebView's custom-view fullscreen is not
+/// wired, so a fullscreen tap would otherwise blank).
+String trailerEmbedHtml(String key) =>
+    '''
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+html,body{margin:0;padding:0;background:#000;height:100%;overflow:hidden}
+iframe{border:0;position:absolute;inset:0;width:100%;height:100%}
+</style>
+</head>
+<body>
+<iframe id="ytplayer" src="https://www.youtube-nocookie.com/embed/$key?playsinline=1&rel=0&modestbranding=1&autoplay=1&fs=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+</body>
+</html>''';
+
 /// v1.0.1+28: the OFFICIAL YouTube embedded-player URL for a video
 /// [key]. Embedded playback is YouTube's own sanctioned in-app path —
 /// completely immune to the direct-stream IP gates / PO-token lockouts
 /// that kept killing device-side resolution. `playsinline` keeps it
 /// inside the detail card; autoplay is safe because we only load it in
-/// response to a user tap.
-String youtubeEmbedUrl(String key) =>
-    'https://www.youtube-nocookie.com/embed/$key'
-    '?playsinline=1&rel=0&modestbranding=1&autoplay=1';
+/// response to a user tap. v1.0.1+29: [hostIdx] 0 = youtube-nocookie
+/// (default), 1 = www.youtube.com fallback when the nocookie edge fails
+/// on a given network/WebView.
+String youtubeEmbedUrl(String key, [int hostIdx = 0]) {
+  const hosts = ['www.youtube-nocookie.com', 'www.youtube.com'];
+  final host = hosts[hostIdx.clamp(0, hosts.length - 1)];
+  return 'https://$host/embed/$key'
+      '?playsinline=1&rel=0&modestbranding=1&autoplay=1';
+}
 
 /// Big YouTube thumbnail URL for a video [key] — `maxresdefault.jpg`
 /// (1280x720; callers fall back to `hqdefault.jpg` on error). Pure.

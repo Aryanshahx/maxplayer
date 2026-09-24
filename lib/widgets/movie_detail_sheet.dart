@@ -138,47 +138,45 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                 }
               },
               onWebResourceError: (err) {
-                if (err.isForMainFrame == true &&
-                    mounted &&
-                    req == _inlineTrailerReqId) {
-                  CrashLog.error(
-                    'trailer.embed_error',
-                    '${err.errorCode} ${err.description}',
-                  );
-                  if (mounted) {
-                    setState(() {
-                      _inlineTrailerLoading = false;
-                      _inlineTrailerFailed = true;
-                      _inlineTrailerFailDetail = err.description;
-                    });
-                  }
-                }
+                if (err.isForMainFrame != true || !mounted) return;
+                if (req != _inlineTrailerReqId) return;
+                CrashLog.error(
+                  'trailer.embed_error',
+                  '${err.errorCode} ${err.description}',
+                );
+                setState(() {
+                  _inlineTrailerLoading = false;
+                  _inlineTrailerFailed = true;
+                  _inlineTrailerFailDetail =
+                      '${err.errorCode}: ${err.description}';
+                });
               },
               onNavigationRequest: (navReq) {
-                final host = Uri.tryParse(navReq.url)?.host ?? '';
-                // Keep YouTube player traffic in-app; block anything trying
-                // to leave (e.g. an embed-blocked video's "Watch on YouTube"
-                // link) — the app must never hand the user off to YouTube.
-                if (navReq.isMainFrame &&
-                    !host.endsWith('youtube-nocookie.com') &&
-                    !host.endsWith('youtube.com') &&
-                    !host.endsWith('youtu.be')) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'This trailer can only be watched on YouTube',
-                        ),
-                      ),
-                    );
-                  }
-                  return NavigationDecision.prevent;
+                // v1.0.1+30: the card is SEALED. The main frame only ever
+                // holds our local iframe page (its load isn't a navigation
+                // request), so ANY main-frame navigation — including the
+                // "Watch video on YouTube" takeover that junked the card
+                // — is refused. The publisher-block message stays inside
+                // the tiny player, exactly like every other app.
+                if (!navReq.isMainFrame) return NavigationDecision.navigate;
+                if (navReq.url == 'about:blank') {
+                  return NavigationDecision.navigate;
                 }
-                return NavigationDecision.navigate;
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('This trailer is restricted by its owner'),
+                    ),
+                  );
+                }
+                return NavigationDecision.prevent;
               },
             ),
           )
-          ..loadRequest(Uri.parse(youtubeEmbedUrl(key)));
+          ..loadHtmlString(
+            trailerEmbedHtml(key),
+            baseUrl: kTrailerEmbedBaseUrl,
+          );
     // Sound-on autoplay after the user's tap (moved to the Android
     // platform controller in webview_flutter 4.14).
     unawaited(
@@ -201,7 +199,12 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
       _inlineKey = v.key;
       _inlineTrailerLoading = true;
     });
-    unawaited(_inlineWebView?.loadRequest(Uri.parse(youtubeEmbedUrl(v.key))));
+    unawaited(
+      _inlineWebView?.loadHtmlString(
+        trailerEmbedHtml(v.key),
+        baseUrl: kTrailerEmbedBaseUrl,
+      ),
+    );
   }
 
   /// v1.0.1+26: stop the inline trailer; the card returns to its
@@ -318,6 +321,18 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                               letterSpacing: 1.2,
                             ),
                           ),
+                        ),
+                      ),
+                    ),
+                    // v1.0.1+29: build stamp — screenshot proof of the
+                    // installed build when reporting issues.
+                    const Positioned(
+                      right: 10,
+                      bottom: 10,
+                      child: IgnorePointer(
+                        child: Text(
+                          kAppVersionLabel,
+                          style: TextStyle(color: Colors.white38, fontSize: 9),
                         ),
                       ),
                     ),
