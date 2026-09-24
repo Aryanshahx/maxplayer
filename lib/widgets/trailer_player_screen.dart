@@ -458,7 +458,7 @@ Future<TrailerStreams> deviceOrderedTrailerStreams(TrailerStreams s) async {
 /// v1.0.1+29: build stamp shown on the trailer card so a screenshot
 /// PROVES which build is installed (kills "did the fix even reach the
 /// phone?" ambiguity forever).
-const kAppVersionLabel = 'MaxPlayer 1.0.1+30';
+const kAppVersionLabel = 'MaxPlayer 1.0.1+31';
 
 /// v1.0.1+30: the parent ORIGIN the WebView page is served from. YouTube
 /// rejects embedded players whose hosting page has no Referer/Origin
@@ -472,6 +472,14 @@ const kTrailerEmbedBaseUrl = 'https://www.youtube.com';
 /// the tiny card can't be hijacked by YouTube's UI. `fs=0` hides the
 /// fullscreen button (Android WebView's custom-view fullscreen is not
 /// wired, so a fullscreen tap would otherwise blank).
+///
+/// v1.0.1+31: host switched to plain `www.youtube.com` with
+/// `enablejsapi=1&origin=<baseUrl>&widget_referrer=<baseUrl>` — the exact
+/// parameter set of the youtube_player_flutter reference implementation.
+/// Native WebViews get error 152-4 ("This video is unavailable") when the
+/// embed can't verify its origin identity (capacitor-youtube-player #49);
+/// declaring the origin explicitly is the documented fix, and the nocookie
+/// edge proved strictly more gated than www on-device.
 String trailerEmbedHtml(String key) =>
     '''
 <!DOCTYPE html>
@@ -484,7 +492,7 @@ iframe{border:0;position:absolute;inset:0;width:100%;height:100%}
 </style>
 </head>
 <body>
-<iframe id="ytplayer" src="https://www.youtube-nocookie.com/embed/$key?playsinline=1&rel=0&modestbranding=1&autoplay=1&fs=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+<iframe id="ytplayer" src="https://www.youtube.com/embed/$key?playsinline=1&rel=0&modestbranding=1&autoplay=1&fs=0&enablejsapi=1&origin=https%3A%2F%2Fwww.youtube.com&widget_referrer=https%3A%2F%2Fwww.youtube.com%2F" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
 </body>
 </html>''';
 
