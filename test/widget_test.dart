@@ -1647,12 +1647,6 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
   });
 
-  group('build stamp (v1.0.1+29)', () {
-    test('kAppVersionLabel pinpoints the running build', () {
-      expect(kAppVersionLabel, contains('1.0.1+32'));
-    });
-  });
-
   group('youtube watch hand-off (v1.0.1+32)', () {
     test('watch url targets the youtube watch page with the key', () {
       expect(

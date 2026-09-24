@@ -455,11 +455,6 @@ Future<TrailerStreams> deviceOrderedTrailerStreams(TrailerStreams s) async {
   return out;
 }
 
-/// v1.0.1+29: build stamp shown on the trailer card so a screenshot
-/// PROVES which build is installed (kills "did the fix even reach the
-/// phone?" ambiguity forever).
-const kAppVersionLabel = 'MaxPlayer 1.0.1+32';
-
 /// v1.0.1+32: the plain YouTube WATCH url — the card's hand-off target.
 /// The in-app WebView embed helpers were removed after the +31 field
 /// verdict: YouTube hard-gates embedded playback inside this app's

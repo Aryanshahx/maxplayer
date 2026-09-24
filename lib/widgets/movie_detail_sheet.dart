@@ -261,18 +261,6 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                         ),
                       ),
                     ),
-                    // v1.0.1+29: build stamp — screenshot proof of the
-                    // installed build when reporting issues.
-                    const Positioned(
-                      right: 10,
-                      bottom: 10,
-                      child: IgnorePointer(
-                        child: Text(
-                          kAppVersionLabel,
-                          style: TextStyle(color: Colors.white38, fontSize: 9),
-                        ),
-                      ),
-                    ),
                   ],
                   if (_inlineTrailerLoading)
                     const ColoredBox(
