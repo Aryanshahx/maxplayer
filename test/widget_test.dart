@@ -34,6 +34,8 @@ import 'package:maxplayer/services/ai_suggest.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:maxplayer/utils/app_volume.dart';
+import 'package:maxplayer/utils/audio_lang.dart';
+import 'package:maxplayer/utils/mpv_errors.dart';
 import 'package:maxplayer/utils/movie_match.dart';
 import 'package:maxplayer/utils/player_settings.dart';
 import 'package:maxplayer/utils/watch_stats.dart';
@@ -1414,5 +1416,63 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(gestureTickFor(98, 110, 0, 100), GestureTick.edgeHigh);
       expect(gestureTickFor(98, 99, 0, 100), GestureTick.tick);
     });
-  });}
+  });
 
+  group('mpv error filter (v1.0.1+18)', () {
+    test('command/filter/property noise is NOT fatal', () {
+      expect(
+        looksLikeFatalMpvError('Error executing command af add @boost'),
+        isFalse,
+      );
+      expect(
+        looksLikeFatalMpvError('lavfi: No such filter: alimiter'),
+        isFalse,
+      );
+      expect(
+        looksLikeFatalMpvError('No option named volume-maxxx exists'),
+        isFalse,
+      );
+    });
+
+    test('real open/decode failures ARE fatal', () {
+      expect(looksLikeFatalMpvError('Failed to open https://x/y.mp4'), isTrue);
+      expect(
+        looksLikeFatalMpvError(
+          'tcp: Connection failed: HTTP error 403 Forbidden',
+        ),
+        isTrue,
+      );
+      expect(
+        looksLikeFatalMpvError('Invalid data found when processing input'),
+        isTrue,
+      );
+    });
+  });
+
+  group('preferred audio language (v1.0.1+18)', () {
+    test('option lookup falls back to auto', () {
+      expect(audioLangOptionFor('hi').label, 'Hindi');
+      expect(audioLangOptionFor('zzz').code, 'auto');
+    });
+
+    test('ISO-639-2 language tags match by index', () {
+      final tracks = <({String? title, String? language})>[
+        (title: 'DD5.1', language: 'eng'),
+        (title: null, language: 'hin'),
+      ];
+      expect(matchAudioTrackIndex(tracks, 'hi'), 1);
+      expect(matchAudioTrackIndex(tracks, 'en'), 0);
+      expect(matchAudioTrackIndex(tracks, 'ta'), -1);
+      expect(matchAudioTrackIndex(tracks, 'auto'), -1);
+    });
+
+    test('title substring + ISO-639-1 tag also match', () {
+      final tracks = <({String? title, String? language})>[
+        (title: 'Tamil', language: null),
+        (title: null, language: 'hi'),
+      ];
+      expect(matchAudioTrackIndex(tracks, 'ta'), 0);
+      expect(matchAudioTrackIndex(tracks, 'hi'), 1);
+    });
+  });
+}

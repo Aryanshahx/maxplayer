@@ -10,11 +10,23 @@ class PlayerSettings extends ChangeNotifier {
   static final PlayerSettings instance = PlayerSettings._();
 
   static const seekSteps = <int>[5, 10, 15, 30];
+
   /// Long-press speed-boost multipliers (set in player settings).
   static const speedRates = <double>[1.5, 2.0, 2.5, 3.0];
+
   /// Constant playback-speed choices, 0.5× .. 4.0×.
   static const playbackRates = <double>[
-    0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0,
+    0.5,
+    0.75,
+    1.0,
+    1.25,
+    1.5,
+    1.75,
+    2.0,
+    2.5,
+    3.0,
+    3.5,
+    4.0,
   ];
   static const autoHideSeconds = <int>[3, 4, 5, 6];
   static const performanceModes = <String>['auto', 'on', 'off'];
@@ -36,6 +48,7 @@ class PlayerSettings extends ChangeNotifier {
   static const _kScreenLock = 'player.screenLock';
   static const _kPerformanceMode = 'player.performanceMode';
   static const _kPlaybackRate = 'player.playbackRate';
+  static const _kPreferredAudioLang = 'player.preferredAudioLang';
 
   bool doubleTapSides = true;
   bool doubleTapMiddle = true;
@@ -93,10 +106,12 @@ class PlayerSettings extends ChangeNotifier {
     resume = p.getBool(_kResume) ?? true;
     screenLock = p.getBool(_kScreenLock) ?? true;
     final storedPerf = p.getString(_kPerformanceMode);
-    performanceMode =
-        performanceModes.contains(storedPerf) ? storedPerf! : 'auto';
+    performanceMode = performanceModes.contains(storedPerf)
+        ? storedPerf!
+        : 'auto';
     final storedPlaybackRate = p.getDouble(_kPlaybackRate);
     playbackRate = nearestPlaybackRate(storedPlaybackRate ?? 1.0);
+    preferredAudioLang = p.getString(_kPreferredAudioLang) ?? 'auto';
     notifyListeners();
   }
 
@@ -129,6 +144,17 @@ class PlayerSettings extends ChangeNotifier {
   Future<void> setVolumeBoost(bool v) async {
     volumeBoost = v;
     await _saveBool(_kVolumeBoost, v);
+  }
+
+  /// v1.0.1+18: 'auto' or an ISO 639-1 code (see kAudioLangOptions in
+  /// audio_lang.dart) — the matching audio track is auto-selected when a
+  /// multi-audio video opens.
+  String preferredAudioLang = 'auto';
+
+  Future<void> setPreferredAudioLang(String v) async {
+    preferredAudioLang = v;
+    notifyListeners();
+    await _save((p) => p.setString(_kPreferredAudioLang, v));
   }
 
   Future<void> setHorizontalSeek(bool v) async {
@@ -197,7 +223,8 @@ class PlayerSettings extends ChangeNotifier {
   }
 
   Future<void> _save(
-      Future<bool> Function(SharedPreferences prefs) write) async {
+    Future<bool> Function(SharedPreferences prefs) write,
+  ) async {
     await write(await SharedPreferences.getInstance());
   }
 }
@@ -211,4 +238,3 @@ double nearestPlaybackRate(double rate) {
   final steps = ((clamped - min) / 0.25).round();
   return (min + steps * 0.25).clamp(min, max);
 }
-

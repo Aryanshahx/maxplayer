@@ -73,8 +73,6 @@ class AudioPlayerHolder extends ChangeNotifier {
     if (_player != null) return;
     final p = Player();
     _player = p;
-    _boostFiltersArmed = false;
-    _lastBoostFactor = -1;
     // v1.0.1+16: in-app 100% was capped by the untouched system stream —
     // raise it to max once so the 0..200% scale is absolute (same as the
     // video player).
@@ -217,83 +215,15 @@ class AudioPlayerHolder extends ChangeNotifier {
     }
   }
 
-  Future<void> _mpvCmd(Player p, List<String> args) async {
-    try {
-      final platform = p.platform;
-      if (platform != null) {
-        await (platform as dynamic).command(args);
-      }
-    } catch (e) {
-      CrashLog.error('audio.mpv_cmd_failed', e, {'args': args.join(' ')});
-      rethrow;
-    }
-  }
-
-  // ------------------------------------------------------ volume boost ---
-  // v1.0.1+16: same boost rework as the video player — amplify INSIDE the
-  // audio filter chain (builtin `volume` filter at unity master) followed
-  // by a peak limiter, so 150–200% no longer digitally clips/distorts.
-  bool _boostFiltersArmed = false;
-  double _lastBoostFactor = -1;
-  Future<void> _volumeChain = Future<void>.value();
-
+  // v1.0.1+18: boost is back on the plain mpv `volume` property — the
+  // filter-chain approach surfaced error-level mpv logs that broke
+  // playback on some devices (see player_screen_impl._onError).
   void _applyVolume() {
     final p = _player;
     if (p == null) return;
-    final gain = AppVolume.instance.mpvGain;
-    final run = _volumeChain.then((_) async {
-      try {
-        await _applyGain(p, gain);
-      } catch (e) {
-        CrashLog.error('audio.volume_apply_failed', e);
-      }
-    });
-    _volumeChain = run;
-    unawaited(run);
-  }
-
-  Future<void> _applyGain(Player p, double gain) async {
-    if (gain > 100.5) {
-      final factor = gain / 100;
-      if (_boostFiltersArmed && (factor - _lastBoostFactor).abs() < 0.03) {
-        return;
-      }
-      _lastBoostFactor = factor;
-      await _mpvSetProp(p, 'volume', '100');
-      if (_boostFiltersArmed) await _delBoostFilters(p);
-      await _mpvCmd(p, [
-        'af',
-        'add',
-        '@boost:volume=${factor.toStringAsFixed(2)}',
-      ]);
-      try {
-        await _mpvCmd(p, [
-          'af',
-          'add',
-          '@lim:lavfi=[alimiter=limit=0.95:level=false]',
-        ]);
-      } catch (_) {
-        // Limiter unavailable in this mpv build — boost without limiting
-        // (old behaviour); never fail the whole apply.
-      }
-      _boostFiltersArmed = true;
-    } else {
-      _lastBoostFactor = -1;
-      if (_boostFiltersArmed) {
-        await _delBoostFilters(p);
-        _boostFiltersArmed = false;
-      }
-      await _mpvSetProp(p, 'volume', gain.round().toString());
-    }
-  }
-
-  Future<void> _delBoostFilters(Player p) async {
-    try {
-      await _mpvCmd(p, ['af', 'del', '@boost']);
-    } catch (_) {}
-    try {
-      await _mpvCmd(p, ['af', 'del', '@lim']);
-    } catch (_) {}
+    unawaited(
+      _mpvSetProp(p, 'volume', AppVolume.instance.mpvGain.round().toString()),
+    );
   }
 
   bool get boostEnabled => PlayerSettings.instance.volumeBoost;
@@ -371,4 +301,3 @@ class AudioPlayerHolder extends ChangeNotifier {
     if (p != null) unawaited(p.setRate(r));
   }
 }
-

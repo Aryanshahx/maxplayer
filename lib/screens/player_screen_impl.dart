@@ -13,6 +13,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/native_bridge.dart';
 import '../theme.dart';
 import '../utils/ab_loop.dart';
+import '../utils/audio_lang.dart';
 import '../utils/gesture_ticks.dart';
 import '../utils/app_volume.dart';
 import '../utils/ai_subtitles.dart';
@@ -23,6 +24,7 @@ import '../utils/karaoke.dart';
 import '../utils/local_store.dart';
 import '../utils/network_headers.dart'
     show kMaxPlayerUserAgent, kVlcFallbackUserAgent;
+import '../utils/mpv_errors.dart';
 import '../utils/mpv_filters.dart';
 import '../utils/player_settings.dart';
 import '../utils/queue_math.dart';
@@ -97,6 +99,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   StreamSubscription<bool>? _bufferingSub;
   StreamSubscription<bool>? _completedSub;
   StreamSubscription<String>? _errorSub;
+  StreamSubscription<Tracks>? _tracksSub;
+
+  /// v1.0.1+18: the preferred-audio-language pick runs once per file.
+  bool _prefAudioApplied = false;
   Timer? _hideTimer;
   Timer? _saveTimer;
   Timer? _indicatorTimer;
@@ -284,6 +290,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     _errorSub = _player.stream.error.listen((e) {
       _onError(e);
     });
+    // v1.0.1+18: refresh track pickers when tracks change, and
+    // auto-select the preferred audio language once per file.
+    _tracksSub = _player.stream.tracks.listen((t) {
+      if (mounted) setState(() {});
+      _applyPreferredAudio(t);
+    });
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       unawaited(_savePosition());
       // Watch-time statistics (same 5s tick as the old player): count a
@@ -324,6 +336,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     CrashLog.crumb('player.open', {'path': path});
     _volumeMaxArmed = false;
     try {
+      _prefAudioApplied = false; // v1.0.1+18: re-arm language auto-pick
       await _player.open(_mediaFor(path), play: true);
       // Keep the remembered playback speed across videos (v29): mpv can
       // reset the rate while a new file loads, so re-apply it here too.
@@ -552,6 +565,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       _uaRetried = false;
       _title = asset?.title ?? 'Video';
       if (mounted) setState(() {});
+      _prefAudioApplied = false; // v1.0.1+18: re-arm language auto-pick
       await _player.open(Media(file.path), play: true);
       unawaited(_player.setRate(_settings.playbackRate));
     } catch (e) {
@@ -562,6 +576,14 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _onError(Object e) {
     if (_failed) return;
+    // v1.0.1+18: media_kit forwards EVERY mpv error-level log line here,
+    // including harmless command/property/filter noise (the v16 boost
+    // bug). Only genuine open/decode failures earn the recovery ladder;
+    // everything else is logged and ignored.
+    if (!looksLikeFatalMpvError(e.toString())) {
+      CrashLog.crumb('player.engine_error_ignored', {'msg': e.toString()});
+      return;
+    }
     unawaited(_recoverOrFail(e));
   }
 
@@ -707,99 +729,27 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// v1.0.10: apply the AppVolume store to the engine. Everything that
   /// moves the volume (swipe, hardware keys, settings slider, mute button)
   /// writes to the store; the listener registered in initState lands here.
-  /// Raw mpv command transport (af/cycle style commands), same soft-fail
-  /// logging discipline as [_mpvSet].
-  Future<void> _mpvCmd(List<String> args) async {
-    try {
-      final platform = _player.platform;
-      if (platform != null) {
-        await (platform as dynamic).command(args);
-      }
-    } catch (e) {
-      CrashLog.error('player.mpv_cmd_failed', e, {'args': args.join(' ')});
-      rethrow;
-    }
-  }
-
   // ------------------------------------------------------ volume boost ---
 
-  /// v1.0.1+16 volume rework. Two real bugs were reported:
-  ///   1. "100% feels like 50%" — fixed where the player opens by raising
-  ///      the untouched Android media stream to max (see initState).
-  ///   2. "200% fully distorted" — mpv `volume` >100 clips the decoded PCM
-  ///      hard. The boost region now amplifies INSIDE the audio filter
-  ///      chain (builtin `volume` filter at unity master volume) followed
-  ///      by an ffmpeg peak limiter — same loudness, without the harsh
-  ///      digital clipping. If lavfi is unavailable in a given mpv build,
-  ///      the boost still applies (old behaviour), only the limiting is
-  ///      skipped.
-  bool _boostFiltersArmed = false;
-  double _lastAppliedBoostFactor = -1;
-  Future<void> _volumeChain = Future<void>.value();
-
+  /// v1.0.1+18: the >100% boost went BACK to the plain mpv `volume`
+  /// property (0..200 with `volume-max=200`). v16 tried boosting through
+  /// the mpv audio FILTER chain — every tiny af-command hiccup surfaced
+  /// as an mpv error-level log, which media_kit forwards as "player
+  /// error" → bogus recovery ladder → "This video can't be played by MPV"
+  /// the moment volume crossed 100%. Loudness stays absolute thanks to
+  /// the system-stream raise at open; extreme boost can clip like VLC's
+  /// own 200% (acceptable and error-free).
   void _applyVolume() {
     // v1.0.13: hard no-op until open() has completed.
     if (!_ready || _failed) return;
-    unawaited(_applyVolumeAsync(AppVolume.instance.mpvGain));
-    if (mounted) setState(() {});
-  }
-
-  /// Serialize engine volume ops — swipe ticks would otherwise interleave
-  /// af add/del and the `volume` property write into a mess.
-  Future<void> _applyVolumeAsync(double gain) {
-    final run = _volumeChain.then((_) async {
-      try {
-        await _applyGain(gain);
-      } catch (e) {
-        CrashLog.error('player.volume_apply_failed', e);
-      }
-    });
-    _volumeChain = run;
-    return run;
-  }
-
-  Future<void> _applyGain(double gain) async {
-    if (gain > 100.5) {
-      final factor = gain / 100;
-      if (_boostFiltersArmed &&
-          (factor - _lastAppliedBoostFactor).abs() < 0.03) {
-        return; // swipe micro-updates: nothing meaningful changed
-      }
-      _lastAppliedBoostFactor = factor;
-      await _mpvSet('volume', '100');
-      if (_boostFiltersArmed) await _delBoostFilters();
-      await _mpvCmd([
-        'af',
-        'add',
-        '@boost:volume=${factor.toStringAsFixed(2)}',
-      ]);
-      try {
-        await _mpvCmd([
-          'af',
-          'add',
-          '@lim:lavfi=[alimiter=limit=0.95:level=false]',
-        ]);
-      } catch (_) {
-        // Limiter unavailable — boost works without it (old behaviour).
-      }
-      _boostFiltersArmed = true;
-    } else {
-      _lastAppliedBoostFactor = -1;
-      if (_boostFiltersArmed) {
-        await _delBoostFilters();
-        _boostFiltersArmed = false;
-      }
-      await _mpvSet('volume', gain.round().toString());
+    try {
+      unawaited(
+        _mpvSet('volume', AppVolume.instance.mpvGain.round().toString()),
+      );
+      if (mounted) setState(() {});
+    } catch (e) {
+      CrashLog.error('player.volume_apply_failed', e);
     }
-  }
-
-  Future<void> _delBoostFilters() async {
-    try {
-      await _mpvCmd(['af', 'del', '@boost']);
-    } catch (_) {}
-    try {
-      await _mpvCmd(['af', 'del', '@lim']);
-    } catch (_) {}
   }
 
   Future<void> _onVolumeKey(String dir) async {
@@ -1485,6 +1435,38 @@ class _PlayerScreenState extends State<PlayerScreen>
           ],
         ),
       ),
+    );
+  }
+
+  /// v1.0.1+18: with Player Settings → "Preferred audio language" set,
+  /// auto-select the matching audio track once per file (manual switching
+  /// in the Audio-track picker still wins afterwards).
+  void _applyPreferredAudio(Tracks t) {
+    if (_prefAudioApplied) return;
+    final pref = _settings.preferredAudioLang;
+    if (pref == 'auto') return;
+    final idx = matchAudioTrackIndex([
+      for (final a in t.audio) (title: a.title, language: a.language),
+    ], pref);
+    if (idx < 0 || idx >= t.audio.length) {
+      _prefAudioApplied = true; // not present in this file — stop trying
+      return;
+    }
+    final track = t.audio[idx];
+    if (track.id == _player.state.track.audio.id) {
+      _prefAudioApplied = true;
+      return; // already the active track
+    }
+    _prefAudioApplied = true;
+    unawaited(
+      _player.setAudioTrack(track).then((_) {
+        CrashLog.crumb('player.pref_audio_applied', {
+          'lang': pref,
+          'track': track.id,
+          'label': _trackLabel(track),
+        });
+        _emitSnack('Audio: ${audioLangOptionFor(pref).label}');
+      }),
     );
   }
 
@@ -2222,6 +2204,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _bufferingSub?.cancel();
     _completedSub?.cancel();
     _errorSub?.cancel();
+    _tracksSub?.cancel();
     _karaokeSubTextSub?.cancel();
     if (NativeBridge.pipToggleListener != null) {
       NativeBridge.pipToggleListener = null;
@@ -3751,4 +3734,3 @@ class _KaraokeOverlay extends StatelessWidget {
     );
   }
 }
-

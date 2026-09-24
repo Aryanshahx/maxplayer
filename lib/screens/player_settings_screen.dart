@@ -1,3 +1,4 @@
+import '../utils/audio_lang.dart';
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
@@ -97,7 +98,12 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   trailing: s.doubleTapSides
                       ? _MiniDropdown<int>(
                           value: s.seekStep,
-                          entries: const {5: '5s', 10: '10s', 15: '15s', 30: '30s'},
+                          entries: const {
+                            5: '5s',
+                            10: '10s',
+                            15: '15s',
+                            30: '30s',
+                          },
                           onChanged: (v) => s.setSeekStep(v ?? 10),
                         )
                       : null,
@@ -131,7 +137,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 _SwitchTile(
                   icon: Icons.pinch_outlined,
                   label: 'Two-finger pinch to zoom',
-                  subtitle: 'OFF (default): spread 2 fingers = Fit, Crop, '
+                  subtitle:
+                      'OFF (default): spread 2 fingers = Fit, Crop, '
                       'Stretch, 16:9... then keep spreading to zoom in. '
                       'ON: pinch zooms straight away. 2-finger tap = Fit.',
                   value: s.pinchZoom,
@@ -158,6 +165,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 ),
                 const _SectionHeader('Sound'),
                 _BoostToggleTile(s: s),
+                _AudioLangTile(s: s),
                 const _SectionHeader('Playback'),
                 _SwitchTile(
                   icon: Icons.timer_off_outlined,
@@ -192,7 +200,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 _SwitchTile(
                   icon: Icons.speed_outlined,
                   label: 'Performance mode (low-end)',
-                  subtitle: 'Drops late frames instead of lagging; '
+                  subtitle:
+                      'Drops late frames instead of lagging; '
                       'auto-detects low-RAM phones when left enabled',
                   value: s.performanceMode != 'off',
                   onChanged: (v) => s.setPerformanceMode(v ? 'on' : 'off'),
@@ -294,38 +303,85 @@ class _BoostToggleTile extends StatelessWidget {
         final av = AppVolume.instance;
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-          child: Row(children: [
-            const Icon(Icons.volume_up, color: Colors.white70, size: 22),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Volume boost (up to 200%)',
-                    style: TextStyle(color: Colors.white, fontSize: 15),
-                  ),
-                  Text(
-                    s.volumeBoost
-                        ? 'On — current level ${av.level.round()}%'
-                        : 'Off — capped at 100%, current level ${av.level.round()}%',
-                    style:
-                        const TextStyle(color: Colors.white38, fontSize: 12),
-                  ),
-                ],
+          child: Row(
+            children: [
+              const Icon(Icons.volume_up, color: Colors.white70, size: 22),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Volume boost (up to 200%)',
+                      style: TextStyle(color: Colors.white, fontSize: 15),
+                    ),
+                    Text(
+                      s.volumeBoost
+                          ? 'On — current level ${av.level.round()}%'
+                          : 'Off — capped at 100%, current level ${av.level.round()}%',
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Switch.adaptive(
-              value: s.volumeBoost,
-              activeThumbColor: AppColors.accent,
-              onChanged: (v) async {
-                await s.setVolumeBoost(v);
-                await AppVolume.instance.setBoostEnabled(v);
-              },
-            ),
-          ]),
+              Switch.adaptive(
+                value: s.volumeBoost,
+                activeThumbColor: AppColors.accent,
+                onChanged: (v) async {
+                  await s.setVolumeBoost(v);
+                  await AppVolume.instance.setBoostEnabled(v);
+                },
+              ),
+            ],
+          ),
         );
       },
+    );
+  }
+}
+
+/// v1.0.1+18: preferred audio language — videos with multiple audio
+/// tracks auto-select this language when they open.
+class _AudioLangTile extends StatelessWidget {
+  final PlayerSettings s;
+  const _AudioLangTile({required this.s});
+
+  @override
+  Widget build(BuildContext context) {
+    final opt = audioLangOptionFor(s.preferredAudioLang);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      child: Row(
+        children: [
+          const Icon(Icons.translate_rounded, color: Colors.white70, size: 22),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Preferred audio language',
+                  style: TextStyle(color: Colors.white, fontSize: 15),
+                ),
+                Text(
+                  opt.code == 'auto'
+                      ? "Plays the file's default audio track"
+                      : 'Auto-selects ${opt.label} audio when available',
+                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          _MiniDropdown<String>(
+            value: opt.code,
+            entries: {for (final o in kAudioLangOptions) o.code: o.label},
+            onChanged: (v) => s.setPreferredAudioLang(v ?? 'auto'),
+          ),
+        ],
+      ),
     );
   }
 }
