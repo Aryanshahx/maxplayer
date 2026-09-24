@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http_parser/http_parser.dart' show MediaType;
 import 'package:maxplayer/theme.dart';
 import 'package:maxplayer/screens/history_screen.dart' show timeAgo;
 import 'package:maxplayer/models/network_location.dart';
@@ -25,6 +26,7 @@ import 'package:maxplayer/utils/sort.dart';
 import 'package:maxplayer/utils/srt.dart';
 import 'package:maxplayer/utils/tmdb.dart';
 import 'package:maxplayer/widgets/trailer_player_screen.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:maxplayer/widgets/discover_section.dart';
 import 'package:maxplayer/utils/tmdb_image.dart';
 import 'package:maxplayer/utils/gesture_ticks.dart';
@@ -1642,6 +1644,88 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       // resolver passes the muxed <=360p url as the 3rd positional arg.
       const s = TrailerStreams('a', 'b', 'c');
       expect([s.videoUrl, s.audioUrl, s.fallbackUrl], ['a', 'b', 'c']);
+    });
+  });
+
+  group('trailer manifest mapping (v1.0.1+27)', () {
+    MuxedStreamInfo mux(int h, String name) => MuxedStreamInfo(
+      VideoId('TcMBFSGVi1c'),
+      h == 720 ? 18 : 17,
+      Uri.parse('https://gv.example/$name'),
+      StreamContainer.mp4,
+      const FileSize(1024),
+      const Bitrate(1000),
+      'mp4a.40.2',
+      'avc1.42001E',
+      '${h}p',
+      h >= 720 ? VideoQuality.high720 : VideoQuality.medium360,
+      VideoResolution(h * 16 ~/ 9, h),
+      const Framerate(30),
+      MediaType('video', 'mp4'),
+    );
+
+    VideoOnlyStreamInfo vo(int h, String name) => VideoOnlyStreamInfo(
+      VideoId('TcMBFSGVi1c'),
+      h >= 1080 ? 137 : 136,
+      Uri.parse('https://gv.example/$name'),
+      StreamContainer.mp4,
+      const FileSize(2048),
+      const Bitrate(2000),
+      'avc1.640028',
+      '${h}p',
+      h >= 1080 ? VideoQuality.high1080 : VideoQuality.high720,
+      VideoResolution(h * 16 ~/ 9, h),
+      const Framerate(30),
+      const [],
+      MediaType('video', 'mp4'),
+    );
+
+    AudioOnlyStreamInfo ao(String name) => AudioOnlyStreamInfo(
+      VideoId('TcMBFSGVi1c'),
+      140,
+      Uri.parse('https://gv.example/$name'),
+      StreamContainer.mp4,
+      const FileSize(512),
+      const Bitrate(128),
+      'mp4a.40.2',
+      '128k',
+      const [],
+      MediaType('audio', 'mp4'),
+      null,
+    );
+
+    test('720p muxed wins outright (one file, audio included)', () {
+      final m = StreamManifest([mux(360, 'a'), mux(720, 'b')]);
+      final s = trailerStreamsFromManifest(m)!;
+      expect(s.videoUrl, 'https://gv.example/b');
+      expect(s.audioUrl, isNull);
+      expect(s.fallbackUrl, isNull);
+    });
+
+    test('video-only 1080p + audio, muxed 360p as safety fallback', () {
+      final m = StreamManifest([vo(1080, 'v'), ao('a'), mux(360, 'm')]);
+      final s = trailerStreamsFromManifest(m)!;
+      expect(s.videoUrl, 'https://gv.example/v');
+      expect(s.audioUrl, 'https://gv.example/a');
+      expect(s.fallbackUrl, 'https://gv.example/m');
+    });
+
+    test('sub-720p video-only yields to a taller muxed stream', () {
+      final m = StreamManifest([vo(480, 'v'), ao('a'), mux(720, 'm')]);
+      final s = trailerStreamsFromManifest(m)!;
+      expect(s.videoUrl, 'https://gv.example/m');
+      expect(s.audioUrl, isNull);
+    });
+
+    test('plain best muxed when nothing else exists', () {
+      final s = trailerStreamsFromManifest(StreamManifest([mux(360, 'm')]))!;
+      expect(s.videoUrl, 'https://gv.example/m');
+      expect(s.audioUrl, isNull);
+      expect(s.fallbackUrl, isNull);
+    });
+
+    test('empty manifest resolves to null', () {
+      expect(trailerStreamsFromManifest(StreamManifest(const [])), isNull);
     });
   });
 

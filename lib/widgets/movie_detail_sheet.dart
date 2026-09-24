@@ -118,6 +118,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
   Future<void> _playInlineTrailer(TmdbMovie detailMovie) async {
     if (_inlineTrailerController != null || _inlineTrailerLoading) return;
     final req = ++_inlineTrailerReqId;
+    TrailerPlayerScreen.lastResolveError = null;
     setState(() {
       _inlineTrailerLoading = true;
       _inlineTrailerFailed = false;
@@ -145,10 +146,15 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
         CrashLog.crumb('trailer.inline_no_streams', {
           'title': widget.movie.title,
         });
+        // v1.0.1+27: show the REAL resolution failure (PO-token gate,
+        // timeout, 429, ...) instead of a generic line.
+        final detail = (TrailerPlayerScreen.lastResolveError ?? '').trim();
         setState(() {
           _inlineTrailerLoading = false;
           _inlineTrailerFailed = true;
-          _inlineTrailerFailDetail = 'No playable trailer stream found.';
+          _inlineTrailerFailDetail = detail.isEmpty
+              ? 'No playable trailer stream found.'
+              : detail;
         });
         return;
       }

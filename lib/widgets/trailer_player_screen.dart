@@ -24,6 +24,11 @@ import '../utils/tmdb.dart';
 class TrailerPlayerScreen {
   TrailerPlayerScreen._();
 
+  /// v1.0.1+27: the LAST trailer resolution error, in plain text, so the
+  /// detail-card UI can show (and the user can paste) the REAL cause
+  /// instead of a generic "couldn't be loaded".
+  static String? lastResolveError;
+
   static Future<void> open(
     BuildContext context,
     String videoKey,
@@ -223,68 +228,101 @@ class TrailerPlayerScreen {
   }
 }
 
-/// v1.0.1+20: resolve a YouTube video id to its direct stream(s) with a
-/// hard 12s timeout — NEVER below 720p when the video has 720p or better
-/// at all. Selection order:
-///   1. muxed (audio+video) at >=720p — mpv plays it directly;
-///   2. otherwise the best video-only stream (>=720p when available)
-///      paired with the best audio track — mpv attaches the audio via
-///      its `audio-file` property in the player;
-///   3. last resort (very old <720p-only uploads): best muxed stream so
-///      playback still works instead of failing hard.
-/// Shared by the initial trailer open AND the in-player language
-/// switcher. Null on any failure. Never throws.
+/// Manifest -> [TrailerStreams] mapping (separated for unit tests):
+///  * a muxed (progressive) stream at >=720p wins outright — one file,
+///    audio included;
+///  * otherwise the best >=720p video-only DASH stream + the
+///    highest-bitrate audio track, plus the best muxed (<=360p) stream as
+///    the in-player safety fallback (v1.0.1+24);
+///  * a sub-720p video-only stream yields to a taller muxed stream;
+///  * finally, the plain best muxed stream, or null.
+TrailerStreams? trailerStreamsFromManifest(StreamManifest manifest) {
+  int byResThenBitrate(VideoStreamInfo a, VideoStreamInfo b) {
+    final r = b.videoResolution.height.compareTo(a.videoResolution.height);
+    return r != 0 ? r : b.bitrate.compareTo(a.bitrate);
+  }
+
+  final muxed = manifest.muxed.toList()..sort(byResThenBitrate);
+  for (final m in muxed) {
+    if (m.videoResolution.height >= 720) {
+      return TrailerStreams(m.url.toString());
+    }
+  }
+
+  final videoOnly = manifest.videoOnly.toList()..sort(byResThenBitrate);
+  if (videoOnly.isNotEmpty && manifest.audioOnly.isNotEmpty) {
+    var best = videoOnly.firstWhere(
+      (s) => s.videoResolution.height >= 720,
+      orElse: () => videoOnly.first,
+    );
+    if (muxed.isNotEmpty &&
+        best.videoResolution.height <= muxed.first.videoResolution.height) {
+      return TrailerStreams(muxed.first.url.toString());
+    }
+    final audio = manifest.audioOnly.withHighestBitrate();
+    final fallbackUrl = muxed.isNotEmpty ? muxed.first.url.toString() : null;
+    return TrailerStreams(
+      best.url.toString(),
+      audio.url.toString(),
+      fallbackUrl,
+    );
+  }
+
+  if (muxed.isNotEmpty) return TrailerStreams(muxed.first.url.toString());
+  return null;
+}
+
+/// v1.0.1+27: YouTube keeps tightening PO-token / signature gates on
+/// specific API clients — on a flagged device the default client can
+/// fail for EVERY video ("No playable trailer stream") while other
+/// clients still answer. Same remedy yt-dlp / NewPipe use: cycle the
+/// client — library default (androidSdkless) -> androidVr -> tv ->
+/// mediaConnect. Every failure lands in
+/// [TrailerPlayerScreen.lastResolveError] so the card shows the REAL
+/// cause. First success wins.
 Future<TrailerStreams?> resolveTrailerStreams(String videoKey) async {
   final yt = YoutubeExplode();
   try {
-    final manifest = await yt.videos.streams
-        .getManifest(videoKey)
-        .timeout(const Duration(seconds: 12));
-
-    int byResThenBitrate(VideoStreamInfo a, VideoStreamInfo b) {
-      final r = b.videoResolution.height.compareTo(a.videoResolution.height);
-      return r != 0 ? r : b.bitrate.compareTo(a.bitrate);
-    }
-
-    final muxed = manifest.muxed.toList()..sort(byResThenBitrate);
-    for (final m in muxed) {
-      if (m.videoResolution.height >= 720) {
-        return TrailerStreams(m.url.toString());
+    const clientLadder = <String, List<YoutubeApiClient>?>{
+      'default': null,
+      'androidVr': [YoutubeApiClient.androidVr],
+      'tv': [YoutubeApiClient.tv],
+      'mediaConnect': [YoutubeApiClient.mediaConnect],
+    };
+    for (final entry in clientLadder.entries) {
+      try {
+        final manifest = await yt.videos.streams
+            .getManifest(videoKey, ytClients: entry.value)
+            .timeout(const Duration(seconds: 10));
+        final streams = trailerStreamsFromManifest(manifest);
+        if (streams != null) {
+          if (entry.key != 'default') {
+            CrashLog.crumb('trailer.resolve_client_ok', {
+              'key': videoKey,
+              'client': entry.key,
+            });
+          }
+          return streams;
+        }
+        CrashLog.crumb('trailer.resolve_empty', {
+          'key': videoKey,
+          'client': entry.key,
+        });
+      } on TimeoutException catch (e) {
+        TrailerPlayerScreen.lastResolveError =
+            '[${entry.key}] video-info request timed out';
+        CrashLog.error('trailer.resolve_timeout', e, {
+          'key': videoKey,
+          'client': entry.key,
+        });
+      } catch (e) {
+        TrailerPlayerScreen.lastResolveError = '[${entry.key}] $e';
+        CrashLog.error('trailer.resolve_failed', e, {
+          'key': videoKey,
+          'client': entry.key,
+        });
       }
     }
-
-    final videoOnly = manifest.videoOnly.toList()..sort(byResThenBitrate);
-    if (videoOnly.isNotEmpty && manifest.audioOnly.isNotEmpty) {
-      var best = videoOnly.firstWhere(
-        (s) => s.videoResolution.height >= 720,
-        orElse: () => videoOnly.first,
-      );
-      // If even the best video-only stream is below 720p but a muxed
-      // stream exists at the same height, prefer the one-file muxed URL.
-      if (muxed.isNotEmpty &&
-          best.videoResolution.height <= muxed.first.videoResolution.height) {
-        return TrailerStreams(muxed.first.url.toString());
-      }
-      final audio = manifest.audioOnly.withHighestBitrate();
-      // v1.0.1+24: also capture the best MUXED (<=360p) stream as an
-      // in-app safety net — if mpv can't open the 720p+ video-only +
-      // separate-audio pair on the user's connection, the player
-      // degrades to this instead of failing with "can't be played".
-      final fallbackUrl = muxed.isNotEmpty ? muxed.first.url.toString() : null;
-      return TrailerStreams(
-        best.url.toString(),
-        audio.url.toString(),
-        fallbackUrl,
-      );
-    }
-
-    if (muxed.isNotEmpty) return TrailerStreams(muxed.first.url.toString());
-    return null;
-  } on TimeoutException catch (e) {
-    CrashLog.error('trailer.resolve_timeout', e, {'key': videoKey});
-    return null;
-  } catch (e) {
-    CrashLog.error('trailer.resolve_failed', e, {'key': videoKey});
     return null;
   } finally {
     yt.close();
@@ -310,10 +348,18 @@ Future<({TrailerStreams streams, String key})?> resolveFirstPlayableTrailer(
   final res = resolver ?? resolveTrailerStreams;
   final seen = <String>{};
   var attempts = 0;
+  // v1.0.1+27: hard WALL-CLOCK cap — with the client ladder each key can
+  // take up to ~40s on a poisoned network; a dead network must never park
+  // the inline card for minutes.
+  final sw = Stopwatch()..start();
   for (final v in variants) {
     if (v.key.isEmpty || !seen.add(v.key)) continue;
     if (++attempts > 4) break;
     final s = await res(v.key);
+    if (sw.elapsed > const Duration(seconds: 50)) {
+      CrashLog.crumb('trailer.resolve_wall_cap', {'attempts': attempts});
+      break;
+    }
     if (s != null && s.videoUrl.isNotEmpty) {
       return (streams: s, key: v.key);
     }
