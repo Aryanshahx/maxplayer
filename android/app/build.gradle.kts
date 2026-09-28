@@ -37,8 +37,14 @@ android {
         applicationId = "com.hypertechlabs.maxplayer"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        // AI subtitles need minSdk 24 (whisper-android / ffmpeg-kit).
-        minSdk = 24
+        // v1.0.1+36: floor raised 24 -> 26. The Google Mobile Ads SDK's
+        // cold-start path needs java.time handling that only exists from
+        // API 26; the library-desugaring rewrite proved unreliable in this
+        // toolchain (AGP 9) — the app died ~1s after launch on device even
+        // WITH desugaring enabled. At 26 the classes are platform-native
+        // and the entire crash class disappears. Cost: pre-Android-8
+        // devices (effectively none in 2026) can't install.
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
