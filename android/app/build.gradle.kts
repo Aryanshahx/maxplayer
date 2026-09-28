@@ -25,6 +25,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Google Mobile Ads SDK needs core library desugaring below
+        // minSdk 26 (we are at 24). Without it the app died ~1s after
+        // launch with NoClassDefFoundError — the pre-+17 crash saga.
+        // PERMANENT, even if ads are removed again someday.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -88,6 +93,9 @@ android {
 }
 
 dependencies {
+    // Required by the Google Mobile Ads SDK on minSdk < 26 (see the
+    // compileOptions note above).
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // AI SUBTITLES (on-device): prebuilt whisper.cpp engine. Plain Maven
     // artifact (NOT a Gradle/Flutter plugin) = no toolchain conflicts.
     // Runs 100% offline & free after the one-time model download (64-bit).

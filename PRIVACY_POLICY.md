@@ -89,17 +89,24 @@ The app collects no data from anyone, including children.
   "account/data deletion requests" do not apply: there is nothing on any
   server to delete.
 
+## Advertising (AdMob)
+
+The app shows ONE small banner ad at the bottom of the Library home screen,
+served by Google AdMob (Google Mobile Ads SDK).
+
+- While Max Player ships with Google's **demo ad inventory** (v1.0.1+34 era),
+  these are labeled test ads; no real advertiser is involved.
+- When live ads ship: AdMob (a Google service) may process the device
+  **advertising ID**, approximate location derived from the IP address, and
+  ad interaction data to serve and measure ads. That processing is Google's
+  as the ad provider; Max Player itself still keeps everything local and does
+  not receive or store your personal data.
+- No ads ever appear on the player screen or interrupt playback.
+
 ## Changes
 
 Any change to this policy is published in this file in the public repository
 with a new effective date.
-
-## Affiliate links
-
-The app shows clearly-labelled "Partner link" buttons (for example Prime
-Video and pCloud). Tapping one opens that service's website; we may earn a
-commission at no extra cost to you. These links carry only our public
-partner tag — no personal data is sent through them.
 
 ## Contact
 

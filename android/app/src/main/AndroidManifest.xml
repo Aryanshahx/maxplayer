@@ -35,6 +35,13 @@
         android:banner="@drawable/tv_banner"
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true">
+        <!-- AdMob / Google Mobile Ads. v1.0.1+34: Google DEMO App ID while
+             the integration is validated (labeled test ads, zero invalid-
+             traffic risk). The live AdMob App ID replaces this value in
+             the pre-Play drop. MUST be the publisher~app tilde form. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

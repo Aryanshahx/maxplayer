@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http_parser/http_parser.dart' show MediaType;
 import 'package:maxplayer/theme.dart';
+import 'package:maxplayer/utils/ads.dart';
 import 'package:maxplayer/screens/history_screen.dart' show timeAgo;
 import 'package:maxplayer/models/network_location.dart';
 import 'package:maxplayer/models/saved_server.dart';
@@ -1786,6 +1787,24 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
         pickPlayableTrailerStreams(noFallback, videoOk: false).videoUrl,
         'https://v',
       );
+    });
+  });
+
+  group('ads demo mode (v1.0.1+34)', () {
+    test('demo builds serve Google demo banner unit', () {
+      expect(kAdsDemoMode, isTrue);
+      expect(adsBannerUnitId(), kAdsDemoBannerUnit);
+    });
+
+    test('id shapes are correct (tilde app id, slash unit id)', () {
+      expect(adsLooksLikeAppId(kAdsDemoAppId), isTrue);
+      expect(adsLooksLikeUnitId(kAdsDemoBannerUnit), isTrue);
+      // The pre-+17 crash trap: a slash (unit-form) id as the App ID.
+      expect(adsLooksLikeAppId(kAdsDemoBannerUnit), isFalse);
+    });
+
+    test('footer slot height is the standard 320x50 banner', () {
+      expect(kAdBannerHeight, 50);
     });
   });
 }
