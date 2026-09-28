@@ -6,7 +6,6 @@ import 'package:photo_manager/photo_manager.dart';
 
 import '../app_info.dart';
 import '../theme.dart';
-import '../utils/ads.dart';
 import '../utils/collections.dart';
 import '../utils/crash_log.dart';
 import '../utils/local_store.dart';
@@ -114,27 +113,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
       if (played == null || !mounted) return;
       final path = played['path'] as String?;
       if (path == null) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => played['stream'] == true
-              ? PlayerScreen.stream(
-                  path: path,
-                  title: played['title'] as String? ?? 'Stream',
-                )
-              : PlayerScreen(
-                  path: path,
-                  title: played['title'] as String? ?? 'Video',
-                ),
-        ),
-      );
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => played['stream'] == true
+            ? PlayerScreen.stream(
+                path: path, title: played['title'] as String? ?? 'Stream')
+            : PlayerScreen(
+                path: path, title: played['title'] as String? ?? 'Video'),
+      ));
     }
   }
 
   Future<void> _maybeShowOnboarding() async {
     final seen = await Onboarding.hasSeen();
     if (!seen && mounted) {
-      await Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => const OnboardingFlow()));
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const OnboardingFlow()),
+      );
     }
   }
 
@@ -177,9 +171,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         return;
       }
       final paths = await PhotoManager.getAssetPathList(
-        type: RequestType.video,
-        onlyAll: true,
-      );
+          type: RequestType.video, onlyAll: true);
       _allPath = paths.isEmpty ? null : paths.first;
       _scanTotal = null;
       final path = _allPath;
@@ -202,9 +194,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     } catch (e) {
       CrashLog.error('library.scan_failed', e);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not scan videos on this device')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Could not scan videos on this device')));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -227,7 +218,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (path == null || _exhausted || _loadingMore) return;
     _loadingMore = true;
     try {
-      final batch = await path.getAssetListPaged(page: _page, size: _pageSize);
+      final batch =
+          await path.getAssetListPaged(page: _page, size: _pageSize);
       if (batch.length < _pageSize) _exhausted = true;
       final firstPage = _page == 0;
       _page++;
@@ -287,11 +279,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
         case SortField.name:
           return cmpStr(x.title ?? '', y.title ?? '', s.sortAsc);
         case SortField.dateAdded:
-          return cmpNum(
-            x.modifiedDateTime.millisecondsSinceEpoch,
-            y.modifiedDateTime.millisecondsSinceEpoch,
-            s.sortAsc,
-          );
+          return cmpNum(x.modifiedDateTime.millisecondsSinceEpoch,
+              y.modifiedDateTime.millisecondsSinceEpoch, s.sortAsc);
         case SortField.length:
           return cmpNum(x.duration, y.duration, s.sortAsc);
         case SortField.size:
@@ -307,14 +296,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
     switch (a) {
       case _MenuAction.display:
         Navigator.of(context)
-            .push(
-              MaterialPageRoute(builder: (_) => const DisplaySettingsScreen()),
-            )
+            .push(MaterialPageRoute(
+                builder: (_) => const DisplaySettingsScreen()))
             .then((_) => _refresh());
         break;
       case _MenuAction.stats:
         Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const StatisticsScreen()))
+            .push(MaterialPageRoute(
+                builder: (_) => const StatisticsScreen()))
             .then((_) => _refresh());
         break;
       case _MenuAction.manual:
@@ -341,8 +330,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
         child: _denied && _videos.isEmpty
             ? _PermissionHint(onRetry: _load)
             : _loading && _videos.isEmpty
-            ? Center(child: CircularProgressIndicator(color: AppColors.accent))
-            : _buildHome(),
+                ? Center(
+                    child: CircularProgressIndicator(color: AppColors.accent))
+                : _buildHome(),
       ),
     );
   }
@@ -354,22 +344,25 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ? ListView(
             controller: _listScroll,
             // keeps pull-to-refresh usable on empty state
-            children: const [SizedBox(height: 140), _EmptyHint()],
+            children: const [
+              SizedBox(height: 140),
+              _EmptyHint(),
+            ],
           )
         : s.groupBy == GroupBy.folder
-        ? _GroupedView(
-            videos: videos,
-            listMode: s.viewMode == ViewMode.list,
-            onChanged: _refresh,
-            controller: _listScroll,
-          )
-        : VideoGrid(
-            key: ValueKey('${s.viewMode}_${videos.length}'),
-            videos: videos,
-            listMode: s.viewMode == ViewMode.list,
-            onChanged: _refresh,
-            controller: _listScroll,
-          );
+            ? _GroupedView(
+                videos: videos,
+                listMode: s.viewMode == ViewMode.list,
+                onChanged: _refresh,
+                controller: _listScroll,
+              )
+            : VideoGrid(
+                key: ValueKey('${s.viewMode}_${videos.length}'),
+                videos: videos,
+                listMode: s.viewMode == ViewMode.list,
+                onChanged: _refresh,
+                controller: _listScroll,
+              );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -379,7 +372,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
           child: DiscoverBanner(
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => DiscoverScreen(videos: videos)),
+              MaterialPageRoute(
+                builder: (_) => DiscoverScreen(videos: videos),
+              ),
             ),
           ),
         ),
@@ -424,10 +419,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: content,
           ),
         ),
-        // v1.0.1+34: footer ad slot (Google DEMO inventory — labeled test
-        // ads, zero invalid-traffic risk). Renders nothing until a real
-        // banner is in hand; never on the player screen.
-        const AdBannerSlot(),
       ],
     );
   }
@@ -477,20 +468,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ],
             ),
           ),
-          _headIcon(
-            Icons.search,
-            'Search',
-            () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const SearchScreen())),
-          ),
+          _headIcon(Icons.search, 'Search', () => Navigator.of(context)
+              .push(
+                  MaterialPageRoute(builder: (_) => const SearchScreen()))),
           _headIcon(Icons.sync, 'Refresh', _load),
-          _headIcon(
-            Icons.history,
-            'History',
-            () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const HistoryScreen()))
-                .then((_) => _refresh()),
-          ),
+          _headIcon(Icons.history, 'History', () =>
+              Navigator.of(context)
+                  .push(MaterialPageRoute(
+                      builder: (_) => const HistoryScreen()))
+                  .then((_) => _refresh())),
           PopupMenuButton<_MenuAction>(
             // Same 24px glyph as the old app's three-dots action.
             iconSize: 24,
@@ -508,41 +494,31 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 value: _MenuAction.display,
                 height: 44,
                 child: _MenuRow(
-                  icon: Icons.tune_rounded,
-                  label: 'Display settings',
-                ),
+                    icon: Icons.tune_rounded, label: 'Display settings'),
               ),
               PopupMenuItem(
                 value: _MenuAction.stats,
                 height: 44,
                 child: _MenuRow(
-                  icon: Icons.bar_chart_rounded,
-                  label: 'Watch statistics',
-                ),
+                    icon: Icons.bar_chart_rounded, label: 'Watch statistics'),
               ),
               PopupMenuItem(
                 value: _MenuAction.manual,
                 height: 44,
                 child: _MenuRow(
-                  icon: Icons.menu_book_outlined,
-                  label: 'User manual',
-                ),
+                    icon: Icons.menu_book_outlined, label: 'User manual'),
               ),
               PopupMenuItem(
                 value: _MenuAction.about,
                 height: 44,
                 child: _MenuRow(
-                  icon: Icons.info_outline_rounded,
-                  label: 'About Max Player',
-                ),
+                    icon: Icons.info_outline_rounded, label: 'About Max Player'),
               ),
               PopupMenuItem(
                 value: _MenuAction.privacy,
                 height: 44,
                 child: _MenuRow(
-                  icon: Icons.privacy_tip_outlined,
-                  label: 'Privacy policy',
-                ),
+                    icon: Icons.privacy_tip_outlined, label: 'Privacy policy'),
               ),
               const PopupMenuDivider(height: 1),
               const PopupMenuItem(
@@ -564,13 +540,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  Widget _headIcon(IconData icon, String tip, VoidCallback onTap) => IconButton(
-    tooltip: tip,
-    // Stock old-app IconButton metrics: 24px glyph and 48px tap target.
-    iconSize: 24,
-    icon: Icon(icon, color: AppColors.accent),
-    onPressed: onTap,
-  );
+  Widget _headIcon(IconData icon, String tip, VoidCallback onTap) =>
+      IconButton(
+        tooltip: tip,
+        // Stock old-app IconButton metrics: 24px glyph and 48px tap target.
+        iconSize: 24,
+        icon: Icon(icon, color: AppColors.accent),
+        onPressed: onTap,
+      );
 
   // ---------------- quick tiles (old 2x2 grids) ----------------
 
@@ -578,10 +555,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   int _tilePage = 0;
 
   Widget _buildTiles() {
-    void push(Widget page) =>
-        Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => page))
-            .then((_) => _refresh());
+    void push(Widget page) => Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => page))
+        .then((_) => _refresh());
 
     // v1.0.20: tiles are DATA-DRIVEN (lib/utils/quick_tiles.dart) — the
     // File Manager tile was replaced by Audio, and the positions of Cloud
@@ -601,24 +577,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
         _Tile(spec.icon, spec.label, actions[spec.id] ?? () {});
 
     Widget grid(List<QuickTileSpec> items) => Column(
-      children: [
-        Row(
           children: [
-            Expanded(child: tileAt(items[0])),
-            const SizedBox(width: 8),
-            Expanded(child: tileAt(items[1])),
+            Row(
+              children: [
+                Expanded(child: tileAt(items[0])),
+                const SizedBox(width: 8),
+                Expanded(child: tileAt(items[1])),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(child: tileAt(items[2])),
+                const SizedBox(width: 8),
+                Expanded(child: tileAt(items[3])),
+              ],
+            ),
           ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(child: tileAt(items[2])),
-            const SizedBox(width: 8),
-            Expanded(child: tileAt(items[3])),
-          ],
-        ),
-      ],
-    );
+        );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
@@ -644,7 +620,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   width: _tilePage == dot ? 14 : 5,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: _tilePage == dot ? AppColors.accent : Colors.white24,
+                    color: _tilePage == dot
+                        ? AppColors.accent
+                        : Colors.white24,
                     borderRadius: BorderRadius.circular(3),
                   ),
                 ),
@@ -691,11 +669,10 @@ class _Tile extends StatelessWidget {
                 ),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.14),
-                  width: 1,
-                ),
+                    color: Colors.white.withValues(alpha: 0.14), width: 1),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
               child: Row(
                 children: [
                   Icon(icon, color: accent, size: 18),
@@ -775,15 +752,12 @@ class _GroupedView extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
-              child: Text(
-                '$name  ·  ${items.length}',
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                ),
-              ),
+              child: Text('$name  ·  ${items.length}',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6)),
             ),
             // Old grid geometry (maxCrossAxisExtent 200, 8px gaps, 1.18
             // ratio): size the non-scrolling inner grid exactly so it never
@@ -800,8 +774,8 @@ class _GroupedView extends StatelessWidget {
                 final height = listMode
                     ? items.length * 68.0 + vPad
                     : ((items.length + cols - 1) ~/ cols) * (cellH + spacing) -
-                          spacing +
-                          vPad;
+                        spacing +
+                        vPad;
                 return SizedBox(
                   height: height,
                   child: VideoGrid(
@@ -832,34 +806,26 @@ class _PermissionHint extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.lock_outline_rounded,
-              size: 52,
-              color: AppColors.textSecondary,
-            ),
+            const Icon(Icons.lock_outline_rounded,
+                size: 52, color: AppColors.textSecondary),
             const SizedBox(height: 16),
-            const Text(
-              'Permission needed',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-            ),
+            const Text('Permission needed',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
             const SizedBox(height: 8),
             const Text(
-              'Max Player needs access to your videos to show the library.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
+                'Max Player needs access to your videos to show the library.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textSecondary)),
             const SizedBox(height: 20),
             FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.accent,
                 foregroundColor: AppColors.onAccent,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                    borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: onRetry,
               child: const Text('Grant access'),
@@ -877,10 +843,8 @@ class _EmptyHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Center(
-      child: Text(
-        'No videos found. Pull down to rescan.',
-        style: TextStyle(color: AppColors.textSecondary),
-      ),
+      child: Text('No videos found. Pull down to rescan.',
+          style: TextStyle(color: AppColors.textSecondary)),
     );
   }
 }

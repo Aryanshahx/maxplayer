@@ -25,11 +25,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // Google Mobile Ads SDK needs core library desugaring below
-        // minSdk 26 (we are at 24). Without it the app died ~1s after
-        // launch with NoClassDefFoundError — the pre-+17 crash saga.
-        // PERMANENT, even if ads are removed again someday.
-        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -37,14 +32,8 @@ android {
         applicationId = "com.hypertechlabs.maxplayer"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        // v1.0.1+36: floor raised 24 -> 26. The Google Mobile Ads SDK's
-        // cold-start path needs java.time handling that only exists from
-        // API 26; the library-desugaring rewrite proved unreliable in this
-        // toolchain (AGP 9) — the app died ~1s after launch on device even
-        // WITH desugaring enabled. At 26 the classes are platform-native
-        // and the entire crash class disappears. Cost: pre-Android-8
-        // devices (effectively none in 2026) can't install.
-        minSdk = 26
+        // AI subtitles need minSdk 24 (whisper-android / ffmpeg-kit).
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -99,9 +88,6 @@ android {
 }
 
 dependencies {
-    // Required by the Google Mobile Ads SDK on minSdk < 26 (see the
-    // compileOptions note above).
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // AI SUBTITLES (on-device): prebuilt whisper.cpp engine. Plain Maven
     // artifact (NOT a Gradle/Flutter plugin) = no toolchain conflicts.
     // Runs 100% offline & free after the one-time model download (64-bit).
