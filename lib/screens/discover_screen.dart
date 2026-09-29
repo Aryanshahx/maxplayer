@@ -14,6 +14,7 @@ import '../utils/movie_match.dart';
 import '../utils/tmdb.dart';
 import '../utils/tmdb_image.dart';
 import '../widgets/ai_suggest_sheet.dart';
+import '../widgets/cine_ui.dart';
 import 'movie_detail_screen.dart';
 
 /// "Discover" — OTT platform home, rebuilt from scratch (v1.0.1+15).
@@ -61,10 +62,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   final TmdbClient _client = TmdbClient();
   final TextEditingController _searchCtrl = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
-  final PageController _heroCtrl = PageController();
   final ScrollController _homeScroll = ScrollController();
   Timer? _searchDebounce;
-  Timer? _heroTimer;
 
   /// Top bar auto-hide: slides away while scrolling down, instantly back
   /// when scrolling up (and always visible while the search field has
@@ -73,7 +72,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   double _lastHomePixels = 0;
 
   List<TmdbMovie> _hero = [];
-  int _heroIndex = 0;
 
   final List<_RailState> _rails = [for (final f in kAllFilters) _RailState(f)];
 
@@ -90,6 +88,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   final ScrollController _gridScroll = ScrollController();
 
   bool _booting = true;
+
+  /// v1.0.1+38: the cinematic boot curtain lifts once (per screen open)
+  /// over the OTT home.
+  bool _cineCurtain = true;
   bool _keyMissing = false;
   bool _voiceSearching = false;
   int _token = 0;
@@ -108,8 +110,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
-    _heroTimer?.cancel();
-    _heroCtrl.dispose();
     _homeScroll.dispose();
     _gridScroll.dispose();
     _searchFocus.dispose();
@@ -234,24 +234,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         .toList();
     if (withBackdrop.length >= _hero.length || _hero.isEmpty) {
       setState(() => _hero = withBackdrop.take(7).toList());
-      _restartHeroTimer();
     }
-  }
-
-  void _restartHeroTimer() {
-    _heroTimer?.cancel();
-    if (_hero.length < 2) return;
-    _heroTimer = Timer.periodic(const Duration(seconds: 6), (_) {
-      if (!mounted || !_heroCtrl.hasClients || _hero.isEmpty) return;
-      // If the user is currently interacting, skip this frame.
-      if (_heroCtrl.position.isScrollingNotifier.value) return;
-      final next = (_heroIndex + 1) % _hero.length;
-      _heroCtrl.animateToPage(
-        next,
-        duration: const Duration(milliseconds: 550),
-        curve: Curves.easeInOutCubic,
-      );
-    });
   }
 
   // ----------------------------------------------------------- search ---
@@ -375,30 +358,43 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       backgroundColor: const Color(0xFF0a0a10),
       body: _keyMissing
           ? const _NoKeyBody()
-          : SafeArea(
-              child: Column(
-                children: [
-                  // Top bar slides away when scrolling the home feed
-                  // down and returns the moment the user scrolls back
-                  // up. NEVER hides while search is focused/active.
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeInOutCubic,
-                    alignment: Alignment.topCenter,
-                    child:
-                        (_topBarVisible || _searching || _searchFocus.hasFocus)
-                        ? _buildSearchBar()
-                        : const SizedBox(width: double.infinity),
+          : Stack(
+              children: [
+                SafeArea(
+                  child: Column(
+                    children: [
+                      // Top bar slides away when scrolling the home feed
+                      // down and returns the moment the user scrolls back
+                      // up. NEVER hides while search is focused/active.
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeInOutCubic,
+                        alignment: Alignment.topCenter,
+                        child:
+                            (_topBarVisible ||
+                                _searching ||
+                                _searchFocus.hasFocus)
+                            ? _buildSearchBar()
+                            : const SizedBox(width: double.infinity),
+                      ),
+                      Expanded(
+                        child: _searching
+                            ? _buildSearchResults()
+                            : (_searchFocus.hasFocus
+                                  ? _buildHotSearches()
+                                  : _buildOttHome()),
+                      ),
+                    ],
                   ),
-                  Expanded(
-                    child: _searching
-                        ? _buildSearchResults()
-                        : (_searchFocus.hasFocus
-                              ? _buildHotSearches()
-                              : _buildOttHome()),
+                ),
+                // v1.0.1+38: cinematic boot curtain (once per open).
+                if (_cineCurtain)
+                  Positioned.fill(
+                    child: CineBoot(
+                      onFinished: () => setState(() => _cineCurtain = false),
+                    ),
                   ),
-                ],
-              ),
+              ],
             ),
     );
   }
@@ -553,6 +549,25 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   // ------------------------------------------------------------ home ---
 
+  /// v1.0.1+38: TOP 10 source — trending rail first, hero as filler,
+  /// deduped, posters required.
+  List<TmdbMovie> _topTenSource() {
+    final out = <TmdbMovie>[];
+    final seen = <int>{};
+    final pools = <List<TmdbMovie>>[
+      if (_rails.isNotEmpty) _rails.first.items,
+      _hero,
+    ];
+    for (final pool in pools) {
+      for (final m in pool) {
+        if ((m.posterPath ?? '').isEmpty) continue;
+        if (seen.add(m.id)) out.add(m);
+        if (out.length == 10) return out;
+      }
+    }
+    return out;
+  }
+
   Widget _buildOttHome() {
     final contentEmpty = _hero.isEmpty && _rails.every((r) => r.items.isEmpty);
     if (_booting && contentEmpty) return const _OttSkeleton();
@@ -564,6 +579,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       child: CustomScrollView(
         controller: _homeScroll,
         slivers: [
+          // v1.0.1+38: cinematic hero (full-viewport crossfade + Ken
+          // Burns + countdown pills) — the old slide carousel is retired.
           SliverToBoxAdapter(
             child: _hero.isEmpty
                 ? const SizedBox(
@@ -572,13 +589,21 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       child: CircularProgressIndicator(color: Colors.white24),
                     ),
                   )
-                : _HeroCarousel(
-                    controller: _heroCtrl,
-                    items: _hero,
-                    onPageChanged: (i) => _heroIndex = i,
-                    onTap: _openMovie,
-                  ),
+                : CineFeaturedHero(items: _hero, onTap: _openMovie),
           ),
+          // v1.0.1+38: tilted neon ticker overlapping the hero's base.
+          if (_hero.isNotEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.only(top: 2),
+                child: CineTicker(),
+              ),
+            ),
+          // v1.0.1+38: TOP 10 ghost-numeral rail (trending source).
+          if (_topTenSource().isNotEmpty)
+            SliverToBoxAdapter(
+              child: CineTopTen(items: _topTenSource(), onTap: _openMovie),
+            ),
           if (_pickedForYou.isNotEmpty && _anchor != null)
             SliverToBoxAdapter(
               child: _PosterRail(
@@ -790,125 +815,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
 /// Full-width auto-rotating trending billboard: backdrop art, gradient
 /// scrim, title + chips + Details CTA, plus dot indicators under it.
-class _HeroCarousel extends StatelessWidget {
-  final PageController controller;
-  final List<TmdbMovie> items;
-  final ValueChanged<int> onPageChanged;
-  final ValueChanged<TmdbMovie> onTap;
-
-  const _HeroCarousel({
-    required this.controller,
-    required this.items,
-    required this.onPageChanged,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(
-          height: 222,
-          child: PageView.builder(
-            controller: controller,
-            itemCount: items.length,
-            onPageChanged: onPageChanged,
-            itemBuilder: (context, i) {
-              final m = items[i];
-              final url = tmdbBackdropUrl(m.backdropPath);
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Container(color: const Color(0xFF181822)),
-                      if (url.isNotEmpty)
-                        TmdbImage(url: url, fit: BoxFit.cover),
-                      // bottom scrim
-                      IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              stops: const [0.35, 1.0],
-                              colors: [
-                                Colors.transparent,
-                                Colors.black.withValues(alpha: 0.85),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      // content
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => onTap(m),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Spacer(),
-                                _MetaChips(movie: m),
-                                const SizedBox(height: 7),
-                                Text(
-                                  m.title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 21,
-                                    fontWeight: FontWeight.w900,
-                                    height: 1.1,
-                                    letterSpacing: 0.15,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Text(
-                                    'DETAILS',
-                                    style: TextStyle(
-                                      color: Colors.black,
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1.1,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        _HeroDots(controller: controller, count: items.length),
-      ],
-    );
-  }
-}
-
 class _HeroDots extends StatefulWidget {
   final PageController controller;
   final int count;
@@ -1322,39 +1228,6 @@ class _OttSkeleton extends StatelessWidget {
   }
 }
 
-class _MetaChips extends StatelessWidget {
-  final TmdbMovie movie;
-  const _MetaChips({required this.movie});
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 6,
-      runSpacing: 4,
-      children: [
-        if (movie.year != null) _chip('${movie.year}'),
-        if (movie.rating > 0) _chip('★ ${tmdbRatingText(movie.rating)}'),
-        _chip(movie.kind == 'tv' ? 'Series' : 'Movie'),
-      ],
-    );
-  }
-
-  Widget _chip(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(color: Colors.white, fontSize: 10.5),
-      ),
-    );
-  }
-}
-
 class _NoKeyBody extends StatelessWidget {
   const _NoKeyBody();
 
@@ -1435,4 +1308,3 @@ class _SearchSkeletonTile extends StatelessWidget {
     );
   }
 }
-

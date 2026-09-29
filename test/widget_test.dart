@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http_parser/http_parser.dart' show MediaType;
 import 'package:maxplayer/theme.dart';
+import 'package:maxplayer/widgets/cine_ui.dart';
 import 'package:maxplayer/screens/history_screen.dart' show timeAgo;
 import 'package:maxplayer/models/network_location.dart';
 import 'package:maxplayer/models/saved_server.dart';
@@ -1786,6 +1787,58 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
         pickPlayableTrailerStreams(noFallback, videoOk: false).videoUrl,
         'https://v',
       );
+    });
+  });
+
+  group('cinematic discover UI (v1.0.1+38)', () {
+    test('boot ease endpoints, fast start, exact stutter plateaus', () {
+      expect(cineBootEase(0), 0);
+      expect(cineBootEase(1), 1);
+      expect(cineBootEase(0.10) > 0.15, isTrue); // fast launch
+      expect(
+        cineBootEase(0.16),
+        closeTo(cineBootEase(0.32), 1e-9),
+      ); // stutter 1
+      expect(
+        cineBootEase(0.55),
+        closeTo(cineBootEase(0.62), 1e-9),
+      ); // stutter 2
+      expect(cineBootEase(0.97) > 0.8, isTrue); // final snap
+      var prev = 0.0;
+      for (var t = 0.0; t <= 1.0; t += 0.01) {
+        final v = cineBootEase(t);
+        expect(v >= prev, isTrue); // monotonic non-decreasing
+        prev = v;
+      }
+    });
+
+    test('boot status words cycle with progress', () {
+      expect(cineBootWord(0.05), 'PROJECTION');
+      expect(cineBootWord(0.25), 'GRAIN');
+      expect(cineBootWord(0.40), '24 FPS');
+      expect(cineBootWord(0.58), 'SOUND');
+      expect(cineBootWord(0.75), 'REEL 01');
+      expect(cineBootWord(0.95), 'HD');
+    });
+
+    test('hero rotation wraps and survives empty list', () {
+      expect(cineHeroNext(2, 5), 3);
+      expect(cineHeroNext(4, 5), 0);
+      expect(cineHeroNext(0, 0), 0);
+      expect(cineHeroNext(0, 1), 0);
+    });
+
+    test('kind label + ticker items are the design copy', () {
+      expect(cineKindLabel('movie'), 'FILM');
+      expect(cineKindLabel('tv'), 'SERIES');
+      expect(kCineTickerItems, [
+        'MAX MOVIES',
+        'REAL STREAMS',
+        '4K QUALITY',
+        'TV SERIES',
+        'NO SIGN UP',
+        'CINEMA UI',
+      ]);
     });
   });
 }

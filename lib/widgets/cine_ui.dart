@@ -1,0 +1,1285 @@
+/// Cinematic Discover UI set (v1.0.1+38) — ported to Flutter/Dart from a
+/// React/Framer-Motion/Tailwind reference. Four pieces:
+///  1. [CineBoot] — full-screen projector boot/loading curtain.
+///  2. [CineFeaturedHero] — auto-rotating immersive featured hero.
+///  3. [CineTicker] — tilted infinite neon marquee strip.
+///  4. [CineTopTen] — horizontal TOP 10 rail with ghost rank numerals.
+/// Pure helpers (`cineBootEase`, `cineBootWord`, …) are pinned by tests.
+library;
+
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+
+import '../utils/tmdb.dart';
+import '../utils/tmdb_image.dart';
+
+// ---------------------------------------------------------------- tokens ---
+
+const kCineInk = Color(0xFF050506);
+const kCineBg = Color(0xFF060607);
+const kCineCyan = Color(0xFF22D3EE);
+const kCinePurple = Color(0xFFA855F7);
+const kCinePink = Color(0xFFEC4899);
+const kCineAmber = Color(0xFFF59E0B);
+
+/// Anton display face (bundled in assets/fonts/Anton-Regular.ttf).
+const kCineDisplay = 'Anton';
+
+/// Space Mono mono face (bundled in assets/fonts/SpaceMono-Regular.ttf).
+const kCineMono = 'SpaceMono';
+
+TextStyle cineMono(
+  double size,
+  Color color, {
+  double letterSpacing = 1.0,
+  FontWeight weight = FontWeight.w400,
+}) => TextStyle(
+  fontFamily: kCineMono,
+  fontSize: size,
+  color: color,
+  letterSpacing: letterSpacing,
+  fontWeight: weight,
+);
+
+TextStyle cineDisplay(double size, Color color, {double height = 1.0}) =>
+    TextStyle(
+      fontFamily: kCineDisplay,
+      fontSize: size,
+      color: color,
+      height: height,
+    );
+
+// --------------------------------------------------------- pure helpers ---
+
+/// Neon ticker items (exact copy from the reference design).
+const kCineTickerItems = <String>[
+  'MAX MOVIES',
+  'REAL STREAMS',
+  '4K QUALITY',
+  'TV SERIES',
+  'NO SIGN UP',
+  'CINEMA UI',
+];
+
+/// Gate angles/durations (tunable without touching widget code).
+const kCineHeroDuration = Duration(milliseconds: 7000);
+const kCineHeroCrossfade = Duration(milliseconds: 1400);
+const kCineBootDuration = Duration(milliseconds: 2600);
+const kCineBootExit = Duration(milliseconds: 900);
+const kCineTickerPeriod = Duration(seconds: 28);
+const kCineTickerTiltDeg = -1.2;
+
+/// Non-linear projector ramp for the boot percentage (pure).
+///
+/// Fast launch, two brief STUTTER plateaus in the middle (like a real
+/// projector gaining speed), then a snap to 1.0 in the final stretch.
+/// Monotonic non-decreasing; f(0)=0, f(1)=1, and plateaus are exact.
+double cineBootEase(double t) {
+  final x = t.clamp(0.0, 1.0);
+  const knots = <(double, double)>[
+    (0.00, 0.00),
+    (0.16, 0.30),
+    (0.32, 0.30), // stutter 1 (plateau)
+    (0.55, 0.52),
+    (0.62, 0.52), // stutter 2 (plateau)
+    (0.78, 0.66),
+    (0.90, 0.80),
+    (1.00, 1.00),
+  ];
+  for (var i = 1; i < knots.length; i++) {
+    final (t0, v0) = knots[i - 1];
+    final (t1, v1) = knots[i];
+    if (x <= t1) {
+      final span = t1 - t0;
+      final f = span <= 0 ? 1.0 : (x - t0) / span;
+      if (i == knots.length - 1) {
+        // final stretch: ease-out cubic snap.
+        final eased = 1 - math.pow(1 - f, 3).toDouble();
+        return v0 + (v1 - v0) * eased;
+      }
+      return v0 + (v1 - v0) * f;
+    }
+  }
+  return 1.0;
+}
+
+/// Boot status word for progress [p] (pure). Cycles as the counter climbs:
+/// PROJECTION → GRAIN → 24 FPS → SOUND → REEL 01 → HD.
+String cineBootWord(double p) {
+  if (p < 0.18) return 'PROJECTION';
+  if (p < 0.34) return 'GRAIN';
+  if (p < 0.50) return '24 FPS';
+  if (p < 0.66) return 'SOUND';
+  if (p < 0.82) return 'REEL 01';
+  return 'HD';
+}
+
+/// Next hero index, wrapping (pure; empty list always yields 0).
+int cineHeroNext(int current, int length) =>
+    length <= 0 ? 0 : (current + 1) % length;
+
+/// Kind chip label: movie -> FILM, anything else -> SERIES (pure).
+String cineKindLabel(String kind) => kind == 'movie' ? 'FILM' : 'SERIES';
+
+// ================================================================== BOOT ==
+
+/// Full-screen cinematic boot curtain. Plays the ramp once, slides itself
+/// up like a raised cinema curtain, then calls [onFinished].
+class CineBoot extends StatefulWidget {
+  const CineBoot({super.key, required this.onFinished});
+
+  final VoidCallback onFinished;
+
+  @override
+  State<CineBoot> createState() => _CineBootState();
+}
+
+class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
+  late final AnimationController _run =
+      AnimationController(vsync: this, duration: kCineBootDuration)
+        ..addStatusListener((s) {
+          if (s == AnimationStatus.completed) {
+            Future<void>.delayed(const Duration(milliseconds: 260), () {
+              if (mounted) _exit.forward();
+            });
+          }
+        });
+  late final AnimationController _exit =
+      AnimationController(vsync: this, duration: kCineBootExit)
+        ..addStatusListener((s) {
+          if (s == AnimationStatus.completed) widget.onFinished();
+        });
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..repeat(reverse: true);
+  late final AnimationController _flicker = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 95),
+  )..repeat(reverse: true);
+
+  @override
+  void initState() {
+    super.initState();
+    _run.forward();
+  }
+
+  @override
+  void dispose() {
+    _run.dispose();
+    _exit.dispose();
+    _pulse.dispose();
+    _flicker.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final exitCurve = CurvedAnimation(
+      parent: _exit,
+      curve: const Cubic(0.76, 0.0, 0.24, 1.0),
+    );
+    return LayoutBuilder(
+      builder: (context, c) {
+        final w = c.maxWidth;
+        final h = c.maxHeight;
+        final counterSize = (w * 0.22).clamp(96.0, 240.0);
+        return AnimatedBuilder(
+          animation: _exit,
+          builder: (context, _) {
+            return Transform.translate(
+              offset: Offset(0, -h * exitCurve.value),
+              child: Container(
+                width: w,
+                height: h,
+                color: kCineBg,
+                child: Stack(
+                  children: [
+                    // corner labels
+                    Positioned(
+                      top: 18,
+                      left: 18,
+                      child: Text(
+                        'MAX / RE-CUT',
+                        style: cineMono(
+                          9,
+                          Colors.white.withValues(alpha: 0.3),
+                          letterSpacing: 2.0,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 18,
+                      right: 18,
+                      child: FadeTransition(
+                        opacity: Tween(begin: 0.3, end: 0.8).animate(_pulse),
+                        child: Text(
+                          'WARMING LAMP',
+                          style: cineMono(
+                            9,
+                            Colors.white.withValues(alpha: 0.55),
+                            letterSpacing: 2.0,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // status line, middle-left
+                    Positioned(
+                      left: 18,
+                      top: h * 0.42,
+                      child: AnimatedBuilder(
+                        animation: _run,
+                        builder: (context, _) {
+                          final p = cineBootEase(_run.value);
+                          return Text(
+                            cineBootWord(p),
+                            style: cineMono(
+                              11,
+                              kCineCyan,
+                              letterSpacing: 0.5 * 11.0,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    // bottom block
+                    Positioned(
+                      left: 18,
+                      right: 18,
+                      bottom: 22,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'SOURCE: NATIVE',
+                                style: cineMono(
+                                  9,
+                                  Colors.white.withValues(alpha: 0.3),
+                                  letterSpacing: 2.0,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'FPS: 23.976',
+                                style: cineMono(
+                                  9,
+                                  Colors.white.withValues(alpha: 0.3),
+                                  letterSpacing: 2.0,
+                                ),
+                              ),
+                            ],
+                          ),
+                          AnimatedBuilder(
+                            animation: _run,
+                            builder: (context, _) {
+                              final p = cineBootEase(_run.value);
+                              return RichText(
+                                text: TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: '${(p * 100).floor()}',
+                                      style: cineDisplay(
+                                        counterSize,
+                                        Colors.white,
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: '%',
+                                      style: cineDisplay(
+                                        counterSize * 0.45,
+                                        kCinePurple.withValues(alpha: 0.8),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    // hairline progress bar
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: AnimatedBuilder(
+                        animation: _run,
+                        builder: (context, _) {
+                          final p = cineBootEase(_run.value);
+                          return Align(
+                            alignment: Alignment.centerLeft,
+                            child: FractionallySizedBox(
+                              widthFactor: p,
+                              child: Container(
+                                height: 2,
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [kCineCyan, kCinePurple, kCinePink],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Color(0x80A855F7),
+                                      blurRadius: 15,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    // scanline flicker
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: AnimatedBuilder(
+                          animation: _flicker,
+                          builder: (context, _) {
+                            return Opacity(
+                              opacity: 0.025 + 0.03 * _flicker.value,
+                              child: CustomPaint(painter: _ScanlinePainter()),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ScanlinePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 1;
+    for (var y = 0.0; y < size.height; y += 3) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ================================================================== HERO ==
+
+/// Immersive auto-rotating featured hero: crossfaded backdrops with a Ken
+/// Burns push-in, staggered content entrance, vertical name indicators on
+/// the right and realtime countdown pills at the bottom.
+class CineFeaturedHero extends StatefulWidget {
+  const CineFeaturedHero({
+    super.key,
+    required this.items,
+    required this.onTap,
+    this.onInfo,
+  });
+
+  final List<TmdbMovie> items;
+  final void Function(TmdbMovie) onTap;
+  final void Function(TmdbMovie)? onInfo;
+
+  @override
+  State<CineFeaturedHero> createState() => _CineFeaturedHeroState();
+}
+
+class _CineFeaturedHeroState extends State<CineFeaturedHero>
+    with TickerProviderStateMixin {
+  int _index = 0;
+  Timer? _timer;
+  late final AnimationController _slide = AnimationController(
+    vsync: this,
+    duration: kCineHeroDuration,
+  );
+  late final AnimationController _enter = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _arm();
+  }
+
+  @override
+  void didUpdateWidget(covariant CineFeaturedHero oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.items.length != widget.items.length &&
+        _index >= widget.items.length) {
+      _index = 0;
+    }
+    _arm();
+  }
+
+  void _arm() {
+    _slide
+      ..stop()
+      ..reset()
+      ..forward();
+    _enter
+      ..stop()
+      ..reset()
+      ..forward();
+    _timer?.cancel();
+    if (widget.items.length > 1) {
+      _timer = Timer(
+        kCineHeroDuration,
+        () => _goTo(cineHeroNext(_index, widget.items.length)),
+      );
+    }
+  }
+
+  void _goTo(int i) {
+    if (i == _index || widget.items.isEmpty) return;
+    setState(() => _index = i);
+    _arm();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _slide.dispose();
+    _enter.dispose();
+    super.dispose();
+  }
+
+  Widget _staggered(int i, Widget child) {
+    final begin = (i * 0.09).clamp(0.0, 0.6);
+    final anim = CurvedAnimation(
+      parent: _enter,
+      curve: Interval(
+        begin,
+        (begin + 0.4).clamp(0.0, 1.0),
+        curve: Curves.easeOut,
+      ),
+    );
+    return AnimatedBuilder(
+      animation: anim,
+      builder: (context, _) => Opacity(
+        opacity: anim.value,
+        child: Transform.translate(
+          offset: Offset(0, 50 * (1 - anim.value)),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items;
+    final mq = MediaQuery.of(context);
+    final h = (mq.size.height - mq.padding.top - mq.padding.bottom).clamp(
+      480.0,
+      mq.size.height,
+    );
+    if (items.isEmpty) return const SizedBox.shrink();
+    final m = items[_index.clamp(0, items.length - 1)];
+    final backdrop = tmdbBackdropUrl(m.backdropPath);
+
+    return SizedBox(
+      height: h,
+      width: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // backdrop: crossfade + Ken Burns
+          AnimatedSwitcher(
+            duration: kCineHeroCrossfade,
+            child: KeyedSubtree(
+              key: ValueKey('hero_${m.id}'),
+              child: AnimatedBuilder(
+                animation: _slide,
+                builder: (context, _) {
+                  final scale = 1.15 - 0.15 * _slide.value;
+                  return Transform.scale(
+                    scale: scale,
+                    child: backdrop.isEmpty
+                        ? const ColoredBox(color: kCineInk)
+                        : TmdbImage(url: backdrop, fit: BoxFit.cover),
+                  );
+                },
+              ),
+            ),
+          ),
+          // three gradient veils
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [kCineInk, Colors.transparent],
+                stops: [0.0, 1.0],
+              ),
+            ),
+          ),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.center,
+                colors: [Color(0x80050506), Colors.transparent],
+              ),
+            ),
+          ),
+          const Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              height: 160,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [kCineInk, Colors.transparent],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // content — bottom-left stagger stack
+          Positioned(
+            left: 20,
+            right: 96,
+            bottom: 80,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _staggered(0, _badgeRow(m)),
+                const SizedBox(height: 12),
+                _staggered(
+                  1,
+                  Text(m.title.toUpperCase(), style: _titleStyle(context)),
+                ),
+                const SizedBox(height: 10),
+                _staggered(2, _metaRow(m)),
+                if (m.overview.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _staggered(
+                    3,
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 390),
+                      child: Text(
+                        m.overview,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 15,
+                          height: 1.45,
+                          color: Colors.white.withValues(alpha: 0.65),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                _staggered(4, _buttonRow(m)),
+              ],
+            ),
+          ),
+          // right vertical indicators
+          if (items.length > 1)
+            Positioned(
+              right: 12,
+              top: h * 0.30,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    _vIndicator(i, items[i]),
+                ],
+              ),
+            ),
+          // bottom countdown pills
+          if (items.length > 1)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 30,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [for (var i = 0; i < items.length; i++) _pill(i)],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  TextStyle _titleStyle(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final size = (w * 0.09).clamp(44.0, 128.0);
+    return cineDisplay(size, Colors.white).copyWith(
+      shadows: const [Shadow(color: Color(0xB3000000), blurRadius: 60)],
+    );
+  }
+
+  Widget _badgeRow(TmdbMovie m) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: kCineCyan.withValues(alpha: 0.2),
+            border: Border.all(color: kCineCyan.withValues(alpha: 0.3)),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.play_arrow, size: 10, color: kCineCyan),
+              const SizedBox(width: 4),
+              Text(
+                'FEATURED ${(_index + 1).toString().padLeft(2, '0')}',
+                style: cineMono(9, Colors.white, letterSpacing: 2.0),
+              ),
+            ],
+          ),
+        ),
+        if (m.rating > 0) ...[
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.star_rounded, size: 11, color: kCineAmber),
+                const SizedBox(width: 4),
+                Text(
+                  tmdbRatingText(m.rating),
+                  style: cineMono(9, Colors.white, letterSpacing: 1.5),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _metaRow(TmdbMovie m) {
+    TextStyle st() =>
+        cineMono(10, Colors.white.withValues(alpha: 0.5), letterSpacing: 1.5);
+    Widget sep() => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Text('|', style: st()),
+    );
+    Widget dot() => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Text('·', style: st()),
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.calendar_today_outlined,
+          size: 11,
+          color: Colors.white.withValues(alpha: 0.5),
+        ),
+        const SizedBox(width: 4),
+        Text('${m.year ?? '—'}', style: st()),
+        sep(),
+        Icon(
+          Icons.movie_outlined,
+          size: 11,
+          color: Colors.white.withValues(alpha: 0.5),
+        ),
+        const SizedBox(width: 4),
+        Text(cineKindLabel(m.kind), style: st()),
+        if (m.rating > 0) ...[
+          sep(),
+          const Icon(Icons.star_rounded, size: 11, color: kCineAmber),
+          dot(),
+          Text(tmdbRatingText(m.rating), style: st()),
+        ],
+      ],
+    );
+  }
+
+  Widget _buttonRow(TmdbMovie m) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => widget.onTap(m),
+            child: const SizedBox(
+              height: 54,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 32),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.play_arrow_rounded,
+                      color: Colors.black,
+                      size: 22,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'PLAY NOW',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Material(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => (widget.onInfo ?? widget.onTap)(m),
+            child: Container(
+              height: 54,
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    color: Colors.white.withValues(alpha: 0.9),
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'MORE INFO',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _vIndicator(int i, TmdbMovie m) {
+    final active = i == _index;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: InkWell(
+        onTap: () => _goTo(i),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOutCubic,
+              constraints: BoxConstraints(maxWidth: active ? 180 : 0),
+              child: active
+                  ? Text(
+                      m.title.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.fade,
+                      softWrap: false,
+                      style: cineMono(
+                        8,
+                        Colors.white.withValues(alpha: 0.6),
+                        letterSpacing: 1.5,
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            const SizedBox(width: 8),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 500),
+              height: 2,
+              width: active ? 26 : 10,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(2),
+                gradient: active
+                    ? const LinearGradient(colors: [kCineCyan, kCinePurple])
+                    : null,
+                color: active ? null : Colors.white.withValues(alpha: 0.25),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pill(int i) {
+    final active = i == _index;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: InkWell(
+        onTap: () => _goTo(i),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 400),
+          width: active ? 48 : 16,
+          height: 4,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            color: active
+                ? Colors.white.withValues(alpha: 0.14)
+                : Colors.white.withValues(alpha: 0.2),
+          ),
+          child: active
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: AnimatedBuilder(
+                    animation: _slide,
+                    builder: (context, _) => FractionallySizedBox(
+                      widthFactor: _slide.value,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          gradient: const LinearGradient(
+                            colors: [kCineCyan, kCinePurple, kCinePink],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+// ================================================================ TICKER ==
+
+/// Infinite neon marquee — tilted -1.2°, scaled 1.02 to bleed past the
+/// viewport edges. Loop is seamless: the row is duplicated back-to-back
+/// and translated exactly one half.
+class CineTicker extends StatefulWidget {
+  const CineTicker({super.key});
+
+  @override
+  State<CineTicker> createState() => _CineTickerState();
+}
+
+class _CineTickerState extends State<CineTicker>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: kCineTickerPeriod,
+  )..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  List<Widget> _row() => [
+    for (final item in kCineTickerItems) ...[
+      Padding(
+        padding: const EdgeInsets.only(left: 26),
+        child: Text(item, style: cineDisplay(22, Colors.white)),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Icon(
+          Icons.auto_awesome,
+          size: 12,
+          color: Colors.white.withValues(alpha: 0.6),
+        ),
+      ),
+    ],
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final strip = Container(
+      height: 54,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF9333EA), kCineCyan, kCinePink],
+        ),
+      ),
+      child: ClipRect(
+        child: OverflowBox(
+          minWidth: 0,
+          maxWidth: double.infinity,
+          alignment: Alignment.centerLeft,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: Offset.zero,
+              end: const Offset(-0.5, 0),
+            ).animate(_c),
+            child: IntrinsicWidth(child: Row(children: [..._row(), ..._row()])),
+          ),
+        ),
+      ),
+    );
+    return Transform.rotate(
+      angle: kCineTickerTiltDeg * math.pi / 180,
+      child: Transform.scale(scale: 1.02, child: strip),
+    );
+  }
+}
+
+// ============================================================== TOP TEN ==
+
+/// Horizontal TOP 10 chart rail: giant ghost rank numerals behind each
+/// poster, hover lift + cyan stroke on the numeral, frosted overlay with
+/// play affordance on hover/press.
+class CineTopTen extends StatefulWidget {
+  const CineTopTen({super.key, required this.items, required this.onTap});
+
+  final List<TmdbMovie> items;
+  final void Function(TmdbMovie) onTap;
+
+  @override
+  State<CineTopTen> createState() => _CineTopTenState();
+}
+
+class _CineTopTenState extends State<CineTopTen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _enter = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..forward();
+
+  @override
+  void dispose() {
+    _enter.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items.take(10).toList();
+    if (items.length < 6) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFF59E0B), Color(0xFFEA580C)],
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(
+                  Icons.trending_up,
+                  size: 12,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'TRENDING NOW',
+                style: cineMono(
+                  10,
+                  kCineAmber.withValues(alpha: 0.8),
+                  letterSpacing: 2.0,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
+          child: Text('TOP 10 THIS WEEK', style: cineDisplay(28, Colors.white)),
+        ),
+        SizedBox(
+          height: 244,
+          child: ShaderMask(
+            shaderCallback: (rect) => const LinearGradient(
+              colors: [
+                Colors.transparent,
+                Colors.black,
+                Colors.black,
+                Colors.transparent,
+              ],
+              stops: [0.0, 0.035, 0.965, 1.0],
+            ).createShader(rect),
+            blendMode: BlendMode.dstIn,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              physics: const BouncingScrollPhysics(),
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (context, i) => _TopTenCard(
+                rank: i + 1,
+                movie: items[i],
+                onTap: () => widget.onTap(items[i]),
+                enterAnim: CurvedAnimation(
+                  parent: _enter,
+                  curve: Interval(
+                    (i * 0.04).clamp(0.0, 0.6),
+                    ((i * 0.04) + 0.4).clamp(0.0, 1.0),
+                    curve: Curves.easeOut,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TopTenCard extends StatefulWidget {
+  const _TopTenCard({
+    required this.rank,
+    required this.movie,
+    required this.onTap,
+    required this.enterAnim,
+  });
+
+  final int rank;
+  final TmdbMovie movie;
+  final VoidCallback onTap;
+  final Animation<double> enterAnim;
+
+  @override
+  State<_TopTenCard> createState() => _TopTenCardState();
+}
+
+class _TopTenCardState extends State<_TopTenCard> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final posterW = w >= 1024
+        ? 150.0
+        : w >= 600
+        ? 130.0
+        : 110.0;
+    final ghostSize = (w * 0.12).clamp(104.0, 192.0);
+    final rankPad = widget.rank >= 10 ? ghostSize * 0.62 : ghostSize * 0.34;
+
+    return AnimatedBuilder(
+      animation: widget.enterAnim,
+      builder: (context, _) {
+        final v = widget.enterAnim.value;
+        return Opacity(
+          opacity: v,
+          child: Transform.translate(
+            offset: Offset(0, 44 * (1 - v)),
+            child: MouseRegion(
+              onEnter: (_) => setState(() => _hover = true),
+              onExit: (_) => setState(() => _hover = false),
+              child: GestureDetector(
+                onTap: widget.onTap,
+                onTapDown: (_) => setState(() => _hover = true),
+                onTapUp: (_) => setState(() => _hover = false),
+                onTapCancel: () => setState(() => _hover = false),
+                child: SizedBox(
+                  width: posterW + rankPad,
+                  height: 232,
+                  child: Stack(
+                    alignment: Alignment.bottomLeft,
+                    children: [
+                      // ghost rank numeral
+                      Positioned(
+                        left: 0,
+                        bottom: 0,
+                        child: TweenAnimationBuilder<Color?>(
+                          tween: ColorTween(
+                            end: _hover
+                                ? kCineCyan.withValues(alpha: 0.25)
+                                : Colors.white.withValues(alpha: 0.06),
+                          ),
+                          duration: const Duration(milliseconds: 500),
+                          builder: (context, color, _) => Text(
+                            '${widget.rank}',
+                            style: TextStyle(
+                              fontFamily: kCineDisplay,
+                              fontSize: ghostSize,
+                              height: 0.95,
+                              foreground: Paint()
+                                ..style = PaintingStyle.stroke
+                                ..strokeWidth = 1.5
+                                ..color = color ?? Colors.transparent,
+                            ),
+                          ),
+                        ),
+                      ),
+                      // poster
+                      Positioned(
+                        left: rankPad,
+                        bottom: 0,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOut,
+                          transform: Matrix4.translationValues(
+                            0,
+                            _hover ? -8 : 0,
+                            0,
+                          ),
+                          width: posterW,
+                          height: posterW * 1.5,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _hover
+                                  ? kCinePurple.withValues(alpha: 0.4)
+                                  : Colors.white.withValues(alpha: 0.06),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _hover
+                                    ? kCinePurple.withValues(alpha: 0.25)
+                                    : Colors.black.withValues(alpha: 0.4),
+                                blurRadius: _hover ? 22 : 12,
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                () {
+                                  final url = tmdbPosterUrl(
+                                    widget.movie.posterPath,
+                                    big: true,
+                                  );
+                                  return url.isEmpty
+                                      ? const ColoredBox(
+                                          color: Color(0xFF17171d),
+                                        )
+                                      : TmdbImage(url: url, fit: BoxFit.cover);
+                                }(),
+                                // hover overlay
+                                AnimatedOpacity(
+                                  duration: const Duration(milliseconds: 220),
+                                  opacity: _hover ? 1 : 0,
+                                  child: Container(
+                                    color: Colors.black.withValues(alpha: 0.55),
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Container(
+                                          width: 42,
+                                          height: 42,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.2,
+                                            ),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.5,
+                                              ),
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.play_arrow_rounded,
+                                            color: Colors.white,
+                                            size: 24,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                          ),
+                                          child: Text(
+                                            widget.movie.title.toUpperCase(),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.center,
+                                            style: cineMono(
+                                              8,
+                                              Colors.white,
+                                              letterSpacing: 1.2,
+                                            ),
+                                          ),
+                                        ),
+                                        if (widget.movie.rating > 0) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              const Icon(
+                                                Icons.star_rounded,
+                                                size: 10,
+                                                color: kCineAmber,
+                                              ),
+                                              Text(
+                                                tmdbRatingText(
+                                                  widget.movie.rating,
+                                                ),
+                                                style: cineMono(
+                                                  8,
+                                                  Colors.white70,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
