@@ -55,12 +55,14 @@ TextStyle cineDisplay(double size, Color color, {double height = 1.0}) =>
 
 /// Neon ticker items (exact copy from the reference design).
 const kCineTickerItems = <String>[
-  'MAX MOVIES',
+  'MOVIES',
+  'WEB SERIES',
+  'DRAMA',
+  'ANIME',
   'REAL STREAMS',
   '4K QUALITY',
   'TV SERIES',
   'NO SIGN UP',
-  'CINEMA UI',
 ];
 
 /// Gate angles/durations (tunable without touching widget code).
@@ -110,7 +112,7 @@ int cineHeroNext(int current, int length) =>
     length <= 0 ? 0 : (current + 1) % length;
 
 /// Kind chip label: movie -> FILM, anything else -> SERIES (pure).
-String cineKindLabel(String kind) => kind == 'movie' ? 'FILM' : 'SERIES';
+String cineKindLabel(String kind) => kind == 'movie' ? 'MOVIE' : 'SERIES';
 
 // ================================================================== BOOT ==
 
@@ -398,10 +400,9 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
   Widget build(BuildContext context) {
     final items = widget.items;
     final mq = MediaQuery.of(context);
-    final h = (mq.size.height - mq.padding.top - mq.padding.bottom).clamp(
-      480.0,
-      mq.size.height,
-    );
+    // v1.0.1+42: ~60% viewport (was FULL viewport — that wasted screen
+    // read as "huge blank space between the search bar and featured").
+    final h = (mq.size.height * 0.60).clamp(400.0, mq.size.height);
     if (items.isEmpty) return const SizedBox.shrink();
     final m = items[_index.clamp(0, items.length - 1)];
     final backdrop = tmdbBackdropUrl(m.backdropPath);

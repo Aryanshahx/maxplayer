@@ -1821,20 +1821,22 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
 
     test('kind label + ticker items are the design copy', () {
-      expect(cineKindLabel('movie'), 'FILM');
+      expect(cineKindLabel('movie'), 'MOVIE');
       expect(cineKindLabel('tv'), 'SERIES');
       expect(kCineTickerItems, [
-        'MAX MOVIES',
+        'MOVIES',
+        'WEB SERIES',
+        'DRAMA',
+        'ANIME',
         'REAL STREAMS',
         '4K QUALITY',
         'TV SERIES',
         'NO SIGN UP',
-        'CINEMA UI',
       ]);
     });
   });
 
-  group('cine player (v1.0.1+41)', () {
+  group('cine player (v1.0.1+42)', () {
     test('decision order: local stream > trailer > unavailable', () {
       expect(
         cinePlayerMode(hasLocal: true, trailerKey: 'k9x_2Va'),
@@ -1850,37 +1852,12 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       );
     });
 
-    test('trailer embed page uses the EXACT spec iframe', () {
-      final html = cineTrailerEmbedHtml('k9x_2Va');
-      expect(
-        html,
-        contains(
-          'https://www.youtube-nocookie.com/embed/k9x_2Va'
-          '?autoplay=1&rel=0&modestbranding=1&playsinline=1',
-        ),
-      );
-      expect(
-        html,
-        contains('position:absolute;inset:0;width:100%;height:100%'),
-      );
-      expect(html, contains('encrypted-media'));
-      expect(html, contains('picture-in-picture'));
-      expect(html, contains('allowfullscreen'));
-    });
-
-    test('sealed page still served from the youtube parent origin', () {
-      expect(kCineEmbedBaseUrl, 'https://www.youtube.com');
-    });
-
-    // v1.0.1+41 152-4 fix: the oEmbed GATE decides embed-ability BEFORE
-    // an iframe is ever built; blocked trailers go straight to the
-    // poster fallback with the direct YouTube link.
-    test('oembed gate + fallback watch URL', () {
-      expect(
-        cineOembedCheckUrl('k9x_2Va'),
-        'https://www.youtube.com/oembed'
-        '?url=https://www.youtube.com/watch?v=k9x_2Va&format=json',
-      );
+    // v1.0.1+42 (user's call, field-proven repeatedly): in-app iframe
+    // trailers can never work on this network (152-4, even behind the
+    // +41 oEmbed gate). PLAY NOW redirects to YouTube. This pin keeps
+    // the handoff URL — and the "no webview in the player" decision —
+    // from regressing.
+    test('trailers hand off to the YouTube watch URL (no iframe)', () {
       expect(
         cineTrailerWatchUrl('k9x_2Va'),
         'https://www.youtube.com/watch?v=k9x_2Va',

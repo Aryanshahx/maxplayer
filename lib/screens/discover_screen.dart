@@ -182,7 +182,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 
   Future<void> _fillRail(_RailState r, int page) async {
-    if (r.loading || (page != 1 && (r.page >= r.totalPages || page > 2))) {
+    if (r.loading || (page != 1 && r.page >= r.totalPages)) {
       return;
     }
     r.loading = true;
