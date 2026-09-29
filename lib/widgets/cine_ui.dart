@@ -469,17 +469,16 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
               ),
             ),
           ),
-          // content — bottom-left stagger stack
+          // content texts — NON-INTERACTIVE: taps fall through to the
+          // tap layer below (moved up by the button row's height).
           Positioned(
             left: 20,
             right: 96,
-            bottom: 80,
+            bottom: 152,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                _staggered(0, _badgeRow(m)),
-                const SizedBox(height: 12),
                 _staggered(
                   1,
                   Text(m.title.toUpperCase(), style: _titleStyle(context)),
@@ -505,11 +504,21 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
                     ),
                   ),
                 ],
-                const SizedBox(height: 18),
-                _staggered(4, _buttonRow(m)),
               ],
             ),
           ),
+          // v1.0.1+41: full-bleed tap layer ABOVE the texts/veils and
+          // BELOW the buttons + pills — a tap anywhere on the artwork or
+          // copy opens the detail page, guaranteed (the +40 backdrop-only
+          // gesture got swallowed in nested stacks).
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => widget.onOpen(m),
+              child: const SizedBox.expand(),
+            ),
+          ),
+          Positioned(left: 20, bottom: 80, child: _staggered(4, _buttonRow(m))),
           // bottom countdown pills
           if (items.length > 1)
             Positioned(
@@ -531,55 +540,6 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
     final size = (w * 0.09).clamp(44.0, 128.0);
     return cineDisplay(size, Colors.white).copyWith(
       shadows: const [Shadow(color: Color(0xB3000000), blurRadius: 60)],
-    );
-  }
-
-  Widget _badgeRow(TmdbMovie m) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: kCineCyan.withValues(alpha: 0.2),
-            border: Border.all(color: kCineCyan.withValues(alpha: 0.3)),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.play_arrow, size: 10, color: kCineCyan),
-              const SizedBox(width: 4),
-              Text(
-                'FEATURED ${(_index + 1).toString().padLeft(2, '0')}',
-                style: cineMono(9, Colors.white, letterSpacing: 2.0),
-              ),
-            ],
-          ),
-        ),
-        if (m.rating > 0) ...[
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.06),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.star_rounded, size: 11, color: kCineAmber),
-                const SizedBox(width: 4),
-                Text(
-                  tmdbRatingText(m.rating),
-                  style: cineMono(9, Colors.white, letterSpacing: 1.5),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ],
     );
   }
 

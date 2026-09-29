@@ -1834,7 +1834,7 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     });
   });
 
-  group('cine player (v1.0.1+40)', () {
+  group('cine player (v1.0.1+41)', () {
     test('decision order: local stream > trailer > unavailable', () {
       expect(
         cinePlayerMode(hasLocal: true, trailerKey: 'k9x_2Va'),
@@ -1850,12 +1850,37 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       );
     });
 
-    // v1.0.1+40: in-app youtube-nocookie iframes are gone for good —
-    // on this deployment network YouTube answers 152-4 INSIDE the iframe
-    // (no WebResourceError ever fires, so the failure is undetectable and
-    // the user just sees a dead player). Trailers now hand off to the
-    // YouTube app. This pin keeps that decision from regressing.
-    test('trailers hand off to the YouTube watch URL (no iframe)', () {
+    test('trailer embed page uses the EXACT spec iframe', () {
+      final html = cineTrailerEmbedHtml('k9x_2Va');
+      expect(
+        html,
+        contains(
+          'https://www.youtube-nocookie.com/embed/k9x_2Va'
+          '?autoplay=1&rel=0&modestbranding=1&playsinline=1',
+        ),
+      );
+      expect(
+        html,
+        contains('position:absolute;inset:0;width:100%;height:100%'),
+      );
+      expect(html, contains('encrypted-media'));
+      expect(html, contains('picture-in-picture'));
+      expect(html, contains('allowfullscreen'));
+    });
+
+    test('sealed page still served from the youtube parent origin', () {
+      expect(kCineEmbedBaseUrl, 'https://www.youtube.com');
+    });
+
+    // v1.0.1+41 152-4 fix: the oEmbed GATE decides embed-ability BEFORE
+    // an iframe is ever built; blocked trailers go straight to the
+    // poster fallback with the direct YouTube link.
+    test('oembed gate + fallback watch URL', () {
+      expect(
+        cineOembedCheckUrl('k9x_2Va'),
+        'https://www.youtube.com/oembed'
+        '?url=https://www.youtube.com/watch?v=k9x_2Va&format=json',
+      );
       expect(
         cineTrailerWatchUrl('k9x_2Va'),
         'https://www.youtube.com/watch?v=k9x_2Va',

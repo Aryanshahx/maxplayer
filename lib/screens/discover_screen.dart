@@ -615,78 +615,82 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       onRefresh: _refreshAll,
       color: AppColors.accent,
       backgroundColor: const Color(0xFF1a1a22),
-      child: CustomScrollView(
-        controller: _homeScroll,
-        slivers: [
-          // v1.0.1+38: cinematic hero (full-viewport crossfade + Ken
-          // Burns + countdown pills) — the old slide carousel is retired.
-          SliverToBoxAdapter(
-            child: _hero.isEmpty
-                ? const SizedBox(
-                    height: 236,
-                    child: Center(
-                      child: CircularProgressIndicator(color: Colors.white24),
+      child: MediaQuery.removePadding(
+        context: context,
+        removeTop: true,
+        child: CustomScrollView(
+          controller: _homeScroll,
+          slivers: [
+            // v1.0.1+38: cinematic hero (full-viewport crossfade + Ken
+            // Burns + countdown pills) — the old slide carousel is retired.
+            SliverToBoxAdapter(
+              child: _hero.isEmpty
+                  ? const SizedBox(
+                      height: 236,
+                      child: Center(
+                        child: CircularProgressIndicator(color: Colors.white24),
+                      ),
+                    )
+                  : CineFeaturedHero(
+                      items: _hero,
+                      onTap: _playMovie,
+                      onOpen: _openMovie,
                     ),
-                  )
-                : CineFeaturedHero(
-                    items: _hero,
-                    onTap: _playMovie,
-                    onOpen: _openMovie,
-                  ),
-          ),
-          // v1.0.1+38: tilted neon ticker overlapping the hero's base.
-          if (_hero.isNotEmpty)
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.only(top: 2),
-                child: CineTicker(),
+            ),
+            // v1.0.1+38: tilted neon ticker overlapping the hero's base.
+            if (_hero.isNotEmpty)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.only(top: 2),
+                  child: CineTicker(),
+                ),
               ),
-            ),
-          // v1.0.1+38: TOP 10 ghost-numeral rail (trending source).
-          if (_topTenSource().isNotEmpty)
-            SliverToBoxAdapter(
-              child: CineTopTen(items: _topTenSource(), onTap: _openMovie),
-            ),
-          if (_pickedForYou.isNotEmpty && _anchor != null)
-            SliverToBoxAdapter(
-              child: _PosterRail(
-                title: 'Because you watched ${_anchor!.title}',
-                movies: _pickedForYou,
-                onTap: _openMovie,
+            // v1.0.1+38: TOP 10 ghost-numeral rail (trending source).
+            if (_topTenSource().isNotEmpty)
+              SliverToBoxAdapter(
+                child: CineTopTen(items: _topTenSource(), onTap: _openMovie),
               ),
-            ),
-          for (final r in _rails)
-            SliverToBoxAdapter(
-              child: NotificationListener<ScrollNotification>(
-                onNotification: (n) {
-                  if (n is ScrollUpdateNotification ||
-                      n is ScrollEndNotification) {
-                    if (r.scroll.hasClients) {
-                      final pos = r.scroll.position;
-                      if (pos.pixels > pos.maxScrollExtent - 250 &&
-                          r.page < r.totalPages &&
-                          !r.loading) {
-                        _fillRail(r, r.page + 1);
-                      }
-                    }
-                  }
-                  return false;
-                },
+            if (_pickedForYou.isNotEmpty && _anchor != null)
+              SliverToBoxAdapter(
                 child: _PosterRail(
-                  title: r.title,
-                  movies: r.items,
-                  scrollController: r.scroll,
-                  loading: r.loading,
-                  failed: r.failed,
-                  onRetry: () => _fillRail(r, 1),
+                  title: 'Because you watched ${_anchor!.title}',
+                  movies: _pickedForYou,
                   onTap: _openMovie,
                 ),
               ),
-            ),
-          // v1.0.1+16: TMDB credit line removed per request — plain
-          // bottom padding instead.
-          const SliverToBoxAdapter(child: SizedBox(height: 26)),
-        ],
+            for (final r in _rails)
+              SliverToBoxAdapter(
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (n) {
+                    if (n is ScrollUpdateNotification ||
+                        n is ScrollEndNotification) {
+                      if (r.scroll.hasClients) {
+                        final pos = r.scroll.position;
+                        if (pos.pixels > pos.maxScrollExtent - 250 &&
+                            r.page < r.totalPages &&
+                            !r.loading) {
+                          _fillRail(r, r.page + 1);
+                        }
+                      }
+                    }
+                    return false;
+                  },
+                  child: _PosterRail(
+                    title: r.title,
+                    movies: r.items,
+                    scrollController: r.scroll,
+                    loading: r.loading,
+                    failed: r.failed,
+                    onRetry: () => _fillRail(r, 1),
+                    onTap: _openMovie,
+                  ),
+                ),
+              ),
+            // v1.0.1+16: TMDB credit line removed per request — plain
+            // bottom padding instead.
+            const SliverToBoxAdapter(child: SizedBox(height: 26)),
+          ],
+        ),
       ),
     );
   }
