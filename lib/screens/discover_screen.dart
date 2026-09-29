@@ -14,6 +14,7 @@ import '../utils/movie_match.dart';
 import '../utils/tmdb.dart';
 import '../utils/tmdb_image.dart';
 import '../widgets/ai_suggest_sheet.dart';
+import '../widgets/cine_player.dart';
 import '../widgets/cine_ui.dart';
 import 'movie_detail_screen.dart';
 
@@ -345,6 +346,18 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     );
   }
 
+  /// v1.0.1+39: PLAY NOW opens the CinePlayer — full-screen local stream
+  /// when a device file matches, sealed youtube-nocookie trailer otherwise.
+  void _playMovie(TmdbMovie movie) {
+    final match = findLocalMovie(movie.title, movie.year, widget.videos);
+    openCinePlayer(
+      context,
+      movie: movie,
+      localMatch: match,
+      detailLoader: () => _client.fullDetail(movie.id, kind: movie.kind),
+    );
+  }
+
   Future<void> _aiSuggest() async {
     final movie = await AiSuggestSheet.show(context);
     if (movie != null && mounted) _openMovie(movie);
@@ -361,30 +374,59 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           : Stack(
               children: [
                 SafeArea(
-                  child: Column(
-                    children: [
-                      // Top bar slides away when scrolling the home feed
-                      // down and returns the moment the user scrolls back
-                      // up. NEVER hides while search is focused/active.
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeInOutCubic,
-                        alignment: Alignment.topCenter,
-                        child:
-                            (_topBarVisible ||
-                                _searching ||
-                                _searchFocus.hasFocus)
-                            ? _buildSearchBar()
-                            : const SizedBox(width: double.infinity),
-                      ),
-                      Expanded(
-                        child: _searching
-                            ? _buildSearchResults()
-                            : (_searchFocus.hasFocus
-                                  ? _buildHotSearches()
-                                  : _buildOttHome()),
-                      ),
-                    ],
+                  bottom: false,
+                  child: Builder(
+                    builder: (context) {
+                      final searching = _searching || _searchFocus.hasFocus;
+                      final body = _searching
+                          ? _buildSearchResults()
+                          : (_searchFocus.hasFocus
+                                ? _buildHotSearches()
+                                : _buildOttHome());
+                      // v1.0.1+39: the top bar FLOATS over the hero (no
+                      // stacked black strip above featured movies), so
+                      // the non-hero panes reserve its height instead.
+                      return searching
+                          ? Padding(
+                              padding: const EdgeInsets.only(top: 62),
+                              child: body,
+                            )
+                          : body;
+                    },
+                  ),
+                ),
+                // Top bar slides away when scrolling the home feed
+                // down and returns the moment the user scrolls back
+                // up. NEVER hides while search is focused/active.
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    bottom: false,
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeInOutCubic,
+                      alignment: Alignment.topCenter,
+                      child:
+                          (_topBarVisible ||
+                              _searching ||
+                              _searchFocus.hasFocus)
+                          ? Container(
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0xF20a0a10),
+                                    Color(0x000a0a10),
+                                  ],
+                                ),
+                              ),
+                              child: _buildSearchBar(),
+                            )
+                          : const SizedBox(width: double.infinity),
+                    ),
                   ),
                 ),
                 // v1.0.1+38: cinematic boot curtain (once per open).
@@ -403,13 +445,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   /// far the OTT home scrolls: search field, voice mic, ✨ AI Suggestor.
   Widget _buildSearchBar() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0a0a10),
-        border: Border(
-          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
-        ),
-      ),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
       child: Row(
         children: [
           // Search field
@@ -589,7 +625,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       child: CircularProgressIndicator(color: Colors.white24),
                     ),
                   )
-                : CineFeaturedHero(items: _hero, onTap: _openMovie),
+                : CineFeaturedHero(items: _hero, onTap: _playMovie),
           ),
           // v1.0.1+38: tilted neon ticker overlapping the hero's base.
           if (_hero.isNotEmpty)

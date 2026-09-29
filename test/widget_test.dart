@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http_parser/http_parser.dart' show MediaType;
 import 'package:maxplayer/theme.dart';
 import 'package:maxplayer/widgets/cine_ui.dart';
+import 'package:maxplayer/widgets/cine_player.dart';
 import 'package:maxplayer/screens/history_screen.dart' show timeAgo;
 import 'package:maxplayer/models/network_location.dart';
 import 'package:maxplayer/models/saved_server.dart';
@@ -1812,15 +1813,6 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       }
     });
 
-    test('boot status words cycle with progress', () {
-      expect(cineBootWord(0.05), 'PROJECTION');
-      expect(cineBootWord(0.25), 'GRAIN');
-      expect(cineBootWord(0.40), '24 FPS');
-      expect(cineBootWord(0.58), 'SOUND');
-      expect(cineBootWord(0.75), 'REEL 01');
-      expect(cineBootWord(0.95), 'HD');
-    });
-
     test('hero rotation wraps and survives empty list', () {
       expect(cineHeroNext(2, 5), 3);
       expect(cineHeroNext(4, 5), 0);
@@ -1839,6 +1831,45 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
         'NO SIGN UP',
         'CINEMA UI',
       ]);
+    });
+  });
+
+  group('cine player (v1.0.1+39)', () {
+    test('decision order: local stream > trailer > unavailable', () {
+      expect(
+        cinePlayerMode(hasLocal: true, trailerKey: 'k9x_2Va'),
+        CinePlayerMode.local,
+      );
+      expect(
+        cinePlayerMode(hasLocal: false, trailerKey: 'k9x_2Va'),
+        CinePlayerMode.trailer,
+      );
+      expect(
+        cinePlayerMode(hasLocal: false, trailerKey: ''),
+        CinePlayerMode.unavailable,
+      );
+    });
+
+    test('trailer embed page uses the EXACT spec iframe', () {
+      final html = cineTrailerEmbedHtml('k9x_2Va');
+      expect(
+        html,
+        contains(
+          'https://www.youtube-nocookie.com/embed/k9x_2Va'
+          '?autoplay=1&rel=0&modestbranding=1&playsinline=1',
+        ),
+      );
+      expect(
+        html,
+        contains('position:absolute;inset:0;width:100%;height:100%'),
+      );
+      expect(html, contains('encrypted-media'));
+      expect(html, contains('picture-in-picture'));
+      expect(html, contains('allowfullscreen'));
+    });
+
+    test('sealed page still served from the youtube parent origin', () {
+      expect(kCineEmbedBaseUrl, 'https://www.youtube.com');
     });
   });
 }

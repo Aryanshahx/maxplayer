@@ -105,17 +105,6 @@ double cineBootEase(double t) {
   return 1.0;
 }
 
-/// Boot status word for progress [p] (pure). Cycles as the counter climbs:
-/// PROJECTION → GRAIN → 24 FPS → SOUND → REEL 01 → HD.
-String cineBootWord(double p) {
-  if (p < 0.18) return 'PROJECTION';
-  if (p < 0.34) return 'GRAIN';
-  if (p < 0.50) return '24 FPS';
-  if (p < 0.66) return 'SOUND';
-  if (p < 0.82) return 'REEL 01';
-  return 'HD';
-}
-
 /// Next hero index, wrapping (pure; empty list always yields 0).
 int cineHeroNext(int current, int length) =>
     length <= 0 ? 0 : (current + 1) % length;
@@ -127,6 +116,10 @@ String cineKindLabel(String kind) => kind == 'movie' ? 'FILM' : 'SERIES';
 
 /// Full-screen cinematic boot curtain. Plays the ramp once, slides itself
 /// up like a raised cinema curtain, then calls [onFinished].
+/// Full-screen cinematic boot curtain (MINIMAL per field feedback:
+/// no flicker, no decorative texts) — just the giant Anton percentage
+/// over pure black with the glowing hairline, then the curtain-lift
+/// exit. Plays once per Discover open.
 class CineBoot extends StatefulWidget {
   const CineBoot({super.key, required this.onFinished});
 
@@ -139,8 +132,8 @@ class CineBoot extends StatefulWidget {
 class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
   late final AnimationController _run =
       AnimationController(vsync: this, duration: kCineBootDuration)
-        ..addStatusListener((s) {
-          if (s == AnimationStatus.completed) {
+        ..addStatusListener((st) {
+          if (st == AnimationStatus.completed) {
             Future<void>.delayed(const Duration(milliseconds: 260), () {
               if (mounted) _exit.forward();
             });
@@ -148,17 +141,9 @@ class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
         });
   late final AnimationController _exit =
       AnimationController(vsync: this, duration: kCineBootExit)
-        ..addStatusListener((s) {
-          if (s == AnimationStatus.completed) widget.onFinished();
+        ..addStatusListener((st) {
+          if (st == AnimationStatus.completed) widget.onFinished();
         });
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1200),
-  )..repeat(reverse: true);
-  late final AnimationController _flicker = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 95),
-  )..repeat(reverse: true);
 
   @override
   void initState() {
@@ -170,8 +155,6 @@ class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
   void dispose() {
     _run.dispose();
     _exit.dispose();
-    _pulse.dispose();
-    _flicker.dispose();
     super.dispose();
   }
 
@@ -197,115 +180,35 @@ class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
                 color: kCineBg,
                 child: Stack(
                   children: [
-                    // corner labels
+                    // giant counter, bottom-right
                     Positioned(
-                      top: 18,
-                      left: 18,
-                      child: Text(
-                        'MAX / RE-CUT',
-                        style: cineMono(
-                          9,
-                          Colors.white.withValues(alpha: 0.3),
-                          letterSpacing: 2.0,
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 18,
                       right: 18,
-                      child: FadeTransition(
-                        opacity: Tween(begin: 0.3, end: 0.8).animate(_pulse),
-                        child: Text(
-                          'WARMING LAMP',
-                          style: cineMono(
-                            9,
-                            Colors.white.withValues(alpha: 0.55),
-                            letterSpacing: 2.0,
-                          ),
-                        ),
-                      ),
-                    ),
-                    // status line, middle-left
-                    Positioned(
-                      left: 18,
-                      top: h * 0.42,
+                      bottom: 22,
                       child: AnimatedBuilder(
                         animation: _run,
                         builder: (context, _) {
                           final p = cineBootEase(_run.value);
-                          return Text(
-                            cineBootWord(p),
-                            style: cineMono(
-                              11,
-                              kCineCyan,
-                              letterSpacing: 0.5 * 11.0,
+                          return RichText(
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: '${(p * 100).floor()}',
+                                  style: cineDisplay(counterSize, Colors.white),
+                                ),
+                                TextSpan(
+                                  text: '%',
+                                  style: cineDisplay(
+                                    counterSize * 0.45,
+                                    kCinePurple.withValues(alpha: 0.8),
+                                  ),
+                                ),
+                              ],
                             ),
                           );
                         },
                       ),
                     ),
-                    // bottom block
-                    Positioned(
-                      left: 18,
-                      right: 18,
-                      bottom: 22,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'SOURCE: NATIVE',
-                                style: cineMono(
-                                  9,
-                                  Colors.white.withValues(alpha: 0.3),
-                                  letterSpacing: 2.0,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'FPS: 23.976',
-                                style: cineMono(
-                                  9,
-                                  Colors.white.withValues(alpha: 0.3),
-                                  letterSpacing: 2.0,
-                                ),
-                              ),
-                            ],
-                          ),
-                          AnimatedBuilder(
-                            animation: _run,
-                            builder: (context, _) {
-                              final p = cineBootEase(_run.value);
-                              return RichText(
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: '${(p * 100).floor()}',
-                                      style: cineDisplay(
-                                        counterSize,
-                                        Colors.white,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: '%',
-                                      style: cineDisplay(
-                                        counterSize * 0.45,
-                                        kCinePurple.withValues(alpha: 0.8),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    // hairline progress bar
+                    // glowing hairline progress bar
                     Positioned(
                       left: 0,
                       right: 0,
@@ -337,20 +240,6 @@ class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
                         },
                       ),
                     ),
-                    // scanline flicker
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: AnimatedBuilder(
-                          animation: _flicker,
-                          builder: (context, _) {
-                            return Opacity(
-                              opacity: 0.025 + 0.03 * _flicker.value,
-                              child: CustomPaint(painter: _ScanlinePainter()),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -362,37 +251,16 @@ class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
   }
 }
 
-class _ScanlinePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 1;
-    for (var y = 0.0; y < size.height; y += 3) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
 // ================================================================== HERO ==
 
 /// Immersive auto-rotating featured hero: crossfaded backdrops with a Ken
 /// Burns push-in, staggered content entrance, vertical name indicators on
 /// the right and realtime countdown pills at the bottom.
 class CineFeaturedHero extends StatefulWidget {
-  const CineFeaturedHero({
-    super.key,
-    required this.items,
-    required this.onTap,
-    this.onInfo,
-  });
+  const CineFeaturedHero({super.key, required this.items, required this.onTap});
 
   final List<TmdbMovie> items;
   final void Function(TmdbMovie) onTap;
-  final void Function(TmdbMovie)? onInfo;
 
   @override
   State<CineFeaturedHero> createState() => _CineFeaturedHeroState();
@@ -420,11 +288,24 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
   @override
   void didUpdateWidget(covariant CineFeaturedHero oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.items.length != widget.items.length &&
-        _index >= widget.items.length) {
+    // v1.0.1+39: re-arm ONLY when the item set actually changed. Parent
+    // setStates (search bar slide, rail fills) must NEVER restart the
+    // Ken Burns / entrance animations — that was the "touches restart
+    // the hero" bug.
+    if (!_sameMovieSet(oldWidget.items, widget.items)) {
       _index = 0;
+      _arm();
+      return;
     }
-    _arm();
+    if (_index >= widget.items.length) setState(() => _index = 0);
+  }
+
+  static bool _sameMovieSet(List<TmdbMovie> a, List<TmdbMovie> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id) return false;
+    }
+    return true;
   }
 
   void _arm() {
@@ -499,22 +380,27 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // backdrop: crossfade + Ken Burns
-          AnimatedSwitcher(
-            duration: kCineHeroCrossfade,
-            child: KeyedSubtree(
-              key: ValueKey('hero_${m.id}'),
-              child: AnimatedBuilder(
-                animation: _slide,
-                builder: (context, _) {
-                  final scale = 1.15 - 0.15 * _slide.value;
-                  return Transform.scale(
-                    scale: scale,
-                    child: backdrop.isEmpty
-                        ? const ColoredBox(color: kCineInk)
-                        : TmdbImage(url: backdrop, fit: BoxFit.cover),
-                  );
-                },
+          // backdrop: crossfade + Ken Burns — the whole art is tappable
+          // (v1.0.1+39: "make each slider clickable").
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => widget.onTap(m),
+            child: AnimatedSwitcher(
+              duration: kCineHeroCrossfade,
+              child: KeyedSubtree(
+                key: ValueKey('hero_${m.id}'),
+                child: AnimatedBuilder(
+                  animation: _slide,
+                  builder: (context, _) {
+                    final scale = 1.15 - 0.15 * _slide.value;
+                    return Transform.scale(
+                      scale: scale,
+                      child: backdrop.isEmpty
+                          ? const ColoredBox(color: kCineInk)
+                          : TmdbImage(url: backdrop, fit: BoxFit.cover),
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -756,43 +642,6 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        Material(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => (widget.onInfo ?? widget.onTap)(m),
-            child: Container(
-              height: 54,
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    color: Colors.white.withValues(alpha: 0.9),
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'MORE INFO',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -986,6 +835,18 @@ class _CineTopTenState extends State<CineTopTen>
     super.dispose();
   }
 
+  static double _posterW(double w) => w >= 1024
+      ? 150.0
+      : w >= 600
+      ? 130.0
+      : 110.0;
+
+  static double _ghostSize(double w) => (w * 0.12).clamp(104.0, 192.0);
+
+  /// Rail height = tallest of (poster, ghost numeral) + lift allowance.
+  static double _railHeight(double w) =>
+      math.max(_posterW(w) * 1.5, _ghostSize(w) * 0.95) + 14;
+
   @override
   Widget build(BuildContext context) {
     final items = widget.items.take(10).toList();
@@ -1030,7 +891,9 @@ class _CineTopTenState extends State<CineTopTen>
           child: Text('TOP 10 THIS WEEK', style: cineDisplay(28, Colors.white)),
         ),
         SizedBox(
-          height: 244,
+          // v1.0.1+39: rail height is COMPUTED from the poster size (was
+          // a fixed 244 -> a dead black gap under the heading on phones).
+          height: _railHeight(MediaQuery.of(context).size.width),
           child: ShaderMask(
             shaderCallback: (rect) => const LinearGradient(
               colors: [
@@ -1052,6 +915,7 @@ class _CineTopTenState extends State<CineTopTen>
                 rank: i + 1,
                 movie: items[i],
                 onTap: () => widget.onTap(items[i]),
+                posterW: _posterW(MediaQuery.of(context).size.width),
                 enterAnim: CurvedAnimation(
                   parent: _enter,
                   curve: Interval(
@@ -1074,12 +938,14 @@ class _TopTenCard extends StatefulWidget {
     required this.rank,
     required this.movie,
     required this.onTap,
+    required this.posterW,
     required this.enterAnim,
   });
 
   final int rank;
   final TmdbMovie movie;
   final VoidCallback onTap;
+  final double posterW;
   final Animation<double> enterAnim;
 
   @override
@@ -1091,13 +957,10 @@ class _TopTenCardState extends State<_TopTenCard> {
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
-    final posterW = w >= 1024
-        ? 150.0
-        : w >= 600
-        ? 130.0
-        : 110.0;
-    final ghostSize = (w * 0.12).clamp(104.0, 192.0);
+    final posterW = widget.posterW;
+    final ghostSize = _CineTopTenState._ghostSize(
+      MediaQuery.of(context).size.width,
+    );
     final rankPad = widget.rank >= 10 ? ghostSize * 0.62 : ghostSize * 0.34;
 
     return AnimatedBuilder(
@@ -1118,7 +981,11 @@ class _TopTenCardState extends State<_TopTenCard> {
                 onTapCancel: () => setState(() => _hover = false),
                 child: SizedBox(
                   width: posterW + rankPad,
-                  height: 232,
+                  height:
+                      _CineTopTenState._railHeight(
+                        MediaQuery.of(context).size.width,
+                      ) -
+                      14,
                   child: Stack(
                     alignment: Alignment.bottomLeft,
                     children: [
