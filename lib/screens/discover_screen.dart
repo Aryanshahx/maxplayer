@@ -374,6 +374,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           : Stack(
               children: [
                 SafeArea(
+                  top: false,
                   bottom: false,
                   child: Builder(
                     builder: (context) {
@@ -388,7 +389,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       // the non-hero panes reserve its height instead.
                       return searching
                           ? Padding(
-                              padding: const EdgeInsets.only(top: 62),
+                              padding: EdgeInsets.only(
+                                top: MediaQuery.viewPaddingOf(context).top + 62,
+                              ),
                               child: body,
                             )
                           : body;
@@ -625,7 +628,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       child: CircularProgressIndicator(color: Colors.white24),
                     ),
                   )
-                : CineFeaturedHero(items: _hero, onTap: _playMovie),
+                : CineFeaturedHero(
+                    items: _hero,
+                    onTap: _playMovie,
+                    onOpen: _openMovie,
+                  ),
           ),
           // v1.0.1+38: tilted neon ticker overlapping the hero's base.
           if (_hero.isNotEmpty)

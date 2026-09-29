@@ -66,8 +66,8 @@ const kCineTickerItems = <String>[
 /// Gate angles/durations (tunable without touching widget code).
 const kCineHeroDuration = Duration(milliseconds: 7000);
 const kCineHeroCrossfade = Duration(milliseconds: 1400);
-const kCineBootDuration = Duration(milliseconds: 2600);
-const kCineBootExit = Duration(milliseconds: 900);
+const kCineBootDuration = Duration(milliseconds: 1500);
+const kCineBootExit = Duration(milliseconds: 500);
 const kCineTickerPeriod = Duration(seconds: 28);
 const kCineTickerTiltDeg = -1.2;
 
@@ -134,7 +134,7 @@ class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
       AnimationController(vsync: this, duration: kCineBootDuration)
         ..addStatusListener((st) {
           if (st == AnimationStatus.completed) {
-            Future<void>.delayed(const Duration(milliseconds: 260), () {
+            Future<void>.delayed(const Duration(milliseconds: 120), () {
               if (mounted) _exit.forward();
             });
           }
@@ -156,6 +156,25 @@ class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
     _run.dispose();
     _exit.dispose();
     super.dispose();
+  }
+
+  Widget _cornerTick(bool top, bool left) {
+    final c = Colors.white.withValues(alpha: 0.55);
+    final hBar = Container(color: c, width: 26, height: 1);
+    final vBar = Container(color: c, width: 1, height: 26);
+    return Positioned(
+      top: top ? 18 : null,
+      bottom: top ? null : 21,
+      left: left ? 18 : null,
+      right: left ? null : 18,
+      child: Row(
+        crossAxisAlignment: top
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: (left ? [hBar, vBar] : [vBar, hBar]),
+      ),
+    );
   }
 
   @override
@@ -180,6 +199,12 @@ class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
                 color: kCineBg,
                 child: Stack(
                   children: [
+                    // v1.0.1+40: the thin white corner hairlines are back
+                    // (pure line ticks, no text labels).
+                    _cornerTick(true, true),
+                    _cornerTick(true, false),
+                    _cornerTick(false, true),
+                    _cornerTick(false, false),
                     // giant counter, bottom-right
                     Positioned(
                       right: 18,
@@ -254,13 +279,20 @@ class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
 // ================================================================== HERO ==
 
 /// Immersive auto-rotating featured hero: crossfaded backdrops with a Ken
-/// Burns push-in, staggered content entrance, vertical name indicators on
-/// the right and realtime countdown pills at the bottom.
+/// Burns push-in, staggered content entrance and realtime countdown pills
+/// at the bottom. Tapping the ART opens the detail page ([onOpen]); the
+/// PLAY NOW button starts playback ([onTap]).
 class CineFeaturedHero extends StatefulWidget {
-  const CineFeaturedHero({super.key, required this.items, required this.onTap});
+  const CineFeaturedHero({
+    super.key,
+    required this.items,
+    required this.onTap,
+    required this.onOpen,
+  });
 
   final List<TmdbMovie> items;
   final void Function(TmdbMovie) onTap;
+  final void Function(TmdbMovie) onOpen;
 
   @override
   State<CineFeaturedHero> createState() => _CineFeaturedHeroState();
@@ -384,7 +416,7 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
           // (v1.0.1+39: "make each slider clickable").
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => widget.onTap(m),
+            onTap: () => widget.onOpen(m),
             child: AnimatedSwitcher(
               duration: kCineHeroCrossfade,
               child: KeyedSubtree(
@@ -478,20 +510,6 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
               ],
             ),
           ),
-          // right vertical indicators
-          if (items.length > 1)
-            Positioned(
-              right: 12,
-              top: h * 0.30,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var i = 0; i < items.length; i++)
-                    _vIndicator(i, items[i]),
-                ],
-              ),
-            ),
           // bottom countdown pills
           if (items.length > 1)
             Positioned(
@@ -643,53 +661,6 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _vIndicator(int i, TmdbMovie m) {
-    final active = i == _index;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: InkWell(
-        onTap: () => _goTo(i),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOutCubic,
-              constraints: BoxConstraints(maxWidth: active ? 180 : 0),
-              child: active
-                  ? Text(
-                      m.title.toUpperCase(),
-                      maxLines: 1,
-                      overflow: TextOverflow.fade,
-                      softWrap: false,
-                      style: cineMono(
-                        8,
-                        Colors.white.withValues(alpha: 0.6),
-                        letterSpacing: 1.5,
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-            const SizedBox(width: 8),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              height: 2,
-              width: active ? 26 : 10,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(2),
-                gradient: active
-                    ? const LinearGradient(colors: [kCineCyan, kCinePurple])
-                    : null,
-                color: active ? null : Colors.white.withValues(alpha: 0.25),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
