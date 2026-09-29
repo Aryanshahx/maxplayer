@@ -249,9 +249,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     if (!_homeScroll.hasClients) return;
     final pixels = _homeScroll.position.pixels;
     final delta = pixels - _lastHomePixels;
-    if (delta.abs() < 8) return;
+    if (delta.abs() < 8 && pixels > 24) {
+      return; // tiny drifts away from the top don't re-evaluate
+    }
     _lastHomePixels = pixels;
-    final shouldShow = delta < 0 || pixels < 80;
+    // v1.0.1+45: while scrolling DOWN the bar hides EVERYWHERE (the old
+    // "|| pixels < 80" re-showed it during a down-scroll through the top
+    // band — the "bar appears when I scroll down" complaint).
+    final shouldShow = delta < 0 || pixels <= 24;
     if (shouldShow != _topBarVisible) {
       setState(() => _topBarVisible = shouldShow);
     }

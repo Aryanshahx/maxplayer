@@ -399,10 +399,15 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
   Widget build(BuildContext context) {
     final items = widget.items;
     final mq = MediaQuery.of(context);
-    // v1.0.1+42: ~60% viewport (was FULL viewport — that wasted screen
-    // read as "huge blank space between the search bar and featured").
+    // v1.0.1+42/+45: ~60% viewport hero (the +43 split layout and the
+    // +44 art-shift are REVERTED).
     final h = (mq.size.height * 0.60).clamp(400.0, mq.size.height);
     if (items.isEmpty) return const SizedBox.shrink();
+    // v1.0.1+45 tablet/landscape guard: on short viewports the bottom
+    // copy column was taller than the space left for it, so the title
+    // escaped UP into the search bar (and compressed the strip below).
+    // Compact mode: smaller title cap, overview dropped.
+    final compact = h < 560;
     final m = items[_index.clamp(0, items.length - 1)];
     final backdrop = tmdbBackdropUrl(m.backdropPath);
 
@@ -429,23 +434,7 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
                       scale: scale,
                       child: backdrop.isEmpty
                           ? const ColoredBox(color: kCineInk)
-                          // v1.0.1+44: art nudged ~5% UP inside the slider
-                          // (+43's split layout was rejected; this is the
-                          // ONLY layout change on top of +42).
-                          : ClipRect(
-                              child: OverflowBox(
-                                alignment: Alignment.topCenter,
-                                maxHeight: h * 1.05,
-                                child: SizedBox(
-                                  height: h * 1.05,
-                                  width: double.infinity,
-                                  child: TmdbImage(
-                                    url: backdrop,
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                              ),
-                            ),
+                          : TmdbImage(url: backdrop, fit: BoxFit.cover),
                     );
                   },
                 ),
@@ -497,11 +486,14 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
               children: [
                 _staggered(
                   1,
-                  Text(m.title.toUpperCase(), style: _titleStyle(context)),
+                  Text(
+                    m.title.toUpperCase(),
+                    style: _titleStyle(context, compact),
+                  ),
                 ),
                 const SizedBox(height: 10),
                 _staggered(2, _metaRow(m)),
-                if (m.overview.isNotEmpty) ...[
+                if (!compact && m.overview.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   _staggered(
                     3,
@@ -525,8 +517,7 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
           ),
           // v1.0.1+41: full-bleed tap layer ABOVE the texts/veils and
           // BELOW the buttons + pills — a tap anywhere on the artwork or
-          // copy opens the detail page, guaranteed (the +40 backdrop-only
-          // gesture got swallowed in nested stacks).
+          // copy opens the detail page, guaranteed.
           Positioned.fill(
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
@@ -551,9 +542,11 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
     );
   }
 
-  TextStyle _titleStyle(BuildContext context) {
+  TextStyle _titleStyle(BuildContext context, bool compact) {
     final w = MediaQuery.of(context).size.width;
-    final size = (w * 0.09).clamp(44.0, 128.0);
+    // v1.0.1+45: capped at 92 (was 128 — the giant tablet titles that
+    // overlapped the strip + search bar), 64 in compact/landscape hero.
+    final size = (w * 0.09).clamp(44.0, compact ? 64.0 : 92.0);
     return cineDisplay(size, Colors.white).copyWith(
       shadows: const [Shadow(color: Color(0xB3000000), blurRadius: 60)],
     );
