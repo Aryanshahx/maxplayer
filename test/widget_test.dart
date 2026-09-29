@@ -1828,7 +1828,6 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
         'WEB SERIES',
         'DRAMA',
         'ANIME',
-        'REAL STREAMS',
         '4K QUALITY',
         'TV SERIES',
         'NO SIGN UP',

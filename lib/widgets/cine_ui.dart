@@ -59,7 +59,6 @@ const kCineTickerItems = <String>[
   'WEB SERIES',
   'DRAMA',
   'ANIME',
-  'REAL STREAMS',
   '4K QUALITY',
   'TV SERIES',
   'NO SIGN UP',
@@ -68,8 +67,8 @@ const kCineTickerItems = <String>[
 /// Gate angles/durations (tunable without touching widget code).
 const kCineHeroDuration = Duration(milliseconds: 7000);
 const kCineHeroCrossfade = Duration(milliseconds: 1400);
-const kCineBootDuration = Duration(milliseconds: 1500);
-const kCineBootExit = Duration(milliseconds: 500);
+const kCineBootDuration = Duration(milliseconds: 1000);
+const kCineBootExit = Duration(milliseconds: 350);
 const kCineTickerPeriod = Duration(seconds: 28);
 const kCineTickerTiltDeg = -1.2;
 
@@ -136,7 +135,7 @@ class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
       AnimationController(vsync: this, duration: kCineBootDuration)
         ..addStatusListener((st) {
           if (st == AnimationStatus.completed) {
-            Future<void>.delayed(const Duration(milliseconds: 120), () {
+            Future<void>.delayed(const Duration(milliseconds: 60), () {
               if (mounted) _exit.forward();
             });
           }
@@ -399,11 +398,20 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
   @override
   Widget build(BuildContext context) {
     final items = widget.items;
-    final mq = MediaQuery.of(context);
-    // v1.0.1+42: ~60% viewport (was FULL viewport — that wasted screen
-    // read as "huge blank space between the search bar and featured").
-    final h = (mq.size.height * 0.60).clamp(400.0, mq.size.height);
     if (items.isEmpty) return const SizedBox.shrink();
+    final mq = MediaQuery.of(context);
+    final w = mq.size.width;
+    final isTablet = w >= 600;
+    // v1.0.1+43: SPLIT layout. The artwork lives in the TOP HALF only
+    // (exactly 50%) and the title/meta/buttons/pills sit BELOW it on the
+    // page background — copy can never bleach over busy art, and on
+    // tablets the (now hard-capped) title can't escape upward into the
+    // search bar or downward into the ticker strip.
+    final h = (mq.size.height * (isTablet ? 0.62 : 0.56)).clamp(
+      320.0,
+      mq.size.height,
+    );
+    final imgH = h * 0.5;
     final m = items[_index.clamp(0, items.length - 1)];
     final backdrop = tmdbBackdropUrl(m.backdropPath);
 
@@ -411,107 +419,74 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
       height: h,
       width: double.infinity,
       child: Stack(
-        fit: StackFit.expand,
         children: [
-          // backdrop: crossfade + Ken Burns — the whole art is tappable
-          // (v1.0.1+39: "make each slider clickable").
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => widget.onOpen(m),
-            child: AnimatedSwitcher(
-              duration: kCineHeroCrossfade,
-              child: KeyedSubtree(
-                key: ValueKey('hero_${m.id}'),
-                child: AnimatedBuilder(
-                  animation: _slide,
-                  builder: (context, _) {
-                    final scale = 1.15 - 0.15 * _slide.value;
-                    return Transform.scale(
-                      scale: scale,
-                      child: backdrop.isEmpty
-                          ? const ColoredBox(color: kCineInk)
-                          : TmdbImage(url: backdrop, fit: BoxFit.cover),
-                    );
-                  },
+          // ---- artwork: top half ONLY ----
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: imgH,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => widget.onOpen(m),
+              child: AnimatedSwitcher(
+                duration: kCineHeroCrossfade,
+                child: KeyedSubtree(
+                  key: ValueKey('hero_${m.id}'),
+                  child: AnimatedBuilder(
+                    animation: _slide,
+                    builder: (context, _) {
+                      final scale = 1.15 - 0.15 * _slide.value;
+                      return Transform.scale(
+                        scale: scale,
+                        child: backdrop.isEmpty
+                            ? const ColoredBox(color: kCineInk)
+                            : TmdbImage(url: backdrop, fit: BoxFit.cover),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
           ),
-          // three gradient veils
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [kCineInk, Colors.transparent],
-                stops: [0.0, 1.0],
-              ),
-            ),
-          ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.center,
-                colors: [Color(0x80050506), Colors.transparent],
-              ),
-            ),
-          ),
-          const Align(
-            alignment: Alignment.bottomCenter,
-            child: SizedBox(
-              height: 160,
+          // top veil so the floating search bar stays readable
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: imgH * 0.6,
+            child: const IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [kCineInk, Colors.transparent],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x99000000), Colors.transparent],
                   ),
                 ),
               ),
             ),
           ),
-          // content texts — NON-INTERACTIVE: taps fall through to the
-          // tap layer below (moved up by the button row's height).
+          // bottom fade: artwork melts into the page background
           Positioned(
-            left: 20,
-            right: 96,
-            bottom: 152,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _staggered(
-                  1,
-                  Text(m.title.toUpperCase(), style: _titleStyle(context)),
-                ),
-                const SizedBox(height: 10),
-                _staggered(2, _metaRow(m)),
-                if (m.overview.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _staggered(
-                    3,
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 390),
-                      child: Text(
-                        m.overview,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 15,
-                          height: 1.45,
-                          color: Colors.white.withValues(alpha: 0.65),
-                        ),
-                      ),
-                    ),
+            top: imgH * 0.4,
+            left: 0,
+            right: 0,
+            height: imgH * 0.6,
+            child: const IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Color(0xFF0a0a10)],
                   ),
-                ],
-              ],
+                ),
+              ),
             ),
           ),
-          // v1.0.1+41: full-bleed tap layer ABOVE the texts/veils and
-          // BELOW the buttons + pills — a tap anywhere on the artwork or
-          // copy opens the detail page, guaranteed (the +40 backdrop-only
-          // gesture got swallowed in nested stacks).
+          // full-bleed tap layer ABOVE art/veils, BELOW the copy + buttons
+          // (v1.0.1+41 lesson: tap SLIDER anywhere -> detail screen).
           Positioned.fill(
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
@@ -519,18 +494,58 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
               child: const SizedBox.expand(),
             ),
           ),
-          Positioned(left: 20, bottom: 80, child: _staggered(4, _buttonRow(m))),
-          // bottom countdown pills
-          if (items.length > 1)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 30,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [for (var i = 0; i < items.length; i++) _pill(i)],
-              ),
+          // ---- copy + buttons + pills: bottom half, OFF the artwork ----
+          Positioned(
+            left: 20,
+            right: 20,
+            top: imgH + 8,
+            bottom: 10,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _staggered(
+                  1,
+                  Text(
+                    m.title.toUpperCase(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: _titleStyle(context),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _staggered(2, _metaRow(m)),
+                if (isTablet && m.overview.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _staggered(
+                    3,
+                    Text(
+                      m.overview,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.4,
+                        color: Colors.white.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                _staggered(4, _buttonRow(m)),
+                if (items.length > 1) ...[
+                  const SizedBox(height: 14),
+                  Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var i = 0; i < items.length; i++) _pill(i),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
             ),
+          ),
         ],
       ),
     );
@@ -538,9 +553,11 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
 
   TextStyle _titleStyle(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
-    final size = (w * 0.09).clamp(44.0, 128.0);
+    // v1.0.1+43: hard-capped (was w*0.09 -> up to 128px on tablets, which
+    // is what overlapped the ticker strip and the search bar area).
+    final size = (w * 0.075).clamp(36.0, 64.0);
     return cineDisplay(size, Colors.white).copyWith(
-      shadows: const [Shadow(color: Color(0xB3000000), blurRadius: 60)],
+      shadows: const [Shadow(color: Color(0xB3000000), blurRadius: 24)],
     );
   }
 
