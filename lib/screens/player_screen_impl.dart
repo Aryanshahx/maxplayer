@@ -208,6 +208,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   );
   bool _dialogueBoost = false;
   bool _enhance = false;
+
+  /// Current 3D mode — a key of [kStereo3dModes] ('OFF' by default).
+  String _stereo3d = 'OFF';
+
   bool _karaoke = false;
 
   // Karaoke subtitle state (old app's live sub-text observer port).
@@ -1400,6 +1404,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                 },
                 onLongPress: _cancelAb,
               ),
+              _extraAction(
+                icon: Icons.threed_rotation_rounded,
+                title: '3D mode ($_stereo3d)',
+                subtitle: 'Red-cyan anaglyph for 3D movies — tap to cycle',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _cycle3d();
+                },
+              ),
               _extraToggle(
                 icon: Icons.closed_caption_outlined,
                 title: 'Karaoke subtitles',
@@ -1877,17 +1890,43 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  /// Composes the vf chain: 3D stereo conversion FIRST, then the
+  /// user enhance filter. Never stomp one with the other (+46 fix-up:
+  /// enabling Enhance used to silently kill 3D and vice versa).
+  Future<void> _applyVideoChain() async {
+    final parts = <String>[
+      if ((kStereo3dModes[_stereo3d] ?? '').isNotEmpty)
+        kStereo3dModes[_stereo3d]!,
+      if (_enhance) buildEnhanceFilter(),
+    ];
+    await _mpvSet('vf', parts.join(','));
+  }
+
+  /// v1.0.1+46: 3D MODE — cycles OFF -> SBS red-cyan -> SBS reverse ->
+  /// top-bottom -> left-eye-only -> OFF. Real MPV stereo3d merge,
+  /// red-cyan ("dubois") output for the paper glasses.
+  void _cycle3d() {
+    final keys = kStereo3dModes.keys.toList();
+    _stereo3d = keys[(keys.indexOf(_stereo3d) + 1) % keys.length];
+    CrashLog.crumb('player.stereo3d', {'mode': _stereo3d});
+    setState(() {});
+    unawaited(_applyVideoChain());
+    _emitSnack(
+      _stereo3d == 'OFF' ? '3D off' : '3D: $_stereo3d — wear red-cyan glasses',
+    );
+  }
+
   Future<void> _setVideoFilters(bool enabled) async {
     if (enabled) {
       await _mpvSet('contrast', '14');
       await _mpvSet('saturation', '12');
       await _mpvSet('gamma', '2');
-      await _mpvSet('vf', buildEnhanceFilter());
+      await _applyVideoChain();
     } else {
       await _mpvSet('contrast', '0');
       await _mpvSet('saturation', '0');
       await _mpvSet('gamma', '0');
-      await _mpvSet('vf', '');
+      await _applyVideoChain();
     }
   }
 
@@ -2430,8 +2469,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _emitSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -4037,3 +4077,15 @@ class _KaraokeOverlay extends StatelessWidget {
     );
   }
 }
+
+/// v1.0.1+46: 3D MODE table — key = sheet label, value = the stereo3d
+/// leg of the vf chain ('' = no conversion). Real MPV/ffmpeg stereo3d
+/// merge; 'arcd' = red-cyan DUBOIS (comfort + colour), 'ml' = mono-left
+/// (left eye only). Requires true SBS/TB source video for real depth.
+const kStereo3dModes = <String, String>{
+  'OFF': '',
+  'SBS → RED-CYAN': 'stereo3d=sbsl:arcd',
+  'SBS REVERSE → RED-CYAN': 'stereo3d=sbsr:arcd',
+  'TOP-BOTTOM → RED-CYAN': 'stereo3d=tbl:arcd',
+  'LEFT EYE ONLY': 'stereo3d=sbsl:ml',
+};

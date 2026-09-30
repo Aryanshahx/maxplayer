@@ -11,6 +11,9 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../utils/config.dart';
 
 import '../utils/tmdb.dart';
 import '../utils/tmdb_image.dart';
@@ -602,23 +605,23 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
             borderRadius: BorderRadius.circular(16),
             onTap: () => widget.onTap(m),
             child: const SizedBox(
-              height: 54,
+              height: 46,
               child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 32),
+                padding: EdgeInsets.symmetric(horizontal: 26),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       Icons.play_arrow_rounded,
                       color: Colors.black,
-                      size: 22,
+                      size: 19,
                     ),
-                    SizedBox(width: 8),
+                    SizedBox(width: 6),
                     Text(
                       'PLAY NOW',
                       style: TextStyle(
                         color: Colors.black,
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1.0,
                       ),
@@ -1087,6 +1090,113 @@ class _TopTenCardState extends State<_TopTenCard> {
           ),
         );
       },
+    );
+  }
+}
+
+// ============================================================ SOCIAL ==
+
+/// v1.0.1+46: Instagram follow card shown under the featured slider.
+/// Gradient ring = the Instagram brand band; tap opens the profile in
+/// the Instagram app / browser (external).
+class CineInstagramCard extends StatelessWidget {
+  const CineInstagramCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => unawaited(
+          launchUrl(
+            Uri.parse(kMaxInstagramUrl),
+            mode: LaunchMode.externalApplication,
+          ),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: kCinePink.withValues(alpha: 0.6),
+              width: 1.4,
+            ),
+            gradient: LinearGradient(
+              colors: [
+                kCinePurple.withValues(alpha: 0.16),
+                kCinePink.withValues(alpha: 0.10),
+              ],
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [kCinePurple, kCinePink, kCineAmber],
+                  ),
+                ),
+                child: const Icon(
+                  Icons.camera_alt_rounded,
+                  color: Colors.white,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '@maxplayer_official',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'FOLLOW US ON INSTAGRAM',
+                      style: cineMono(
+                        9,
+                        Colors.white.withValues(alpha: 0.55),
+                        letterSpacing: 1.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'FOLLOW',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

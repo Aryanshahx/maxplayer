@@ -3,6 +3,11 @@
 /// Values come ONLY from --dart-define, injected by GitHub Actions from
 /// repo secrets: TMDB_API_KEY and OPENROUTER_API_KEY. Keys are NEVER
 /// committed to the repo.
+/// Public support + social endpoints (v1.0.1+46).
+const kMaxReportEmail = 'techlabs.hyper@gmail.com';
+const kMaxInstagramUrl =
+    'https://www.instagram.com/maxplayer_official?stkn=MWZpbjQxNWNqbWU0eQ==';
+
 class AppConfig {
   AppConfig._();
 
@@ -20,7 +25,6 @@ class AppConfig {
   /// OpenRouter key — reserved for upcoming AI features.
   static const openRouterKey = String.fromEnvironment(
     'OPENROUTER_API_KEY',
-    defaultValue:
-        '',
+    defaultValue: '',
   );
 }

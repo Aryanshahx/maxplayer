@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http_parser/http_parser.dart' show MediaType;
 import 'package:maxplayer/theme.dart';
 import 'package:maxplayer/widgets/cine_ui.dart';
+import 'package:maxplayer/screens/player_screen_impl.dart';
+import 'package:maxplayer/utils/config.dart';
 import 'package:maxplayer/widgets/cine_player.dart';
 import 'package:maxplayer/screens/history_screen.dart' show timeAgo;
 import 'package:maxplayer/models/network_location.dart';
@@ -1861,6 +1863,24 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
         cineTrailerWatchUrl('k9x_2Va'),
         'https://www.youtube.com/watch?v=k9x_2Va',
       );
+    });
+  });
+
+  group('3d mode + socials (v1.0.1+46)', () {
+    test('stereo3d vf chains pinned (red-cyan dubois)', () {
+      expect(kStereo3dModes.keys.first, 'OFF');
+      expect(kStereo3dModes.values.toList(), [
+        '',
+        'stereo3d=sbsl:arcd',
+        'stereo3d=sbsr:arcd',
+        'stereo3d=tbl:arcd',
+        'stereo3d=sbsl:ml',
+      ]);
+    });
+
+    test('report + instagram endpoints pinned', () {
+      expect(kMaxReportEmail, 'techlabs.hyper@gmail.com');
+      expect(kMaxInstagramUrl, contains('instagram.com/maxplayer_official'));
     });
   });
 }

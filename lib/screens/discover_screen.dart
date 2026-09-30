@@ -16,6 +16,7 @@ import '../utils/tmdb_image.dart';
 import '../widgets/ai_suggest_sheet.dart';
 import '../widgets/cine_player.dart';
 import '../widgets/cine_ui.dart';
+import 'category_screen.dart';
 import 'movie_detail_screen.dart';
 
 /// "Discover" — OTT platform home, rebuilt from scratch (v1.0.1+15).
@@ -196,14 +197,23 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     if (!mounted) return;
     setState(() {
       if (result.items.isEmpty) {
-        r.failed = r.items.isEmpty;
+        // v1.0.1+46: an empty LATE page means the rail is exhausted —
+        // before, it retried the SAME page forever -> rails froze after
+        // a few pages instead of paging indefinitely.
+        if (page > 1) {
+          r.totalPages = r.page;
+        } else {
+          r.failed = true;
+        }
         return;
       }
       r.page = result.page;
       r.totalPages = result.totalPages;
       r.failed = false;
       for (final m in result.items) {
-        if (r.seen.add(m.id)) r.items.add(m);
+        // v1.0.1+46: ids parked in the hero / TOP 10 / an earlier
+        // category never re-appear ("one movie in 4 categories" fixed).
+        if (r.seen.add(m.id) && _seenShown.add(m.id)) r.items.add(m);
       }
     });
   }
@@ -220,6 +230,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       }
       _hero = const [];
       _pickedForYou = const [];
+      _seenShown.clear();
     });
     await Future.wait([
       for (final r in _rails) _fillRail(r, 1),
@@ -234,7 +245,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         .where((m) => (m.backdropPath ?? '').isNotEmpty)
         .toList();
     if (withBackdrop.length >= _hero.length || _hero.isEmpty) {
-      setState(() => _hero = withBackdrop.take(7).toList());
+      setState(() {
+        _hero = withBackdrop.take(7).toList();
+        for (final m in _hero) {
+          _seenShown.add(m.id);
+        }
+      });
     }
   }
 
@@ -253,10 +269,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       return; // tiny drifts away from the top don't re-evaluate
     }
     _lastHomePixels = pixels;
-    // v1.0.1+45: while scrolling DOWN the bar hides EVERYWHERE (the old
-    // "|| pixels < 80" re-showed it during a down-scroll through the top
-    // band — the "bar appears when I scroll down" complaint).
-    final shouldShow = delta < 0 || pixels <= 24;
+    // v1.0.1+46: the bar ONLY exists at the very top — once hidden it
+    // never re-appears mid-feed, on down- OR up-scrolls (user request:
+    // "scroll down hides (good), but scroll up re-shows (fix)").
+    final shouldShow = pixels <= 24;
     if (shouldShow != _topBarVisible) {
       setState(() => _topBarVisible = shouldShow);
     }
@@ -595,6 +611,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   /// v1.0.1+38: TOP 10 source — trending rail first, hero as filler,
   /// deduped, posters required.
+  /// v1.0.1+46: cross-section dedupe registry — hero, TOP 10 and every
+  /// category rail share this, so one title can never star in 4 places.
+  final Set<int> _seenShown = {};
+
   List<TmdbMovie> _topTenSource() {
     final out = <TmdbMovie>[];
     final seen = <int>{};
@@ -605,11 +625,28 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     for (final pool in pools) {
       for (final m in pool) {
         if ((m.posterPath ?? '').isEmpty) continue;
-        if (seen.add(m.id)) out.add(m);
+        if (_seenShown.contains(m.id)) continue; // never repeat the hero
+        if (seen.add(m.id)) {
+          out.add(m);
+          _seenShown.add(m.id);
+        }
         if (out.length == 10) return out;
       }
     }
     return out;
+  }
+
+  /// v1.0.1+46: tapping a category title opens its full-screen grid.
+  void _openCategory(_RailState r) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CategoryScreen(
+          title: r.title,
+          filter: r.filter,
+          videos: widget.videos,
+        ),
+      ),
+    );
   }
 
   Widget _buildOttHome() {
@@ -650,6 +687,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   child: CineTicker(),
                 ),
               ),
+            // v1.0.1+46: Instagram follow card directly under the slider.
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(12, 8, 12, 2),
+                child: CineInstagramCard(),
+              ),
+            ),
             // v1.0.1+38: TOP 10 ghost-numeral rail (trending source).
             if (_topTenSource().isNotEmpty)
               SliverToBoxAdapter(
@@ -688,6 +732,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     failed: r.failed,
                     onRetry: () => _fillRail(r, 1),
                     onTap: _openMovie,
+                    onSeeAll: () => _openCategory(r),
                   ),
                 ),
               ),
@@ -939,6 +984,7 @@ class _PosterRail extends StatelessWidget {
   final bool failed;
   final VoidCallback? onRetry;
   final ValueChanged<TmdbMovie> onTap;
+  final VoidCallback? onSeeAll;
 
   const _PosterRail({
     required this.title,
@@ -948,6 +994,7 @@ class _PosterRail extends StatelessWidget {
     this.failed = false,
     this.onRetry,
     required this.onTap,
+    this.onSeeAll,
   });
 
   @override
@@ -959,7 +1006,7 @@ class _PosterRail extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _RailHeader(title: title),
+          _RailHeader(title: title, onSeeAll: onSeeAll),
           SizedBox(
             height: _PosterRail.cardHeight,
             child: ListView.separated(
@@ -976,7 +1023,7 @@ class _PosterRail extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _RailHeader(title: title),
+        _RailHeader(title: title, onSeeAll: onSeeAll),
         SizedBox(
           height: _PosterRail.cardHeight,
           child: ListView.builder(
@@ -997,7 +1044,8 @@ class _PosterRail extends StatelessWidget {
 
 class _RailHeader extends StatelessWidget {
   final String title;
-  const _RailHeader({required this.title});
+  final VoidCallback? onSeeAll;
+  const _RailHeader({required this.title, this.onSeeAll});
 
   @override
   Widget build(BuildContext context) {
@@ -1027,11 +1075,38 @@ class _RailHeader extends StatelessWidget {
               ),
             ),
           ),
-          Icon(
-            Icons.chevron_right,
-            color: Colors.white.withValues(alpha: 0.35),
-            size: 18,
-          ),
+          if (onSeeAll == null)
+            Icon(
+              Icons.chevron_right,
+              color: Colors.white.withValues(alpha: 0.35),
+              size: 18,
+            )
+          else
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: onSeeAll,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Row(
+                  children: [
+                    Text(
+                      'SEE ALL',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.4,
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right,
+                      color: Colors.white.withValues(alpha: 0.55),
+                      size: 16,
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );

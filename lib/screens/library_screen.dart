@@ -3,6 +3,9 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../utils/config.dart';
 
 import '../app_info.dart';
 import '../theme.dart';
@@ -331,6 +334,25 @@ class _LibraryScreenState extends State<LibraryScreen> {
       case _MenuAction.privacy:
         showPrivacyPolicyDialog(context);
         break;
+      case _MenuAction.report:
+        unawaited(
+          launchUrl(
+            Uri.parse(
+              'mailto:$kMaxReportEmail'
+              '?subject=${Uri.encodeComponent('Max Player — report & feedback')}',
+            ),
+            mode: LaunchMode.externalApplication,
+          ),
+        );
+        break;
+      case _MenuAction.instagram:
+        unawaited(
+          launchUrl(
+            Uri.parse(kMaxInstagramUrl),
+            mode: LaunchMode.externalApplication,
+          ),
+        );
+        break;
     }
   }
 
@@ -546,6 +568,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   label: 'Privacy policy',
                 ),
               ),
+              PopupMenuItem(
+                value: _MenuAction.report,
+                height: 44,
+                child: _MenuRow(
+                  icon: Icons.flag_outlined,
+                  label: 'Report a problem',
+                ),
+              ),
+              PopupMenuItem(
+                value: _MenuAction.instagram,
+                height: 44,
+                child: _MenuRow(
+                  icon: Icons.camera_alt_outlined,
+                  label: 'Follow on Instagram',
+                ),
+              ),
               const PopupMenuDivider(height: 1),
               const PopupMenuItem(
                 value: _MenuAction.display,
@@ -723,7 +761,7 @@ class _Tile extends StatelessWidget {
   }
 }
 
-enum _MenuAction { display, stats, manual, about, privacy }
+enum _MenuAction { display, stats, manual, about, privacy, report, instagram }
 
 class _MenuRow extends StatelessWidget {
   const _MenuRow({required this.icon, required this.label});
