@@ -242,7 +242,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
         _videos
           ..clear()
           ..addAll(vids);
+        warmVideoThumbs(_videos); // +47: pre-decode the first screenful
       } else {
+        warmVideoThumbs(vids); // keep later pages warm too
         final merged = appendUnique(_videos, vids, (a) => a.id);
         if (merged.length != _videos.length) {
           _videos

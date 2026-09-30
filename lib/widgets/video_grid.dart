@@ -42,8 +42,12 @@ class VideoGrid extends StatefulWidget {
 
   /// Guarded open used everywhere a video starts (non-negotiable #2).
   /// Records history, hands off the queue when "Queue All" is enabled.
-  static Future<void> openVideo(BuildContext context, AssetEntity asset,
-      {LocalStore? store, List<AssetEntity>? queue}) async {
+  static Future<void> openVideo(
+    BuildContext context,
+    AssetEntity asset, {
+    LocalStore? store,
+    List<AssetEntity>? queue,
+  }) async {
     CrashLog.crumb('video.tap', {'id': asset.id, 'title': asset.title});
     try {
       final file = await asset.file;
@@ -51,17 +55,19 @@ class VideoGrid extends StatefulWidget {
       if (file == null || !file.existsSync()) {
         throw StateError('video file unavailable: ${asset.title}');
       }
-      unawaited((store ?? LocalStore()).addRecent(RecentItem(
-        id: asset.id,
-        title: asset.title ?? 'Video',
-        path: file.path,
-        ts: DateTime.now().millisecondsSinceEpoch,
-      )));
+      unawaited(
+        (store ?? LocalStore()).addRecent(
+          RecentItem(
+            id: asset.id,
+            title: asset.title ?? 'Video',
+            path: file.path,
+            ts: DateTime.now().millisecondsSinceEpoch,
+          ),
+        ),
+      );
       List<String> queueIds = const [];
       var start = 0;
-      if (AppSettings.instance.queueAll &&
-          queue != null &&
-          queue.isNotEmpty) {
+      if (AppSettings.instance.queueAll && queue != null && queue.isNotEmpty) {
         queueIds = queue.map((e) => e.id).toList();
         start = queueIds.indexOf(asset.id);
         if (start < 0) start = 0;
@@ -81,8 +87,9 @@ class VideoGrid extends StatefulWidget {
               'File': file.path,
               'Size': formatBytes(file.lengthSync()),
               'Resolution': '${info.w} × ${info.h} (${info.badge})',
-              'Duration (MediaStore)':
-                  formatDuration(Duration(seconds: asset.duration)),
+              'Duration (MediaStore)': formatDuration(
+                Duration(seconds: asset.duration),
+              ),
               if (asset.mimeType != null) 'MIME': asset.mimeType!,
             },
           ),
@@ -100,8 +107,11 @@ class VideoGrid extends StatefulWidget {
 
   /// Delete with system consent (MediaStore delete dialog on Android 11+),
   /// then scrub the id from every local store + resume point.
-  static Future<bool> deleteWithConsent(AssetEntity asset,
-      {LocalStore? store, ResumeStore? resumeStore}) async {
+  static Future<bool> deleteWithConsent(
+    AssetEntity asset, {
+    LocalStore? store,
+    ResumeStore? resumeStore,
+  }) async {
     CrashLog.crumb('video.delete_request', {'id': asset.id});
     try {
       final path = (await asset.file)?.path;
@@ -180,8 +190,10 @@ class _VideoGridState extends State<VideoGrid> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a24),
-        title: const Text('Move to Private folder?',
-            style: TextStyle(color: Colors.white, fontSize: 17)),
+        title: const Text(
+          'Move to Private folder?',
+          style: TextStyle(color: Colors.white, fontSize: 17),
+        ),
         content: Text(
           '"${a.title ?? 'This video'}" moves into the app\'s private folder '
           '- invisible to Gallery and file managers, visible here only after '
@@ -227,9 +239,9 @@ class _VideoGridState extends State<VideoGrid> {
             .toString()
             .replaceAll('FileSystemException: ', '')
             .replaceAll('Exception: ', '');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not hide: $why')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not hide: $why')));
       }
     }
     await _loadFlags();
@@ -245,8 +257,10 @@ class _VideoGridState extends State<VideoGrid> {
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: AppColors.border),
         ),
-        title: const Text('Delete video?',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 17)),
+        title: const Text(
+          'Delete video?',
+          style: TextStyle(color: AppColors.textPrimary, fontSize: 17),
+        ),
         content: Text(
           '"${a.title ?? 'This video'}" will be deleted from your device. '
           'Android will ask you to confirm.',
@@ -255,15 +269,18 @@ class _VideoGridState extends State<VideoGrid> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.danger,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Delete'),
@@ -274,9 +291,9 @@ class _VideoGridState extends State<VideoGrid> {
     if (yes != true || !mounted) return;
     final ok = await VideoGrid.deleteWithConsent(a, store: _store);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(ok ? 'Deleted' : 'Delete cancelled or failed'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ok ? 'Deleted' : 'Delete cancelled or failed')),
+      );
     }
     widget.onChanged();
   }
@@ -285,34 +302,46 @@ class _VideoGridState extends State<VideoGrid> {
     final pls = await _store.playlists();
     if (!mounted) return;
     if (pls.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content:
-              Text('No playlists yet — create one from the Playlists tile')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No playlists yet — create one from the Playlists tile',
+          ),
+        ),
+      );
       return;
     }
     final chosen = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text('Add to playlist',
-                  style: TextStyle(
-                      color: AppColors.accent,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700)),
+              child: Text(
+                'Add to playlist',
+                style: TextStyle(
+                  color: AppColors.accent,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
             for (final name in pls.keys)
               ListTile(
-                leading: Icon(Icons.playlist_play_rounded,
-                    color: AppColors.accent),
-                title: Text(name,
-                    style: const TextStyle(color: AppColors.textPrimary)),
+                leading: Icon(
+                  Icons.playlist_play_rounded,
+                  color: AppColors.accent,
+                ),
+                title: Text(
+                  name,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                ),
                 trailing: Icon(
                   pls[name]!.contains(a.id)
                       ? Icons.check_circle_rounded
@@ -331,9 +360,13 @@ class _VideoGridState extends State<VideoGrid> {
     if (chosen == null) return;
     final added = await _store.toggleInPlaylist(chosen, a.id);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content:
-              Text(added ? 'Added to "$chosen"' : 'Removed from "$chosen"')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            added ? 'Added to "$chosen"' : 'Removed from "$chosen"',
+          ),
+        ),
+      );
     }
     widget.onChanged();
   }
@@ -359,9 +392,10 @@ class _VideoGridState extends State<VideoGrid> {
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: AppColors.border),
         ),
-        title: Text(renamedTitleFor(a),
-            style:
-                const TextStyle(color: AppColors.textPrimary, fontSize: 15)),
+        title: Text(
+          renamedTitleFor(a),
+          style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+        ),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -369,16 +403,19 @@ class _VideoGridState extends State<VideoGrid> {
             children: [
               _prop('Resolution', '${info.w} × ${info.h} (${info.badge})'),
               _prop('Megapixels', '${mp.toStringAsFixed(1)} MP/video-frame'),
-              _prop('Duration',
-                  formatDuration(Duration(seconds: a.duration))),
+              _prop('Duration', formatDuration(Duration(seconds: a.duration))),
               _prop('Format', ext),
               if (a.mimeType != null) _prop('MIME', a.mimeType!),
               _prop('Size', formatBytes(size)),
               if (size > 0 && a.duration > 0)
-                _prop('Average bit rate',
-                    '${((size * 8) / a.duration / 1000).toStringAsFixed(0)} kbit/s'),
-              _prop('Location on device',
-                  file?.path ?? a.relativePath ?? 'unknown'),
+                _prop(
+                  'Average bit rate',
+                  '${((size * 8) / a.duration / 1000).toStringAsFixed(0)} kbit/s',
+                ),
+              _prop(
+                'Location on device',
+                file?.path ?? a.relativePath ?? 'unknown',
+              ),
               _prop('Created', fmtDate(a.createDateTime)),
               _prop('Modified', fmtDate(a.modifiedDateTime)),
               if (latlng != null)
@@ -389,8 +426,10 @@ class _VideoGridState extends State<VideoGrid> {
                   'Codec / frame-rate / track details: open the video and '
                   'tap the (i) button — the player reads them live from MPV.',
                   style: TextStyle(
-                      color: AppColors.textSecondary, fontSize: 11.5,
-                      height: 1.4),
+                    color: AppColors.textSecondary,
+                    fontSize: 11.5,
+                    height: 1.4,
+                  ),
                 ),
               ),
             ],
@@ -407,30 +446,35 @@ class _VideoGridState extends State<VideoGrid> {
   }
 
   Widget _prop(String k, String v) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text('$k:  $v',
-            style: const TextStyle(
-                color: AppColors.textSecondary, fontSize: 13)),
-      );
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(
+      '$k:  $v',
+      style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+    ),
+  );
 
   void _showActions(AssetEntity a) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
               padding: const EdgeInsets.all(14),
-              child: Text(renamedTitleFor(a),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.w700)),
+              child: Text(
+                renamedTitleFor(a),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
             _sheetAction(Icons.playlist_add_rounded, 'Add to playlist', () {
               Navigator.of(context).pop();
@@ -440,11 +484,14 @@ class _VideoGridState extends State<VideoGrid> {
               Navigator.of(context).pop();
               _rename(a);
             }),
-            _sheetAction(Icons.lock_outline_rounded, 'Move to Private folder',
-                () {
-              Navigator.of(context).pop();
-              _togglePrivate(a);
-            }),
+            _sheetAction(
+              Icons.lock_outline_rounded,
+              'Move to Private folder',
+              () {
+                Navigator.of(context).pop();
+                _togglePrivate(a);
+              },
+            ),
             _sheetAction(Icons.info_outline_rounded, 'Properties', () {
               Navigator.of(context).pop();
               unawaited(_properties(a));
@@ -460,16 +507,21 @@ class _VideoGridState extends State<VideoGrid> {
     );
   }
 
-  ListTile _sheetAction(IconData icon, String label, VoidCallback onTap,
-          {bool danger = false}) =>
-      ListTile(
-        leading:
-            Icon(icon, color: danger ? AppColors.danger : AppColors.accent),
-        title: Text(label,
-            style: TextStyle(
-                color: danger ? AppColors.danger : AppColors.textPrimary)),
-        onTap: onTap,
-      );
+  ListTile _sheetAction(
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    bool danger = false,
+  }) => ListTile(
+    leading: Icon(icon, color: danger ? AppColors.danger : AppColors.accent),
+    title: Text(
+      label,
+      style: TextStyle(
+        color: danger ? AppColors.danger : AppColors.textPrimary,
+      ),
+    ),
+    onTap: onTap,
+  );
 
   /// Renames the video through the Android platform (MediaStore on scoped
   /// storage, a direct file rename below that). A raw `File.rename` fails on
@@ -484,8 +536,9 @@ class _VideoGridState extends State<VideoGrid> {
       }
       final oldName = a.title ?? path.split('/').last;
       final dot = oldName.lastIndexOf('.');
-      final ext =
-          (dot > 0 && dot < oldName.length - 1) ? oldName.substring(dot) : '';
+      final ext = (dot > 0 && dot < oldName.length - 1)
+          ? oldName.substring(dot)
+          : '';
       final base = dot > 0 ? oldName.substring(0, dot) : oldName;
       final ctrl = TextEditingController(text: base);
       if (!mounted) return;
@@ -497,8 +550,10 @@ class _VideoGridState extends State<VideoGrid> {
             borderRadius: BorderRadius.circular(16),
             side: const BorderSide(color: AppColors.border),
           ),
-          title: const Text('Rename video',
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 17)),
+          title: const Text(
+            'Rename video',
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 17),
+          ),
           content: TextField(
             controller: ctrl,
             autofocus: true,
@@ -512,15 +567,18 @@ class _VideoGridState extends State<VideoGrid> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel',
-                  style: TextStyle(color: AppColors.textSecondary)),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
             ),
             FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.accent,
                 foregroundColor: AppColors.onAccent,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               onPressed: () => Navigator.of(context).pop(ctrl.text.trim()),
               child: const Text('Rename'),
@@ -534,14 +592,18 @@ class _VideoGridState extends State<VideoGrid> {
       if (File(targetPath).existsSync()) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('A file with that name exists')));
+            const SnackBar(content: Text('A file with that name exists')),
+          );
         }
         return;
       }
       final resume = ResumeStore();
       final saved = await resume.readMs(path);
       final renamed = await NativeBridge.renameVideo(
-          id: a.id, path: path, newName: newName);
+        id: a.id,
+        path: path,
+        newName: newName,
+      );
       if (!renamed) {
         throw const FileSystemException('Rename declined by the platform');
       }
@@ -561,8 +623,9 @@ class _VideoGridState extends State<VideoGrid> {
       kRenamedVideoTitles[a.id] = newName;
       if (mounted) {
         setState(() {});
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Renamed to "$newName"')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Renamed to "$newName"')));
       }
       resumeProgressCache.remove(a.id);
       widget.onChanged();
@@ -571,7 +634,10 @@ class _VideoGridState extends State<VideoGrid> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('Rename failed - the file may be protected or in use')),
+            content: Text(
+              'Rename failed - the file may be protected or in use',
+            ),
+          ),
         );
       }
     }
@@ -581,7 +647,12 @@ class _VideoGridState extends State<VideoGrid> {
     if (widget.onOpen != null) {
       widget.onOpen!(a);
     } else {
-      await VideoGrid.openVideo(context, a, store: _store, queue: widget.videos);
+      await VideoGrid.openVideo(
+        context,
+        a,
+        store: _store,
+        queue: widget.videos,
+      );
     }
     // Watched-progress bars must reflect the position the player just
     // saved — drop the memoized fractions so the next build re-reads them.
@@ -665,7 +736,9 @@ Future<double> resumeProgress(AssetEntity asset) =>
 final Map<String, Future<int>> videoSizeCache = {};
 
 Future<int> videoSize(AssetEntity asset) => videoSizeCache.putIfAbsent(
-    asset.id, () async => (await asset.file)?.length() ?? 0);
+  asset.id,
+  () async => (await asset.file)?.length() ?? 0,
+);
 
 /// Memoized thumbnail futures — MediaStore gets asked ONCE per asset, and
 /// a failed sized render falls back to an unscaled decode before giving
@@ -677,16 +750,37 @@ Future<Uint8List?> videoThumb(AssetEntity asset, ThumbnailSize size) =>
       try {
         final t = await asset.thumbnailDataWithSize(size);
         if (t != null) return t;
-      } catch (_) {/* fall through */}
+      } catch (_) {
+        /* fall through */
+      }
       try {
         return await asset.thumbnailDataWithOption(
           ThumbnailOption(
-              size: size, format: ThumbnailFormat.jpeg, quality: 90),
+            size: size,
+            format: ThumbnailFormat.jpeg,
+            quality: 75,
+          ),
         );
       } catch (_) {
         return null;
       }
     });
+
+/// v1.0.1+47: thumbnail WARM-UP — pre-decode the first [count] thumbs in
+/// the background right after a scan completes, so the grid's first
+/// screenful is already painted when the user looks (thumbs used to
+/// decode lazily per tile -> "home thumbnails load very slow").
+void warmVideoThumbs(
+  Iterable<AssetEntity> assets, {
+  int count = 18,
+  ThumbnailSize size = const ThumbnailSize(480, 480),
+}) {
+  var n = 0;
+  for (final a in assets) {
+    if (n++ >= count) break;
+    unawaited(videoThumb(a, size));
+  }
+}
 
 class _VideoRow extends StatelessWidget {
   const _VideoRow({
@@ -710,8 +804,7 @@ class _VideoRow extends StatelessWidget {
       child: ListTile(
         onTap: onTap,
         onLongPress: onLongPress,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(10),
           child: SizedBox(
@@ -725,11 +818,12 @@ class _VideoRow extends StatelessWidget {
             ),
           ),
         ),
-        title: Text(renamedTitleFor(asset),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style:
-                const TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+        title: Text(
+          renamedTitleFor(asset),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -739,7 +833,9 @@ class _VideoRow extends StatelessWidget {
               builder: (context, snap) => Text(
                 '${snap.data ?? qualityBadge(asset.width, asset.height)} · ${formatDuration(Duration(seconds: asset.duration))}',
                 style: const TextStyle(
-                    color: AppColors.textSecondary, fontSize: 11.5),
+                  color: AppColors.textSecondary,
+                  fontSize: 11.5,
+                ),
               ),
             ),
             const SizedBox(height: 5),
@@ -753,8 +849,7 @@ class _VideoRow extends StatelessWidget {
                   if (frac <= 0) return const SizedBox.shrink();
                   return Stack(
                     children: [
-                      Container(
-                          color: Colors.white.withValues(alpha: 0.18)),
+                      Container(color: Colors.white.withValues(alpha: 0.18)),
                       FractionallySizedBox(
                         alignment: Alignment.centerLeft,
                         widthFactor: frac,
@@ -823,9 +918,12 @@ class _VideoCard extends StatelessWidget {
                     future: videoThumb(asset, const ThumbnailSize(480, 480)),
                     builder: (context, snap) =>
                         snap.hasError || snap.data == null
-                            ? const _ThumbFallback()
-                            : Image.memory(snap.data!,
-                                fit: BoxFit.cover, gaplessPlayback: true),
+                        ? const _ThumbFallback()
+                        : Image.memory(
+                            snap.data!,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                          ),
                   ),
                   // Quality badge (e.g. "1080p"), top-left like VLC.
                   Positioned(
@@ -835,7 +933,9 @@ class _VideoCard extends StatelessWidget {
                       future: resolvedQualityBadge(asset),
                       builder: (context, snap) => Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 2),
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.7),
                           borderRadius: BorderRadius.circular(4),
@@ -878,7 +978,9 @@ class _VideoCard extends StatelessWidget {
                     bottom: 6,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.7),
                         borderRadius: BorderRadius.circular(4),
@@ -886,7 +988,9 @@ class _VideoCard extends StatelessWidget {
                       child: Text(
                         formatDuration(Duration(seconds: asset.duration)),
                         style: const TextStyle(
-                            fontSize: 11, color: Colors.white),
+                          fontSize: 11,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -905,7 +1009,8 @@ class _VideoCard extends StatelessWidget {
                           child: Stack(
                             children: [
                               Container(
-                                  color: Colors.white.withValues(alpha: 0.25)),
+                                color: Colors.white.withValues(alpha: 0.25),
+                              ),
                               FractionallySizedBox(
                                 alignment: Alignment.centerLeft,
                                 widthFactor: frac,
@@ -930,9 +1035,10 @@ class _VideoCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   FutureBuilder<int>(
@@ -942,8 +1048,9 @@ class _VideoCard extends StatelessWidget {
                           ? formatBytes(snap.data!)
                           : ' ',
                       style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.white.withValues(alpha: 0.5)),
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
                     ),
                   ),
                 ],
@@ -965,8 +1072,11 @@ class _ThumbFallback extends StatelessWidget {
     return const ColoredBox(
       color: AppColors.surfaceAlt,
       child: Center(
-        child: Icon(Icons.videocam_outlined,
-            color: AppColors.textSecondary, size: 34),
+        child: Icon(
+          Icons.videocam_outlined,
+          color: AppColors.textSecondary,
+          size: 34,
+        ),
       ),
     );
   }

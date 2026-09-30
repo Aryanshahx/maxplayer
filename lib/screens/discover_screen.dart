@@ -213,7 +213,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       for (final m in result.items) {
         // v1.0.1+46: ids parked in the hero / TOP 10 / an earlier
         // category never re-appear ("one movie in 4 categories" fixed).
-        if (r.seen.add(m.id) && _seenShown.add(m.id)) r.items.add(m);
+        if (r.seen.add(m.id) && _seenRails.add(m.id)) r.items.add(m);
       }
     });
   }
@@ -230,7 +230,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       }
       _hero = const [];
       _pickedForYou = const [];
-      _seenShown.clear();
+      _seenRails.clear();
     });
     await Future.wait([
       for (final r in _rails) _fillRail(r, 1),
@@ -245,12 +245,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         .where((m) => (m.backdropPath ?? '').isNotEmpty)
         .toList();
     if (withBackdrop.length >= _hero.length || _hero.isEmpty) {
-      setState(() {
-        _hero = withBackdrop.take(7).toList();
-        for (final m in _hero) {
-          _seenShown.add(m.id);
-        }
-      });
+      setState(() => _hero = withBackdrop.take(7).toList());
     }
   }
 
@@ -611,9 +606,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   /// v1.0.1+38: TOP 10 source — trending rail first, hero as filler,
   /// deduped, posters required.
-  /// v1.0.1+46: cross-section dedupe registry — hero, TOP 10 and every
-  /// category rail share this, so one title can never star in 4 places.
-  final Set<int> _seenShown = {};
+  /// v1.0.1+47: rails-ONLY cross-category dedupe (TOP 10 owns its own
+  /// pool and must NEVER consult this — at +46 sharing the registry
+  /// starved the TOP 10 to empty and it vanished).
+  final Set<int> _seenRails = {};
 
   List<TmdbMovie> _topTenSource() {
     final out = <TmdbMovie>[];
@@ -625,11 +621,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     for (final pool in pools) {
       for (final m in pool) {
         if ((m.posterPath ?? '').isEmpty) continue;
-        if (_seenShown.contains(m.id)) continue; // never repeat the hero
-        if (seen.add(m.id)) {
-          out.add(m);
-          _seenShown.add(m.id);
-        }
+        if (seen.add(m.id)) out.add(m);
         if (out.length == 10) return out;
       }
     }
