@@ -1250,21 +1250,89 @@ class _TopTenCardState extends State<_TopTenCard> {
 /// v1.0.1+46: Instagram follow card shown under the featured slider.
 /// Gradient ring = the Instagram brand band; tap opens the profile in
 /// the Instagram app / browser (external).
-/// v1.0.1+48: slim social card (fits two side-by-side under the slider).
+/// v1.0.1+49: real Instagram glyph (rounded square + lens + flash dot),
+/// drawn in code — no asset files needed.
+class _InstagramLogoPainter extends CustomPainter {
+  const _InstagramLogoPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.12
+      ..strokeCap = StrokeCap.round;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Offset.zero & size,
+        Radius.circular(size.width * 0.28),
+      ),
+      stroke,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.5, size.height * 0.5),
+      size.width * 0.22,
+      stroke,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.74, size.height * 0.27),
+      size.width * 0.08,
+      Paint()..color = Colors.white,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// v1.0.1+49: real Telegram paper-plane glyph, drawn in code.
+class _TelegramLogoPainter extends CustomPainter {
+  const _TelegramLogoPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final plane = Path()
+      ..moveTo(w * 0.10, h * 0.50)
+      ..lineTo(w * 0.92, h * 0.14)
+      ..lineTo(w * 0.70, h * 0.88)
+      ..lineTo(w * 0.50, h * 0.64)
+      ..lineTo(w * 0.34, h * 0.74)
+      ..lineTo(w * 0.38, h * 0.56)
+      ..close();
+    canvas.drawPath(plane, Paint()..color = Colors.white);
+    // wing-fold crease so it reads as a paper plane
+    canvas.drawLine(
+      Offset(w * 0.50, h * 0.64),
+      Offset(w * 0.92, h * 0.14),
+      Paint()
+        ..color = const Color(0xFF2AABEE)
+        ..strokeWidth = w * 0.055
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// v1.0.1+49: slim social card — real brand badge + handle. The whole
+/// card is the button (FOLLOW/JOIN chips removed).
 class _SocialCard extends StatelessWidget {
   const _SocialCard({
     required this.url,
     required this.handle,
     required this.kicker,
-    required this.cta,
-    required this.icon,
+    required this.badgeColors,
+    required this.badgePainter,
   });
 
   final String url;
   final String handle;
   final String kicker;
-  final String cta;
-  final IconData icon;
+  final List<Color> badgeColors;
+  final CustomPainter badgePainter;
 
   @override
   Widget build(BuildContext context) {
@@ -1294,17 +1362,22 @@ class _SocialCard extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
-                decoration: const BoxDecoration(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [kCinePurple, kCinePink, kCineAmber],
+                    colors: badgeColors,
                   ),
                 ),
-                child: Icon(icon, color: Colors.white, size: 17),
+                child: Center(
+                  child: CustomPaint(
+                    size: const Size(17, 17),
+                    painter: badgePainter,
+                  ),
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -1334,16 +1407,7 @@ class _SocialCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Text(
-                cta,
-                style: const TextStyle(
-                  color: kCineCyan,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.0,
-                ),
-              ),
-              const Icon(Icons.chevron_right, color: kCineCyan, size: 16),
+              const Icon(Icons.open_in_new_rounded, color: kCineCyan, size: 15),
             ],
           ),
         ),
@@ -1361,8 +1425,8 @@ class CineInstagramCard extends StatelessWidget {
     url: kMaxInstagramUrl,
     handle: '@maxplayer_official',
     kicker: 'FOLLOW ON INSTAGRAM',
-    cta: 'FOLLOW',
-    icon: Icons.camera_alt_rounded,
+    badgeColors: [Color(0xFF405DE6), Color(0xFFC13584), Color(0xFFF77737)],
+    badgePainter: _InstagramLogoPainter(),
   );
 }
 
@@ -1376,7 +1440,7 @@ class CineTelegramCard extends StatelessWidget {
     url: kMaxTelegramUrl,
     handle: '@maxofficial_channel',
     kicker: 'JOIN ON TELEGRAM',
-    cta: 'JOIN',
-    icon: Icons.send_rounded,
+    badgeColors: [Color(0xFF37AEE2), Color(0xFF1E96C8)],
+    badgePainter: _TelegramLogoPainter(),
   );
 }

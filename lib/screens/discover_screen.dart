@@ -683,7 +683,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             // Instagram | Telegram, side by side.
             const SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.fromLTRB(12, 8, 12, 2),
+                padding: EdgeInsets.fromLTRB(12, 10, 12, 18),
                 child: Row(
                   children: [
                     Expanded(child: CineInstagramCard()),
