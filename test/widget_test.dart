@@ -1870,6 +1870,7 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
     test('report + instagram endpoints pinned', () {
       expect(kMaxReportEmail, 'techlabs.hyper@gmail.com');
       expect(kMaxInstagramUrl, contains('instagram.com/maxplayer_official'));
+      expect(kMaxTelegramUrl, 'https://t.me/maxofficial_channel');
     });
   });
 }

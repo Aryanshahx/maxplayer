@@ -7,6 +7,7 @@
 const kMaxReportEmail = 'techlabs.hyper@gmail.com';
 const kMaxInstagramUrl =
     'https://www.instagram.com/maxplayer_official?stkn=MWZpbjQxNWNqbWU0eQ==';
+const kMaxTelegramUrl = 'https://t.me/maxofficial_channel';
 
 class AppConfig {
   AppConfig._();

@@ -679,11 +679,18 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   child: CineTicker(),
                 ),
               ),
-            // v1.0.1+46: Instagram follow card directly under the slider.
+            // v1.0.1+48: social row directly under the slider —
+            // Instagram | Telegram, side by side.
             const SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.fromLTRB(12, 8, 12, 2),
-                child: CineInstagramCard(),
+                child: Row(
+                  children: [
+                    Expanded(child: CineInstagramCard()),
+                    SizedBox(width: 8),
+                    Expanded(child: CineTelegramCard()),
+                  ],
+                ),
               ),
             ),
             // v1.0.1+38: TOP 10 ghost-numeral rail (trending source).

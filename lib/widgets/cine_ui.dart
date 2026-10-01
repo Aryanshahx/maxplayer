@@ -404,7 +404,15 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
     final mq = MediaQuery.of(context);
     // v1.0.1+42/+45: ~60% viewport hero (the +43 split layout and the
     // +44 art-shift are REVERTED).
-    final h = (mq.size.height * 0.60).clamp(400.0, mq.size.height);
+    final landscape = mq.size.width > mq.size.height;
+    // v1.0.1+48: LANDSCAPE hero goes SIDE-BY-SIDE (art left / copy
+    // right) — the bottom-anchored portrait copy column was TALLER than
+    // a 60vh landscape hero, so the title/meta escaped upward into the
+    // floating search bar and everything visually overlapped.
+    final h = (mq.size.height * (landscape ? 0.92 : 0.60)).clamp(
+      mq.size.height * 0.5,
+      mq.size.height,
+    );
     if (items.isEmpty) return const SizedBox.shrink();
     // v1.0.1+45 tablet/landscape guard: on short viewports the bottom
     // copy column was taller than the space left for it, so the title
@@ -413,6 +421,141 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
     final compact = h < 560;
     final m = items[_index.clamp(0, items.length - 1)];
     final backdrop = tmdbBackdropUrl(m.backdropPath);
+
+    // LANDSCAPE: art occupies the LEFT 55%; title/meta/PLAY NOW/pills
+    // sit centered in the RIGHT 45% on the plain background — nothing
+    // can escape into the search bar (which floats over art only) or
+    // the ticker strip below.
+    if (landscape) {
+      return SizedBox(
+        height: h,
+        width: double.infinity,
+        child: Stack(
+          children: [
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: mq.size.width * 0.55,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => widget.onOpen(m),
+                    child: AnimatedSwitcher(
+                      duration: kCineHeroCrossfade,
+                      child: KeyedSubtree(
+                        key: ValueKey('hero_${m.id}'),
+                        child: AnimatedBuilder(
+                          animation: _slide,
+                          builder: (context, _) {
+                            final scale = 1.15 - 0.15 * _slide.value;
+                            return Transform.scale(
+                              scale: scale,
+                              child: backdrop.isEmpty
+                                  ? const ColoredBox(color: kCineInk)
+                                  : TmdbImage(url: backdrop, fit: BoxFit.cover),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.center,
+                        colors: [Color(0x80050506), Colors.transparent],
+                      ),
+                    ),
+                  ),
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: SizedBox(
+                      width: 90,
+                      height: double.infinity,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.centerRight,
+                            end: Alignment.centerLeft,
+                            colors: [kCineInk, Colors.transparent],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // tap-to-detail anywhere (kept above art/veils, below copy)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () => widget.onOpen(m),
+                child: const SizedBox.expand(),
+              ),
+            ),
+            Positioned(
+              left: mq.size.width * 0.55,
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 16, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Spacer(),
+                    _staggered(
+                      1,
+                      Text(
+                        m.title.toUpperCase(),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: _landscapeTitleStyle(context),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _staggered(2, _metaRow(m)),
+                    if (m.overview.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _staggered(
+                        3,
+                        Text(
+                          m.overview,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.4,
+                            color: Colors.white.withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    _staggered(4, _buttonRow(m)),
+                    if (items.length > 1) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < items.length; i++) _pill(i),
+                        ],
+                      ),
+                    ],
+                    const Spacer(),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return SizedBox(
       height: h,
@@ -542,6 +685,14 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
             ),
         ],
       ),
+    );
+  }
+
+  TextStyle _landscapeTitleStyle(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final size = (w * 0.04).clamp(28.0, 52.0);
+    return cineDisplay(size, Colors.white).copyWith(
+      shadows: const [Shadow(color: Color(0xB3000000), blurRadius: 40)],
     );
   }
 
@@ -1099,8 +1250,21 @@ class _TopTenCardState extends State<_TopTenCard> {
 /// v1.0.1+46: Instagram follow card shown under the featured slider.
 /// Gradient ring = the Instagram brand band; tap opens the profile in
 /// the Instagram app / browser (external).
-class CineInstagramCard extends StatelessWidget {
-  const CineInstagramCard({super.key});
+/// v1.0.1+48: slim social card (fits two side-by-side under the slider).
+class _SocialCard extends StatelessWidget {
+  const _SocialCard({
+    required this.url,
+    required this.handle,
+    required this.kicker,
+    required this.cta,
+    required this.icon,
+  });
+
+  final String url;
+  final String handle;
+  final String kicker;
+  final String cta;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -1110,18 +1274,15 @@ class CineInstagramCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => unawaited(
-          launchUrl(
-            Uri.parse(kMaxInstagramUrl),
-            mode: LaunchMode.externalApplication,
-          ),
+          launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
         ),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: kCinePink.withValues(alpha: 0.6),
-              width: 1.4,
+              color: kCinePink.withValues(alpha: 0.55),
+              width: 1.2,
             ),
             gradient: LinearGradient(
               colors: [
@@ -1133,8 +1294,8 @@ class CineInstagramCard extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 32,
+                height: 32,
                 decoration: const BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
@@ -1143,60 +1304,79 @@ class CineInstagramCard extends StatelessWidget {
                     colors: [kCinePurple, kCinePink, kCineAmber],
                   ),
                 ),
-                child: const Icon(
-                  Icons.camera_alt_rounded,
-                  color: Colors.white,
-                  size: 21,
-                ),
+                child: Icon(icon, color: Colors.white, size: 17),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '@maxplayer_official',
-                      style: TextStyle(
+                    Text(
+                      handle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 14,
+                        fontSize: 11.5,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 2),
                     Text(
-                      'FOLLOW US ON INSTAGRAM',
+                      kicker,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: cineMono(
-                        9,
-                        Colors.white.withValues(alpha: 0.55),
-                        letterSpacing: 1.8,
+                        8,
+                        Colors.white.withValues(alpha: 0.5),
+                        letterSpacing: 1.4,
                       ),
                     ),
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'FOLLOW',
-                  style: TextStyle(
-                    color: Colors.black,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.2,
-                  ),
+              Text(
+                cta,
+                style: const TextStyle(
+                  color: kCineCyan,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.0,
                 ),
               ),
+              const Icon(Icons.chevron_right, color: kCineCyan, size: 16),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+/// v1.0.1+46: Instagram follow card under the featured slider.
+class CineInstagramCard extends StatelessWidget {
+  const CineInstagramCard({super.key});
+
+  @override
+  Widget build(BuildContext context) => const _SocialCard(
+    url: kMaxInstagramUrl,
+    handle: '@maxplayer_official',
+    kicker: 'FOLLOW ON INSTAGRAM',
+    cta: 'FOLLOW',
+    icon: Icons.camera_alt_rounded,
+  );
+}
+
+/// v1.0.1+48: Telegram channel card (sits beside Instagram under the
+/// featured slider).
+class CineTelegramCard extends StatelessWidget {
+  const CineTelegramCard({super.key});
+
+  @override
+  Widget build(BuildContext context) => const _SocialCard(
+    url: kMaxTelegramUrl,
+    handle: '@maxofficial_channel',
+    kicker: 'JOIN ON TELEGRAM',
+    cta: 'JOIN',
+    icon: Icons.send_rounded,
+  );
 }
