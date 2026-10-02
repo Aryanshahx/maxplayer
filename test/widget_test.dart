@@ -4,6 +4,7 @@ import 'package:http_parser/http_parser.dart' show MediaType;
 import 'package:maxplayer/theme.dart';
 import 'package:maxplayer/widgets/cine_ui.dart';
 
+import 'package:maxplayer/services/ad_service.dart';
 import 'package:maxplayer/utils/config.dart';
 import 'package:maxplayer/widgets/cine_player.dart';
 import 'package:maxplayer/screens/history_screen.dart' show timeAgo;
@@ -1871,6 +1872,14 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(kMaxReportEmail, 'techlabs.hyper@gmail.com');
       expect(kMaxInstagramUrl, contains('instagram.com/maxplayer_official'));
       expect(kMaxTelegramUrl, 'https://t.me/maxofficial_channel');
+
+      // v1.0.1+50: ads are TEST units until release + capped once/session.
+      expect(AdService.bannerId, 'ca-app-pub-3940256099942544/6300978111');
+      expect(
+        AdService.interstitialId,
+        'ca-app-pub-3940256099942544/1033173712',
+      );
+      expect(AdService.kMaxInterstitialsPerSession, 1);
     });
   });
 }

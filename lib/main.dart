@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -6,6 +8,7 @@ import 'screens/library_screen.dart';
 import 'services/native_bridge.dart';
 import 'theme.dart';
 import 'utils/crash_log.dart';
+import 'services/ad_service.dart';
 import 'utils/settings.dart';
 
 /// Root navigator key (kept for future system-level pushes; the
@@ -26,6 +29,9 @@ Future<void> main() async {
   NativeBridge.ensureNativeHandler();
   CrashLog.crumb('app.start');
   runApp(const MaxPlayerApp());
+  // v1.0.1+50: AdMob warms up AFTER the first frame — it can never
+  // block or crash startup (no Play services? → the app stays ad-free).
+  unawaited(AdService.instance.safeInit());
 }
 
 class MaxPlayerApp extends StatelessWidget {
@@ -49,4 +55,3 @@ class MaxPlayerApp extends StatelessWidget {
     );
   }
 }
-

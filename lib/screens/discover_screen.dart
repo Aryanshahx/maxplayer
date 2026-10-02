@@ -8,6 +8,7 @@ import 'package:photo_manager/photo_manager.dart';
 import '../services/native_bridge.dart';
 import '../services/recommendations.dart';
 import '../theme.dart';
+import '../services/ad_service.dart';
 import '../utils/config.dart';
 import '../utils/local_store.dart';
 import '../utils/movie_match.dart';
@@ -446,6 +447,19 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                             )
                           : const SizedBox(width: double.infinity),
                     ),
+                  ),
+                ),
+                // v1.0.1+50: AdMob banner docked at the very bottom.
+                // The slot is zero-height until an ad is really loaded,
+                // and stays collapsed on failure — it can never cover
+                // content with a dead placeholder.
+                const Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: SafeArea(
+                    top: false,
+                    child: Center(child: CineBannerSlot()),
                   ),
                 ),
                 // v1.0.1+38: cinematic boot curtain (once per open).

@@ -25,6 +25,7 @@ import '../services/native_bridge.dart';
 import 'player_screen.dart';
 import 'audio_screen.dart';
 import 'cloud_storage_screen.dart';
+import '../services/ad_service.dart';
 import 'discover_screen.dart';
 import 'display_settings_screen.dart';
 import 'folders_screen.dart';
@@ -407,8 +408,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
           child: DiscoverBanner(
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => DiscoverScreen(videos: videos)),
+            // v1.0.1+50: test interstitial before Discover (capped at one
+            // per session; user is NEVER blocked if no ad is ready).
+            onTap: () => AdService.instance.showInterstitialThenProceed(
+              () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => DiscoverScreen(videos: videos),
+                ),
+              ),
             ),
           ),
         ),
