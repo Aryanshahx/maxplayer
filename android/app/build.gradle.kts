@@ -80,7 +80,9 @@ android {
             // AdMob SDK touches BEFORE runApp() (see proguard-rules.pro).
             isMinifyEnabled = true
             proguardFiles(
-                getDefaultProguardFile("proguard-android.txt"),
+                // AGP 9 rejects the legacy "proguard-android.txt" (it carries
+                // -dontoptimize, which disables R8) — use the optimize variant.
+                getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
             // Play Store: sign with the upload keystore from key.properties
