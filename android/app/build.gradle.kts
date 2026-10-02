@@ -75,6 +75,14 @@ android {
 
     buildTypes {
         release {
+            // v1.0.1+52: R8 runs on release; the rules file keeps the
+            // androidx.startup / Room / WorkManager / GMS classes the
+            // AdMob SDK touches BEFORE runApp() (see proguard-rules.pro).
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android.txt"),
+                "proguard-rules.pro",
+            )
             // Play Store: sign with the upload keystore from key.properties
             // when present; otherwise fall back to the debug key so local
             // `flutter run --release` keeps working.
