@@ -37,7 +37,7 @@
         android:requestLegacyExternalStorage="true">
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713" /><!-- TEST: swap to your real AdMob App ID -->
+            android:value="ca-app-pub-8874449394681109~9733138875" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -1873,12 +1873,19 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(kMaxInstagramUrl, contains('instagram.com/maxplayer_official'));
       expect(kMaxTelegramUrl, 'https://t.me/maxofficial_channel');
 
-      // v1.0.1+50: ads are TEST units until release + capped once/session.
+      // v1.0.1+55: REAL ids in release, TEST ids in debug (tests run in
+      // kDebugMode -> the test units must always resolve here).
       expect(AdService.bannerId, 'ca-app-pub-3940256099942544/6300978111');
       expect(
         AdService.interstitialId,
         'ca-app-pub-3940256099942544/1033173712',
       );
+      expect(AdService.kRealBannerId, 'ca-app-pub-8874449394681109/7278195452');
+      expect(
+        AdService.kRealInterstitialId,
+        'ca-app-pub-8874449394681109/5318157235',
+      );
+      expect(AdService.kRealAppId, 'ca-app-pub-8874449394681109~9733138875');
       expect(AdService.kMaxInterstitialsPerSession, 1);
     });
   });

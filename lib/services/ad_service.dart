@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
@@ -24,9 +25,19 @@ class AdService {
   static const String kTestInterstitialId =
       'ca-app-pub-3940256099942544/1033173712';
 
-  /// SWAP THESE to your real AdMob unit ids before release.
-  static const String bannerId = kTestBannerId;
-  static const String interstitialId = kTestInterstitialId;
+  /// REAL (production) unit ids — v1.0.1+55.
+  static const String kRealAppId = 'ca-app-pub-8874449394681109~9733138875';
+  static const String kRealBannerId = 'ca-app-pub-8874449394681109/7278195452';
+  static const String kRealInterstitialId =
+      'ca-app-pub-8874449394681109/5318157235';
+
+  /// Release builds use the REAL units; debug/development builds keep the
+  /// Google TEST units — clicking real ads during development is how an
+  /// AdMob account gets banned, so debug can never reach the real ones.
+  static const String bannerId = kDebugMode ? kTestBannerId : kRealBannerId;
+  static const String interstitialId = kDebugMode
+      ? kTestInterstitialId
+      : kRealInterstitialId;
 
   /// Becomes true once the Google Mobile Ads SDK is initialized — the
   /// banner slot listens to this before attempting any load.
