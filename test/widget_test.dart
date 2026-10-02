@@ -1886,7 +1886,7 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
         'ca-app-pub-8874449394681109/5318157235',
       );
       expect(AdService.kRealAppId, 'ca-app-pub-8874449394681109~9733138875');
-      expect(AdService.kMaxInterstitialsPerSession, 1);
+      expect(AdService.kMaxInterstitialsPerSession, 3);
     });
   });
 }

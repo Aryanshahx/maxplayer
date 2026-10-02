@@ -638,13 +638,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
     // File Manager tile was replaced by Audio, and the positions of Cloud
     // Storage and Audio were interchanged. Ordering is unit-tested.
     final actions = <String, VoidCallback>{
-      'privateSpace': () => push(PrivateScreen(libraryVideos: _videos)),
+      // v1.0.1+56: interstitial gate (session-capped; never blocks).
+      'privateSpace': () => AdService.instance.showInterstitialThenProceed(
+        () => push(PrivateScreen(libraryVideos: _videos)),
+      ),
       'playlists': () => push(const PlaylistsScreen()),
       'folders': () => push(const FoldersScreen()),
       'audio': () => push(const AudioScreen()),
       'networkStorage': () => push(const NetworkStorageScreen()),
       'cloudStorage': () => push(const CloudStorageScreen()),
-      'openStream': () => push(const OpenStreamScreen()),
+      // v1.0.1+56: interstitial gate (session-capped; never blocks).
+      'openStream': () => AdService.instance.showInterstitialThenProceed(
+        () => push(const OpenStreamScreen()),
+      ),
       'quickShare': () => push(const QuickShareScreen()),
     };
 

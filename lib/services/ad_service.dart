@@ -49,9 +49,10 @@ class AdService {
   InterstitialAd? _interstitial;
   bool _interstitialLoading = false;
 
-  /// Frequency cap: at most one interstitial per app session so testing
-  /// never becomes nag-ware.
-  static const int kMaxInterstitialsPerSession = 1;
+  /// Frequency cap: at most this many interstitials per app session —
+  /// enough for the Discover/Private-folder/Open-Stream touchpoints,
+  /// never nag-ware.
+  static const int kMaxInterstitialsPerSession = 3;
   int _interstitialShownThisSession = 0;
 
   /// Fire after runApp(). Never throws, never blocks startup.
