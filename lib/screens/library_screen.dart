@@ -26,6 +26,8 @@ import 'player_screen.dart';
 import 'audio_screen.dart';
 import 'cloud_storage_screen.dart';
 import '../services/ad_service.dart';
+import '../services/app_analytics.dart';
+import '../widgets/invite_card.dart';
 import 'discover_screen.dart';
 import 'display_settings_screen.dart';
 import 'folders_screen.dart';
@@ -136,8 +138,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Future<void> _maybeShowOnboarding() async {
     final seen = await Onboarding.hasSeen();
     if (!seen && mounted) {
-      await Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => const OnboardingFlow()));
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const OnboardingFlow()));
     }
   }
 
@@ -409,14 +412,23 @@ class _LibraryScreenState extends State<LibraryScreen> {
           child: DiscoverBanner(
             // v1.0.1+50: test interstitial before Discover (capped at one
             // per session; user is NEVER blocked if no ad is ready).
-            onTap: () => AdService.instance.showInterstitialThenProceed(
-              () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => DiscoverScreen(videos: videos),
+            onTap: () {
+              AppAnalytics.instance.log('discover_opened');
+              AdService.instance.showInterstitialThenProceed(
+                () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => DiscoverScreen(videos: videos),
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
+        ),
+        // v1.0.1+58: Invite & Earn card (refer-and-earn: 3 friends ->
+        // 6 months ad-free, stacking).
+        const Padding(
+          padding: EdgeInsets.fromLTRB(12, 0, 12, 12),
+          child: InviteCard(),
         ),
         // v28-old: the quick tiles slide away when scrolling down.
         ClipRect(
@@ -515,8 +527,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
           _headIcon(
             Icons.search,
             'Search',
-            () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const SearchScreen())),
+            () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const SearchScreen())),
           ),
           _headIcon(Icons.sync, 'Refresh', _load),
           _headIcon(
@@ -629,10 +642,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   int _tilePage = 0;
 
   Widget _buildTiles() {
-    void push(Widget page) =>
-        Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => page))
-            .then((_) => _refresh());
+    void push(Widget page) => Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => page)).then((_) => _refresh());
 
     // v1.0.20: tiles are DATA-DRIVEN (lib/utils/quick_tiles.dart) — the
     // File Manager tile was replaced by Audio, and the positions of Cloud

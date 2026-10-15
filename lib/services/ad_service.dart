@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import 'referral_service.dart';
+
 /// v1.0.1+50: AdMob wiring — SAFE BY CONSTRUCTION.
 ///
 /// - TEST ad unit ids below; swap the two constants + the manifest
@@ -46,6 +48,13 @@ class AdService {
   bool _initializing = false;
   bool _initialized = false;
 
+  /// v1.0.1+57/58: Google UMP consent (GDPR — EEA/UK). When the user's
+  /// region REQUIRES a consent decision and hasn't given one, we don't
+  /// initialize the ads SDK at all: banners stay collapsed, the
+  /// interstitial always proceeds, the app works ad-free for them.
+  bool _adsAllowed = true;
+  bool _umpHandled = false;
+
   InterstitialAd? _interstitial;
   bool _interstitialLoading = false;
 
@@ -60,6 +69,17 @@ class AdService {
     if (_initialized || _initializing) return;
     _initializing = true;
     try {
+      // v1.0.1+58: Refer & Earn reward — ad-free owners skip the SDK
+      // entirely (every ad surface re-checks mid-session too).
+      if (ReferralService.adsFree.value) {
+        debugPrint('Ad-free reward active — ads SDK stays asleep');
+        return;
+      }
+      await _handleUmpConsent(); // GDPR gate — BEFORE the ads SDK wakes
+      if (!_adsAllowed) {
+        debugPrint('UMP: ads not permitted (consent required & not given)');
+        return; // ready stays false -> every ad surface stays collapsed
+      }
       await MobileAds.instance.initialize();
       _initialized = true;
       ready.value = true;
@@ -69,6 +89,44 @@ class AdService {
       debugPrint('AdMob init skipped (no Play services?): $e');
     } finally {
       _initializing = false;
+    }
+  }
+
+  /// v1.0.1+57: Google UMP flow — request consent info, then show the
+  /// consent form IF the user's region/setup requires it (EEA/UK with a
+  /// Privacy message configured in AdMob). Non-EEA users: resolves
+  /// instantly and invisibly. Debug builds fake EEA geography so the
+  /// dialog can be tested anywhere.
+  Future<void> _handleUmpConsent() async {
+    if (_umpHandled) return;
+    _umpHandled = true;
+    try {
+      final done = Completer<void>();
+      ConsentInformation.instance.requestConsentInfoUpdate(
+        ConsentRequestParameters(
+          consentDebugSettings: kDebugMode
+              ? ConsentDebugSettings(
+                  debugGeography: DebugGeography.debugGeographyEea,
+                )
+              : null,
+        ),
+        () async {
+          ConsentForm.loadAndShowConsentFormIfRequired((error) {
+            if (error != null) debugPrint('UMP form error: $error');
+            if (!done.isCompleted) done.complete();
+          });
+        },
+        (FormError error) {
+          debugPrint('UMP info update failed: ${error.message}');
+          if (!done.isCompleted) done.complete();
+        },
+      );
+      await done.future;
+      final canRequest = await ConsentInformation.instance.canRequestAds();
+      _adsAllowed = canRequest;
+    } catch (e) {
+      debugPrint('UMP flow skipped: $e');
+      _adsAllowed = true; // never punish the app for a consent hiccup
     }
   }
 
@@ -95,7 +153,8 @@ class AdService {
   /// ALWAYS calls [proceed] — user navigation is never hostage to an ad.
   void showInterstitialThenProceed(VoidCallback proceed) {
     final ad = _interstitial;
-    if (!_initialized ||
+    if (ReferralService.adsFree.value ||
+        !_initialized ||
         ad == null ||
         _interstitialShownThisSession >= kMaxInterstitialsPerSession) {
       proceed();
@@ -147,6 +206,7 @@ class _CineBannerSlotState extends State<CineBannerSlot> {
 
   void _maybeLoad() {
     if (!mounted || _loaded || _failed || _ad != null) return;
+    if (ReferralService.adsFree.value) return; // v1.0.1+58 reward
     if (!AdService.instance.ready.value) return;
     final ad = BannerAd(
       adUnitId: AdService.bannerId,
@@ -178,7 +238,9 @@ class _CineBannerSlotState extends State<CineBannerSlot> {
   @override
   Widget build(BuildContext context) {
     final ad = _ad;
-    if (!_loaded || ad == null) return const SizedBox.shrink();
+    if (ReferralService.adsFree.value || !_loaded || ad == null) {
+      return const SizedBox.shrink();
+    }
     return Container(
       color: Colors.black,
       width: ad.size.width.toDouble(),

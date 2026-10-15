@@ -25,6 +25,16 @@ always use Google's **test** ad units so development can never generate
 invalid clicks against the real account. See
 [PRIVACY_POLICY.md](PRIVACY_POLICY.md).
 
+## Refer & Earn + Admin dashboard
+
+Users share their `MAX-XXXX` code; every 3 friends who install and claim it
+unlocks 6 months ad-free (stacking). Anonymous daily counters
+(`stats/daily_*`, `stats/total`, `referral_board` collections) power the
+PIN-locked admin site in [`admin/index.html`](admin/index.html) — host it on
+GitHub Pages. Firebase client config lives in `lib/services/app_analytics.dart`
+(paste your 4 values from the Firebase console); Firestore rules are in
+`firestore.rules`.
+
 ## Building
 
 ```bash

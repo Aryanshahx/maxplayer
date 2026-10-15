@@ -5,6 +5,7 @@ import 'package:maxplayer/theme.dart';
 import 'package:maxplayer/widgets/cine_ui.dart';
 
 import 'package:maxplayer/services/ad_service.dart';
+import 'package:maxplayer/services/referral_service.dart';
 import 'package:maxplayer/utils/config.dart';
 import 'package:maxplayer/widgets/cine_player.dart';
 import 'package:maxplayer/screens/history_screen.dart' show timeAgo;
@@ -1887,6 +1888,12 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       );
       expect(AdService.kRealAppId, 'ca-app-pub-8874449394681109~9733138875');
       expect(AdService.kMaxInterstitialsPerSession, 3);
+
+      // v1.0.1+58: Refer & Earn economy + code format.
+      expect(ReferralService.kReferralsPerReward, 3);
+      expect(ReferralService.kRewardDays, 182);
+      final sample = ReferralService.generateCode();
+      expect(RegExp(r'^MAX-[A-Z2-9]{4}$').hasMatch(sample), isTrue);
     });
   });
 }
