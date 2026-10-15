@@ -21,10 +21,10 @@ class AppAnalytics {
 
   // TODO(firebase): create the project for Max Player and paste the four
   // values, then bump +59. The app runs fully WITHOUT them.
-  static const String kFirebaseApiKey = 'PASTE_API_KEY_HERE';
-  static const String kFirebaseAppId = 'PASTE_APP_ID_HERE';
-  static const String kFirebaseProjectId = 'PASTE_PROJECT_ID_HERE';
-  static const String kFirebaseSenderId = 'PASTE_SENDER_ID_HERE';
+  static const String kFirebaseApiKey = 'AIzaSyDOz1FWZPP4aOzfiRYvE6xy8CF2mXiXPOY';
+  static const String kFirebaseAppId = '1:1080871289145:android:be220a998bdbcc1a0ca8e8';
+  static const String kFirebaseProjectId = 'max-player-cd43d';
+  static const String kFirebaseSenderId = '1080871289145';
 
   /// true only once Firebase is actually usable (configured + initialised).
   static final ValueNotifier<bool> ready = ValueNotifier<bool>(false);

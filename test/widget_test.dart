@@ -5,6 +5,7 @@ import 'package:maxplayer/theme.dart';
 import 'package:maxplayer/widgets/cine_ui.dart';
 
 import 'package:maxplayer/services/ad_service.dart';
+import 'package:maxplayer/services/app_analytics.dart';
 import 'package:maxplayer/services/referral_service.dart';
 import 'package:maxplayer/utils/config.dart';
 import 'package:maxplayer/widgets/cine_player.dart';
@@ -1894,6 +1895,10 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(ReferralService.kRewardDays, 182);
       final sample = ReferralService.generateCode();
       expect(RegExp(r'^MAX-[A-Z2-9]{4}$').hasMatch(sample), isTrue);
+
+      // v1.0.1+59: Firebase is configured (values baked in).
+      expect(AppAnalytics.configured, isTrue);
+      expect(AppAnalytics.kFirebaseProjectId, 'max-player-cd43d');
     });
   });
 }
