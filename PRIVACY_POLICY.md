@@ -53,14 +53,6 @@ and "Most watched" list. This data never leaves the device.
 
 Max Player itself collects no data from anyone, including children.
 
-## Analytics & Invite and Earn
-
-The app counts anonymous events (app opens, ad views, shares) with Firebase
-Analytics to improve the product — no name, email, or contact data is
-collected. Invite and Earn stores an anonymous install ID plus your referral
-code and count so the ad-free reward can be granted; no contacts are read and
-nothing about your friends is uploaded.
-
 ## Google Play Data Safety (short answers)
 
 - Data collected by Max Player itself: none.

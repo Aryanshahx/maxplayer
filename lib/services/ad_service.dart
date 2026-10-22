@@ -2,9 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-
-import 'referral_service.dart';
 
 /// v1.0.1+50: AdMob wiring — SAFE BY CONSTRUCTION.
 ///
@@ -64,15 +63,31 @@ class AdService {
   static const int kMaxInterstitialsPerSession = 3;
   int _interstitialShownThisSession = 0;
 
+  /// v1.0.1+61: true on Android TV — AdMob phone ads are not made for
+  /// televisions, so every ad surface stays silent there (the player UI
+  /// stays fully clean on the big screen).
+  static bool isTv = false;
+
+  Future<void> _detectTv() async {
+    try {
+      final a = await DeviceInfoPlugin().androidInfo;
+      final feats = a.systemFeatures;
+      isTv =
+          feats.contains('android.software.leanback') &&
+          !feats.contains('android.hardware.touchscreen');
+    } catch (_) {
+      /* phones: stays false */
+    }
+  }
+
   /// Fire after runApp(). Never throws, never blocks startup.
   Future<void> safeInit() async {
     if (_initialized || _initializing) return;
     _initializing = true;
     try {
-      // v1.0.1+58: Refer & Earn reward — ad-free owners skip the SDK
-      // entirely (every ad surface re-checks mid-session too).
-      if (ReferralService.adsFree.value) {
-        debugPrint('Ad-free reward active — ads SDK stays asleep');
+      await _detectTv();
+      if (isTv) {
+        debugPrint('Android TV detected — ads SDK stays asleep');
         return;
       }
       await _handleUmpConsent(); // GDPR gate — BEFORE the ads SDK wakes
@@ -153,7 +168,7 @@ class AdService {
   /// ALWAYS calls [proceed] — user navigation is never hostage to an ad.
   void showInterstitialThenProceed(VoidCallback proceed) {
     final ad = _interstitial;
-    if (ReferralService.adsFree.value ||
+    if (isTv ||
         !_initialized ||
         ad == null ||
         _interstitialShownThisSession >= kMaxInterstitialsPerSession) {
@@ -206,7 +221,7 @@ class _CineBannerSlotState extends State<CineBannerSlot> {
 
   void _maybeLoad() {
     if (!mounted || _loaded || _failed || _ad != null) return;
-    if (ReferralService.adsFree.value) return; // v1.0.1+58 reward
+    if (AdService.isTv) return; // v1.0.1+61: no banner ads on TV
     if (!AdService.instance.ready.value) return;
     final ad = BannerAd(
       adUnitId: AdService.bannerId,
@@ -238,7 +253,7 @@ class _CineBannerSlotState extends State<CineBannerSlot> {
   @override
   Widget build(BuildContext context) {
     final ad = _ad;
-    if (ReferralService.adsFree.value || !_loaded || ad == null) {
+    if (AdService.isTv || !_loaded || ad == null) {
       return const SizedBox.shrink();
     }
     return Container(
