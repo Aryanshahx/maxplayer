@@ -17,6 +17,7 @@ import 'package:maxplayer/utils/format.dart';
 import 'package:maxplayer/utils/iptv.dart' show kMaxPlayerUserAgent;
 import 'package:maxplayer/services/iptv_parser.dart'
     show parseIptvM3u, kIptvWorldUrl, kIptvIndiaUrl;
+import 'package:maxplayer/services/app_analytics.dart' show AppAnalytics;
 import 'package:maxplayer/utils/m3u.dart';
 import 'package:maxplayer/utils/network_headers.dart'
     show kVlcFallbackUserAgent;
@@ -1924,6 +1925,53 @@ https://example.com/orphan.m3u8''';
     test('empty/blank input parses to empty list', () {
       expect(parseIptvM3u(''), isEmpty);
       expect(parseIptvM3u('#EXTM3U\n'), isEmpty);
+    });
+  });
+
+  group('activity tracking (v1.0.1+63)', () {
+    test('firebase values are baked in (configured, not placeholders)', () {
+      expect(AppAnalytics.configured, isTrue);
+      expect(AppAnalytics.kFirebaseProjectId, 'max-player-cd43d');
+      expect(AppAnalytics.kFirebaseApiKey, startsWith('AIza'));
+      expect(AppAnalytics.kFirebaseAppId, contains(':android:'));
+    });
+
+    test('classifyError buckets the real user reports', () {
+      expect(
+        AppAnalytics.classifyError(
+          'tcp: Connection to tcp://103.185.24.134:3001 failed: Connection timed out',
+        ),
+        'timeout',
+      );
+      expect(
+        AppAnalytics.classifyError(
+          'tcp: Connection to tcp://103.135.253.32:8080 failed: Connection refused',
+        ),
+        'refused',
+      );
+      expect(AppAnalytics.classifyError('HTTP error 403 Forbidden'), 'http');
+      expect(AppAnalytics.classifyError('ffmpeg codec not found'), 'other');
+      expect(AppAnalytics.classifyError(''), 'other');
+    });
+
+    test('sanitizeHost produces Firestore-safe keys', () {
+      expect(AppAnalytics.sanitizeHost('103.185.24.134'), '103_185_24_134');
+      expect(AppAnalytics.sanitizeHost('CDN.Example.COM'), 'cdn_example_com');
+      expect(AppAnalytics.sanitizeHost(' tv-host:8080 '), 'tv_host_8080');
+    });
+
+    test('hostOf returns http(s) host only — local paths stay private', () {
+      expect(AppAnalytics.hostOf('http://a.b.com:8080/x/y.m3u8'), 'a.b.com');
+      expect(
+        AppAnalytics.hostOf('https://cdn.example.com/v.m3u8?token=1'),
+        'cdn.example.com',
+      );
+      expect(
+        AppAnalytics.hostOf('/storage/emulated/0/Movies/clip.mp4'),
+        isNull,
+      );
+      expect(AppAnalytics.hostOf('content://media/external/video/1'), isNull);
+      expect(AppAnalytics.hostOf('smb://192.168.1.5/share/movie.mkv'), isNull);
     });
   });
 }

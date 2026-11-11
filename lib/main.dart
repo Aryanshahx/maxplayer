@@ -9,6 +9,7 @@ import 'services/native_bridge.dart';
 import 'theme.dart';
 import 'utils/crash_log.dart';
 import 'services/ad_service.dart';
+import 'services/app_analytics.dart';
 import 'utils/settings.dart';
 
 /// Root navigator key (kept for future system-level pushes; the
@@ -32,6 +33,9 @@ Future<void> main() async {
   // v1.0.1+50: AdMob warms up AFTER the first frame — it can never
   // block or crash startup (no Play services? → the app stays ad-free).
   unawaited(AdService.instance.safeInit());
+  // v1.0.1+63: anonymous activity counters for the admin dashboard
+  // (aggregates only — no names, no URLs, no personal data).
+  unawaited(AppAnalytics.instance.trackAppOpen());
 }
 
 class MaxPlayerApp extends StatelessWidget {

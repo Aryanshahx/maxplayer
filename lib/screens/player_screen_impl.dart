@@ -10,6 +10,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../services/app_analytics.dart';
 import '../services/native_bridge.dart';
 import '../theme.dart';
 import '../utils/ab_loop.dart';
@@ -44,6 +45,7 @@ class PlayerScreen extends StatefulWidget {
     this.queueStart = 0,
     this.isStream = false,
     this.meta = const {},
+    this.isLiveTv = false,
     this.trailerVariants,
     this.trailerCurrentKey,
     this.trailerResolver,
@@ -56,6 +58,7 @@ class PlayerScreen extends StatefulWidget {
     super.key,
     required this.path,
     required this.title,
+    this.isLiveTv = false,
     this.trailerVariants,
     this.trailerCurrentKey,
     this.trailerResolver,
@@ -73,6 +76,12 @@ class PlayerScreen extends StatefulWidget {
   final int queueStart;
   final bool isStream;
   final Map<String, String> meta;
+
+  /// v1.0.1+63: true when this stream came from the built-in LIVE TV
+  /// screen — shows a buffer PERCENTAGE instead of the plain loading
+  /// circle (live IPTV can take a while to open) and counts as an
+  /// iptv_play in the activity stats instead of a generic stream open.
+  final bool isLiveTv;
 
   /// v1.0.1+19 — TRAILER-ONLY language switcher. These three are set
   /// ONLY when the screen plays a YouTube trailer (never for device
@@ -134,6 +143,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<bool>? _bufferingSub;
+  StreamSubscription<double>? _bufferPctSub;
   StreamSubscription<bool>? _completedSub;
   StreamSubscription<String>? _errorSub;
   StreamSubscription<Tracks>? _tracksSub;
@@ -169,6 +179,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// v1.0.20: one-shot hedge for the volume boost — see _playingSub below.
   bool _volumeMaxArmed = false;
   bool _buffering = false;
+  // v1.0.1+63: live TV buffer percentage (0-100) shown during fills.
+  double _bufferPct = 0;
   bool _controlsVisible = true;
   bool _boost = false;
   bool _locked = false;
@@ -255,6 +267,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     _controller = VideoController(_player);
     // v1.0.1+62: HLS/IPTV friendliness — longer timeout + cache for streams.
     unawaited(_applyStreamTuning());
+    // v1.0.1+63: anonymous activity counters (no names/URLs ever leave).
+    if (widget.isStream && widget.isLiveTv) {
+      AppAnalytics.instance.bumpDaily(iptvPlayed: 1);
+      AppAnalytics.instance.log('iptv_play');
+    } else if (widget.isStream) {
+      AppAnalytics.instance.bumpDaily(streamsOpened: 1);
+      AppAnalytics.instance.log('stream_open');
+    } else {
+      AppAnalytics.instance.bumpDaily(videosPlayed: 1);
+      AppAnalytics.instance.log('video_play');
+    }
     _settingsListener = () {
       if (!mounted) return;
       setState(() {});
@@ -328,6 +351,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       unawaited(_native.invokeMethod('updatePipPlaying', {'playing': playing}));
       if (mounted) setState(() {});
+    });
+    _bufferPctSub = _player.stream.bufferingPercentage.listen((pct) {
+      if (mounted) setState(() => _bufferPct = pct);
     });
     _bufferingSub = _player.stream.buffering.listen((b) {
       if (mounted) setState(() => _buffering = b);
@@ -749,7 +775,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     final errors = _trailerEngineErrors.toList();
     final le = lastError.toString();
     if (!errors.contains(le)) errors.add(le);
-    final report = StringBuffer('MaxPlayer v1.0.1+25 trailer failure report\n');
+    // v1.0.1+63: count the failure anonymously (kind + HOST only).
+    final kind = AppAnalytics.classifyError(errors.join(' '));
+    AppAnalytics.instance.bumpDaily(playFailed: 1, failKind: kind);
+    AppAnalytics.instance.log('playback_failed', {'kind': kind});
+    final failHost = AppAnalytics.hostOf(_currentPath);
+    if (failHost != null) AppAnalytics.instance.bumpFailHost(failHost, kind);
+    final report = StringBuffer(
+      'MaxPlayer v1.0.1+63 playback failure report\n',
+    );
     final uri = Uri.tryParse(_currentPath);
     if (uri != null) report.writeln('host: ${uri.host}');
     for (final err in errors) {
@@ -762,7 +796,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         backgroundColor: const Color(0xFF16161f),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Text(
-          'Trailer could not be played',
+          'Video could not be played',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
         ),
         content: SizedBox(
@@ -2458,6 +2492,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _saveTimer?.cancel();
     _playingSub?.cancel();
     _bufferingSub?.cancel();
+    _bufferPctSub?.cancel();
     _completedSub?.cancel();
     _errorSub?.cancel();
     _tracksSub?.cancel();
@@ -2582,6 +2617,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                   ),
                 )
+              else if (widget.isLiveTv)
+                // v1.0.1+63: live TV shows the buffer PERCENTAGE while
+                // the stream opens instead of a bare circle.
+                Center(child: _LiveTvBufferBadge(pct: _bufferPct))
               else
                 const Center(
                   child: CircularProgressIndicator(color: Colors.white),
@@ -2607,13 +2646,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ),
                 ),
               if (_buffering && _ready)
-                const Center(
-                  child: SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-                ),
+                widget.isLiveTv
+                    ? Center(child: _LiveTvBufferBadge(pct: _bufferPct))
+                    : const Center(
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                      ),
               // Transient indicator (seek / brightness / zoom /
               // resume / fit / play-pause / lock) - the old player's
               // full-width centred pill at top: 64, popping in with
@@ -4048,6 +4089,62 @@ class _KaraokeOverlay extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// v1.0.1+63: LIVE TV buffer progress — big percentage with a thin ring,
+/// replacing the bare loading circle for IPTV streams. 0% while the
+/// engine is still connecting; climbs as the demuxer cache fills.
+class _LiveTvBufferBadge extends StatelessWidget {
+  const _LiveTvBufferBadge({required this.pct});
+
+  final double pct;
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = pct.clamp(0, 100).round();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 64,
+          height: 64,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 64,
+                height: 64,
+                child: CircularProgressIndicator(
+                  value: shown > 0 ? shown / 100 : null,
+                  strokeWidth: 3,
+                  color: Colors.white,
+                  backgroundColor: Colors.white24,
+                ),
+              ),
+              Text(
+                '$shown%',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          pct <= 0 ? 'CONNECTING…' : 'BUFFERING',
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 10,
+            letterSpacing: 2,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }

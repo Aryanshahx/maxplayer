@@ -18,6 +18,19 @@ device. The app shows ads via Google AdMob — see "Ads (Google AdMob)" below.
   the Ask AI feature, stream URLs you open, and loading ads. Nothing personal
   about you is sent anywhere by Max Player itself.
 
+## Anonymous usage statistics (Firebase)
+
+The app counts anonymous, aggregate activity so the developer can see how
+many people use the app and which free stream sources are broken: app
+opens, number of plays (videos / streams / live TV channels), ad
+impressions, and playback failures with a coarse reason (for example
+"timeout") plus the failing HOST (for example "example.com") — never the
+full URL, and never a file name, folder name, video title, or search term.
+The counts are attached to a random, per-device identifier with no sign-in
+and no personal information. Data lives in Google Firebase
+(https://firebase.google.com/support/privacy). Nothing here can identify
+you or what you watched.
+
 ## Ads (Google AdMob)
 
 The app shows banner and occasional full-screen (interstitial) ads served by

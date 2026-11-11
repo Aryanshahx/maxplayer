@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/iptv_parser.dart';
 import '../theme.dart';
+import '../services/app_analytics.dart';
 import 'player_screen.dart';
 
 /// v1.0.1+62: LIVE TV — the iptv-org free-to-air channel collection,
@@ -35,6 +36,9 @@ class _IptvScreenState extends State<IptvScreen> {
   @override
   void initState() {
     super.initState();
+    // v1.0.1+63: anonymous activity counter (screen opened).
+    AppAnalytics.instance.bumpDaily(iptvOpened: 1);
+    AppAnalytics.instance.log('iptv_open');
     unawaited(_load());
   }
 
@@ -262,8 +266,11 @@ class _ChannelTile extends StatelessWidget {
         focusColor: accent.withValues(alpha: 0.30),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) =>
-                PlayerScreen.stream(path: channel.url, title: channel.name),
+            builder: (_) => PlayerScreen.stream(
+              path: channel.url,
+              title: channel.name,
+              isLiveTv: true,
+            ),
           ),
         ),
         child: Container(

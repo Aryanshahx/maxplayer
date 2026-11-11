@@ -26,6 +26,11 @@
     <uses-feature
         android:name="android.hardware.faketouch"
         android:required="false" />
+    <!-- Some no-name TV boxes report a missing microphone which makes
+         sideloaders/Play call the app "not compatible" — it is optional. -->
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
 
     <application
         android:label="Max Player"

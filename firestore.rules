@@ -1,0 +1,16 @@
+// Max Player — activity dashboard (v1.0.1+63)
+// Paste into Firebase console -> Firestore -> Rules -> Publish.
+//
+// Model note: the app is anonymous (no sign-in), so writes can't be
+// owner-authenticated. Contents are aggregate counters and host names
+// only — nothing personal — which keeps open-write abuse cosmetic.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /stats/{doc} {
+      allow read: if true;            // aggregate counters only
+      allow create, update: if true;  // field increments from devices
+      allow delete: if false;
+    }
+  }
+}

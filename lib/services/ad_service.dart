@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'app_analytics.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
@@ -183,6 +185,11 @@ class AdService {
         _preloadInterstitial();
         proceed();
       },
+      onAdImpression: (_) {
+        // v1.0.1+63: feed the dashboard counter (fires only on a real
+        // on-screen impression — never on load or failed shows).
+        AppAnalytics.instance.bumpDaily(adImpressions: 1);
+      },
       onAdFailedToShowFullScreenContent: (a, error) {
         a.dispose();
         _preloadInterstitial();
@@ -230,6 +237,10 @@ class _CineBannerSlotState extends State<CineBannerSlot> {
       listener: BannerAdListener(
         onAdLoaded: (_) {
           if (mounted) setState(() => _loaded = true);
+        },
+        onAdImpression: (_) {
+          // v1.0.1+63: dashboard counter.
+          AppAnalytics.instance.bumpDaily(adImpressions: 1);
         },
         onAdFailedToLoad: (a, error) {
           debugPrint('Banner failed to load: $error');

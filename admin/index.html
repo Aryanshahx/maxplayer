@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Max Player — Admin</title>
+<style>
+  :root { --bg:#0a0a10; --card:#14141d; --pur:#8b5cf6; --pink:#ec4899; --cyan:#22d3ee; --amber:#f59e0b; --green:#34d399; --red:#f87171; --tx:#fff; --dim:#8b8b9e; }
+  * { box-sizing:border-box; margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; }
+  body { background:var(--bg); color:var(--tx); min-height:100vh; padding:24px 16px 48px; }
+  .wrap { max-width:900px; margin:0 auto; }
+  h1 { font-size:14px; letter-spacing:3px; color:var(--dim); text-align:center; margin-bottom:22px; }
+  h1 b { color:var(--tx); }
+  .card { background:var(--card); border:1px solid #23232e; border-radius:16px; padding:18px; margin-bottom:16px; }
+  #login { max-width:340px; margin:18vh auto 0; text-align:center; }
+  input, button { width:100%; padding:12px 14px; border-radius:10px; border:1px solid #2c2c3a; background:#0e0e16; color:var(--tx); font-size:14px; }
+  button { background:linear-gradient(90deg,var(--pur),var(--pink)); border:0; font-weight:700; letter-spacing:1px; margin-top:12px; cursor:pointer; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; }
+  .stat b { display:block; font-size:24px; }
+  .stat span { font-size:10px; letter-spacing:1.5px; color:var(--dim); }
+  .cyan { color:var(--cyan); } .pink { color:var(--pink); } .amber { color:var(--amber); }
+  .pur { color:var(--pur); } .green { color:var(--green); } .red { color:var(--red); }
+  canvas { width:100%; height:180px; display:block; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; color:var(--dim); font-size:10px; letter-spacing:1.5px; padding:6px 0 10px; }
+  td { padding:8px 0; border-top:1px solid #20202c; }
+  .sub { font-size:11px; color:var(--dim); margin:8px 0 0; text-align:right; }
+  .err { color:var(--red); font-size:12px; margin-top:10px; text-align:center; }
+  #dash { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>MAX PLAYER <b>· USER ACTIVITY</b></h1>
+
+  <div class="card" id="login">
+    <p style="font-size:13px;color:var(--dim);margin-bottom:14px">PIN-locked dashboard</p>
+    <input id="pin" type="password" placeholder="Admin PIN" autocomplete="off">
+    <button id="go">UNLOCK</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div id="dash">
+    <div class="grid">
+      <div class="card stat"><b class="cyan" id="sInstalls">–</b><span>INSTALLS</span></div>
+      <div class="card stat"><b class="pink" id="sOpens7">–</b><span>APP OPENS · 7D</span></div>
+      <div class="card stat"><b class="pur" id="sVideos7">–</b><span>VIDEOS PLAYED · 7D</span></div>
+      <div class="card stat"><b class="amber" id="sStreams7">–</b><span>STREAMS · 7D</span></div>
+      <div class="card stat"><b class="green" id="sIptv7">–</b><span>IPTV PLAYS · 7D</span></div>
+      <div class="card stat"><b class="red" id="sFail7">–</b><span>PLAY FAILURES · 7D</span></div>
+      <div class="card stat"><b class="cyan" id="sAds7">–</b><span>AD IMPRESSIONS · 7D</span></div>
+    </div>
+    <div class="card">
+      <canvas id="chart" width="860" height="180"></canvas>
+      <p class="sub">app opens · last 14 days</p>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>#</th><th>FAILING STREAM HOST</th><th style="text-align:right">TIMEOUT</th><th style="text-align:right">REFUSED</th><th style="text-align:right">COUNT</th></tr></thead>
+        <tbody id="hosts"></tbody>
+      </table>
+      <p class="sub">dead sources your users are hitting · host only, never full URLs</p>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>DATE</th><th style="text-align:right">OPENS</th><th style="text-align:right">VIDEOS</th><th style="text-align:right">STREAMS</th><th style="text-align:right">IPTV</th><th style="text-align:right">FAILED</th><th style="text-align:right">ADS</th></tr></thead>
+        <tbody id="days"></tbody>
+      </table>
+      <p class="sub">daily activity · refreshes every 60s · all anonymous aggregates</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// Max Player admin dashboard (GitHub Pages + Firebase REST, no SDK).
+// PROJECT_ID must match kFirebaseProjectId in lib/services/app_analytics.dart.
+// DEFAULT PIN is 1234 — CHANGE IT: edit the ADMIN_PIN line below.
+// NOTE: this is a SOFT lock (page source is public); the data it guards
+// is anonymous aggregates only.
+// =====================================================================
+const PROJECT_ID = 'max-player-cd43d';
+const ADMIN_PIN  = '1234';
+
+const API = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+
+document.getElementById('go').addEventListener('click', unlock);
+document.getElementById('pin').addEventListener('keydown', e => { if (e.key === 'Enter') unlock(); });
+
+function unlock() {
+  const err = document.getElementById('err');
+  if (document.getElementById('pin').value !== ADMIN_PIN) { err.textContent = 'Wrong PIN'; return; }
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('dash').style.display = 'block';
+  refresh(); setInterval(refresh, 60000);
+}
+
+const num = v => v && v.integerValue !== undefined ? Number(v.integerValue) : (v && v.doubleValue || 0);
+
+async function refresh() {
+  try {
+    const stats = await fetch(`${API}/stats?pageSize=200`).then(r => r.json());
+    paintStats(stats.documents || []);
+  } catch (e) { console.error(e); }
+}
+
+function paintStats(docs) {
+  let installs = 0, hosts = {};
+  const days = new Map();
+  docs.forEach(d => {
+    const f = d.fields || {};
+    const name = d.name.split('/').pop();
+    if (name === 'total') installs = num(f.installs);
+    else if (name === 'failHosts') {
+      // fields: c_<key> count, k_<key>__<kind> split, n_<key> readable name
+      Object.keys(f).forEach(k => {
+        if (!k.startsWith('c_')) return;
+        const key = k.slice(2);
+        hosts[key] = {
+          count: num(f[k]),
+          name: (f['n_' + key] && f['n_' + key].stringValue) || key,
+          timeout: num(f['k_' + key + '__timeout']),
+          refused: num(f['k_' + key + '__refused']),
+        };
+      });
+    }
+    else if (name.startsWith('daily_')) days.set(name.slice(6), f);
+  });
+  const dates = [...days.keys()].sort();
+  const last7 = dates.slice(-7);
+  const sum7 = key => last7.reduce((a, d) => a + num(days.get(d)[key]), 0);
+  document.getElementById('sInstalls').textContent = installs;
+  document.getElementById('sOpens7').textContent  = sum7('appOpens');
+  document.getElementById('sVideos7').textContent = sum7('videosPlayed');
+  document.getElementById('sStreams7').textContent = sum7('streamsOpened');
+  document.getElementById('sIptv7').textContent   = sum7('iptvPlayed');
+  document.getElementById('sFail7').textContent   = sum7('playFailed');
+  document.getElementById('sAds7').textContent    = sum7('adImpressions');
+
+  // chart: last 14 days of app opens
+  const c = document.getElementById('chart'), x = c.getContext('2d');
+  x.clearRect(0, 0, c.width, c.height);
+  const slice = dates.slice(-14);
+  const vals = slice.map(d => num(days.get(d).appOpens));
+  const max = Math.max(1, ...vals);
+  const bw = c.width / Math.max(1, vals.length);
+  vals.forEach((v, i) => {
+    const h = (v / max) * (c.height - 26);
+    const g = x.createLinearGradient(0, c.height - h, 0, c.height);
+    g.addColorStop(0, '#ec4899'); g.addColorStop(1, '#8b5cf6');
+    x.fillStyle = g;
+    x.fillRect(i * bw + 4, c.height - h - 18, Math.max(2, bw - 8), h);
+    x.fillStyle = '#8b8b9e'; x.font = '9px system-ui'; x.textAlign = 'center';
+    x.fillText(slice[i].slice(5), i * bw + bw / 2, c.height - 5);
+    x.fillStyle = '#22d3ee'; x.font = 'bold 10px system-ui';
+    x.fillText(v, i * bw + bw / 2, c.height - h - 22);
+  });
+
+  // failing hosts table
+  const rows = Object.values(hosts).sort((a, b) => b.count - a.count).slice(0, 20);
+  document.getElementById('hosts').innerHTML = rows.map((h, i) =>
+    `<tr><td>${i + 1}</td><td style="color:var(--dim)">${h.name}</td><td style="text-align:right;color:var(--amber)">${h.timeout || '–'}</td><td style="text-align:right;color:var(--amber)">${h.refused || '–'}</td><td style="text-align:right;color:var(--red);font-weight:700">${h.count}</td></tr>`
+  ).join('') || '<tr><td colspan="5" style="color:var(--dim)">No failures yet</td></tr>';
+
+  // daily table, newest first
+  const recent = dates.slice(-10).reverse();
+  document.getElementById('days').innerHTML = recent.map(d => {
+    const f = days.get(d);
+    return `<tr><td>${d}</td><td style="text-align:right">${num(f.appOpens)}</td><td style="text-align:right">${num(f.videosPlayed)}</td><td style="text-align:right">${num(f.streamsOpened)}</td><td style="text-align:right;color:var(--green)">${num(f.iptvPlayed)}</td><td style="text-align:right;color:var(--red)">${num(f.playFailed)}</td><td style="text-align:right">${num(f.adImpressions)}</td></tr>`;
+  }).join('') || '<tr><td colspan="7" style="color:var(--dim)">No activity yet — counters appear as users run 1.0.1+63</td></tr>';
+}
+</script>
+</body>
+</html>
