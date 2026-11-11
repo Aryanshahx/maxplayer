@@ -44,6 +44,10 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
+          # v1.0.1+65: PINNED to the last working Flutter — stable moved
+          # to 3.50 which demands Gradle 9.3.1 / deprecates material.dart.
+          # We deliberately stay on the +62-era toolchain.
+          flutter-version: '3.47.0'
           channel: stable
           cache: true
 

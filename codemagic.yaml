@@ -13,7 +13,7 @@ workflows:
     environment:
       groups:
         - keystore_credentials
-      flutter: stable
+      flutter: 3.47.0  # v1.0.1+65: pinned — stable (3.50) breaks the old toolchain
       xcode: latest
     scripts:
       - name: Set up keystore from env vars
