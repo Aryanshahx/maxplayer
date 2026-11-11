@@ -15,6 +15,8 @@ import 'package:maxplayer/utils/collections.dart';
 import 'package:maxplayer/utils/fit.dart';
 import 'package:maxplayer/utils/format.dart';
 import 'package:maxplayer/utils/iptv.dart' show kMaxPlayerUserAgent;
+import 'package:maxplayer/services/iptv_parser.dart'
+    show parseIptvM3u, kIptvWorldUrl, kIptvIndiaUrl;
 import 'package:maxplayer/utils/m3u.dart';
 import 'package:maxplayer/utils/network_headers.dart'
     show kVlcFallbackUserAgent;
@@ -1887,6 +1889,41 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       );
       expect(AdService.kRealAppId, 'ca-app-pub-8874449394681109~9733138875');
       expect(AdService.kMaxInterstitialsPerSession, 3);
+    });
+  });
+
+  group('iptv parser (v1.0.1+62)', () {
+    test('endpoints pinned', () {
+      expect(kIptvWorldUrl, 'https://iptv-org.github.io/iptv/index.m3u');
+      expect(kIptvIndiaUrl, 'https://iptv-org.github.io/iptv/countries/in.m3u');
+    });
+
+    test('iname/logo/group/quality extraction', () {
+      const sample = '''#EXTM3U
+#EXTINF:-1 tvg-id="DDNational.in" tvg-logo="https://example.com/dd.png" group-title="Entertainment",DD National (1080p)
+https://example.com/dd.m3u8
+#EXTINF:-1 tvg-id="Sample.us" group-title="News",Plain Channel
+https://example.com/plain.m3u8
+#bogus line
+https://example.com/orphan.m3u8''';
+      final list = parseIptvM3u(sample);
+      expect(list.length, 2); // orphan URL with no EXTINF is ignored
+      final dd = list.first;
+      expect(dd.name, 'DD National'); // quality token stripped
+      expect(dd.quality, '1080P'); // parser normalises to uppercase
+      expect(dd.logo, 'https://example.com/dd.png');
+      expect(dd.group, 'Entertainment');
+      expect(dd.url, 'https://example.com/dd.m3u8');
+      final plain = list.last;
+      expect(plain.name, 'Plain Channel');
+      expect(plain.quality, isEmpty);
+      expect(plain.logo, isEmpty);
+      expect(plain.group, 'News');
+    });
+
+    test('empty/blank input parses to empty list', () {
+      expect(parseIptvM3u(''), isEmpty);
+      expect(parseIptvM3u('#EXTM3U\n'), isEmpty);
     });
   });
 }

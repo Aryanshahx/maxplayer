@@ -253,6 +253,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _queueIndex = widget.queueStart;
     _player = Player();
     _controller = VideoController(_player);
+    // v1.0.1+62: HLS/IPTV friendliness — longer timeout + cache for streams.
+    unawaited(_applyStreamTuning());
     _settingsListener = () {
       if (!mounted) return;
       setState(() {});
@@ -491,6 +493,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  /// v1.0.1+62: live-stream friendliness — generous network timeout
+  /// (iptv-org CDNs routinely take 10-20s to spin up) and cache so
+  /// HLS segments pre-buffer. Phones + TV both.
+  Future<void> _applyStreamTuning() async {
+    if (!widget.isStream) return;
+    unawaited(_mpvSet('network-timeout', '25'));
+    unawaited(_mpvSet('stream-lavf-o', 'reconnect=1'));
+    unawaited(_mpvSet('cache', 'yes'));
+    unawaited(_mpvSet('demuxer-max-bytes', '96MiB'));
+  }
+
   Future<void> _savePosition() async {
     if (widget.isStream ||
         !_settings.resume ||
@@ -723,12 +736,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     // show the REAL engine errors with a COPY REPORT button so the exact
     // cause (HTTP 403, timeout, unsupported codec, ...) is visible and
     // shareable. Device videos keep the compact snack.
-    if (widget.trailerVariants != null || widget.trailerAudioUrl != null) {
-      unawaited(_showTrailerFailureDialog(e));
-      return;
-    }
-    _emitSnack("This video can't be played by MPV");
-    Navigator.of(context).maybePop();
+    // v1.0.1+62: EVERY failure (not just trailers) shows the real engine
+    // errors with COPY REPORT — local files, IPTV streams, trailers alike.
+    // A bare "can't be played" snack told us nothing actionable; the
+    // dialog makes the actual cause (403, codec, timeout) copyable.
+    unawaited(_showTrailerFailureDialog(e));
   }
 
   /// v1.0.1+25: trailer failure dialog — thumbnail, the real collected

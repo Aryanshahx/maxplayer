@@ -7,6 +7,7 @@ import '../utils/crash_log.dart';
 import '../utils/iptv.dart';
 import '../utils/local_store.dart';
 import '../utils/m3u.dart';
+import 'iptv_screen.dart';
 import 'player_screen.dart';
 
 /// Old-app parity: prefetching thousands of rows on first paint kills the
@@ -285,6 +286,31 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          // v1.0.1+62: one-tap LIVE TV — iptv-org's legal free-to-air
+          // collection with logos, IN/WORLD switch, group filters.
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: accent.withValues(alpha: 0.16),
+                foregroundColor: accent,
+                side: BorderSide(color: accent.withValues(alpha: 0.6)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const IptvScreen())),
+              icon: const Icon(Icons.live_tv_rounded),
+              label: const Text(
+                'LIVE TV — free channels',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
           FilledButton.icon(
             style: FilledButton.styleFrom(
               backgroundColor: accent,
@@ -514,4 +540,3 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
     );
   }
 }
-
