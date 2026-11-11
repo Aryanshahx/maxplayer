@@ -28,7 +28,10 @@ jobs:
 
       - run: flutter --version
       - run: flutter pub get
-      - run: flutter analyze
+      # v1.0.1+64: --no-fatal-infos — newer Flutter stables flag
+      # material.dart etc. as "deprecated" INFOS; infos must never
+      # block the build. Errors and warnings still fail the job.
+      - run: flutter analyze --no-fatal-infos
       - run: flutter test
 
       # These are compile-time values. If OPENROUTER_API_KEY is not a

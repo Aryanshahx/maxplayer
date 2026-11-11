@@ -782,7 +782,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final failHost = AppAnalytics.hostOf(_currentPath);
     if (failHost != null) AppAnalytics.instance.bumpFailHost(failHost, kind);
     final report = StringBuffer(
-      'MaxPlayer v1.0.1+63 playback failure report\n',
+      'MaxPlayer v1.0.1+64 playback failure report\n',
     );
     final uri = Uri.tryParse(_currentPath);
     if (uri != null) report.writeln('host: ${uri.host}');
@@ -2477,9 +2477,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _emitSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
