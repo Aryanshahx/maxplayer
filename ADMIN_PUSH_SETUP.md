@@ -1,3 +1,5 @@
+> **Updated by +69:** See ADMIN_REDESIGN.md. Notification history was removed and locale-based country charts replaced with new IP samples. Authentication and token instructions below still apply.
+
 # Update 3 — authenticated admin panel
 
 The app version stays **1.0.1+67**. No app, toolchain, sender or Firestore rules changes are included. Apply after the app/rules and GitHub sender updates.

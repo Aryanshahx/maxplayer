@@ -1,0 +1,10 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {bucketActivity,niceScale,ipCountries} from './charts.mjs';
+const number=v=>Number(v?.integerValue||0);
+const rows=n=>Array.from({length:n},(_,i)=>({date:new Date(Date.UTC(2026,0,i+1)).toISOString().slice(0,10),f:{appOpens:{integerValue:'2'}}}));
+test('short ranges stay daily',()=>{const b=bucketActivity(rows(7),'appOpens',number);assert.equal(b.mode,'day');assert.equal(b.points.length,7);});
+test('long ranges group without losing totals',()=>{const b=bucketActivity(rows(90),'appOpens',number);assert.equal(b.mode,'week');assert.equal(b.points.reduce((a,p)=>a+p.value,0),180);});
+test('year ranges group by calendar month',()=>{const b=bucketActivity(rows(365),'appOpens',number);assert.equal(b.mode,'month');assert.equal(b.points.length,12);assert.equal(b.points.reduce((a,p)=>a+p.value,0),730);});
+test('integer scales do not repeat fractional count labels',()=>{for(const n of [0,1,2,7,101,10000]){const s=niceScale(n);assert.ok(s.step>=1);assert.ok(s.max>=n);}});
+test('country chart excludes old locale fields',()=>assert.deepEqual(ipCountries({c_US:{integerValue:'100'},ip_c_IN:{integerValue:'3'},ip_c_GB:{integerValue:'1'}},number),[{cc:'IN',count:3},{cc:'GB',count:1}]));
+test('empty country sample remains empty',()=>assert.deepEqual(ipCountries({c_US:{integerValue:'100'}},number),[]));

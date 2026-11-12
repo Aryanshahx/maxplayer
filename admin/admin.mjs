@@ -1,3 +1,4 @@
+import { bucketActivity, niceScale, ipCountries } from './charts.mjs';
 import { fieldsOf, unpackDoc, validateDraft, imageByteSize, MAX_IMAGE_BYTES, statusText } from './push-core.mjs';
 const PROJECT_ID='max-player-cd43d';
 const API_KEY='AIzaSyDOz1FWZPP4aOzfiRYvE6xy8CF2mXiXPOY';
@@ -52,7 +53,7 @@ function signOut(){
  authGeneration++;session=null;sessionStorage.removeItem(SESSION_KEY);sessionStorage.removeItem(TOKEN_KEY);sessionStorage.removeItem('max.push.attempt');sessionStorage.removeItem('max.push.tracked');
  localStorage.removeItem(TOKEN_KEY);$('githubToken').value='';$('rememberToken').checked=false;
  clearTimeout(historyTimer);$('dash').style.display='none';$('login').style.display='block';$('password').value='';
- STATS=[];REPORTS=[];trackedId='';setText('noticeHistory','');setText('sendStatus','');setText('liveStatus','');
+ STATS=[];REPORTS=[];trackedId='';setText('sendStatus','');setText('liveStatus','');
  imageGeneration++;clearPicture();$('noticeForm').reset();updatePreview();setText('err','Signed out. Browser dispatch token cleared.');
 }
 function openDashboard(){
@@ -67,12 +68,8 @@ function openDashboard(){
     if(imageData){$('previewImage').src=imageData;$('previewImage').hidden=false;}
     updatePreview();
   }catch{}
-  setText('sendStatus','An earlier queue request was interrupted. Queue and Send will retry the ORIGINAL saved notice, ignoring edits. Check history first; do not create a duplicate.');
+  setText('sendStatus','An earlier queue request was interrupted. Queue and Send will retry the ORIGINAL saved notice, ignoring edits. Check the current notice status before retrying; do not create a duplicate.');
  }
-}
-async function query(collectionId,limit=30){
- const result=await api(':runQuery',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({structuredQuery:{select:{fields:['title','message','target','status','createdAt','acceptedRequests','acceptedTokens','failedTokens','error','errors','outcomeUncertain'].map(fieldPath=>({fieldPath}))},from:[{collectionId}],orderBy:[{field:{fieldPath:'createdAt'},direction:'DESCENDING'}],limit}})});
- return result.filter(x=>x.document).map(x=>x.document);
 }
 async function recentReports(){
  // Reports use ISO string ts rather than server createdAt timestamps.
@@ -141,28 +138,21 @@ async function sendNotice(event){
  finally{sending=false;$('send').disabled=imageBusy;}
 }
 async function refreshNotices(){
- if(!session||historyBusy||document.hidden)return;historyBusy=true;const generation=authGeneration;clearTimeout(historyTimer);
+ if(!session||!trackedId||historyBusy||document.hidden)return;
+ historyBusy=true;const generation=authGeneration;clearTimeout(historyTimer);let active=false;
  try{
- const notices=(await query('notices')).map(unpackDoc);if(generation!==authGeneration)return;
- const body=$('noticeHistory');body.replaceChildren();
- for(const n of notices){
-  const row=document.createElement('tr');
-  for(const text of [(n.createdAt?new Date(n.createdAt).toLocaleString():'Pending timestamp')+'\n'+n.id,n.title+'\n'+(n.target==='all'?'Everyone':n.target),statusText(n)]){const cell=document.createElement('td');cell.textContent=text;cell.style.whiteSpace='pre-wrap';row.append(cell);}body.append(row);
- }
- if(!notices.length){const row=document.createElement('tr');const cell=document.createElement('td');cell.colSpan=3;cell.textContent='No notices yet.';row.append(cell);body.append(row);}
- let tracked=notices.find(n=>n.id===trackedId);
- if(trackedId&&!tracked){try{tracked=unpackDoc(await api('notices/'+encodeURIComponent(trackedId)));}catch{}}
+ const mask=['title','target','status','acceptedTokens','failedTokens','error','errors','outcomeUncertain'].map(x=>'mask.fieldPaths='+x).join('&');
+ const notice=unpackDoc(await api('notices/'+encodeURIComponent(trackedId)+'?'+mask));
  if(generation!==authGeneration)return;
- if(tracked)setText('liveStatus',tracked.id+' · '+statusText(tracked));
- setText('historyStatus','Updated '+new Date().toLocaleTimeString()+'. Counts are FCM acceptance, not confirmed phone delivery.');
- }catch(e){if(generation===authGeneration)setText('historyStatus',e.message+' Check Firebase admin membership and published rules.');}
- finally{historyBusy=false;if(session)historyTimer=setTimeout(()=>void refreshNotices(),15000);}
+ setText('liveStatus',notice.id+' · '+statusText(notice));active=['pending','sending'].includes(notice.status);
+ }catch(e){if(generation===authGeneration)setText('liveStatus',e.message);active=true;}
+ finally{historyBusy=false;if(session&&active)historyTimer=setTimeout(()=>void refreshNotices(),15000);}
 }
 
 const COUNTRY = { IN:'India', US:'United States', GB:'United Kingdom', BR:'Brazil', ID:'Indonesia', PK:'Pakistan', BD:'Bangladesh', NG:'Nigeria', RU:'Russia', MX:'Mexico', PH:'Philippines', VN:'Vietnam', TR:'Turkey', EG:'Egypt', IR:'Iran', DE:'Germany', FR:'France', JP:'Japan', KR:'South Korea', SA:'Saudi Arabia', AE:'UAE', TH:'Thailand', IT:'Italy', ES:'Spain', PL:'Poland', CA:'Canada', AU:'Australia', NP:'Nepal', LK:'Sri Lanka', MY:'Malaysia', ZA:'South Africa', KE:'Kenya', AR:'Argentina', CO:'Colombia' };
 
 let STATS = [], REPORTS = [];
-const num = v => v && v.integerValue !== undefined ? Number(v.integerValue) : (v && v.doubleValue || 0);
+const num = v => {const n=Number(v?.integerValue ?? v?.doubleValue ?? 0);return Number.isFinite(n)?Math.max(0,n):0;};
 const str = v => v && v.stringValue !== undefined ? v.stringValue : '';
 const $ = id => document.getElementById(id);
 
@@ -187,7 +177,7 @@ async function refresh() {
  try {
  const [stats,reports]=await Promise.all([collection('stats'),recentReports()]);
  STATS=stats;REPORTS=reports.map(d=>d.fields||{}).sort((a,b)=>str(b.ts).localeCompare(str(a.ts)));
- paint();$('status').textContent='Updated '+new Date().toLocaleString()+' · '+PROJECT_ID+' · installs/countries are all-time; activity/reports follow dates';
+ paint();$('status').textContent='Updated '+new Date().toLocaleString()+' · '+PROJECT_ID+' · registrations / IP samples are all-time; activity / reports follow dates';
  }catch(e){$('status').textContent=e.message;}
 }
 
@@ -206,77 +196,63 @@ function periodRows() {
 }
 const sum = (rows, k) => rows.reduce((a, r) => a + num(r.f[k]), 0);
 
-function paint() {
-  const rows = periodRows();
-  document.getElementById('chartSub').textContent = `app opens · last ${periodDays()} days`;
-  let installs = 0, countries = {};
-  STATS.forEach(d => {
-    const name = d.name.split('/').pop();
-    if (name === 'total') {
-      installs = num((d.fields || {}).installs);
-      Object.keys(d.fields || {}).forEach(k => { if (k.startsWith('c_')) countries[k.slice(2)] = num(d.fields[k]); });
-    }
-  });
-  document.getElementById('sInstalls').textContent = installs;
-  document.getElementById('sOpens').textContent   = sum(rows, 'appOpens');
-  document.getElementById('sVideos').textContent  = sum(rows, 'videosPlayed');
-  document.getElementById('sStreams').textContent = sum(rows, 'streamsOpened');
-  document.getElementById('sIptv').textContent    = sum(rows, 'iptvPlayed');
-  document.getElementById('sFail').textContent    = sum(rows, 'playFailed');
-  document.getElementById('sAds').textContent     = sum(rows, 'adImpressions');
-  const secs = sum(rows, 'sessionSeconds'), sess = Math.max(1, sum(rows, 'sessions'));
-  document.getElementById('sSession').textContent = (secs / sess / 60).toFixed(1);
-
-  // opens chart
-  drawBars(document.getElementById('chart'), rows.map(r => num(r.f.appOpens)),
-    rows.map(r => r.date.slice(5)), '#ec4899', '#8b5cf6');
-
-  // countries
-  document.getElementById('countries').innerHTML =
-    Object.entries(countries).sort((a, b) => b[1] - a[1])
-      .map(([cc, n]) => `<tr><td>${esc(countryName(cc))}</td><td style="text-align:right;color:var(--cyan);font-weight:700">${n}</td></tr>`).join('')
-    || '<tr><td colspan="2" style="color:var(--dim)">No country data yet (needs 1.0.1+65 installs)</td></tr>';
-
-  // hourly usage across the period
-  const hours = Array.from({length: 24}, (_, h) => sum(rows, 'h_' + h));
-  drawBars(document.getElementById('hoursChart'), hours,
-    hours.map((_, h) => h % 6 === 0 ? String(h) : ''), '#22d3ee', '#34d399');
-
-  // reports
-  document.getElementById('reports').innerHTML = filteredReports().slice(0, 100).map(r => {
-    const t = str(r.type) || 'report';
-    const when = str(r.ts).replace('T', ' ').slice(0, 16);
-    const body = str(r.text).slice(0, 400);
-    const host = str(r.host), kind = str(r.kind);
-    return `<tr><td><span class="pill">${esc(t.toUpperCase())}</span></td><td style="color:var(--dim)">${esc(when)}</td><td><div class="rpt">${esc(host ? 'host: ' + host + (kind ? ' · ' + kind : '') + '\n' + body : body)}</div></td></tr>`;
-  }).join('') || '<tr><td colspan="3" style="color:var(--dim)">No reports yet — devices upload from 1.0.1+65</td></tr>';
-}
-
 function esc(x) { const d = document.createElement('div'); d.textContent = x; return d.innerHTML; }
 
 function countryName(cc){try{return new Intl.DisplayNames(['en'],{type:'region'}).of(cc)||cc;}catch{return COUNTRY[cc]||cc;}}
 function filteredReports(){return REPORTS.filter(r=>{const d=str(r.ts).slice(0,10);return d>=$('from').value && d<=$('to').value;});}
-function drawBars(canvas, vals, labels, c1, c2) {
- const width=canvas.clientWidth||800,height=200,dpr=window.devicePixelRatio||1;
- canvas.width=width*dpr;canvas.height=height*dpr;canvas.style.height=height+'px';
- const x=canvas.getContext('2d');x.scale(dpr,dpr);
- const left=42,top=16,bottom=32,w=width-left-10,h=height-top-bottom,max=Math.max(1,...vals);
- x.font='10px system-ui';
- for(let i=0;i<=4;i++){const y=top+h-i*h/4;x.strokeStyle='#2c2c3a';x.beginPath();x.moveTo(left,y);x.lineTo(width-10,y);x.stroke();x.fillStyle='#aaa';x.textAlign='right';x.fillText(String(Math.round(max*i/4)),left-6,y+3);}
- const bw=w/Math.max(1,vals.length),step=Math.max(1,Math.ceil(vals.length/Math.max(2,Math.floor(w/50))));
- vals.forEach((v,i)=>{x.fillStyle=c1;x.fillRect(left+i*bw+1,top+h-v/max*h,Math.max(1,bw-2),v/max*h);if(i%step===0&&labels[i]){x.fillStyle='#aaa';x.textAlign='center';x.fillText(labels[i],left+(i+.5)*bw,height-10);}});
- if(!vals.some(v=>v)){x.fillStyle='#aaa';x.textAlign='center';x.fillText('No activity in selected period',width/2,80);}
- canvas.onmousemove=e=>{const i=Math.floor((e.offsetX-left)/bw);canvas.title=i>=0&&i<vals.length?`${labels[i]||i}: ${vals[i]}`:'';};
+const METRICS={appOpens:'app opens',videosPlayed:'videos played',streamsOpened:'streams opened',iptvPlayed:'IPTV plays'};
+const fmt=n=>new Intl.NumberFormat('en').format(n);
+function shortDate(s){const [y,m,d]=s.split('-');return new Date(Number(y),Number(m)-1,Number(d)).toLocaleDateString('en',{month:'short',day:'numeric'});}
+function plot(host,points,{bars=false,color='#b9f584',label='opens'}={}){
+ const w=Math.max(300,host.clientWidth||700),h=230,left=40,right=15,top=18,bottom=36,pw=w-left-right,ph=h-top-bottom;
+ const max=Math.max(0,...points.map(p=>p.value)),scale=niceScale(max),x=i=>left+(i+.5)*pw/Math.max(1,points.length),y=v=>top+ph-v/scale.max*ph;
+ let svg=`<svg viewBox="0 0 ${w} ${h}" aria-hidden="true"><defs><linearGradient id="grad-${host.id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".24"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>`;
+ for(let v=0;v<=scale.max;v+=scale.step){const yy=y(v);svg+=`<path d="M${left} ${yy}H${w-right}" stroke="#273747" stroke-dasharray="3 5"/><text x="${left-9}" y="${yy+4}" fill="#91a8bd" text-anchor="end">${fmt(v)}</text>`;}
+ const stride=Math.max(1,Math.ceil(points.length/Math.max(2,Math.floor(pw/75))));
+ points.forEach((p,i)=>{if(i%stride===0||i===points.length-1&&points.length<8)svg+=`<text x="${x(i)}" y="${h-9}" fill="#91a8bd" text-anchor="middle">${esc(p.short)}</text>`;});
+ if(bars){const bw=pw/Math.max(1,points.length);points.forEach((p,i)=>{svg+=`<rect x="${x(i)-bw*.32}" y="${y(p.value)}" width="${bw*.64}" height="${top+ph-y(p.value)}" rx="3" fill="${color}"/>`;});}
+ else if(points.length){const path=points.map((p,i)=>(i?'L':'M')+x(i)+' '+y(p.value)).join(' ');svg+=`<path d="${path} L${x(points.length-1)} ${top+ph} L${x(0)} ${top+ph}Z" fill="url(#grad-${host.id})"/><path d="${path}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round"/>`;points.forEach((p,i)=>{if(points.length<=14)svg+=`<circle cx="${x(i)}" cy="${y(p.value)}" r="3" fill="${color}"/>`;});}
+ points.forEach((p,i)=>{svg+=`<rect x="${left+i*pw/Math.max(1,points.length)}" y="${top}" width="${pw/Math.max(1,points.length)}" height="${ph}" fill="transparent" tabindex="0" data-index="${i}" role="button" aria-label="${esc(p.description)}: ${p.value} ${label}"><title>${esc(p.description)}: ${p.value} ${label}</title></rect>`;});
+ if(!max)svg+=`<text x="${w/2}" y="${top+ph/2}" text-anchor="middle" fill="#b9c9d9">No recorded activity in this range</text>`;
+ host.innerHTML=svg+'</svg><div class="tooltip" hidden></div>';
+ host.setAttribute('aria-label',`${label}: ${fmt(points.reduce((a,p)=>a+p.value,0))} recorded. Hover, tap or focus to read exact values.`);
+ const tooltip=host.querySelector('.tooltip');
+ const show=event=>{const target=event.target.closest?.('[data-index]');if(!target)return;const i=Number(target.dataset.index),p=points[i];tooltip.textContent=p.description+'\n'+fmt(p.value)+' '+label;tooltip.hidden=false;tooltip.style.left=Math.max(0,Math.min(w-180,x(i)-70))+'px';tooltip.style.top='25px';};
+ host.onpointermove=show;host.onpointerdown=show;host.onpointerleave=()=>tooltip.hidden=true;
+ host.querySelectorAll('[data-index]').forEach(el=>{el.addEventListener('focus',show);el.addEventListener('blur',()=>tooltip.hidden=true);});
+}
+function rankRows(host,rows,total){
+ host.replaceChildren();
+ for(const r of rows){const wrapper=document.createElement('div'),head=document.createElement('div');head.className='rankHead';const name=document.createElement('b'),value=document.createElement('span');name.textContent=r.name;value.textContent=fmt(r.count)+(total?' · '+(100*r.count/total).toFixed(1)+'%':'');head.append(name,value);const track=document.createElement('div'),fill=document.createElement('div');track.className='track';fill.className='fill';fill.style.width=(total?100*r.count/total:0)+'%';if(r.color)fill.style.background=r.color;track.append(fill);wrapper.append(head,track);host.append(wrapper);}
+}
+function paint(){
+ const rows=periodRows(),key=$('chartMetric').value||'appOpens';
+ const total=STATS.find(d=>d.name.split('/').pop()==='total')?.fields||{};
+ for(const [id,k] of [['sOpens','appOpens'],['sVideos','videosPlayed'],['sStreams','streamsOpened'],['sIptv','iptvPlayed'],['sFail','playFailed'],['sAds','adImpressions']])setText(id,fmt(sum(rows,k)));
+ setText('sInstalls',fmt(num(total.installs)));
+ const sessions=sum(rows,'sessions');setText('sSession',sessions?(sum(rows,'sessionSeconds')/sessions/60).toFixed(1):'—');
+ const {mode,points}=bucketActivity(rows,key,num),label=METRICS[key];
+ setText('chartTotal',fmt(sum(rows,key)));setText('chartSub',label+' · '+(mode==='day'?'daily':mode==='week'?'7-day buckets':'calendar months'));
+ plot($('chart'),points.map(p=>({...p,short:mode==='month'?new Date(p.start+'T12:00:00').toLocaleDateString('en',{month:'short',year:'2-digit'}):shortDate(p.start),description:p.start===p.end?p.start:p.start+' to '+p.end})),{label});
+ const peak=rows.reduce((a,r)=>num(r.f[key])>num(a?.f[key])?r:a,null);
+ setText('chartInsight',peak&&num(peak.f[key])?`Busiest recorded day: ${shortDate(peak.date)} · ${fmt(num(peak.f[key]))} ${label}. Hover or tap the chart for exact values.`:'No events recorded for this metric. Empty dates show zero; they do not confirm that every device reported.');
+ $('chartTable').innerHTML=rows.map(r=>`<tr><td>${r.date}</td>${['appOpens','videosPlayed','streamsOpened','iptvPlayed'].map(k=>'<td>'+fmt(num(r.f[k]))+'</td>').join('')}</tr>`).join('');
+ const features=[{name:'Local videos',count:sum(rows,'videosPlayed')},{name:'Streams',count:sum(rows,'streamsOpened'),color:'#69cfef'},{name:'IPTV',count:sum(rows,'iptvPlayed'),color:'#b3a1f0'}];rankRows($('featureMix'),features,features.reduce((a,r)=>a+r.count,0));
+ const hours=Array.from({length:24},(_,h)=>({value:sum(rows,'h_'+h),short:String(h).padStart(2,'0')+':00',description:String(h).padStart(2,'0')+':00–'+String(h).padStart(2,'0')+':59'}));plot($('hoursChart'),hours,{bars:true,color:'#69cfef',label:'app opens'});
+ const busiest=hours.reduce((a,p)=>p.value>a.value?p:a,hours[0]);setText('hourInsight',busiest.value?`Peak local hour: ${busiest.description} · ${fmt(busiest.value)} opens.`:'No hourly activity recorded in this range.');
+ const countries=ipCountries(total,num),sample=countries.reduce((a,c)=>a+c.count,0);
+ setText('countrySummary',sample?`${fmt(sample)} country samples collected since +69 · top ${Math.min(20,countries.length)} countries shown. Not filtered by activity dates.`:'Waiting for IP-country samples from the +69 app. Old locale-based numbers are intentionally not shown.');
+ rankRows($('countries'),countries.slice(0,20).map(c=>({name:countryName(c.cc),count:c.count})),sample);
+ $('reports').innerHTML=filteredReports().slice(0,100).map(r=>`<tr><td><span class="pill">${esc(str(r.type)||'report')}</span></td><td>${esc(str(r.ts).replace('T',' ').slice(0,16))}</td><td class="rpt">${esc(str(r.text).slice(0,500))}</td></tr>`).join('')||'<tr><td colspan="3">No captured reports in these dates.</td></tr>';
 }
 window.addEventListener('resize',()=>{if($('dash').style.display==='block')paint();});
-
 
 function downloadPdf() {
  const win=window.open('','_blank');if(!win){alert('Allow popups to open the printable PDF report.');return;}
  const rows=periodRows();
  const table=(head,rows)=>`<table><thead><tr>${head.map(x=>'<th>'+esc(String(x))+'</th>').join('')}</tr></thead><tbody>${rows.map(row=>'<tr>'+row.map(x=>'<td>'+esc(String(x))+'</td>').join('')+'</tr>').join('')}</tbody></table>`;
  const total=STATS.find(d=>d.name.split('/').pop()==='total')?.fields||{};
- win.document.write(`<!doctype html><html><head><title>Max Player report</title><style>body{font:12px Arial;color:#111;margin:25px}table{border-collapse:collapse;width:100%;margin:15px 0}td,th{border:1px solid #ccc;padding:6px;text-align:left;white-space:pre-wrap;word-break:break-word}tr{break-inside:avoid}h2{margin-top:25px}@media print{button{display:none}}@page{margin:12mm}</style></head><body><button id="printReport">Print / Save as PDF</button><h1>Max Player activity report</h1><p>${esc($('from').value)} to ${esc($('to').value)} · generated ${esc(new Date().toLocaleString())}</p><p>Use the print destination “Save as PDF”. Installs and countries are all-time; activity and reports follow the selected dates.</p><h2>Summary</h2>${table(['Metric','Value'],[['Installs (all-time)',num(total.installs)],...['appOpens','videosPlayed','streamsOpened','iptvPlayed','playFailed','adImpressions','sessions','sessionSeconds'].map(k=>[k,sum(rows,k)])])}<h2>Countries (device locale)</h2>${table(['Country','Installs'],Object.entries(total).filter(([k])=>k.startsWith('c_')).map(([k,v])=>[countryName(k.slice(2)),num(v)]))}<h2>Hourly app opens (device-local)</h2>${table(['Hour','Opens'],Array.from({length:24},(_,h)=>[h+':00',sum(rows,'h_'+h)]))}<h2>Daily activity</h2>${table(['Date','Opens','Videos','Streams','IPTV','Failures','Ads','Seconds'],rows.map(r=>[r.date,...['appOpens','videosPlayed','streamsOpened','iptvPlayed','playFailed','adImpressions','sessionSeconds'].map(k=>num(r.f[k]))]))}<h2>Problem reports</h2>${table(['Type','Time','Details'],filteredReports().map(r=>[str(r.type),str(r.ts),str(r.text)]))}</body></html>`);
+ win.document.write(`<!doctype html><html><head><title>Max Player report</title><style>body{font:12px Arial;color:#111;margin:25px}table{border-collapse:collapse;width:100%;margin:15px 0}td,th{border:1px solid #ccc;padding:6px;text-align:left;white-space:pre-wrap;word-break:break-word}tr{break-inside:avoid}h2{margin-top:25px}@media print{button{display:none}}@page{margin:12mm}</style></head><body><button id="printReport">Print / Save as PDF</button><h1>Max Player activity report</h1><p>${esc($('from').value)} to ${esc($('to').value)} · generated ${esc(new Date().toLocaleString())}</p><p>Use the print destination “Save as PDF”. Install registrations and IP-country samples are all-time; activity and reports follow the selected dates. Country samples are approximate, not historical install locations.</p><h2>Summary</h2>${table(['Metric','Value'],[['Installs (all-time)',num(total.installs)],...['appOpens','videosPlayed','streamsOpened','iptvPlayed','playFailed','adImpressions','sessions','sessionSeconds'].map(k=>[k,sum(rows,k)])])}<h2>Countries (IP sample since +69; all-time, including upgrades)</h2>${table(['Country','IP samples'],ipCountries(total,num).map(c=>[countryName(c.cc),c.count]))}<h2>Hourly app opens (device-local)</h2>${table(['Hour','Opens'],Array.from({length:24},(_,h)=>[h+':00',sum(rows,'h_'+h)]))}<h2>Daily activity</h2>${table(['Date','Opens','Videos','Streams','IPTV','Failures','Ads','Seconds'],rows.map(r=>[r.date,...['appOpens','videosPlayed','streamsOpened','iptvPlayed','playFailed','adImpressions','sessionSeconds'].map(k=>num(r.f[k]))]))}<h2>Problem reports</h2>${table(['Type','Time','Details'],filteredReports().map(r=>[str(r.type),str(r.ts),str(r.text)]))}</body></html>`);
  win.document.close();win.document.getElementById('printReport').addEventListener('click',()=>win.print());win.focus();setTimeout(()=>win.print(),300);
 }
 
@@ -285,6 +261,7 @@ $('loginForm').addEventListener('submit',signIn);
 $('logout').onclick=signOut;
 $('from').onchange=$('to').onchange=()=>{$('period').value='custom';paint();};
 $('period').onchange=setDates;
+$('chartMetric').onchange=paint;
 $('refresh').onclick=refresh;
 $('pdfBtn').onclick=downloadPdf;
 $('title').oninput=$('message').oninput=$('target').onchange=updatePreview;
@@ -294,7 +271,6 @@ $('noticeForm').addEventListener('submit',sendNotice);
 $('saveToken').onclick=saveToken;
 $('forgetToken').onclick=()=>{sessionStorage.removeItem(TOKEN_KEY);localStorage.removeItem(TOKEN_KEY);$('githubToken').value='';setText('settingsStatus','Dispatch token removed.');};
 $('dispatch').onclick=async()=>{ $('dispatch').disabled=true;try{await assertAdmin();await dispatch();setText('settingsStatus','Workflow start accepted. Watch notice status or open the workflow link.');}catch(e){setText('settingsStatus',e.message);}finally{$('dispatch').disabled=false;} };
-$('refreshNotices').onclick=()=>void refreshNotices();
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&session)void refreshNotices();});
 setInterval(()=>{if(session&&!document.hidden)void refresh();},60000);
 setDates();updatePreview();

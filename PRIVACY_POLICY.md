@@ -1,107 +1,40 @@
 # MAX PLAYER - PRIVACY POLICY
 
-**Effective date:** 5 September 2026
-**Developer:** Hyper Tech Labs (Aryan Shah)
+**Effective date:** 5 September 2026  
+**Developer:** Hyper Tech Labs (Aryan Shah)  
+**App policy update:** 1.0.1+69
 
 ## The short version
+Max Player plays media locally. It also uses online services for aggregate usage statistics, diagnostics, Android push notifications, optional online features and advertising. Your media library is not uploaded by the analytics or notification features. The data described below does leave the device; this policy replaces older statements that the app has no analytics or identifiers.
 
-Max Player is a local video player. It does not collect, store, transmit, or
-share any personal data of its own. Everything the app does happens on your
-device. The app shows ads via Google AdMob — see "Ads (Google AdMob)" below.
+## Media access and private folder
+Storage permissions let the app find/play local media and save screenshots. Local watch lists, file organisation and private-folder settings remain on-device. Private-folder PIN protection uses local storage and Android device authentication; it does not upload the hidden videos. Uninstalling or clearing app data removes app-private settings; move protected files out first as appropriate.
 
-## What the app accesses, and why
+## Aggregate activity and diagnostics (Firebase)
+The app records aggregate opens, install registrations, play events, ad impressions, playback failures, device-local hour buckets and foreground session duration. Captured error reports may include error text, a failure category, app version and failing stream host. Full stream URLs, video titles and library filenames are not intentionally included in the aggregate counters. Diagnostic text is best-effort and may contain technical details. Offline Firebase writes may be queued locally for later transmission. Abrupt termination can leave activity unrecorded.
 
-- **Storage (videos / all files):** to find and play the videos stored on your
-  device, play videos you pick in Android's file picker, and save screenshots
-  to "Pictures/Max Player". None of it ever leaves your device.
-- **Internet:** only for features you trigger yourself — TMDB movie discovery,
-  the Ask AI feature, stream URLs you open, and loading ads. Nothing personal
-  about you is sent anywhere by Max Player itself.
+Firebase Anonymous Authentication creates a pseudonymous installation UID. Notification registration stores that UID and FCM tokens in Firebase; it is not a verified personal identity. Clearing app data or reinstalling can change the UID and cause a new registration. Aggregate counters are not verified counts of people or current installs. Firebase privacy: https://firebase.google.com/support/privacy
 
-## Anonymous usage statistics (Firebase)
+## Approximate IP country (starting with +69)
+The app requests https://api.country.is/ to estimate the country of the connection. That provider necessarily receives the connection IP. The app extracts only the returned two-letter country code; it does not retain or forward the provider's returned IP field to Firebase. Country data is recorded as a best-effort aggregate sample, once per successful registration in local app storage, including upgrades. GPS permission, coordinates, city and address are not requested by this feature.
 
-The app counts anonymous, aggregate activity so the developer can see how
-many people use the app and which free stream sources are broken: app
-opens, number of plays (videos / streams / live TV channels), ad
-impressions, and playback failures with a coarse reason (for example
-"timeout") plus the failing HOST (for example "example.com") — never the
-full URL, and never a file name, folder name, video title, or search term.
-Version 1.0.1+65 adds: the COUNTRY of the install (from the device's
-language/locale setting — no GPS), the device-local HOUR of app opens, the
-total time spent in the app per day, and crash / playback-failure reports
-(engine error text and failing stream HOST only). All of it is aggregated
-or anonymised, queued offline, and sent when the network returns.
+If the request fails, country remains unknown and may be retried on a later app launch. Locale is not used as a fallback. VPNs, proxies, mobile routing and provider inaccuracies can change the result. The sample describes the first successful lookup, not a continually tracked location or historical download country. Old locale-based country totals are no longer shown in the new panel. Provider information: https://country.is/
 
-The counts are attached to a random, per-device identifier with no sign-in
-and no personal information. Data lives in Google Firebase
-(https://firebase.google.com/support/privacy). Nothing here can identify
-you or what you watched.
+## Android push notifications
+Max Player requests Android notification permission after the media permission request finishes and checks it when the app is foregrounded. Android controls repeat prompts and permanent denial. There is no separate app notification switch or inbox; use Android's system notification settings to allow/block notifications.
 
-## Ads (Google AdMob)
+Permitted installations subscribe to general FCM notices, and their tokens can be used for installation-specific notices. FCM processing uses Google services. Notice pictures are downloaded from publisher-selected HTTPS hosts, including public GitHub image URLs; those hosts receive the network connection IP. External links open only when selected through the app/notification flow. Delivery is not guaranteed. The app does not currently report a confirmed-delivery/read counter to the admin panel.
 
-The app shows banner and occasional full-screen (interstitial) ads served by
-Google AdMob. To do this, the AdMob SDK may access your device's advertising
-ID, approximate (non-precise) location, and basic device information,
-according to Google's policy: https://policies.google.com/privacy
+## Advertising and online features
+Google AdMob may process advertising identifiers, approximate location and device information under Google's policy: https://policies.google.com/privacy. Users in supported consent regions are presented Google's UMP consent flow. Advertising choices may also be available in Android's Google/Ads settings.
 
-You can turn ad personalisation off at any time in your device settings
-(Settings > Google > Ads > Remove advertising ID) — ads will then be
-non-personalised. Users in the EEA/UK are asked for consent through Google's
-UMP dialog on first launch.
+Movie discovery, AI features, partner links and network streams use their respective providers when invoked. Stream hosts and linked websites receive network requests. Clearly labelled partner links may earn a commission. Review those providers' policies before sharing information.
 
-## Cloud storage import (Android file picker)
+## Cloud storage import
+Cloud imports use Android's file picker and your installed storage provider. The app receives the file access grant chosen by you rather than a cloud account password. The media picker/provider handles its own sign-in. Anonymous Firebase registration for notifications is separate from cloud storage access.
 
-Opening Android's built-in file picker lists the storage apps installed on
-your device (Google Drive, Dropbox, OneDrive, ...). There is no sign-in,
-account, or OAuth of any kind inside Max Player; the system hands the app a
-one-time, read-only grant for the one video you choose. Nothing is uploaded.
+## Children and Google Play Data Safety
+The app includes analytics, diagnostics, approximate country lookup, identifiers and advertising as described here; it must not be described as collecting no data. The developer must keep Google Play Data Safety and any applicable audience/consent configuration consistent with the actual app and SDK behaviour. This policy is not a claim of certification or legal compliance.
 
-## Private folder
-
-Videos you hide are removed from the library and unlocked with a PIN you
-choose. They never leave your device; the PIN is stored only as a
-cryptographic hash inside the app's settings. Uninstalling removes the app's
-private data — move videos out first if you want to keep them.
-
-## Watch statistics
-
-Counts your watch time in the app's own local storage for the weekly chart
-and "Most watched" list. This data never leaves the device.
-
-## Children
-
-Max Player itself collects no data from anyone, including children.
-
-## Google Play Data Safety (short answers)
-
-- Data collected by Max Player itself: none.
-- The AdMob advertising SDK (Google) may process your advertising ID and
-  approximate location as described above.
-
-## Contact
-
-Hyper Tech Labs (Aryan Shah) — via the GitHub repository.
-
-## Optional Android notifications (1.0.1+67)
-If you enable Android notifications, Firebase Anonymous Authentication creates
-an installation account. Its random UID and Firebase Cloud Messaging token
-are stored so MaxPlayer can send general or installation-specific notices.
-The UID is not a verified identity. Enabling notifications subscribes the
-installation to the general notices topic. Disabling notifications removes
-the current token and subscription when the device can reach Firebase.
-Delivery uses Google Firebase services. Notice images are fetched from the
-HTTPS host selected by the publisher, which can receive the connection IP.
-Read/unread history is stored locally on the device. Clearing app data or
-reinstalling may create a new installation identity. No file names or media
-library content are included in notification registration.
-
-
-## Notification update (1.0.1+68)
-The in-app inbox and separate notification on/off setting have been removed.
-MaxPlayer requests Android notification permission on app open after the
-media permission request has completed. Android controls whether a repeated
-prompt is permitted; we do not override permanent denial or open settings
-automatically. You can allow or block MaxPlayer notifications in Android's
-system settings. When allowed, the anonymous installation is registered for
-general FCM notices. Images are downloaded over HTTPS with a bounded size and
-timeout. A text notification is posted first, then updated if the image loads.
+## Contact and requests
+Contact Hyper Tech Labs (Aryan Shah) through https://github.com/Aryanshahx/maxplayer. Do not post passwords, tokens or private information in public issues. Ask for a private channel for data-related requests. Pseudonymous token/installation records and aggregate counters have different identification and deletion limitations; aggregates may not be attributable to a particular person. Policy changes are published in this repository and bundled in the app.

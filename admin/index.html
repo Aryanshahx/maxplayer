@@ -1,75 +1,21 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://api.github.com; object-src 'none'; base-uri 'none'; form-action 'none'">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Max Player — Admin</title>
-
-<style>
-  label{display:block;margin:12px 0 5px;color:#b7b7c8;font-size:13px}h2{font-size:18px;margin-bottom:12px}a{color:#bda1ff}nav a{padding:8px}.help{font-size:13px;line-height:1.6;color:#b0b0c2;margin:12px 0;overflow-wrap:anywhere}.secondary{background:#242433;border:1px solid #414156}button:disabled{opacity:.5;cursor:wait}.check{display:flex;gap:10px;align-items:center}.check input{width:auto}.phone{border:1px solid #4c4c60;border-radius:18px;background:#22222d;padding:18px;max-width:420px;margin:18px auto;overflow-wrap:anywhere}.phone small{font-size:10px;color:#bcbccc}.phone strong{display:block;margin:12px 0 8px}.phone p{white-space:pre-wrap}.phone img{max-width:100%;max-height:260px;margin-top:12px;border-radius:10px}summary{cursor:pointer}.tableWrap{overflow:auto}td{overflow-wrap:anywhere}#login{margin:8vh auto 0}#noticeHistory td{min-width:130px}.err{overflow-wrap:anywhere}
-
-@media(max-width:600px){.grid{grid-template-columns:1fr!important}.bar input{max-width:45%}.card{overflow-x:auto}}
-  :root { --bg:#0a0a10; --card:#14141d; --pur:#8b5cf6; --pink:#ec4899; --cyan:#22d3ee; --amber:#f59e0b; --green:#34d399; --red:#f87171; --tx:#fff; --dim:#8b8b9e; }
-  * { box-sizing:border-box; margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; }
-  body { background:var(--bg); color:var(--tx); min-height:100vh; padding:24px 16px 48px; }
-  .wrap { max-width:920px; margin:0 auto; }
-  h1 { font-size:14px; letter-spacing:3px; color:var(--dim); text-align:center; margin-bottom:22px; }
-  h1 b { color:var(--tx); }
-  .card { background:var(--card); border:1px solid #23232e; border-radius:16px; padding:18px; margin-bottom:16px; }
-  #login { max-width:340px; margin:18vh auto 0; text-align:center; }
-  input, button, select, textarea { width:100%; padding:12px 14px; border-radius:10px; border:1px solid #2c2c3a; background:#0e0e16; color:var(--tx); font-size:14px; }
-  button { background:linear-gradient(90deg,var(--pur),var(--pink)); border:0; font-weight:700; letter-spacing:1px; margin-top:12px; cursor:pointer; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:12px; }
-  .stat b { display:block; font-size:24px; }
-  .stat span { font-size:10px; letter-spacing:1.5px; color:var(--dim); }
-  .cyan{color:var(--cyan);} .pink{color:var(--pink);} .amber{color:var(--amber);}
-  .pur{color:var(--pur);} .green{color:var(--green);} .red{color:var(--red);}
-  canvas { width:100%; display:block; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th { text-align:left; color:var(--dim); font-size:10px; letter-spacing:1.5px; padding:6px 0 10px; }
-  td { padding:8px 0; border-top:1px solid #20202c; vertical-align:top; }
-  .sub { font-size:11px; color:var(--dim); margin:8px 0 0; text-align:right; }
-  .err { color:var(--red); font-size:12px; margin-top:10px; text-align:center; }
-  #dash { display:none; }
-  .bar { display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
-  .bar select, .bar button { width:auto; margin-top:0; }
-  .bar label { color:var(--dim); font-size:11px; letter-spacing:1.5px; }
-  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:10px; letter-spacing:1px; font-weight:700; }
-  .pill.crash { background:#3b1518; color:var(--red); }
-  .pill.player_fail { background:#3a2a10; color:var(--amber); }
-  .rpt { font-family:monospace; font-size:11px; color:var(--dim); white-space:pre-wrap; word-break:break-all; max-width:520px; }
-  .bc label { display:block; color:var(--dim); font-size:10px; letter-spacing:1.5px; margin:10px 0 6px; }
-  .ok { color:var(--green); font-size:12px; margin-top:10px; text-align:center; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>MAX PLAYER <b>· ADMIN</b></h1>
-
-  <div class="card" id="login">
-    <h2>Admin sign in</h2>
-    <p class="sub">Firebase project: max-player-cd43d</p>
-    <form id="loginForm">
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://api.github.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>MaxPlayer · Control room</title><link rel="stylesheet" href="./admin.css"></head><body>
+<div id="login" class="login card"><div class="brand"><span class="brandIcon">▶</span> MAXPLAYER <small>CONTROL ROOM</small></div><h1>Welcome back.</h1><p class="help">Sign in with your Firebase administrator account.</p><form id="loginForm">
     <label for="email">Admin email</label><input id="email" type="email" autocomplete="username" required>
     <label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required>
     <button id="go" type="submit">SIGN IN</button>
     </form>
     <div class="err" id="err" role="alert"></div>
   </div>
-
-  <div id="dash">
-    <p class="sub" id="identity"></p>
-    <nav class="bar"><a href="#composer">Send notification</a><a href="#historyCard">History</a><a href="#analytics">Analytics</a><a href="#settings">Sender settings</a></nav>
-    <details class="card bc" id="settings"><summary>Sender settings — GitHub dispatch token</summary>
-    <p class="help">Only needed to start the sender immediately. Scheduled sending still works without it. Repository: Aryanshahx/maxplayer. Use a fine-grained token with Actions: read/write for this repository only. Never paste a Firebase service-account key here.</p>
-    <label for="githubToken">GitHub fine-grained token</label><input id="githubToken" type="password" autocomplete="off" placeholder="Paste token here">
-    <label class="check"><input type="checkbox" id="rememberToken"> Remember token on this browser (less secure)</label>
-    <button id="saveToken">SAVE TOKEN</button><button id="forgetToken" class="secondary">FORGET TOKEN</button><button id="dispatch" class="secondary">START SENDER FOR QUEUED NOTICES</button>
-    <a href="https://github.com/Aryanshahx/maxplayer/actions/workflows/send-notices.yml" target="_blank" rel="noopener noreferrer">Open sender workflow</a>
-    <p id="settingsStatus" class="help" role="status"></p></details>
-    <section class="card bc" id="composer">
+<div id="dash" style="display:none"><aside class="sidebar"><a class="brand" href="#overview"><span class="brandIcon">▶</span> MAXPLAYER</a><p class="eyebrow">WORKSPACE</p><nav><a href="#overview">◉ Overview</a><a href="#composer">↗ Send notification</a><a href="#audience">◎ Countries</a><a href="#issues">▤ Problem reports</a><a href="#settings">⚙ Sender settings</a></nav><div class="sidebarFoot"><span class="dot"></span> Admin session<p>max-player-cd43d</p><small>Private administrator workspace</small></div></aside>
+<main class="main"><header class="topbar"><span>Workspace <b>/ Overview</b></span><div><span id="identity"></span><button id="logout" class="secondary small">Sign out</button></div></header>
+<section id="overview"><div class="heading"><div><p class="eyebrow">MAXPLAYER ANALYTICS</p><h1>Your app, at a glance.</h1><p class="help">Understand activity. Find problems. Keep users informed.</p></div><button id="pdfBtn" class="secondary">↓ Export PDF report</button></div>
+<div class="toolbar"><label>Period<select id="period"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="custom">Custom range</option></select></label><label>From<input type="date" id="from"></label><label>To<input type="date" id="to"></label><button id="refresh" class="secondary">↻ Refresh data</button></div><p id="status" class="help" role="status"></p>
+<div class="kpis"><article class="card kpi"><span>App opens</span><strong id="sOpens">—</strong><small>Recorded opens · selected period</small></article><article class="card kpi"><span>Avg foreground session</span><strong id="sSession">—</strong><small>Minutes · selected period</small></article><article class="card kpi"><span>Videos played</span><strong id="sVideos">—</strong><small>Play events · selected period</small></article><article class="card kpi"><span>Install registrations</span><strong id="sInstalls">—</strong><small>All time · not unique people</small></article></div><div class="chartGrid"><section class="card chartCard"><div class="sectionHead"><div><p class="eyebrow">ACTIVITY OVER TIME</p><h2>See how usage changes</h2></div><select id="chartMetric" aria-label="Chart metric"><option value="appOpens">App opens</option><option value="videosPlayed">Videos played</option><option value="streamsOpened">Streams opened</option><option value="iptvPlayed">IPTV plays</option></select></div><div class="chartSummary"><strong id="chartTotal">0</strong><span id="chartSub">Recorded app opens</span></div><div id="chart" class="chartHost" role="img" aria-label="Activity chart"></div><p id="chartInsight" class="help"></p><details><summary>View exact daily numbers</summary><div class="tableWrap"><table><thead><tr><th>Date</th><th>Opens</th><th>Videos</th><th>Streams</th><th>IPTV</th></tr></thead><tbody id="chartTable"></tbody></table></div></details></section>
+<section class="card"><p class="eyebrow">FEATURE MIX</p><h2>What gets used</h2><p class="help">Recorded play events, not unique users.</p><div id="featureMix" class="rankList"></div><div class="miniStats"><div><b id="sStreams">—</b><span>Streams</span></div><div><b id="sIptv">—</b><span>IPTV plays</span></div><div><b id="sFail">—</b><span>Play failures</span></div><div><b id="sAds">—</b><span>Ad impressions</span></div></div></section></div>
+<div class="twoCol"><section class="card" id="audience"><div class="sectionHead"><div><p class="eyebrow">NETWORK COUNTRY · ALL TIME</p><h2>Where the sample connects</h2></div><span class="badge">IP estimate</span></div><p id="countrySummary" class="help"></p><div id="countries" class="rankList"></div><p class="fine">First successful IP lookup per installation, starting with +69. Includes upgraded installations. VPNs/proxies affect results. Not GPS, not verified installs. Old locale counts are excluded.</p></section>
+<section class="card"><p class="eyebrow">TIME OF DAY</p><h2>When the app gets opened</h2><p class="help">Phone-local hour · opens in the selected period.</p><div id="hoursChart" class="chartHost" role="img" aria-label="App opens by local hour"></div><p id="hourInsight" class="help"></p></section></div></section>
+<div class="sectionLabel"><span>COMMUNICATION</span><span>Admin panel → GitHub Actions → FCM</span></div><section class="card bc" id="composer">
     <h2>Send Android notification</h2><p class="help">Real notification-tray push. Delivery depends on device permission and Android restrictions. Pictures are public on GitHub.</p>
     <form id="noticeForm">
     <label for="title">Title · max 80 characters</label><input id="title" maxlength="80" required>
@@ -84,63 +30,13 @@
     </form><p class="help">At most 10 notices/hour. FCM acceptance does not mean every phone received it. Scheduled runs may be delayed.</p>
     <p id="sendStatus" role="status" class="help"></p><p id="liveStatus" role="status" class="help"></p>
     </section>
-    <section class="card" id="historyCard"><h2>Notification history</h2><button id="refreshNotices" class="secondary">REFRESH HISTORY</button><p id="historyStatus" role="status" class="help"></p>
-    <div class="tableWrap"><table><thead><tr><th>Date / ID</th><th>Title / target</th><th>Status / FCM acceptance</th></tr></thead><tbody id="noticeHistory"></tbody></table></div><p class="help">Latest 30 notices. Status updates poll while this tab is visible.</p></section>
-    <h2 id="analytics">App analytics</h2>
-    <div class="bar">
-      <label>PERIOD</label>
-      <select id="period">
-        <option value="7">Last 7 days</option>
-        <option value="30" selected>Last 30 days</option>
-        <option value="90">Last 90 days</option>
-        <option value="365">Last year</option>
-        <option value="custom">Custom dates</option>
-      </select>
-      <input type="date" id="from" style="width:auto"><input type="date" id="to" style="width:auto">
-      <button id="refresh" style="width:auto">REFRESH</button><button id="logout" style="width:auto">SIGN OUT</button>
-      <button id="pdfBtn" style="background:none;border:1px solid var(--pur)">⬇ DOWNLOAD PDF REPORT</button>
-    </div>
-
-    <p id="status" role="status" style="margin:12px 0;color:var(--dim)"></p>
-    <div class="grid">
-      <div class="card stat"><b class="cyan" id="sInstalls">–</b><span>INSTALLS (ALL TIME)</span></div>
-      <div class="card stat"><b class="pink" id="sOpens">–</b><span>APP OPENS</span></div>
-      <div class="card stat"><b class="green" id="sSession">–</b><span>AVG SESSION (MIN)</span></div>
-      <div class="card stat"><b class="pur" id="sVideos">–</b><span>VIDEOS PLAYED</span></div>
-      <div class="card stat"><b class="amber" id="sStreams">–</b><span>STREAMS</span></div>
-      <div class="card stat"><b class="green" id="sIptv">–</b><span>IPTV PLAYS</span></div>
-      <div class="card stat"><b class="red" id="sFail">–</b><span>PLAY FAILURES</span></div>
-      <div class="card stat"><b class="cyan" id="sAds">–</b><span>AD IMPRESSIONS</span></div>
-    </div>
-
-    <div class="card">
-      <canvas id="chart" width="880" height="180"></canvas>
-      <p class="sub" id="chartSub">app opens</p>
-    </div>
-
-    <div class="grid" style="grid-template-columns:1fr 1fr">
-      <div class="card">
-        <table>
-          <thead><tr><th>COUNTRY</th><th style="text-align:right">INSTALLS</th></tr></thead>
-          <tbody id="countries"></tbody>
-        </table>
-        <p class="sub">where installs come from (device locale)</p>
-      </div>
-      <div class="card">
-        <canvas id="hoursChart" width="420" height="160"></canvas>
-        <p class="sub">what time of day the app is used (device-local hour)</p>
-      </div>
-    </div>
-
-    <div class="card">
-      <table>
-        <thead><tr><th>TYPE</th><th>TIME</th><th>REPORT</th></tr></thead>
-        <tbody id="reports"></tbody>
-      </table>
-      <p class="sub">crash &amp; playback reports from devices · newest first</p>
-    </div>
-
-  </div>
-</div>
-<script type="module" src="./admin.mjs"></script>
-</body></html>
+    
+<section class="card" id="issues"><div class="sectionHead"><div><p class="eyebrow">DIAGNOSTICS</p><h2>Crash & playback reports</h2></div><span class="badge">Latest 100 fetched</span></div><p class="help">Selected dates · captured reports only, not every crash or freeze.</p><div class="tableWrap"><table><thead><tr><th>Type</th><th>Time</th><th>Details</th></tr></thead><tbody id="reports"></tbody></table></div></section>
+<details class="card bc" id="settings"><summary>Sender settings — GitHub dispatch token</summary>
+    <p class="help">Only needed to start the sender immediately. Scheduled sending still works without it. Repository: Aryanshahx/maxplayer. Use a fine-grained token with Actions: read/write for this repository only. Never paste a Firebase service-account key here.</p>
+    <label for="githubToken">GitHub fine-grained token</label><input id="githubToken" type="password" autocomplete="off" placeholder="Paste token here">
+    <label class="check"><input type="checkbox" id="rememberToken"> Remember token on this browser (less secure)</label>
+    <button id="saveToken">SAVE TOKEN</button><button id="forgetToken" class="secondary">FORGET TOKEN</button><button id="dispatch" class="secondary">START SENDER FOR QUEUED NOTICES</button>
+    <a href="https://github.com/Aryanshahx/maxplayer/actions/workflows/send-notices.yml" target="_blank" rel="noopener noreferrer">Open sender workflow</a>
+    <p id="settingsStatus" class="help" role="status"></p></details>
+    <footer>MaxPlayer control room <span>Data is observational, not a verified user census.</span></footer></main></div><script type="module" src="./admin.mjs"></script></body></html>

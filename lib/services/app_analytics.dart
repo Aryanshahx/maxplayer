@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'country_lookup.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
@@ -30,7 +31,7 @@ class AppAnalytics {
   static const String kFirebaseSenderId = '1080871289145';
 
   /// Report tag — bump with the app version each release.
-  static const String kAppVersionTag = '1.0.1+68';
+  static const String kAppVersionTag = '1.0.1+69';
 
   /// true only once Firebase is actually usable (configured + initialised).
   static final ValueNotifier<bool> ready = ValueNotifier<bool>(false);
@@ -68,20 +69,38 @@ class AppAnalytics {
       log('app_open');
       bumpDaily(appOpens: 1, appOpenHour: DateTime.now().hour);
       final prefs = await SharedPreferences.getInstance();
-      if (prefs.getString('aa.country') == null) {
-        await prefs.setString(
-          'aa.country',
-          countryFromLocale(PlatformDispatcher.instance.locale.toString()),
-        );
-      }
       if (!(prefs.getBool('aa.installCounted') ?? false)) {
         bumpTotal('installs');
-        final country = prefs.getString('aa.country') ?? '';
-        if (country.isNotEmpty) bumpTotal('c_$country');
         await prefs.setBool('aa.installCounted', true);
       }
+      // Independent of install counting: upgrades also contribute one new IP sample.
+      unawaited(_recordIpCountry());
     } catch (_) {
       /* telemetry must never break startup */
+    }
+  }
+
+  bool _countryLookupRunning = false;
+  Future<void> _recordIpCountry() async {
+    if (_countryLookupRunning || _db == null) return;
+    _countryLookupRunning = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('aa.ipCountryV1.counted') ?? false) return;
+      final country = await lookupIpCountry();
+      if (country.isEmpty) {
+        return; // Unknown/offline: retry next launch, never use locale.
+      }
+      final write = _db!.collection('stats').doc('total').set({
+        'ip_c_$country': FieldValue.increment(1),
+      }, SetOptions(merge: true));
+      unawaited(write.catchError((Object _) {}));
+      await prefs.setString('aa.ipCountryV1.code', country);
+      await prefs.setBool('aa.ipCountryV1.counted', true);
+    } catch (_) {
+      // Best-effort aggregate; never block playback or push initialization.
+    } finally {
+      _countryLookupRunning = false;
     }
   }
 
