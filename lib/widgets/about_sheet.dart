@@ -201,14 +201,6 @@ class AboutSheet extends StatelessWidget {
             style: TextStyle(color: Colors.white38, fontSize: 12.5),
           ),
         ),
-        const SizedBox(height: 4),
-        // Honest engine note: playback runs on MPV (libmpv + FFmpeg).
-        const Center(
-          child: Text(
-            'Playback engine: MPV (libmpv + FFmpeg)',
-            style: TextStyle(color: Colors.white24, fontSize: 11),
-          ),
-        ),
       ],
     );
   }
@@ -240,29 +232,29 @@ const List<(String, String)> _features = [
   (
     'Universal Format Support',
     'Play almost any video or audio file without needing extra codecs or '
-        'converters.'
+        'converters.',
   ),
   (
     'Smooth, High-Performance Playback',
     'Optimized for speed and stability, even with large or high-resolution '
-        'files.'
+        'files.',
   ),
   (
     'Clean, Intuitive Interface',
-    'A minimal design that keeps the focus on your content.'
+    'A minimal design that keeps the focus on your content.',
   ),
   (
     'Customizable Controls',
     'Adjust playback speed (up to 4×), subtitles, audio tracks, and more to '
-        'fit your preferences.'
+        'fit your preferences.',
   ),
   (
     'Lightweight & Efficient',
-    'Built to run smoothly without draining your device\'s resources.'
+    'Built to run smoothly without draining your device\'s resources.',
   ),
   (
     'Regular Updates',
-    'Continuously improved based on user feedback and evolving technology.'
+    'Continuously improved based on user feedback and evolving technology.',
   ),
 ];
 
@@ -328,8 +320,11 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
           ),
           Row(
             children: [
-              const Icon(Icons.bug_report_outlined,
-                  color: Colors.white70, size: 20),
+              const Icon(
+                Icons.bug_report_outlined,
+                color: Colors.white70,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               const Text(
                 'System diagnostics',
@@ -344,12 +339,10 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
                 onPressed: _loading
                     ? null
                     : () async {
-                        await Clipboard.setData(
-                            ClipboardData(text: _report()));
+                        await Clipboard.setData(ClipboardData(text: _report()));
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Diagnostics copied')),
+                            const SnackBar(content: Text('Diagnostics copied')),
                           );
                         }
                       },

@@ -1,4 +1,4 @@
-import 'notifications_screen.dart';
+import '../services/push_service.dart';
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
@@ -171,7 +171,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
       _denied = false;
     });
     try {
-      final ps = await PhotoManager.requestPermissionExtend();
+      final ps = await PhotoManager.requestPermissionExtend().whenComplete(
+        PushService.instance.mediaPermissionSettled,
+      );
       if (!ps.isAuth && !ps.hasAccess) {
         CrashLog.crumb('library.permission_denied');
         // Always ask Android first. Permanent denial cannot be overridden;
@@ -371,14 +373,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      floatingActionButton: FloatingActionButton.small(
-        heroTag: 'notification_inbox',
-        tooltip: 'Notifications',
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
-        ),
-        child: const Icon(Icons.notifications_outlined),
-      ),
       body: SafeArea(
         child: _denied && _videos.isEmpty
             ? _PermissionHint(onRetry: _load)

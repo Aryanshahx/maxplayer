@@ -94,3 +94,14 @@ HTTPS host selected by the publisher, which can receive the connection IP.
 Read/unread history is stored locally on the device. Clearing app data or
 reinstalling may create a new installation identity. No file names or media
 library content are included in notification registration.
+
+
+## Notification update (1.0.1+68)
+The in-app inbox and separate notification on/off setting have been removed.
+MaxPlayer requests Android notification permission on app open after the
+media permission request has completed. Android controls whether a repeated
+prompt is permitted; we do not override permanent denial or open settings
+automatically. You can allow or block MaxPlayer notifications in Android's
+system settings. When allowed, the anonymous installation is registered for
+general FCM notices. Images are downloaded over HTTPS with a bounded size and
+timeout. A text notification is posted first, then updated if the image loads.

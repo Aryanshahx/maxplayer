@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'services/push_service.dart';
-import 'screens/notifications_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'screens/library_screen.dart';
@@ -70,8 +70,7 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // After the first frame: upload any queued crash report, then check
-    // for an admin broadcast ("notification with image").
+    // After the first frame: upload crash report and attach tray-tap handling.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_postLaunchTasks());
     });
@@ -90,9 +89,17 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
     // offline, so no network is fine).
     if (state == AppLifecycleState.resumed) {
       _resumedAt = DateTime.now();
+      unawaited(() async {
+        await PushService.instance.start();
+        await PushService.instance.requestOnForeground();
+      }());
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
+      if (state == AppLifecycleState.paused ||
+          state == AppLifecycleState.detached) {
+        PushService.instance.backgrounded();
+      }
       final secs = DateTime.now().difference(_resumedAt).inSeconds;
       if (secs > 0) AppAnalytics.instance.trackSession(secs);
       _resumedAt = DateTime.now();
@@ -107,11 +114,14 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
       }
     } catch (_) {}
     PushService.instance.onTap = (data) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        rootNavigatorKey.currentState?.push(
-          MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
-        );
-      });
+      // A tray tap opens MaxPlayer, or an explicitly supplied safe HTTPS link.
+      final link = Uri.tryParse(data['link'] as String? ?? '');
+      if (link != null &&
+          link.scheme == 'https' &&
+          link.host.isNotEmpty &&
+          link.userInfo.isEmpty) {
+        unawaited(launchUrl(link, mode: LaunchMode.externalApplication));
+      }
     };
     if (PushService.instance.pendingTap != null) {
       final pending = PushService.instance.pendingTap!;

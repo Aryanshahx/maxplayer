@@ -30,9 +30,9 @@ Use the email/password account you created under Firebase Authentication → Use
 Missing/expired/insufficient dispatch token does not undo a successfully queued notice. The panel says queued, reports the dispatch failure and warns not to submit again. Scheduled sender runs can still process it. GitHub dispatch acceptance means the run was requested, not that it started immediately or sent the message.
 
 ## 4. First phone test
-1. Install the CI-built +67 app. Open its Notifications bell and enable Android notifications. Allow Android permission when asked. Devices need compatible Google Play services.
-2. Copy **Your installation ID** from that screen.
-3. Sign in to the panel. Choose **One installation** and paste that ID. This is not a username, email, FCM token or admin UID.
+1. Install the CI-built +68 app and open it. Complete the media permission request, then allow Android notification permission when requested. There is no notification bell, inbox or in-app switch. Devices need compatible Google Play services.
+2. Individual targeting needs a previously recorded installation UID. This simplified app no longer exposes an inbox/ID screen; otherwise use Everyone for a deliberate controlled test.
+3. Sign in to the panel. If you have the installation UID, choose **One installation** and paste it. Otherwise choose Everyone, remembering that all registered installations can receive the test. The UID is not a username, email, FCM token or admin UID.
 4. Enter a short title/message. For the first test omit a picture. Click Queue and Send and confirm the target.
 5. Watch the status/history. Pending means awaiting a sender (including hourly throttling), sending means processing, sent means accepted by FCM, failed shows the recorded error.
 6. Confirm the phone notification manually. FCM acceptance is not proof of phone delivery. Foreground, background and process-not-running tests should be separate; force-stop and battery restrictions can prevent delivery.
