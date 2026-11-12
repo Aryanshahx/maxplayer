@@ -1960,7 +1960,7 @@ https://example.com/orphan.m3u8''';
       expect(AppAnalytics.sanitizeHost(' tv-host:8080 '), 'tv_host_8080');
     });
 
-    test('countryFromLocale parses device locales (v1.0.1+65)', () {
+    test('countryFromLocale parses device locales (v1.0.1+66)', () {
       expect(AppAnalytics.countryFromLocale('en_IN'), 'IN');
       expect(AppAnalytics.countryFromLocale('hi-IN'), 'IN');
       expect(AppAnalytics.countryFromLocale('en_US.UTF-8'), 'US');
@@ -1969,8 +1969,8 @@ https://example.com/orphan.m3u8''';
       expect(AppAnalytics.countryFromLocale(''), '');
     });
 
-    test('kAppVersionTag tracks the shipped build (v1.0.1+65)', () {
-      expect(AppAnalytics.kAppVersionTag, '1.0.1+65');
+    test('kAppVersionTag tracks the shipped build (v1.0.1+66)', () {
+      expect(AppAnalytics.kAppVersionTag, '1.0.1+66');
     });
 
     test('hostOf returns http(s) host only — local paths stay private', () {

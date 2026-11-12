@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Max Player — Admin</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+
 <style>
+@media(max-width:600px){.grid{grid-template-columns:1fr!important}.bar input{max-width:45%}.card{overflow-x:auto}}
   :root { --bg:#0a0a10; --card:#14141d; --pur:#8b5cf6; --pink:#ec4899; --cyan:#22d3ee; --amber:#f59e0b; --green:#34d399; --red:#f87171; --tx:#fff; --dim:#8b8b9e; }
   * { box-sizing:border-box; margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; }
   body { background:var(--bg); color:var(--tx); min-height:100vh; padding:24px 16px 48px; }
@@ -58,10 +59,14 @@
         <option value="30" selected>Last 30 days</option>
         <option value="90">Last 90 days</option>
         <option value="365">Last year</option>
+        <option value="custom">Custom dates</option>
       </select>
+      <input type="date" id="from" style="width:auto"><input type="date" id="to" style="width:auto">
+      <button id="refresh" style="width:auto">REFRESH</button><button id="logout" style="width:auto">LOCK</button>
       <button id="pdfBtn" style="background:none;border:1px solid var(--pur)">⬇ DOWNLOAD PDF REPORT</button>
     </div>
 
+    <p id="status" role="status" style="margin:12px 0;color:var(--dim)"></p>
     <div class="grid">
       <div class="card stat"><b class="cyan" id="sInstalls">–</b><span>INSTALLS (ALL TIME)</span></div>
       <div class="card stat"><b class="pink" id="sOpens">–</b><span>APP OPENS</span></div>
@@ -94,14 +99,6 @@
 
     <div class="card">
       <table>
-        <thead><tr><th>#</th><th>FAILING STREAM HOST</th><th style="text-align:right">TIMEOUT</th><th style="text-align:right">REFUSED</th><th style="text-align:right">COUNT</th></tr></thead>
-        <tbody id="hosts"></tbody>
-      </table>
-      <p class="sub">dead sources your users hit · host only, never full URLs</p>
-    </div>
-
-    <div class="card">
-      <table>
         <thead><tr><th>TYPE</th><th>TIME</th><th>REPORT</th></tr></thead>
         <tbody id="reports"></tbody>
       </table>
@@ -112,7 +109,7 @@
       <p style="font-size:12px;letter-spacing:2px;color:var(--dim)">📣 SEND NOTIFICATION (with image)</p>
       <label>TITLE</label><input id="bcTitle" placeholder="Update is live!">
       <label>MESSAGE</label><textarea id="bcBody" rows="2" placeholder="Optional message…"></textarea>
-      <label>IMAGE URL (optional — direct https link to a .jpg/.png)</label><input id="bcImage" placeholder="https://…/poster.jpg">
+      <label>IMAGE FROM GALLERY (optional)</label><input id="bcImage" type="file" accept="image/*"><img id="imagePreview" alt="Selected image preview" style="display:none;max-width:100%;max-height:220px;margin-top:10px"><button id="clearImage" style="background:#333">REMOVE IMAGE</button>
       <button id="bcSend">SEND TO ALL USERS</button>
       <p class="sub">shows as an in-app popup the next time each user opens the app</p>
       <div class="ok" id="bcOk"></div><div class="err" id="bcErr"></div>
@@ -137,11 +134,38 @@ const COUNTRY = { IN:'India', US:'United States', GB:'United Kingdom', BR:'Brazi
 let STATS = [], REPORTS = [];
 const num = v => v && v.integerValue !== undefined ? Number(v.integerValue) : (v && v.doubleValue || 0);
 const str = v => v && v.stringValue !== undefined ? v.stringValue : '';
-const periodDays = () => Number(document.getElementById('period').value);
+const $ = id => document.getElementById(id);
+let selectedImage = '';
+const periodDays = () => Math.max(1, Math.round((new Date($('to').value+'T12:00:00') - new Date($('from').value+'T12:00:00'))/86400000)+1);
+function setDates() {
+ if ($('period').value !== 'custom') {
+  const end = new Date(), start = new Date(); start.setDate(end.getDate()-Number($('period').value)+1);
+  const local = d => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  $('from').value=local(start); $('to').value=local(end);
+ }
+ paint();
+}
+$('from').onchange=$('to').onchange=()=>{$('period').value='custom';paint();};
+$('refresh').onclick=refresh;
+$('logout').onclick=()=>{sessionStorage.removeItem('max.admin.unlocked');location.reload();};
+$('clearImage').onclick=()=>{selectedImage='';$('bcImage').value='';$('imagePreview').style.display='none';};
+$('bcImage').onchange=async()=>{
+ try {
+ const file=$('bcImage').files[0]; if(!file)return;
+ if(!file.type.startsWith('image/'))throw Error('Choose an image file');
+ if(file.size>20000000)throw Error('Please choose an image smaller than 20 MB');
+ const bitmap=await createImageBitmap(file);const canvas=document.createElement('canvas');
+ const scale=Math.min(1,1000/Math.max(bitmap.width,bitmap.height));canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);
+ canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();
+ selectedImage=canvas.toDataURL('image/jpeg',0.75);
+ if(selectedImage.length>700000)throw Error('Image is too detailed. Choose a smaller image.');
+ $('imagePreview').src=selectedImage;$('imagePreview').style.display='block';$('bcErr').textContent='';
+ }catch(e){selectedImage='';$('imagePreview').style.display='none';$('bcErr').textContent=e.message;}
+};
 
 document.getElementById('go').addEventListener('click', unlock);
 document.getElementById('pin').addEventListener('keydown', e => { if (e.key === 'Enter') unlock(); });
-document.getElementById('period').addEventListener('change', () => paint());
+document.getElementById('period').addEventListener('change', setDates);
 document.getElementById('pdfBtn').addEventListener('click', downloadPdf);
 document.getElementById('bcSend').addEventListener('click', sendBroadcast);
 
@@ -150,21 +174,32 @@ function unlock() {
   if (document.getElementById('pin').value !== ADMIN_PIN) { err.textContent = 'Wrong PIN'; return; }
   document.getElementById('login').style.display = 'none';
   document.getElementById('dash').style.display = 'block';
-  refresh(); setInterval(refresh, 60000);
+  sessionStorage.setItem('max.admin.unlocked','yes');
+  refresh();
 }
 
+async function api(path, options={}) {
+ const response=await fetch(`${API}/${path}`,options);
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(`HTTP ${response.status}: ${data.error?.message || response.statusText}. Project: ${PROJECT_ID}. Check the exact project/database, published rules and App Check enforcement in Firebase Console.`);
+ return data;
+}
+async function collection(name) {
+ const docs=[];let token='';
+ do {const result=await api(`${name}?pageSize=300${token?'&pageToken='+encodeURIComponent(token):''}`);docs.push(...(result.documents||[]));token=result.nextPageToken||'';}while(token);
+ return docs;
+}
 async function refresh() {
-  try {
-    const [stats, reports] = await Promise.all([
-      fetch(`${API}/stats?pageSize=500`).then(r => r.json()),
-      fetch(`${API}/reports?pageSize=100`).then(r => r.json()),
-    ]);
-    STATS = stats.documents || [];
-    REPORTS = (reports.documents || [])
-      .map(d => d.fields || {})
-      .sort((a, b) => str(b.ts).localeCompare(str(a.ts)));
-    paint();
-  } catch (e) { console.error(e); }
+ $('status').textContent='Connecting to '+PROJECT_ID+'…';
+ try {
+ const [stats,reports]=await Promise.all([collection('stats'),collection('reports')]);
+ STATS=stats;REPORTS=reports.map(d=>d.fields||{}).sort((a,b)=>str(b.ts).localeCompare(str(a.ts)));
+ paint();$('status').textContent='Updated '+new Date().toLocaleString()+' · '+PROJECT_ID+' · installs/countries are all-time; activity/reports follow dates';
+ }catch(e){$('status').textContent=e.message;}
+}
+setInterval(()=>{if(sessionStorage.getItem('max.admin.unlocked'))refresh();},60000);
+if(sessionStorage.getItem('max.admin.unlocked')){
+ $('login').style.display='none';$('dash').style.display='block';refresh();
 }
 
 function periodRows() {
@@ -173,8 +208,12 @@ function periodRows() {
     const name = d.name.split('/').pop();
     if (name.startsWith('daily_')) days.set(name.slice(6), d.fields || {});
   });
-  const dates = [...days.keys()].sort().slice(-periodDays());
-  return dates.map(d => ({ date: d, f: days.get(d) }));
+  const dates = [];
+  if(!$('from').value || !$('to').value || $('from').value>$('to').value)return [];
+  if(periodDays()>3660){$('status').textContent='Choose a range of 10 years or less';return [];}
+  for(let d=new Date($('from').value+'T12:00:00'), end=new Date($('to').value+'T12:00:00');d<=end;d.setDate(d.getDate()+1)){const key=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);dates.push(key);}
+
+  return dates.map(d => ({ date: d, f: days.get(d) || {} }));
 }
 const sum = (rows, k) => rows.reduce((a, r) => a + num(r.f[k]), 0);
 
@@ -205,8 +244,8 @@ function paint() {
 
   // countries
   document.getElementById('countries').innerHTML =
-    Object.entries(countries).sort((a, b) => b[1] - a[1]).slice(0, 12)
-      .map(([cc, n]) => `<tr><td>${COUNTRY[cc] || cc}</td><td style="text-align:right;color:var(--cyan);font-weight:700">${n}</td></tr>`).join('')
+    Object.entries(countries).sort((a, b) => b[1] - a[1])
+      .map(([cc, n]) => `<tr><td>${esc(countryName(cc))}</td><td style="text-align:right;color:var(--cyan);font-weight:700">${n}</td></tr>`).join('')
     || '<tr><td colspan="2" style="color:var(--dim)">No country data yet (needs 1.0.1+65 installs)</td></tr>';
 
   // hourly usage across the period
@@ -214,66 +253,43 @@ function paint() {
   drawBars(document.getElementById('hoursChart'), hours,
     hours.map((_, h) => h % 6 === 0 ? String(h) : ''), '#22d3ee', '#34d399');
 
-  // failing hosts
-  let hosts = {};
-  STATS.forEach(d => {
-    if (d.name.split('/').pop() === 'failHosts') {
-      const f = d.fields || {};
-      Object.keys(f).forEach(k => {
-        if (!k.startsWith('c_')) return;
-        const key = k.slice(2);
-        hosts[key] = { count: num(f[k]), name: str(f['n_' + key]) || key,
-          timeout: num(f['k_' + key + '__timeout']), refused: num(f['k_' + key + '__refused']) };
-      });
-    }
-  });
-  document.getElementById('hosts').innerHTML =
-    Object.values(hosts).sort((a, b) => b.count - a.count).slice(0, 20)
-      .map((h, i) => `<tr><td>${i + 1}</td><td style="color:var(--dim)">${h.name}</td><td style="text-align:right;color:var(--amber)">${h.timeout || '–'}</td><td style="text-align:right;color:var(--amber)">${h.refused || '–'}</td><td style="text-align:right;color:var(--red);font-weight:700">${h.count}</td></tr>`).join('')
-    || '<tr><td colspan="5" style="color:var(--dim)">No failures yet</td></tr>';
-
   // reports
-  document.getElementById('reports').innerHTML = REPORTS.slice(0, 25).map(r => {
+  document.getElementById('reports').innerHTML = filteredReports().slice(0, 100).map(r => {
     const t = str(r.type) || 'report';
     const when = str(r.ts).replace('T', ' ').slice(0, 16);
     const body = str(r.text).slice(0, 400);
     const host = str(r.host), kind = str(r.kind);
-    return `<tr><td><span class="pill ${t}">${t.toUpperCase()}</span></td><td style="color:var(--dim)">${when}</td><td><div class="rpt">${esc(host ? 'host: ' + host + (kind ? ' · ' + kind : '') + '\n' + body : body)}</div></td></tr>`;
+    return `<tr><td><span class="pill">${esc(t.toUpperCase())}</span></td><td style="color:var(--dim)">${esc(when)}</td><td><div class="rpt">${esc(host ? 'host: ' + host + (kind ? ' · ' + kind : '') + '\n' + body : body)}</div></td></tr>`;
   }).join('') || '<tr><td colspan="3" style="color:var(--dim)">No reports yet — devices upload from 1.0.1+65</td></tr>';
 }
 
 function esc(x) { const d = document.createElement('div'); d.textContent = x; return d.innerHTML; }
 
+function countryName(cc){try{return new Intl.DisplayNames(['en'],{type:'region'}).of(cc)||cc;}catch{return COUNTRY[cc]||cc;}}
+function filteredReports(){return REPORTS.filter(r=>{const d=str(r.ts).slice(0,10);return d>=$('from').value && d<=$('to').value;});}
 function drawBars(canvas, vals, labels, c1, c2) {
-  const x = canvas.getContext('2d');
-  x.clearRect(0, 0, canvas.width, canvas.height);
-  const max = Math.max(1, ...vals);
-  const bw = canvas.width / Math.max(1, vals.length);
-  vals.forEach((v, i) => {
-    const h = (v / max) * (canvas.height - 26);
-    const g = x.createLinearGradient(0, canvas.height - h, 0, canvas.height);
-    g.addColorStop(0, c1); g.addColorStop(1, c2);
-    x.fillStyle = g;
-    x.fillRect(i * bw + 2, canvas.height - h - 18, Math.max(1.5, bw - 4), h);
-    if (labels[i]) {
-      x.fillStyle = '#8b8b9e'; x.font = '9px system-ui'; x.textAlign = 'center';
-      x.fillText(labels[i], i * bw + bw / 2, canvas.height - 5);
-    }
-  });
+ const width=canvas.clientWidth||800,height=200,dpr=window.devicePixelRatio||1;
+ canvas.width=width*dpr;canvas.height=height*dpr;canvas.style.height=height+'px';
+ const x=canvas.getContext('2d');x.scale(dpr,dpr);
+ const left=42,top=16,bottom=32,w=width-left-10,h=height-top-bottom,max=Math.max(1,...vals);
+ x.font='10px system-ui';
+ for(let i=0;i<=4;i++){const y=top+h-i*h/4;x.strokeStyle='#2c2c3a';x.beginPath();x.moveTo(left,y);x.lineTo(width-10,y);x.stroke();x.fillStyle='#aaa';x.textAlign='right';x.fillText(String(Math.round(max*i/4)),left-6,y+3);}
+ const bw=w/Math.max(1,vals.length),step=Math.max(1,Math.ceil(vals.length/Math.max(2,Math.floor(w/50))));
+ vals.forEach((v,i)=>{x.fillStyle=c1;x.fillRect(left+i*bw+1,top+h-v/max*h,Math.max(1,bw-2),v/max*h);if(i%step===0&&labels[i]){x.fillStyle='#aaa';x.textAlign='center';x.fillText(labels[i],left+(i+.5)*bw,height-10);}});
+ if(!vals.some(v=>v)){x.fillStyle='#aaa';x.textAlign='center';x.fillText('No activity in selected period',width/2,80);}
+ canvas.onmousemove=e=>{const i=Math.floor((e.offsetX-left)/bw);canvas.title=i>=0&&i<vals.length?`${labels[i]||i}: ${vals[i]}`:'';};
 }
+window.addEventListener('resize',()=>{if($('dash').style.display==='block')paint();});
 
 async function sendBroadcast() {
   const ok = document.getElementById('bcOk'), err = document.getElementById('bcErr');
   ok.textContent = ''; err.textContent = '';
   const title = document.getElementById('bcTitle').value.trim();
   const body = document.getElementById('bcBody').value.trim();
-  const image = document.getElementById('bcImage').value.trim();
+  const image = selectedImage;
   if (!title) { err.textContent = 'Title is required'; return; }
-  if (image && !/^https:\/\/.+\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(image)) {
-    err.textContent = 'Image must be a direct https link ending in .jpg/.png/.webp'; return;
-  }
   try {
-    const r = await fetch(`${API}/broadcasts/latest`, {
+    await api('broadcasts/latest', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields: {
@@ -283,39 +299,18 @@ async function sendBroadcast() {
         image: { stringValue: image },
       }}),
     });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+
     ok.textContent = '✔ Sent — users see it on their next app open';
-  } catch (e) { err.textContent = 'Send failed: ' + e.message + ' (publish the new firestore.rules!)'; }
+  } catch (e) { err.textContent = 'Send failed: ' + e.message; }
 }
 
 function downloadPdf() {
-  if (!window.jspdf) { alert('PDF library not loaded (needs internet on this page)'); return; }
-  const doc = new window.jspdf.jsPDF();
-  const rows = periodRows();
-  let y = 18;
-  doc.setFontSize(16); doc.text('Max Player — activity report', 14, y); y += 8;
-  doc.setFontSize(9); doc.setTextColor(120);
-  doc.text(`Period: last ${periodDays()} days · generated ${new Date().toISOString().slice(0, 19)} · anonymous aggregates`, 14, y); y += 10;
-  doc.setTextColor(0); doc.setFontSize(11);
-  const secs = sum(rows, 'sessionSeconds'), sess = Math.max(1, sum(rows, 'sessions'));
-  [
-    ['App opens', sum(rows, 'appOpens')],
-    ['Avg session (min)', (secs / sess / 60).toFixed(1)],
-    ['Videos played', sum(rows, 'videosPlayed')],
-    ['Streams opened', sum(rows, 'streamsOpened')],
-    ['IPTV plays', sum(rows, 'iptvPlayed')],
-    ['Play failures', sum(rows, 'playFailed')],
-    ['Ad impressions', sum(rows, 'adImpressions')],
-  ].forEach(([k, v]) => { doc.text(`${k}: ${v}`, 14, y); y += 6; });
-  y += 4; doc.setFontSize(12); doc.text('Daily', 14, y); y += 6; doc.setFontSize(8);
-  doc.text('DATE        OPENS   VIDEOS  STREAM  IPTV   FAIL   ADS   SESS-MIN', 14, y); y += 5;
-  rows.forEach(r => {
-    if (y > 285) { doc.addPage(); y = 16; }
-    doc.text(`${r.date}   ${String(num(r.f.appOpens)).padEnd(8)}${String(num(r.f.videosPlayed)).padEnd(8)}${String(num(r.f.streamsOpened)).padEnd(8)}${String(num(r.f.iptvPlayed)).padEnd(7)}${String(num(r.f.playFailed)).padEnd(7)}${String(num(r.f.adImpressions)).padEnd(6)}${(num(r.f.sessionSeconds) / 60).toFixed(1)}`, 14, y);
-    y += 5;
-  });
-  doc.save(`maxplayer-report-${periodDays()}d.pdf`);
+ const win=window.open('','_blank');if(!win){alert('Allow popups to open the printable PDF report.');return;}
+ const rows=periodRows();
+ const table=(head,rows)=>`<table><thead><tr>${head.map(x=>'<th>'+esc(String(x))+'</th>').join('')}</tr></thead><tbody>${rows.map(row=>'<tr>'+row.map(x=>'<td>'+esc(String(x))+'</td>').join('')+'</tr>').join('')}</tbody></table>`;
+ const total=STATS.find(d=>d.name.split('/').pop()==='total')?.fields||{};
+ win.document.write(`<!doctype html><html><head><title>Max Player report</title><style>body{font:12px Arial;color:#111;margin:25px}table{border-collapse:collapse;width:100%;margin:15px 0}td,th{border:1px solid #ccc;padding:6px;text-align:left;white-space:pre-wrap;word-break:break-word}tr{break-inside:avoid}h2{margin-top:25px}@media print{button{display:none}}@page{margin:12mm}</style></head><body><button onclick="window.print()">Print / Save as PDF</button><h1>Max Player activity report</h1><p>${esc($('from').value)} to ${esc($('to').value)} · generated ${esc(new Date().toLocaleString())}</p><p>Use the print destination “Save as PDF”. Installs and countries are all-time; activity and reports follow the selected dates.</p><h2>Summary</h2>${table(['Metric','Value'],[['Installs (all-time)',num(total.installs)],...['appOpens','videosPlayed','streamsOpened','iptvPlayed','playFailed','adImpressions','sessions','sessionSeconds'].map(k=>[k,sum(rows,k)])])}<h2>Countries (device locale)</h2>${table(['Country','Installs'],Object.entries(total).filter(([k])=>k.startsWith('c_')).map(([k,v])=>[countryName(k.slice(2)),num(v)]))}<h2>Hourly app opens (device-local)</h2>${table(['Hour','Opens'],Array.from({length:24},(_,h)=>[h+':00',sum(rows,'h_'+h)]))}<h2>Daily activity</h2>${table(['Date','Opens','Videos','Streams','IPTV','Failures','Ads','Seconds'],rows.map(r=>[r.date,...['appOpens','videosPlayed','streamsOpened','iptvPlayed','playFailed','adImpressions','sessionSeconds'].map(k=>num(r.f[k]))]))}<h2>Problem reports</h2>${table(['Type','Time','Details'],filteredReports().map(r=>[str(r.type),str(r.ts),str(r.text)]))}</body></html>`);
+ win.document.close();win.focus();setTimeout(()=>win.print(),300);
 }
-</script>
-</body>
-</html>
+setDates();
+</script></body></html>

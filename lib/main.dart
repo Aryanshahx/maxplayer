@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
@@ -158,13 +159,21 @@ class _BroadcastDialog extends StatelessWidget {
           if (image.isNotEmpty) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                image,
-                height: 150,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
-              ),
+              child: image.startsWith('data:image/')
+                  ? Image.memory(
+                      base64Decode(image.substring(image.indexOf(',') + 1)),
+                      height: 150,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    )
+                  : Image.network(
+                      image,
+                      height: 150,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
             ),
             const SizedBox(height: 12),
           ],

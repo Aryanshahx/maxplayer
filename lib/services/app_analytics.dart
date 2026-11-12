@@ -30,7 +30,7 @@ class AppAnalytics {
   static const String kFirebaseSenderId = '1080871289145';
 
   /// Report tag — bump with the app version each release.
-  static const String kAppVersionTag = '1.0.1+65';
+  static const String kAppVersionTag = '1.0.1+66';
 
   /// true only once Firebase is actually usable (configured + initialised).
   static final ValueNotifier<bool> ready = ValueNotifier<bool>(false);
@@ -85,7 +85,7 @@ class AppAnalytics {
     }
   }
 
-  /// v1.0.1+65: session-time ping — called when the app backgrounds.
+  /// v1.0.1+66: session-time ping — called when the app backgrounds.
   /// Aggregated as daily sessionSeconds + sessions (avg = sec/sessions).
   void trackSession(int seconds) {
     if (seconds <= 0) return;
@@ -95,7 +95,7 @@ class AppAnalytics {
     } catch (_) {}
   }
 
-  /// v1.0.1+65: report uploader (crash breadcrumbs / player failures).
+  /// v1.0.1+66: report uploader (crash breadcrumbs / player failures).
   /// Firestore queues the write offline and flushes it when the network
   /// returns — dead-zone friendly by design.
   void sendReport({
@@ -120,7 +120,7 @@ class AppAnalytics {
     } catch (_) {}
   }
 
-  /// v1.0.1+65: admin→app broadcast ("notification with image") — the app
+  /// v1.0.1+66: admin→app broadcast ("notification with image") — the app
   /// fetches this once per open; unseen ids pop an in-app dialog.
   Future<Map<String, String>?> fetchBroadcast() async {
     final db = _db;
