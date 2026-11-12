@@ -2,10 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://api.github.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Max Player — Admin</title>
 
 <style>
+  label{display:block;margin:12px 0 5px;color:#b7b7c8;font-size:13px}h2{font-size:18px;margin-bottom:12px}a{color:#bda1ff}nav a{padding:8px}.help{font-size:13px;line-height:1.6;color:#b0b0c2;margin:12px 0;overflow-wrap:anywhere}.secondary{background:#242433;border:1px solid #414156}button:disabled{opacity:.5;cursor:wait}.check{display:flex;gap:10px;align-items:center}.check input{width:auto}.phone{border:1px solid #4c4c60;border-radius:18px;background:#22222d;padding:18px;max-width:420px;margin:18px auto;overflow-wrap:anywhere}.phone small{font-size:10px;color:#bcbccc}.phone strong{display:block;margin:12px 0 8px}.phone p{white-space:pre-wrap}.phone img{max-width:100%;max-height:260px;margin-top:12px;border-radius:10px}summary{cursor:pointer}.tableWrap{overflow:auto}td{overflow-wrap:anywhere}#login{margin:8vh auto 0}#noticeHistory td{min-width:130px}.err{overflow-wrap:anywhere}
+
 @media(max-width:600px){.grid{grid-template-columns:1fr!important}.bar input{max-width:45%}.card{overflow-x:auto}}
   :root { --bg:#0a0a10; --card:#14141d; --pur:#8b5cf6; --pink:#ec4899; --cyan:#22d3ee; --amber:#f59e0b; --green:#34d399; --red:#f87171; --tx:#fff; --dim:#8b8b9e; }
   * { box-sizing:border-box; margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; }
@@ -45,13 +49,44 @@
   <h1>MAX PLAYER <b>· ADMIN</b></h1>
 
   <div class="card" id="login">
-    <p style="font-size:13px;color:var(--dim);margin-bottom:14px">PIN-locked dashboard</p>
-    <input id="pin" type="password" placeholder="Admin PIN" autocomplete="off">
-    <button id="go">UNLOCK</button>
-    <div class="err" id="err"></div>
+    <h2>Admin sign in</h2>
+    <p class="sub">Firebase project: max-player-cd43d</p>
+    <form id="loginForm">
+    <label for="email">Admin email</label><input id="email" type="email" autocomplete="username" required>
+    <label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required>
+    <button id="go" type="submit">SIGN IN</button>
+    </form>
+    <div class="err" id="err" role="alert"></div>
   </div>
 
   <div id="dash">
+    <p class="sub" id="identity"></p>
+    <nav class="bar"><a href="#composer">Send notification</a><a href="#historyCard">History</a><a href="#analytics">Analytics</a><a href="#settings">Sender settings</a></nav>
+    <details class="card bc" id="settings"><summary>Sender settings — GitHub dispatch token</summary>
+    <p class="help">Only needed to start the sender immediately. Scheduled sending still works without it. Repository: Aryanshahx/maxplayer. Use a fine-grained token with Actions: read/write for this repository only. Never paste a Firebase service-account key here.</p>
+    <label for="githubToken">GitHub fine-grained token</label><input id="githubToken" type="password" autocomplete="off" placeholder="Paste token here">
+    <label class="check"><input type="checkbox" id="rememberToken"> Remember token on this browser (less secure)</label>
+    <button id="saveToken">SAVE TOKEN</button><button id="forgetToken" class="secondary">FORGET TOKEN</button><button id="dispatch" class="secondary">START SENDER FOR QUEUED NOTICES</button>
+    <a href="https://github.com/Aryanshahx/maxplayer/actions/workflows/send-notices.yml" target="_blank" rel="noopener noreferrer">Open sender workflow</a>
+    <p id="settingsStatus" class="help" role="status"></p></details>
+    <section class="card bc" id="composer">
+    <h2>Send Android notification</h2><p class="help">Real notification-tray push. Delivery depends on device permission and Android restrictions. Pictures are public on GitHub.</p>
+    <form id="noticeForm">
+    <label for="title">Title · max 80 characters</label><input id="title" maxlength="80" required>
+    <label for="message">Message · max 900 characters</label><textarea id="message" maxlength="900" rows="3"></textarea>
+    <label for="target">Send to</label><select id="target"><option value="all">Everyone</option><option value="one">One installation</option></select>
+    <input id="targetUid" placeholder="Paste installation ID from the app’s Notifications screen" hidden aria-label="Installation ID">
+    <label for="link">Link · optional HTTPS</label><input id="link" type="url" placeholder="https://…">
+    <label for="picture">Picture from gallery · optional</label><input id="picture" type="file" accept="image/*">
+    <p id="imageInfo" class="help"></p><button id="removePicture" type="button" class="secondary">REMOVE PICTURE</button>
+    <div class="phone"><small>▶ MAXPLAYER · preview, actual Android layout varies</small><strong id="previewTitle">Notification title</strong><p id="previewMessage">Your message appears here.</p><img id="previewImage" alt="Notification picture preview" hidden></div>
+    <button id="send" type="submit">QUEUE AND SEND</button>
+    </form><p class="help">At most 10 notices/hour. FCM acceptance does not mean every phone received it. Scheduled runs may be delayed.</p>
+    <p id="sendStatus" role="status" class="help"></p><p id="liveStatus" role="status" class="help"></p>
+    </section>
+    <section class="card" id="historyCard"><h2>Notification history</h2><button id="refreshNotices" class="secondary">REFRESH HISTORY</button><p id="historyStatus" role="status" class="help"></p>
+    <div class="tableWrap"><table><thead><tr><th>Date / ID</th><th>Title / target</th><th>Status / FCM acceptance</th></tr></thead><tbody id="noticeHistory"></tbody></table></div><p class="help">Latest 30 notices. Status updates poll while this tab is visible.</p></section>
+    <h2 id="analytics">App analytics</h2>
     <div class="bar">
       <label>PERIOD</label>
       <select id="period">
@@ -62,7 +97,7 @@
         <option value="custom">Custom dates</option>
       </select>
       <input type="date" id="from" style="width:auto"><input type="date" id="to" style="width:auto">
-      <button id="refresh" style="width:auto">REFRESH</button><button id="logout" style="width:auto">LOCK</button>
+      <button id="refresh" style="width:auto">REFRESH</button><button id="logout" style="width:auto">SIGN OUT</button>
       <button id="pdfBtn" style="background:none;border:1px solid var(--pur)">⬇ DOWNLOAD PDF REPORT</button>
     </div>
 
@@ -105,212 +140,7 @@
       <p class="sub">crash &amp; playback reports from devices · newest first</p>
     </div>
 
-    <div class="card bc">
-      <p style="font-size:12px;letter-spacing:2px;color:var(--dim)">📣 SEND NOTIFICATION (with image)</p>
-      <label>TITLE</label><input id="bcTitle" placeholder="Update is live!">
-      <label>MESSAGE</label><textarea id="bcBody" rows="2" placeholder="Optional message…"></textarea>
-      <label>IMAGE FROM GALLERY (optional)</label><input id="bcImage" type="file" accept="image/*"><img id="imagePreview" alt="Selected image preview" style="display:none;max-width:100%;max-height:220px;margin-top:10px"><button id="clearImage" style="background:#333">REMOVE IMAGE</button>
-      <button id="bcSend">SEND TO ALL USERS</button>
-      <p class="sub">shows as an in-app popup the next time each user opens the app</p>
-      <div class="ok" id="bcOk"></div><div class="err" id="bcErr"></div>
-    </div>
   </div>
 </div>
-
-<script>
-// =====================================================================
-// Max Player admin (GitHub Pages + Firebase REST, no SDK).
-// PROJECT_ID must match kFirebaseProjectId in lib/services/app_analytics.dart.
-// DEFAULT PIN 1234 — change it: edit the ADMIN_PIN line below.
-// Soft lock only: data is anonymous aggregates + reports.
-// =====================================================================
-const PROJECT_ID = 'max-player-cd43d';
-const ADMIN_PIN  = '1234';
-
-const API = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
-
-const COUNTRY = { IN:'India', US:'United States', GB:'United Kingdom', BR:'Brazil', ID:'Indonesia', PK:'Pakistan', BD:'Bangladesh', NG:'Nigeria', RU:'Russia', MX:'Mexico', PH:'Philippines', VN:'Vietnam', TR:'Turkey', EG:'Egypt', IR:'Iran', DE:'Germany', FR:'France', JP:'Japan', KR:'South Korea', SA:'Saudi Arabia', AE:'UAE', TH:'Thailand', IT:'Italy', ES:'Spain', PL:'Poland', CA:'Canada', AU:'Australia', NP:'Nepal', LK:'Sri Lanka', MY:'Malaysia', ZA:'South Africa', KE:'Kenya', AR:'Argentina', CO:'Colombia' };
-
-let STATS = [], REPORTS = [];
-const num = v => v && v.integerValue !== undefined ? Number(v.integerValue) : (v && v.doubleValue || 0);
-const str = v => v && v.stringValue !== undefined ? v.stringValue : '';
-const $ = id => document.getElementById(id);
-let selectedImage = '';
-const periodDays = () => Math.max(1, Math.round((new Date($('to').value+'T12:00:00') - new Date($('from').value+'T12:00:00'))/86400000)+1);
-function setDates() {
- if ($('period').value !== 'custom') {
-  const end = new Date(), start = new Date(); start.setDate(end.getDate()-Number($('period').value)+1);
-  const local = d => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
-  $('from').value=local(start); $('to').value=local(end);
- }
- paint();
-}
-$('from').onchange=$('to').onchange=()=>{$('period').value='custom';paint();};
-$('refresh').onclick=refresh;
-$('logout').onclick=()=>{sessionStorage.removeItem('max.admin.unlocked');location.reload();};
-$('clearImage').onclick=()=>{selectedImage='';$('bcImage').value='';$('imagePreview').style.display='none';};
-$('bcImage').onchange=async()=>{
- try {
- const file=$('bcImage').files[0]; if(!file)return;
- if(!file.type.startsWith('image/'))throw Error('Choose an image file');
- if(file.size>20000000)throw Error('Please choose an image smaller than 20 MB');
- const bitmap=await createImageBitmap(file);const canvas=document.createElement('canvas');
- const scale=Math.min(1,1000/Math.max(bitmap.width,bitmap.height));canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);
- canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();
- selectedImage=canvas.toDataURL('image/jpeg',0.75);
- if(selectedImage.length>700000)throw Error('Image is too detailed. Choose a smaller image.');
- $('imagePreview').src=selectedImage;$('imagePreview').style.display='block';$('bcErr').textContent='';
- }catch(e){selectedImage='';$('imagePreview').style.display='none';$('bcErr').textContent=e.message;}
-};
-
-document.getElementById('go').addEventListener('click', unlock);
-document.getElementById('pin').addEventListener('keydown', e => { if (e.key === 'Enter') unlock(); });
-document.getElementById('period').addEventListener('change', setDates);
-document.getElementById('pdfBtn').addEventListener('click', downloadPdf);
-document.getElementById('bcSend').addEventListener('click', sendBroadcast);
-
-function unlock() {
-  const err = document.getElementById('err');
-  if (document.getElementById('pin').value !== ADMIN_PIN) { err.textContent = 'Wrong PIN'; return; }
-  document.getElementById('login').style.display = 'none';
-  document.getElementById('dash').style.display = 'block';
-  sessionStorage.setItem('max.admin.unlocked','yes');
-  refresh();
-}
-
-async function api(path, options={}) {
- const response=await fetch(`${API}/${path}`,options);
- const data=await response.json().catch(()=>({}));
- if(!response.ok)throw Error(`HTTP ${response.status}: ${data.error?.message || response.statusText}. Project: ${PROJECT_ID}. Check the exact project/database, published rules and App Check enforcement in Firebase Console.`);
- return data;
-}
-async function collection(name) {
- const docs=[];let token='';
- do {const result=await api(`${name}?pageSize=300${token?'&pageToken='+encodeURIComponent(token):''}`);docs.push(...(result.documents||[]));token=result.nextPageToken||'';}while(token);
- return docs;
-}
-async function refresh() {
- $('status').textContent='Connecting to '+PROJECT_ID+'…';
- try {
- const [stats,reports]=await Promise.all([collection('stats'),collection('reports')]);
- STATS=stats;REPORTS=reports.map(d=>d.fields||{}).sort((a,b)=>str(b.ts).localeCompare(str(a.ts)));
- paint();$('status').textContent='Updated '+new Date().toLocaleString()+' · '+PROJECT_ID+' · installs/countries are all-time; activity/reports follow dates';
- }catch(e){$('status').textContent=e.message;}
-}
-setInterval(()=>{if(sessionStorage.getItem('max.admin.unlocked'))refresh();},60000);
-if(sessionStorage.getItem('max.admin.unlocked')){
- $('login').style.display='none';$('dash').style.display='block';refresh();
-}
-
-function periodRows() {
-  const days = new Map();
-  STATS.forEach(d => {
-    const name = d.name.split('/').pop();
-    if (name.startsWith('daily_')) days.set(name.slice(6), d.fields || {});
-  });
-  const dates = [];
-  if(!$('from').value || !$('to').value || $('from').value>$('to').value)return [];
-  if(periodDays()>3660){$('status').textContent='Choose a range of 10 years or less';return [];}
-  for(let d=new Date($('from').value+'T12:00:00'), end=new Date($('to').value+'T12:00:00');d<=end;d.setDate(d.getDate()+1)){const key=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);dates.push(key);}
-
-  return dates.map(d => ({ date: d, f: days.get(d) || {} }));
-}
-const sum = (rows, k) => rows.reduce((a, r) => a + num(r.f[k]), 0);
-
-function paint() {
-  const rows = periodRows();
-  document.getElementById('chartSub').textContent = `app opens · last ${periodDays()} days`;
-  let installs = 0, countries = {};
-  STATS.forEach(d => {
-    const name = d.name.split('/').pop();
-    if (name === 'total') {
-      installs = num((d.fields || {}).installs);
-      Object.keys(d.fields || {}).forEach(k => { if (k.startsWith('c_')) countries[k.slice(2)] = num(d.fields[k]); });
-    }
-  });
-  document.getElementById('sInstalls').textContent = installs;
-  document.getElementById('sOpens').textContent   = sum(rows, 'appOpens');
-  document.getElementById('sVideos').textContent  = sum(rows, 'videosPlayed');
-  document.getElementById('sStreams').textContent = sum(rows, 'streamsOpened');
-  document.getElementById('sIptv').textContent    = sum(rows, 'iptvPlayed');
-  document.getElementById('sFail').textContent    = sum(rows, 'playFailed');
-  document.getElementById('sAds').textContent     = sum(rows, 'adImpressions');
-  const secs = sum(rows, 'sessionSeconds'), sess = Math.max(1, sum(rows, 'sessions'));
-  document.getElementById('sSession').textContent = (secs / sess / 60).toFixed(1);
-
-  // opens chart
-  drawBars(document.getElementById('chart'), rows.map(r => num(r.f.appOpens)),
-    rows.map(r => r.date.slice(5)), '#ec4899', '#8b5cf6');
-
-  // countries
-  document.getElementById('countries').innerHTML =
-    Object.entries(countries).sort((a, b) => b[1] - a[1])
-      .map(([cc, n]) => `<tr><td>${esc(countryName(cc))}</td><td style="text-align:right;color:var(--cyan);font-weight:700">${n}</td></tr>`).join('')
-    || '<tr><td colspan="2" style="color:var(--dim)">No country data yet (needs 1.0.1+65 installs)</td></tr>';
-
-  // hourly usage across the period
-  const hours = Array.from({length: 24}, (_, h) => sum(rows, 'h_' + h));
-  drawBars(document.getElementById('hoursChart'), hours,
-    hours.map((_, h) => h % 6 === 0 ? String(h) : ''), '#22d3ee', '#34d399');
-
-  // reports
-  document.getElementById('reports').innerHTML = filteredReports().slice(0, 100).map(r => {
-    const t = str(r.type) || 'report';
-    const when = str(r.ts).replace('T', ' ').slice(0, 16);
-    const body = str(r.text).slice(0, 400);
-    const host = str(r.host), kind = str(r.kind);
-    return `<tr><td><span class="pill">${esc(t.toUpperCase())}</span></td><td style="color:var(--dim)">${esc(when)}</td><td><div class="rpt">${esc(host ? 'host: ' + host + (kind ? ' · ' + kind : '') + '\n' + body : body)}</div></td></tr>`;
-  }).join('') || '<tr><td colspan="3" style="color:var(--dim)">No reports yet — devices upload from 1.0.1+65</td></tr>';
-}
-
-function esc(x) { const d = document.createElement('div'); d.textContent = x; return d.innerHTML; }
-
-function countryName(cc){try{return new Intl.DisplayNames(['en'],{type:'region'}).of(cc)||cc;}catch{return COUNTRY[cc]||cc;}}
-function filteredReports(){return REPORTS.filter(r=>{const d=str(r.ts).slice(0,10);return d>=$('from').value && d<=$('to').value;});}
-function drawBars(canvas, vals, labels, c1, c2) {
- const width=canvas.clientWidth||800,height=200,dpr=window.devicePixelRatio||1;
- canvas.width=width*dpr;canvas.height=height*dpr;canvas.style.height=height+'px';
- const x=canvas.getContext('2d');x.scale(dpr,dpr);
- const left=42,top=16,bottom=32,w=width-left-10,h=height-top-bottom,max=Math.max(1,...vals);
- x.font='10px system-ui';
- for(let i=0;i<=4;i++){const y=top+h-i*h/4;x.strokeStyle='#2c2c3a';x.beginPath();x.moveTo(left,y);x.lineTo(width-10,y);x.stroke();x.fillStyle='#aaa';x.textAlign='right';x.fillText(String(Math.round(max*i/4)),left-6,y+3);}
- const bw=w/Math.max(1,vals.length),step=Math.max(1,Math.ceil(vals.length/Math.max(2,Math.floor(w/50))));
- vals.forEach((v,i)=>{x.fillStyle=c1;x.fillRect(left+i*bw+1,top+h-v/max*h,Math.max(1,bw-2),v/max*h);if(i%step===0&&labels[i]){x.fillStyle='#aaa';x.textAlign='center';x.fillText(labels[i],left+(i+.5)*bw,height-10);}});
- if(!vals.some(v=>v)){x.fillStyle='#aaa';x.textAlign='center';x.fillText('No activity in selected period',width/2,80);}
- canvas.onmousemove=e=>{const i=Math.floor((e.offsetX-left)/bw);canvas.title=i>=0&&i<vals.length?`${labels[i]||i}: ${vals[i]}`:'';};
-}
-window.addEventListener('resize',()=>{if($('dash').style.display==='block')paint();});
-
-async function sendBroadcast() {
-  const ok = document.getElementById('bcOk'), err = document.getElementById('bcErr');
-  ok.textContent = ''; err.textContent = '';
-  const title = document.getElementById('bcTitle').value.trim();
-  const body = document.getElementById('bcBody').value.trim();
-  const image = selectedImage;
-  if (!title) { err.textContent = 'Title is required'; return; }
-  try {
-    await api('broadcasts/latest', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: {
-        id: { stringValue: 'bc_' + Date.now() },
-        title: { stringValue: title },
-        body: { stringValue: body },
-        image: { stringValue: image },
-      }}),
-    });
-
-    ok.textContent = '✔ Sent — users see it on their next app open';
-  } catch (e) { err.textContent = 'Send failed: ' + e.message; }
-}
-
-function downloadPdf() {
- const win=window.open('','_blank');if(!win){alert('Allow popups to open the printable PDF report.');return;}
- const rows=periodRows();
- const table=(head,rows)=>`<table><thead><tr>${head.map(x=>'<th>'+esc(String(x))+'</th>').join('')}</tr></thead><tbody>${rows.map(row=>'<tr>'+row.map(x=>'<td>'+esc(String(x))+'</td>').join('')+'</tr>').join('')}</tbody></table>`;
- const total=STATS.find(d=>d.name.split('/').pop()==='total')?.fields||{};
- win.document.write(`<!doctype html><html><head><title>Max Player report</title><style>body{font:12px Arial;color:#111;margin:25px}table{border-collapse:collapse;width:100%;margin:15px 0}td,th{border:1px solid #ccc;padding:6px;text-align:left;white-space:pre-wrap;word-break:break-word}tr{break-inside:avoid}h2{margin-top:25px}@media print{button{display:none}}@page{margin:12mm}</style></head><body><button onclick="window.print()">Print / Save as PDF</button><h1>Max Player activity report</h1><p>${esc($('from').value)} to ${esc($('to').value)} · generated ${esc(new Date().toLocaleString())}</p><p>Use the print destination “Save as PDF”. Installs and countries are all-time; activity and reports follow the selected dates.</p><h2>Summary</h2>${table(['Metric','Value'],[['Installs (all-time)',num(total.installs)],...['appOpens','videosPlayed','streamsOpened','iptvPlayed','playFailed','adImpressions','sessions','sessionSeconds'].map(k=>[k,sum(rows,k)])])}<h2>Countries (device locale)</h2>${table(['Country','Installs'],Object.entries(total).filter(([k])=>k.startsWith('c_')).map(([k,v])=>[countryName(k.slice(2)),num(v)]))}<h2>Hourly app opens (device-local)</h2>${table(['Hour','Opens'],Array.from({length:24},(_,h)=>[h+':00',sum(rows,'h_'+h)]))}<h2>Daily activity</h2>${table(['Date','Opens','Videos','Streams','IPTV','Failures','Ads','Seconds'],rows.map(r=>[r.date,...['appOpens','videosPlayed','streamsOpened','iptvPlayed','playFailed','adImpressions','sessionSeconds'].map(k=>num(r.f[k]))]))}<h2>Problem reports</h2>${table(['Type','Time','Details'],filteredReports().map(r=>[str(r.type),str(r.ts),str(r.text)]))}</body></html>`);
- win.document.close();win.focus();setTimeout(()=>win.print(),300);
-}
-setDates();
-</script></body></html>
+<script type="module" src="./admin.mjs"></script>
+</body></html>

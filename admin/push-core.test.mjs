@@ -1,0 +1,17 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { fieldsOf, unpack, unpackDoc, validateDraft, imageByteSize, statusText } from './push-core.mjs';
+const draft=()=>({title:'An update',message:'Details',target:'all',status:'pending'});
+test('validates a broadcast',()=>assert.equal(validateDraft(draft()).target,'all'));
+test('accepts an installation ID',()=>assert.equal(validateDraft({...draft(),target:'installation_123'}).target,'installation_123'));
+test('rejects empty and excessive titles',()=>{for(const title of ['', ' ', 'x'.repeat(81)])assert.throws(()=>validateDraft({...draft(),title}));});
+test('rejects invalid target and long body',()=>{assert.throws(()=>validateDraft({...draft(),target:'../path'}));assert.throws(()=>validateDraft({...draft(),message:'x'.repeat(901)}));});
+test('rejects non-HTTPS and credential-bearing links',()=>{for(const link of ['http://example.com','javascript:alert(1)','https://user:pass@example.com'])assert.throws(()=>validateDraft({...draft(),link}));});
+test('accepts HTTPS links',()=>assert.ok(validateDraft({...draft(),link:'https://example.com/update'})));
+test('counts decoded base64 bytes correctly',()=>{assert.equal(imageByteSize('data:image/jpeg;base64,/9j/2Q=='),4);assert.throws(()=>imageByteSize('data:image/png;base64,/9j/2Q=='));});
+test('caps image bytes',()=>assert.throws(()=>validateDraft({...draft(),imageData:'data:image/jpeg;base64,'+Buffer.alloc(307201).toString('base64')})));
+test('checks UTF-8 byte budget, not just character limit',()=>assert.throws(()=>validateDraft({...draft(),message:'界'.repeat(850)})));
+test('round-trips Firestore REST fields',()=>{const value={message:'Hello',count:2,enabled:true,items:['x',false],nothing:null};assert.deepEqual(unpack(fieldsOf(value)),value);});
+test('decodes Firestore timestamps and document ID',()=>assert.deepEqual(unpackDoc({name:'p/documents/notices/id',fields:{createdAt:{timestampValue:'2026-09-05T00:00:00Z'}}}),{id:'id',createdAt:'2026-09-05T00:00:00Z'}));
+test('does not claim topic phones reached',()=>{const s=statusText({status:'sent',target:'all'});assert.ok(s.includes('phone count unavailable'));assert.ok(!s.includes('delivered'));});
+test('flags uncertain delivery and partial token failures',()=>{assert.ok(statusText({status:'failed',outcomeUncertain:true}).includes('review before retry'));assert.ok(statusText({status:'sent',target:'uid',acceptedTokens:2,failedTokens:1}).includes('failed 1'));});
