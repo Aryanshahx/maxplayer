@@ -26,6 +26,12 @@ opens, number of plays (videos / streams / live TV channels), ad
 impressions, and playback failures with a coarse reason (for example
 "timeout") plus the failing HOST (for example "example.com") — never the
 full URL, and never a file name, folder name, video title, or search term.
+Version 1.0.1+65 adds: the COUNTRY of the install (from the device's
+language/locale setting — no GPS), the device-local HOUR of app opens, the
+total time spent in the app per day, and crash / playback-failure reports
+(engine error text and failing stream HOST only). All of it is aggregated
+or anonymised, queued offline, and sent when the network returns.
+
 The counts are attached to a random, per-device identifier with no sign-in
 and no personal information. Data lives in Google Firebase
 (https://firebase.google.com/support/privacy). Nothing here can identify

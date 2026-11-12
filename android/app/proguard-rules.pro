@@ -33,18 +33,24 @@
 -dontwarn androidx.work.**
 
 # --- Google Mobile Ads / Play services --------------------------------
--keep class com.google.android.gms.** { *; }
--keep class com.google.android.ump.** { *; }
--keep class com.google.ads.** { *; }
+# v1.0.1+65: the SDKs ship their OWN consumer ProGuard rules inside the
+# AARs — blanket '-keep ** { *; }' here kept 100% of GMS and tanked the
+# shrink/obfuscation scores. Only silence warnings.
 -dontwarn com.google.android.gms.**
 -dontwarn com.google.android.ump.**
 -dontwarn com.google.ads.**
 
+# --- Firebase (consumer rules ship in the AARs) ------------------------
+-dontwarn com.google.firebase.**
+-dontwarn com.google.firestore.**
+
 # --- media_kit / libmpv JNI surface (player engine) -------------------
 -keep class com.alexmercerind.** { *; }
--keep class io.flutter.** { *; }
 -dontwarn com.alexmercerind.**
 -dontwarn io.flutter.**
+
+# Reflection/metadata R8 needs for generics across plugins
+-keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
 
 # --- whisper/FFmpegKit JNI (on-device AI subtitles) -------------------
 -keep class com.arthenica.** { *; }

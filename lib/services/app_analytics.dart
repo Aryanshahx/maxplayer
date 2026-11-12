@@ -29,6 +29,9 @@ class AppAnalytics {
   static const String kFirebaseProjectId = 'max-player-cd43d';
   static const String kFirebaseSenderId = '1080871289145';
 
+  /// Report tag — bump with the app version each release.
+  static const String kAppVersionTag = '1.0.1+65';
+
   /// true only once Firebase is actually usable (configured + initialised).
   static final ValueNotifier<bool> ready = ValueNotifier<bool>(false);
   bool _triedInit = false;
@@ -56,21 +59,93 @@ class AppAnalytics {
     }
   }
 
-  /// v1.0.1+63: one call from main() — waits for init, then counts the
-  /// app open; the install is counted ONCE per device ever (local flag).
+  /// v1.0.1+63/+65: one call from main() — waits for init, then counts
+  /// the app open (+ time-of-day bucket); the install + its COUNTRY are
+  /// counted ONCE per device ever (local flags).
   Future<void> trackAppOpen() async {
     await ensureInit();
     try {
       log('app_open');
-      bumpDaily(appOpens: 1);
+      bumpDaily(appOpens: 1, appOpenHour: DateTime.now().hour);
       final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString('aa.country') == null) {
+        await prefs.setString(
+          'aa.country',
+          countryFromLocale(PlatformDispatcher.instance.locale.toString()),
+        );
+      }
       if (!(prefs.getBool('aa.installCounted') ?? false)) {
         bumpTotal('installs');
+        final country = prefs.getString('aa.country') ?? '';
+        if (country.isNotEmpty) bumpTotal('c_$country');
         await prefs.setBool('aa.installCounted', true);
       }
     } catch (_) {
       /* telemetry must never break startup */
     }
+  }
+
+  /// v1.0.1+65: session-time ping — called when the app backgrounds.
+  /// Aggregated as daily sessionSeconds + sessions (avg = sec/sessions).
+  void trackSession(int seconds) {
+    if (seconds <= 0) return;
+    try {
+      log('session_end', {'seconds': seconds});
+      bumpDaily(sessionSeconds: seconds, sessions: 1);
+    } catch (_) {}
+  }
+
+  /// v1.0.1+65: report uploader (crash breadcrumbs / player failures).
+  /// Firestore queues the write offline and flushes it when the network
+  /// returns — dead-zone friendly by design.
+  void sendReport({
+    required String type,
+    required String text,
+    String? host,
+    String kind = '',
+  }) {
+    final db = _db;
+    if (db == null) return;
+    try {
+      unawaited(
+        db.collection('reports').add({
+          'type': type,
+          'ts': DateTime.now().toIso8601String(),
+          'app': kAppVersionTag,
+          if (host != null && host.isNotEmpty) 'host': host,
+          if (kind.isNotEmpty) 'kind': kind,
+          'text': text.length > 1200 ? text.substring(0, 1200) : text,
+        }),
+      );
+    } catch (_) {}
+  }
+
+  /// v1.0.1+65: admin→app broadcast ("notification with image") — the app
+  /// fetches this once per open; unseen ids pop an in-app dialog.
+  Future<Map<String, String>?> fetchBroadcast() async {
+    final db = _db;
+    if (db == null) return null;
+    try {
+      final doc = await db.collection('broadcasts').doc('latest').get();
+      final d = doc.data();
+      if (d == null) return null;
+      final id = '${d['id'] ?? ''}';
+      final title = '${d['title'] ?? ''}';
+      final body = '${d['body'] ?? ''}';
+      final image = '${d['image'] ?? ''}';
+      if (id.isEmpty || title.isEmpty) return null;
+      return {'id': id, 'title': title, 'body': body, 'image': image};
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 'IN' from a Dart locale string like en_IN / en-IN / en_IN.UTF-8.
+  static String countryFromLocale(String locale) {
+    final parts = locale.split('.').first.replaceAll('-', '_').split('_');
+    if (parts.length < 2) return '';
+    final c = parts[1].replaceAll(RegExp('[^A-Za-z]'), '').toUpperCase();
+    return c.length == 2 ? c : '';
   }
 
   FirebaseAnalytics? get _a => ready.value ? FirebaseAnalytics.instance : null;
@@ -104,6 +179,9 @@ class AppAnalytics {
     int iptvPlayed = 0,
     int playFailed = 0,
     String failKind = '',
+    int sessionSeconds = 0,
+    int sessions = 0,
+    int appOpenHour = -1,
   }) {
     final db = _db;
     if (db == null) return;
@@ -121,6 +199,11 @@ class AppAnalytics {
             'streamsOpened': FieldValue.increment(streamsOpened),
           if (iptvOpened > 0) 'iptvOpened': FieldValue.increment(iptvOpened),
           if (iptvPlayed > 0) 'iptvPlayed': FieldValue.increment(iptvPlayed),
+          if (sessionSeconds > 0)
+            'sessionSeconds': FieldValue.increment(sessionSeconds),
+          if (sessions > 0) 'sessions': FieldValue.increment(sessions),
+          if (appOpenHour >= 0 && appOpenHour <= 23)
+            'h_$appOpenHour': FieldValue.increment(1),
           if (playFailed > 0) ...{
             'playFailed': FieldValue.increment(playFailed),
             if (failKind.isNotEmpty)

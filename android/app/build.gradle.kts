@@ -79,6 +79,9 @@ android {
             // androidx.startup / Room / WorkManager / GMS classes the
             // AdMob SDK touches BEFORE runApp() (see proguard-rules.pro).
             isMinifyEnabled = true
+            // v1.0.1+65: raise the Play Console R8 scores (shrink /
+            // obfuscation were ~17%) — unused resources stripped too.
+            isShrinkResources = true
             proguardFiles(
                 // AGP 9 rejects the legacy "proguard-android.txt" (it carries
                 // -dontoptimize, which disables R8) — use the optimize variant.

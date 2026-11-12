@@ -30,8 +30,11 @@ class CrashLog {
 
   /// Log an error worth investigating later. Also persisted to report.last
   /// so the evidence cannot be lost even when nothing visibly crashes.
-  static void error(String event, Object e,
-      [Map<String, Object?> data = const {}]) {
+  static void error(
+    String event,
+    Object e, [
+    Map<String, Object?> data = const {},
+  ]) {
     final report = jsonEncode({
       't': DateTime.now().toIso8601String(),
       'event': event,
@@ -39,20 +42,43 @@ class CrashLog {
       ...data,
     });
     _writeRaw(report);
-    unawaited(Future(() async {
-      try {
-        await _reportFile?.writeAsString('$report\n');
-      } catch (_) {/* never throw from logging */}
-    }));
+    unawaited(
+      Future(() async {
+        try {
+          await _reportFile?.writeAsString('$report\n');
+        } catch (_) {
+          /* never throw from logging */
+        }
+      }),
+    );
   }
 
-  static void _write(Map<String, Object?> entry) => _writeRaw(jsonEncode(entry));
+  /// v1.0.1+65: ONE-SHOT report download — returns the last persisted
+  /// error report (if any) and CLEARS it, so each crash is uploaded once.
+  static Future<String?> takeReport() async {
+    try {
+      final f = _reportFile;
+      if (f == null || !f.existsSync()) return null;
+      final text = (await f.readAsString()).trim();
+      await f.delete();
+      return text.isEmpty ? null : text;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static void _write(Map<String, Object?> entry) =>
+      _writeRaw(jsonEncode(entry));
 
   static void _writeRaw(String line) {
-    unawaited(Future(() async {
-      try {
-        await _eventsFile?.writeAsString('$line\n', mode: FileMode.append);
-      } catch (_) {/* never throw from logging */}
-    }));
+    unawaited(
+      Future(() async {
+        try {
+          await _eventsFile?.writeAsString('$line\n', mode: FileMode.append);
+        } catch (_) {
+          /* never throw from logging */
+        }
+      }),
+    );
   }
 }

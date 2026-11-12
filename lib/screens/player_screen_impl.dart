@@ -781,6 +781,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     AppAnalytics.instance.log('playback_failed', {'kind': kind});
     final failHost = AppAnalytics.hostOf(_currentPath);
     if (failHost != null) AppAnalytics.instance.bumpFailHost(failHost, kind);
+    // v1.0.1+65: and a full report row for the admin panel (queued
+    // offline by Firestore until the network returns).
+    AppAnalytics.instance.sendReport(
+      type: 'player_fail',
+      text: errors.join('\n'),
+      host: failHost,
+      kind: kind,
+    );
     final report = StringBuffer(
       'MaxPlayer v1.0.1+64 playback failure report\n',
     );

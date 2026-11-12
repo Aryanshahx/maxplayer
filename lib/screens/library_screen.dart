@@ -13,6 +13,9 @@ import '../utils/collections.dart';
 import '../utils/crash_log.dart';
 import '../utils/local_store.dart';
 import '../utils/onboarding.dart';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../utils/quick_tiles.dart';
 import '../utils/privacy_policy.dart';
 import '../utils/settings.dart';
@@ -171,6 +174,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
       final ps = await PhotoManager.requestPermissionExtend();
       if (!ps.isAuth && !ps.hasAccess) {
         CrashLog.crumb('library.permission_denied');
+        // v1.0.1+65: once permission is denied permanently ("Don't ask
+        // again"), the system popup will NEVER show again — deep-link
+        // the user to app settings instead of a dead button.
+        final prefs = await SharedPreferences.getInstance();
+        final askedBefore = prefs.getBool('perm.videos.asked') ?? false;
+        if (!askedBefore) await prefs.setBool('perm.videos.asked', true);
+        if (askedBefore) {
+          unawaited(PhotoManager.openSetting());
+        }
         if (mounted) {
           setState(() {
             _loading = false;

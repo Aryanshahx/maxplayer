@@ -4,34 +4,44 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Max Player — Admin</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
 <style>
   :root { --bg:#0a0a10; --card:#14141d; --pur:#8b5cf6; --pink:#ec4899; --cyan:#22d3ee; --amber:#f59e0b; --green:#34d399; --red:#f87171; --tx:#fff; --dim:#8b8b9e; }
   * { box-sizing:border-box; margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; }
   body { background:var(--bg); color:var(--tx); min-height:100vh; padding:24px 16px 48px; }
-  .wrap { max-width:900px; margin:0 auto; }
+  .wrap { max-width:920px; margin:0 auto; }
   h1 { font-size:14px; letter-spacing:3px; color:var(--dim); text-align:center; margin-bottom:22px; }
   h1 b { color:var(--tx); }
   .card { background:var(--card); border:1px solid #23232e; border-radius:16px; padding:18px; margin-bottom:16px; }
   #login { max-width:340px; margin:18vh auto 0; text-align:center; }
-  input, button { width:100%; padding:12px 14px; border-radius:10px; border:1px solid #2c2c3a; background:#0e0e16; color:var(--tx); font-size:14px; }
+  input, button, select, textarea { width:100%; padding:12px 14px; border-radius:10px; border:1px solid #2c2c3a; background:#0e0e16; color:var(--tx); font-size:14px; }
   button { background:linear-gradient(90deg,var(--pur),var(--pink)); border:0; font-weight:700; letter-spacing:1px; margin-top:12px; cursor:pointer; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:12px; }
   .stat b { display:block; font-size:24px; }
   .stat span { font-size:10px; letter-spacing:1.5px; color:var(--dim); }
-  .cyan { color:var(--cyan); } .pink { color:var(--pink); } .amber { color:var(--amber); }
-  .pur { color:var(--pur); } .green { color:var(--green); } .red { color:var(--red); }
-  canvas { width:100%; height:180px; display:block; }
+  .cyan{color:var(--cyan);} .pink{color:var(--pink);} .amber{color:var(--amber);}
+  .pur{color:var(--pur);} .green{color:var(--green);} .red{color:var(--red);}
+  canvas { width:100%; display:block; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th { text-align:left; color:var(--dim); font-size:10px; letter-spacing:1.5px; padding:6px 0 10px; }
-  td { padding:8px 0; border-top:1px solid #20202c; }
+  td { padding:8px 0; border-top:1px solid #20202c; vertical-align:top; }
   .sub { font-size:11px; color:var(--dim); margin:8px 0 0; text-align:right; }
   .err { color:var(--red); font-size:12px; margin-top:10px; text-align:center; }
   #dash { display:none; }
+  .bar { display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
+  .bar select, .bar button { width:auto; margin-top:0; }
+  .bar label { color:var(--dim); font-size:11px; letter-spacing:1.5px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:10px; letter-spacing:1px; font-weight:700; }
+  .pill.crash { background:#3b1518; color:var(--red); }
+  .pill.player_fail { background:#3a2a10; color:var(--amber); }
+  .rpt { font-family:monospace; font-size:11px; color:var(--dim); white-space:pre-wrap; word-break:break-all; max-width:520px; }
+  .bc label { display:block; color:var(--dim); font-size:10px; letter-spacing:1.5px; margin:10px 0 6px; }
+  .ok { color:var(--green); font-size:12px; margin-top:10px; text-align:center; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>MAX PLAYER <b>· USER ACTIVITY</b></h1>
+  <h1>MAX PLAYER <b>· ADMIN</b></h1>
 
   <div class="card" id="login">
     <p style="font-size:13px;color:var(--dim);margin-bottom:14px">PIN-locked dashboard</p>
@@ -41,51 +51,99 @@
   </div>
 
   <div id="dash">
+    <div class="bar">
+      <label>PERIOD</label>
+      <select id="period">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="365">Last year</option>
+      </select>
+      <button id="pdfBtn" style="background:none;border:1px solid var(--pur)">⬇ DOWNLOAD PDF REPORT</button>
+    </div>
+
     <div class="grid">
-      <div class="card stat"><b class="cyan" id="sInstalls">–</b><span>INSTALLS</span></div>
-      <div class="card stat"><b class="pink" id="sOpens7">–</b><span>APP OPENS · 7D</span></div>
-      <div class="card stat"><b class="pur" id="sVideos7">–</b><span>VIDEOS PLAYED · 7D</span></div>
-      <div class="card stat"><b class="amber" id="sStreams7">–</b><span>STREAMS · 7D</span></div>
-      <div class="card stat"><b class="green" id="sIptv7">–</b><span>IPTV PLAYS · 7D</span></div>
-      <div class="card stat"><b class="red" id="sFail7">–</b><span>PLAY FAILURES · 7D</span></div>
-      <div class="card stat"><b class="cyan" id="sAds7">–</b><span>AD IMPRESSIONS · 7D</span></div>
+      <div class="card stat"><b class="cyan" id="sInstalls">–</b><span>INSTALLS (ALL TIME)</span></div>
+      <div class="card stat"><b class="pink" id="sOpens">–</b><span>APP OPENS</span></div>
+      <div class="card stat"><b class="green" id="sSession">–</b><span>AVG SESSION (MIN)</span></div>
+      <div class="card stat"><b class="pur" id="sVideos">–</b><span>VIDEOS PLAYED</span></div>
+      <div class="card stat"><b class="amber" id="sStreams">–</b><span>STREAMS</span></div>
+      <div class="card stat"><b class="green" id="sIptv">–</b><span>IPTV PLAYS</span></div>
+      <div class="card stat"><b class="red" id="sFail">–</b><span>PLAY FAILURES</span></div>
+      <div class="card stat"><b class="cyan" id="sAds">–</b><span>AD IMPRESSIONS</span></div>
     </div>
+
     <div class="card">
-      <canvas id="chart" width="860" height="180"></canvas>
-      <p class="sub">app opens · last 14 days</p>
+      <canvas id="chart" width="880" height="180"></canvas>
+      <p class="sub" id="chartSub">app opens</p>
     </div>
+
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <div class="card">
+        <table>
+          <thead><tr><th>COUNTRY</th><th style="text-align:right">INSTALLS</th></tr></thead>
+          <tbody id="countries"></tbody>
+        </table>
+        <p class="sub">where installs come from (device locale)</p>
+      </div>
+      <div class="card">
+        <canvas id="hoursChart" width="420" height="160"></canvas>
+        <p class="sub">what time of day the app is used (device-local hour)</p>
+      </div>
+    </div>
+
     <div class="card">
       <table>
         <thead><tr><th>#</th><th>FAILING STREAM HOST</th><th style="text-align:right">TIMEOUT</th><th style="text-align:right">REFUSED</th><th style="text-align:right">COUNT</th></tr></thead>
         <tbody id="hosts"></tbody>
       </table>
-      <p class="sub">dead sources your users are hitting · host only, never full URLs</p>
+      <p class="sub">dead sources your users hit · host only, never full URLs</p>
     </div>
+
     <div class="card">
       <table>
-        <thead><tr><th>DATE</th><th style="text-align:right">OPENS</th><th style="text-align:right">VIDEOS</th><th style="text-align:right">STREAMS</th><th style="text-align:right">IPTV</th><th style="text-align:right">FAILED</th><th style="text-align:right">ADS</th></tr></thead>
-        <tbody id="days"></tbody>
+        <thead><tr><th>TYPE</th><th>TIME</th><th>REPORT</th></tr></thead>
+        <tbody id="reports"></tbody>
       </table>
-      <p class="sub">daily activity · refreshes every 60s · all anonymous aggregates</p>
+      <p class="sub">crash &amp; playback reports from devices · newest first</p>
+    </div>
+
+    <div class="card bc">
+      <p style="font-size:12px;letter-spacing:2px;color:var(--dim)">📣 SEND NOTIFICATION (with image)</p>
+      <label>TITLE</label><input id="bcTitle" placeholder="Update is live!">
+      <label>MESSAGE</label><textarea id="bcBody" rows="2" placeholder="Optional message…"></textarea>
+      <label>IMAGE URL (optional — direct https link to a .jpg/.png)</label><input id="bcImage" placeholder="https://…/poster.jpg">
+      <button id="bcSend">SEND TO ALL USERS</button>
+      <p class="sub">shows as an in-app popup the next time each user opens the app</p>
+      <div class="ok" id="bcOk"></div><div class="err" id="bcErr"></div>
     </div>
   </div>
 </div>
 
 <script>
 // =====================================================================
-// Max Player admin dashboard (GitHub Pages + Firebase REST, no SDK).
+// Max Player admin (GitHub Pages + Firebase REST, no SDK).
 // PROJECT_ID must match kFirebaseProjectId in lib/services/app_analytics.dart.
-// DEFAULT PIN is 1234 — CHANGE IT: edit the ADMIN_PIN line below.
-// NOTE: this is a SOFT lock (page source is public); the data it guards
-// is anonymous aggregates only.
+// DEFAULT PIN 1234 — change it: edit the ADMIN_PIN line below.
+// Soft lock only: data is anonymous aggregates + reports.
 // =====================================================================
 const PROJECT_ID = 'max-player-cd43d';
 const ADMIN_PIN  = '1234';
 
 const API = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
+const COUNTRY = { IN:'India', US:'United States', GB:'United Kingdom', BR:'Brazil', ID:'Indonesia', PK:'Pakistan', BD:'Bangladesh', NG:'Nigeria', RU:'Russia', MX:'Mexico', PH:'Philippines', VN:'Vietnam', TR:'Turkey', EG:'Egypt', IR:'Iran', DE:'Germany', FR:'France', JP:'Japan', KR:'South Korea', SA:'Saudi Arabia', AE:'UAE', TH:'Thailand', IT:'Italy', ES:'Spain', PL:'Poland', CA:'Canada', AU:'Australia', NP:'Nepal', LK:'Sri Lanka', MY:'Malaysia', ZA:'South Africa', KE:'Kenya', AR:'Argentina', CO:'Colombia' };
+
+let STATS = [], REPORTS = [];
+const num = v => v && v.integerValue !== undefined ? Number(v.integerValue) : (v && v.doubleValue || 0);
+const str = v => v && v.stringValue !== undefined ? v.stringValue : '';
+const periodDays = () => Number(document.getElementById('period').value);
+
 document.getElementById('go').addEventListener('click', unlock);
 document.getElementById('pin').addEventListener('keydown', e => { if (e.key === 'Enter') unlock(); });
+document.getElementById('period').addEventListener('change', () => paint());
+document.getElementById('pdfBtn').addEventListener('click', downloadPdf);
+document.getElementById('bcSend').addEventListener('click', sendBroadcast);
 
 function unlock() {
   const err = document.getElementById('err');
@@ -95,79 +153,168 @@ function unlock() {
   refresh(); setInterval(refresh, 60000);
 }
 
-const num = v => v && v.integerValue !== undefined ? Number(v.integerValue) : (v && v.doubleValue || 0);
-
 async function refresh() {
   try {
-    const stats = await fetch(`${API}/stats?pageSize=200`).then(r => r.json());
-    paintStats(stats.documents || []);
+    const [stats, reports] = await Promise.all([
+      fetch(`${API}/stats?pageSize=500`).then(r => r.json()),
+      fetch(`${API}/reports?pageSize=100`).then(r => r.json()),
+    ]);
+    STATS = stats.documents || [];
+    REPORTS = (reports.documents || [])
+      .map(d => d.fields || {})
+      .sort((a, b) => str(b.ts).localeCompare(str(a.ts)));
+    paint();
   } catch (e) { console.error(e); }
 }
 
-function paintStats(docs) {
-  let installs = 0, hosts = {};
+function periodRows() {
   const days = new Map();
-  docs.forEach(d => {
-    const f = d.fields || {};
+  STATS.forEach(d => {
     const name = d.name.split('/').pop();
-    if (name === 'total') installs = num(f.installs);
-    else if (name === 'failHosts') {
-      // fields: c_<key> count, k_<key>__<kind> split, n_<key> readable name
+    if (name.startsWith('daily_')) days.set(name.slice(6), d.fields || {});
+  });
+  const dates = [...days.keys()].sort().slice(-periodDays());
+  return dates.map(d => ({ date: d, f: days.get(d) }));
+}
+const sum = (rows, k) => rows.reduce((a, r) => a + num(r.f[k]), 0);
+
+function paint() {
+  const rows = periodRows();
+  document.getElementById('chartSub').textContent = `app opens · last ${periodDays()} days`;
+  let installs = 0, countries = {};
+  STATS.forEach(d => {
+    const name = d.name.split('/').pop();
+    if (name === 'total') {
+      installs = num((d.fields || {}).installs);
+      Object.keys(d.fields || {}).forEach(k => { if (k.startsWith('c_')) countries[k.slice(2)] = num(d.fields[k]); });
+    }
+  });
+  document.getElementById('sInstalls').textContent = installs;
+  document.getElementById('sOpens').textContent   = sum(rows, 'appOpens');
+  document.getElementById('sVideos').textContent  = sum(rows, 'videosPlayed');
+  document.getElementById('sStreams').textContent = sum(rows, 'streamsOpened');
+  document.getElementById('sIptv').textContent    = sum(rows, 'iptvPlayed');
+  document.getElementById('sFail').textContent    = sum(rows, 'playFailed');
+  document.getElementById('sAds').textContent     = sum(rows, 'adImpressions');
+  const secs = sum(rows, 'sessionSeconds'), sess = Math.max(1, sum(rows, 'sessions'));
+  document.getElementById('sSession').textContent = (secs / sess / 60).toFixed(1);
+
+  // opens chart
+  drawBars(document.getElementById('chart'), rows.map(r => num(r.f.appOpens)),
+    rows.map(r => r.date.slice(5)), '#ec4899', '#8b5cf6');
+
+  // countries
+  document.getElementById('countries').innerHTML =
+    Object.entries(countries).sort((a, b) => b[1] - a[1]).slice(0, 12)
+      .map(([cc, n]) => `<tr><td>${COUNTRY[cc] || cc}</td><td style="text-align:right;color:var(--cyan);font-weight:700">${n}</td></tr>`).join('')
+    || '<tr><td colspan="2" style="color:var(--dim)">No country data yet (needs 1.0.1+65 installs)</td></tr>';
+
+  // hourly usage across the period
+  const hours = Array.from({length: 24}, (_, h) => sum(rows, 'h_' + h));
+  drawBars(document.getElementById('hoursChart'), hours,
+    hours.map((_, h) => h % 6 === 0 ? String(h) : ''), '#22d3ee', '#34d399');
+
+  // failing hosts
+  let hosts = {};
+  STATS.forEach(d => {
+    if (d.name.split('/').pop() === 'failHosts') {
+      const f = d.fields || {};
       Object.keys(f).forEach(k => {
         if (!k.startsWith('c_')) return;
         const key = k.slice(2);
-        hosts[key] = {
-          count: num(f[k]),
-          name: (f['n_' + key] && f['n_' + key].stringValue) || key,
-          timeout: num(f['k_' + key + '__timeout']),
-          refused: num(f['k_' + key + '__refused']),
-        };
+        hosts[key] = { count: num(f[k]), name: str(f['n_' + key]) || key,
+          timeout: num(f['k_' + key + '__timeout']), refused: num(f['k_' + key + '__refused']) };
       });
     }
-    else if (name.startsWith('daily_')) days.set(name.slice(6), f);
   });
-  const dates = [...days.keys()].sort();
-  const last7 = dates.slice(-7);
-  const sum7 = key => last7.reduce((a, d) => a + num(days.get(d)[key]), 0);
-  document.getElementById('sInstalls').textContent = installs;
-  document.getElementById('sOpens7').textContent  = sum7('appOpens');
-  document.getElementById('sVideos7').textContent = sum7('videosPlayed');
-  document.getElementById('sStreams7').textContent = sum7('streamsOpened');
-  document.getElementById('sIptv7').textContent   = sum7('iptvPlayed');
-  document.getElementById('sFail7').textContent   = sum7('playFailed');
-  document.getElementById('sAds7').textContent    = sum7('adImpressions');
+  document.getElementById('hosts').innerHTML =
+    Object.values(hosts).sort((a, b) => b.count - a.count).slice(0, 20)
+      .map((h, i) => `<tr><td>${i + 1}</td><td style="color:var(--dim)">${h.name}</td><td style="text-align:right;color:var(--amber)">${h.timeout || '–'}</td><td style="text-align:right;color:var(--amber)">${h.refused || '–'}</td><td style="text-align:right;color:var(--red);font-weight:700">${h.count}</td></tr>`).join('')
+    || '<tr><td colspan="5" style="color:var(--dim)">No failures yet</td></tr>';
 
-  // chart: last 14 days of app opens
-  const c = document.getElementById('chart'), x = c.getContext('2d');
-  x.clearRect(0, 0, c.width, c.height);
-  const slice = dates.slice(-14);
-  const vals = slice.map(d => num(days.get(d).appOpens));
+  // reports
+  document.getElementById('reports').innerHTML = REPORTS.slice(0, 25).map(r => {
+    const t = str(r.type) || 'report';
+    const when = str(r.ts).replace('T', ' ').slice(0, 16);
+    const body = str(r.text).slice(0, 400);
+    const host = str(r.host), kind = str(r.kind);
+    return `<tr><td><span class="pill ${t}">${t.toUpperCase()}</span></td><td style="color:var(--dim)">${when}</td><td><div class="rpt">${esc(host ? 'host: ' + host + (kind ? ' · ' + kind : '') + '\n' + body : body)}</div></td></tr>`;
+  }).join('') || '<tr><td colspan="3" style="color:var(--dim)">No reports yet — devices upload from 1.0.1+65</td></tr>';
+}
+
+function esc(x) { const d = document.createElement('div'); d.textContent = x; return d.innerHTML; }
+
+function drawBars(canvas, vals, labels, c1, c2) {
+  const x = canvas.getContext('2d');
+  x.clearRect(0, 0, canvas.width, canvas.height);
   const max = Math.max(1, ...vals);
-  const bw = c.width / Math.max(1, vals.length);
+  const bw = canvas.width / Math.max(1, vals.length);
   vals.forEach((v, i) => {
-    const h = (v / max) * (c.height - 26);
-    const g = x.createLinearGradient(0, c.height - h, 0, c.height);
-    g.addColorStop(0, '#ec4899'); g.addColorStop(1, '#8b5cf6');
+    const h = (v / max) * (canvas.height - 26);
+    const g = x.createLinearGradient(0, canvas.height - h, 0, canvas.height);
+    g.addColorStop(0, c1); g.addColorStop(1, c2);
     x.fillStyle = g;
-    x.fillRect(i * bw + 4, c.height - h - 18, Math.max(2, bw - 8), h);
-    x.fillStyle = '#8b8b9e'; x.font = '9px system-ui'; x.textAlign = 'center';
-    x.fillText(slice[i].slice(5), i * bw + bw / 2, c.height - 5);
-    x.fillStyle = '#22d3ee'; x.font = 'bold 10px system-ui';
-    x.fillText(v, i * bw + bw / 2, c.height - h - 22);
+    x.fillRect(i * bw + 2, canvas.height - h - 18, Math.max(1.5, bw - 4), h);
+    if (labels[i]) {
+      x.fillStyle = '#8b8b9e'; x.font = '9px system-ui'; x.textAlign = 'center';
+      x.fillText(labels[i], i * bw + bw / 2, canvas.height - 5);
+    }
   });
+}
 
-  // failing hosts table
-  const rows = Object.values(hosts).sort((a, b) => b.count - a.count).slice(0, 20);
-  document.getElementById('hosts').innerHTML = rows.map((h, i) =>
-    `<tr><td>${i + 1}</td><td style="color:var(--dim)">${h.name}</td><td style="text-align:right;color:var(--amber)">${h.timeout || '–'}</td><td style="text-align:right;color:var(--amber)">${h.refused || '–'}</td><td style="text-align:right;color:var(--red);font-weight:700">${h.count}</td></tr>`
-  ).join('') || '<tr><td colspan="5" style="color:var(--dim)">No failures yet</td></tr>';
+async function sendBroadcast() {
+  const ok = document.getElementById('bcOk'), err = document.getElementById('bcErr');
+  ok.textContent = ''; err.textContent = '';
+  const title = document.getElementById('bcTitle').value.trim();
+  const body = document.getElementById('bcBody').value.trim();
+  const image = document.getElementById('bcImage').value.trim();
+  if (!title) { err.textContent = 'Title is required'; return; }
+  if (image && !/^https:\/\/.+\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(image)) {
+    err.textContent = 'Image must be a direct https link ending in .jpg/.png/.webp'; return;
+  }
+  try {
+    const r = await fetch(`${API}/broadcasts/latest`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: {
+        id: { stringValue: 'bc_' + Date.now() },
+        title: { stringValue: title },
+        body: { stringValue: body },
+        image: { stringValue: image },
+      }}),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    ok.textContent = '✔ Sent — users see it on their next app open';
+  } catch (e) { err.textContent = 'Send failed: ' + e.message + ' (publish the new firestore.rules!)'; }
+}
 
-  // daily table, newest first
-  const recent = dates.slice(-10).reverse();
-  document.getElementById('days').innerHTML = recent.map(d => {
-    const f = days.get(d);
-    return `<tr><td>${d}</td><td style="text-align:right">${num(f.appOpens)}</td><td style="text-align:right">${num(f.videosPlayed)}</td><td style="text-align:right">${num(f.streamsOpened)}</td><td style="text-align:right;color:var(--green)">${num(f.iptvPlayed)}</td><td style="text-align:right;color:var(--red)">${num(f.playFailed)}</td><td style="text-align:right">${num(f.adImpressions)}</td></tr>`;
-  }).join('') || '<tr><td colspan="7" style="color:var(--dim)">No activity yet — counters appear as users run 1.0.1+63</td></tr>';
+function downloadPdf() {
+  if (!window.jspdf) { alert('PDF library not loaded (needs internet on this page)'); return; }
+  const doc = new window.jspdf.jsPDF();
+  const rows = periodRows();
+  let y = 18;
+  doc.setFontSize(16); doc.text('Max Player — activity report', 14, y); y += 8;
+  doc.setFontSize(9); doc.setTextColor(120);
+  doc.text(`Period: last ${periodDays()} days · generated ${new Date().toISOString().slice(0, 19)} · anonymous aggregates`, 14, y); y += 10;
+  doc.setTextColor(0); doc.setFontSize(11);
+  const secs = sum(rows, 'sessionSeconds'), sess = Math.max(1, sum(rows, 'sessions'));
+  [
+    ['App opens', sum(rows, 'appOpens')],
+    ['Avg session (min)', (secs / sess / 60).toFixed(1)],
+    ['Videos played', sum(rows, 'videosPlayed')],
+    ['Streams opened', sum(rows, 'streamsOpened')],
+    ['IPTV plays', sum(rows, 'iptvPlayed')],
+    ['Play failures', sum(rows, 'playFailed')],
+    ['Ad impressions', sum(rows, 'adImpressions')],
+  ].forEach(([k, v]) => { doc.text(`${k}: ${v}`, 14, y); y += 6; });
+  y += 4; doc.setFontSize(12); doc.text('Daily', 14, y); y += 6; doc.setFontSize(8);
+  doc.text('DATE        OPENS   VIDEOS  STREAM  IPTV   FAIL   ADS   SESS-MIN', 14, y); y += 5;
+  rows.forEach(r => {
+    if (y > 285) { doc.addPage(); y = 16; }
+    doc.text(`${r.date}   ${String(num(r.f.appOpens)).padEnd(8)}${String(num(r.f.videosPlayed)).padEnd(8)}${String(num(r.f.streamsOpened)).padEnd(8)}${String(num(r.f.iptvPlayed)).padEnd(7)}${String(num(r.f.playFailed)).padEnd(7)}${String(num(r.f.adImpressions)).padEnd(6)}${(num(r.f.sessionSeconds) / 60).toFixed(1)}`, 14, y);
+    y += 5;
+  });
+  doc.save(`maxplayer-report-${periodDays()}d.pdf`);
 }
 </script>
 </body>

@@ -1,4 +1,4 @@
-// Max Player — activity dashboard (v1.0.1+63)
+// Max Player — activity dashboard (v1.0.1+65)
 // Paste into Firebase console -> Firestore -> Rules -> Publish.
 //
 // Model note: the app is anonymous (no sign-in), so writes can't be
@@ -10,6 +10,16 @@ service cloud.firestore {
     match /stats/{doc} {
       allow read: if true;            // aggregate counters only
       allow create, update: if true;  // field increments from devices
+      allow delete: if false;
+    }
+    match /reports/{doc} {
+      allow read: if true;      // admin panel lists them (PIN soft-lock)
+      allow create: if true;    // devices upload crash/failure reports
+      allow update, delete: if false;
+    }
+    match /broadcasts/{doc} {
+      allow read: if true;      // every device fetches the latest on open
+      allow create, update: if true; // admin panel writes the broadcast
       allow delete: if false;
     }
   }
