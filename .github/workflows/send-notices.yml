@@ -1,0 +1,40 @@
+name: Send MaxPlayer notices
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: maxplayer-notice-sender
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: scripts/push/package-lock.json
+      - name: Install sender dependencies
+        working-directory: scripts/push
+        run: npm ci --ignore-scripts
+      - name: Test sender validation
+        working-directory: scripts/push
+        run: npm test
+      - name: Process pending notices
+        working-directory: scripts/push
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm run send

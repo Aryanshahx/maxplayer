@@ -1,0 +1,1 @@
+{"name":"maxplayer-push-sender","private":true,"type":"module","scripts":{"test":"node --test","send":"node sender.mjs"},"dependencies":{"@google-cloud/firestore":"9.4.1","firebase-admin":"14.5.1"},"engines":{"node":">=22"}}
