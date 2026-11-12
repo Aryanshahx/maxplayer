@@ -1,10 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'services/push_service.dart';
+import 'screens/notifications_screen.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'screens/library_screen.dart';
@@ -41,13 +42,17 @@ Future<void> main() async {
     CrashLog.error('dart.error', error, {'stack': stack.toString()});
     return false; // still let the default handler act
   };
+  FirebaseMessaging.onBackgroundMessage(maxPlayerPushBackground);
   runApp(const MaxPlayerApp());
   // v1.0.1+50: AdMob warms up AFTER the first frame — it can never
   // block or crash startup (no Play services? → the app stays ad-free).
   unawaited(AdService.instance.safeInit());
   // v1.0.1+63: anonymous activity counters for the admin dashboard
   // (aggregates only — no names, no URLs, no personal data).
-  unawaited(AppAnalytics.instance.trackAppOpen());
+  unawaited(() async {
+    await AppAnalytics.instance.trackAppOpen();
+    await PushService.instance.start();
+  }());
 }
 
 class MaxPlayerApp extends StatefulWidget {
@@ -101,16 +106,18 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
         AppAnalytics.instance.sendReport(type: 'crash', text: report);
       }
     } catch (_) {}
-    try {
-      final b = await AppAnalytics.instance.fetchBroadcast();
-      if (b == null) return;
-      final prefs = await SharedPreferences.getInstance();
-      if ((prefs.getString('bc.seen') ?? '') == b['id']) return; // seen
-      await prefs.setString('bc.seen', b['id']!);
-      final ctx = rootNavigatorKey.currentContext;
-      if (ctx == null || !ctx.mounted) return;
-      await showDialog<void>(context: ctx, builder: (_) => _BroadcastDialog(b));
-    } catch (_) {}
+    PushService.instance.onTap = (data) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        rootNavigatorKey.currentState?.push(
+          MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
+        );
+      });
+    };
+    if (PushService.instance.pendingTap != null) {
+      final pending = PushService.instance.pendingTap!;
+      PushService.instance.pendingTap = null;
+      PushService.instance.onTap?.call(pending);
+    }
   }
 
   @override
@@ -128,68 +135,6 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
           home: const LibraryScreen(),
         );
       },
-    );
-  }
-}
-
-/// v1.0.1+65: admin broadcast ("notification with image") — shown once
-/// per message id on the next app open.
-class _BroadcastDialog extends StatelessWidget {
-  const _BroadcastDialog(this.data);
-
-  final Map<String, String> data;
-
-  @override
-  Widget build(BuildContext context) {
-    final image = data['image'] ?? '';
-    return AlertDialog(
-      backgroundColor: const Color(0xFF16161F),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      title: Text(
-        data['title'] ?? '',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (image.isNotEmpty) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: image.startsWith('data:image/')
-                  ? Image.memory(
-                      base64Decode(image.substring(image.indexOf(',') + 1)),
-                      height: 150,
-                      width: double.infinity,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                    )
-                  : Image.network(
-                      image,
-                      height: 150,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                    ),
-            ),
-            const SizedBox(height: 12),
-          ],
-          if ((data['body'] ?? '').isNotEmpty)
-            Text(
-              data['body']!,
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text('OK', style: TextStyle(color: AppColors.accent)),
-        ),
-      ],
     );
   }
 }

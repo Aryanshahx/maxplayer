@@ -1,26 +1,61 @@
-// Max Player — activity dashboard (v1.0.1+65)
-// Paste into Firebase console -> Firestore -> Rules -> Publish.
-//
-// Model note: the app is anonymous (no sign-in), so writes can't be
-// owner-authenticated. Contents are aggregate counters and host names
-// only — nothing personal — which keeps open-write abuse cosmetic.
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function admin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    match /admins/{uid} {
+      allow get: if owner(uid);
+      allow list, write: if false; // Create admin records manually in Console.
+    }
+    match /notices/{noticeId} {
+      allow read: if admin();
+      allow create: if admin()
+        && request.resource.data.keys().hasAll(['title','message','target','status','createdAt'])
+        && request.resource.data.keys().hasOnly(['title','message','target','status','createdAt','imageData','link'])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 80
+        && request.resource.data.message is string && request.resource.data.message.size() <= 900
+        && request.resource.data.target is string
+        && request.resource.data.target.matches('^(all|[A-Za-z0-9_-]{1,128})$')
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && (!('imageData' in request.resource.data) || (request.resource.data.imageData is string && request.resource.data.imageData.size() <= 420000 && request.resource.data.imageData.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')))
+        && (!('link' in request.resource.data) || (request.resource.data.link is string && request.resource.data.link.size() <= 2048 && (request.resource.data.link == '' || request.resource.data.link.matches('^https://.+'))));
+      allow update, delete: if false; // Only Admin SDK can claim/change status.
+    }
+    match /publishedNotices/{noticeId} {
+      allow read: if signedIn();
+      allow write: if false; // Shared all-users history; workflow publishes.
+    }
+    match /users/{uid}/tokens/{tokenId} {
+      allow read, delete: if owner(uid);
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasOnly(['token','platform','updatedAt'])
+        && request.resource.data.token is string
+        && request.resource.data.token.size() > 0 && request.resource.data.token.size() <= 4096
+        && request.resource.data.platform == 'android'
+        && request.resource.data.updatedAt == request.time;
+    }
+    match /users/{uid}/inbox/{noticeId} {
+      allow read: if owner(uid);
+      allow write: if false;
+    }
+    // Existing anonymous aggregate analytics retained for dashboard compatibility.
+    // These are not trusted installation counts and remain vulnerable to spam.
     match /stats/{doc} {
-      allow read: if true;            // aggregate counters only
-      allow create, update: if true;  // field increments from devices
+      allow read, create, update: if true;
       allow delete: if false;
     }
     match /reports/{doc} {
-      allow read: if true;      // admin panel lists them (PIN soft-lock)
-      allow create: if true;    // devices upload crash/failure reports
+      allow read: if admin();
+      allow create: if true;
       allow update, delete: if false;
     }
     match /broadcasts/{doc} {
-      allow read: if true;      // every device fetches the latest on open
-      allow create, update: if true; // admin panel writes the broadcast
-      allow delete: if false;
+      allow read, write: if false; // Old in-app broadcast sender retired.
     }
   }
 }

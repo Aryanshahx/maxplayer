@@ -1,0 +1,7 @@
+<resources>
+    <!-- Public client configuration, NOT server credentials. -->
+    <string name="google_app_id" translatable="false">1:1080871289145:android:be220a998bdbcc1a0ca8e8</string>
+    <string name="gcm_defaultSenderId" translatable="false">1080871289145</string>
+    <string name="project_id" translatable="false">max-player-cd43d</string>
+    <string name="google_api_key" translatable="false">AIzaSyDOz1FWZPP4aOzfiRYvE6xy8CF2mXiXPOY</string>
+</resources>

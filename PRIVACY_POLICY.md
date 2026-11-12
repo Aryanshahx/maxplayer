@@ -81,3 +81,16 @@ Max Player itself collects no data from anyone, including children.
 ## Contact
 
 Hyper Tech Labs (Aryan Shah) — via the GitHub repository.
+
+## Optional Android notifications (1.0.1+67)
+If you enable Android notifications, Firebase Anonymous Authentication creates
+an installation account. Its random UID and Firebase Cloud Messaging token
+are stored so MaxPlayer can send general or installation-specific notices.
+The UID is not a verified identity. Enabling notifications subscribes the
+installation to the general notices topic. Disabling notifications removes
+the current token and subscription when the device can reach Firebase.
+Delivery uses Google Firebase services. Notice images are fetched from the
+HTTPS host selected by the publisher, which can receive the connection IP.
+Read/unread history is stored locally on the device. Clearing app data or
+reinstalling may create a new installation identity. No file names or media
+library content are included in notification registration.

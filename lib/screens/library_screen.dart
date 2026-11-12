@@ -1,3 +1,4 @@
+import 'notifications_screen.dart';
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
@@ -137,8 +138,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Future<void> _maybeShowOnboarding() async {
     final seen = await Onboarding.hasSeen();
     if (!seen && mounted) {
-      await Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => const OnboardingFlow()));
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const OnboardingFlow()));
     }
   }
 
@@ -369,6 +371,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      floatingActionButton: FloatingActionButton.small(
+        heroTag: 'notification_inbox',
+        tooltip: 'Notifications',
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
+        ),
+        child: const Icon(Icons.notifications_outlined),
+      ),
       body: SafeArea(
         child: _denied && _videos.isEmpty
             ? _PermissionHint(onRetry: _load)
@@ -518,8 +528,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
           _headIcon(
             Icons.search,
             'Search',
-            () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const SearchScreen())),
+            () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const SearchScreen())),
           ),
           _headIcon(Icons.sync, 'Refresh', _load),
           _headIcon(
@@ -632,10 +643,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   int _tilePage = 0;
 
   Widget _buildTiles() {
-    void push(Widget page) =>
-        Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => page))
-            .then((_) => _refresh());
+    void push(Widget page) => Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => page)).then((_) => _refresh());
 
     // v1.0.20: tiles are DATA-DRIVEN (lib/utils/quick_tiles.dart) — the
     // File Manager tile was replaced by Audio, and the positions of Cloud
