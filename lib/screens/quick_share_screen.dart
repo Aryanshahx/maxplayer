@@ -118,6 +118,7 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final vids = _videos;
     return Scaffold(
       appBar: AppBar(
@@ -137,7 +138,7 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
                 ? Center(
                     child: CircularProgressIndicator(color: AppColors.accent))
                 : vids.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Text('No videos on this device.',
                             style:
                                 TextStyle(color: AppColors.textSecondary)))
@@ -156,7 +157,7 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
                               title: Text(v.title ?? 'Video',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: AppColors.textPrimary,
                                       fontSize: 13.5)),
                               subtitle: FutureBuilder<String>(
@@ -164,7 +165,7 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
                                 builder: (context, snap) => Text(
                                   '${snap.data ?? qualityBadge(v.width, v.height)} · '
                                   '${formatDuration(Duration(seconds: v.duration))}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: AppColors.textSecondary,
                                       fontSize: 11.5),
                                 ),
@@ -294,6 +295,7 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final s = _session;
     final sel = (s != null && s.hosts.isNotEmpty)
         ? _hostIndex.clamp(0, s.hosts.length - 1)
@@ -308,12 +310,12 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text('Direct send (${widget.entries.length})',
-                style: const TextStyle(
+                style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 17,
                     fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Receiver must be on the same Wi-Fi. Open this link there — '
               'with Max Player Receive or any browser.',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
@@ -321,7 +323,7 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
             ),
             const SizedBox(height: 14),
             if (_error != null)
-              Text(_error!, style: const TextStyle(color: AppColors.danger))
+              Text(_error!, style: TextStyle(color: AppColors.danger))
             else if (s == null)
               const Padding(
                 padding: EdgeInsets.all(24),
@@ -400,7 +402,7 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
                     textAlign: TextAlign.center,
                   ),
                 ),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(
                   'If the page opens slowly: both phones must be on the SAME '
@@ -425,7 +427,7 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
                     children: [
                       for (final line in _log)
                         Text('• $line',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 11.5)),
                     ],
@@ -542,6 +544,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final m = _manifest;
     return SafeArea(
       child: SingleChildScrollView(
@@ -549,7 +552,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Receive videos',
+            Text('Receive videos',
                 style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 17,
@@ -586,7 +589,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
               Padding(
                 padding: const EdgeInsets.only(top: 10),
                 child: Text(_error!,
-                    style: const TextStyle(color: AppColors.danger)),
+                    style: TextStyle(color: AppColors.danger)),
               ),
             if (m != null) ...[
               const SizedBox(height: 12),
@@ -604,13 +607,13 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
                         title: Text(f.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: AppColors.textPrimary, fontSize: 13)),
                         subtitle: _progress.containsKey(f.index)
                             ? LinearProgressIndicator(
                                 value: _progress[f.index])
                             : Text(formatBytes(f.size),
-                                style: const TextStyle(
+                                style: TextStyle(
                                     color: AppColors.textSecondary,
                                     fontSize: 11.5)),
                         onChanged: _busy

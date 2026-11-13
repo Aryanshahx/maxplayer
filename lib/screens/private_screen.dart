@@ -279,6 +279,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return Scaffold(
       backgroundColor: const Color(0xFF0f0f14),
@@ -566,6 +567,7 @@ class _VaultThumbState extends State<_VaultThumb> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final thumb = _thumbPath;
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),

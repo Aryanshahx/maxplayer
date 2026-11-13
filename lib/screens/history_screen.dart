@@ -41,18 +41,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.border),
+          side: BorderSide(color: AppColors.border),
         ),
-        title: const Text('Clear history?',
+        title: Text('Clear history?',
             style: TextStyle(color: AppColors.textPrimary)),
-        content: const Text(
+        content: Text(
           'This also resets the saved resume position of every video.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel',
+            child: Text('Cancel',
                 style: TextStyle(color: AppColors.textSecondary)),
           ),
           FilledButton(
@@ -74,6 +74,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('History'),
@@ -87,7 +88,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ],
       ),
       body: _items.isEmpty
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -104,7 +105,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           : ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: _items.length,
-              separatorBuilder: (_, _) => const Divider(
+              separatorBuilder: (_, _) => Divider(
                 height: 1,
                 indent: 120,
                 color: AppColors.border,
@@ -170,6 +171,7 @@ class _HistoryTileState extends State<_HistoryTile> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return FutureBuilder<_HistoryDetail?>(
       future: _detail,
       builder: (context, snap) {
@@ -206,7 +208,7 @@ class _HistoryTileState extends State<_HistoryTile> {
             widget.item.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 14,
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.w500),
@@ -221,7 +223,7 @@ class _HistoryTileState extends State<_HistoryTile> {
                     : hasProgress
                         ? '${timeAgo(widget.item.ts)}  ·  $posLabel / $totalLabel'
                         : timeAgo(widget.item.ts),
-                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),
               if (hasProgress) ...[
                 const SizedBox(height: 6),
@@ -238,7 +240,7 @@ class _HistoryTileState extends State<_HistoryTile> {
             ],
           ),
           trailing: IconButton(
-            icon: const Icon(Icons.close, size: 18, color: AppColors.textSecondary),
+            icon: Icon(Icons.close, size: 18, color: AppColors.textSecondary),
             tooltip: 'Remove from history',
             onPressed: _remove,
           ),
@@ -261,6 +263,7 @@ class _ThumbPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Container(
       color: AppColors.surfaceAlt,
       child: const Center(

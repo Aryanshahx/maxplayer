@@ -106,6 +106,19 @@ class PushService {
     }
   }
 
+  bool _launchRead = false;
+  Future<void> readLaunchTap() async {
+    if (_launchRead) return;
+    _launchRead = true;
+    try {
+      await initLocal();
+      final launch = await local.getNotificationAppLaunchDetails();
+      if (launch?.didNotificationLaunchApp ?? false) {
+        tap(Map<String,dynamic>.from(jsonDecode(launch!.notificationResponse?.payload ?? '{}')));
+      }
+    } catch (_) { _launchRead = false; }
+  }
+
   Future<void> start() async {
     if (_started || _starting) return;
     _starting = true;
@@ -115,16 +128,6 @@ class PushService {
       final auth = FirebaseAuth.instance;
       uid = (auth.currentUser ?? (await auth.signInAnonymously()).user)!.uid;
       await initLocal();
-      final launch = await local.getNotificationAppLaunchDetails();
-      if (launch?.didNotificationLaunchApp ?? false) {
-        try {
-          tap(
-            Map<String, dynamic>.from(
-              jsonDecode(launch!.notificationResponse?.payload ?? '{}'),
-            ),
-          );
-        } catch (_) {}
-      }
       final initial = await FirebaseMessaging.instance.getInitialMessage();
       if (initial != null) tap(initial.data);
       FirebaseMessaging.onMessageOpenedApp.listen((m) => tap(m.data));

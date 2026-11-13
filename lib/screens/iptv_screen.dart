@@ -107,6 +107,7 @@ class _IptvScreenState extends State<IptvScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -257,6 +258,7 @@ class _ChannelTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return Material(
       color: Colors.transparent,

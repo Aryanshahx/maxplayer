@@ -32,6 +32,11 @@ jobs:
       - name: Test sender validation
         working-directory: scripts/push
         run: npm test
+      - name: Process confirmed admin maintenance jobs
+        working-directory: scripts/push
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node admin-jobs.mjs
       - name: Process pending notices
         working-directory: scripts/push
         env:

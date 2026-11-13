@@ -30,6 +30,7 @@ class GestureIllustration extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return SizedBox(
       height: height,
       width: double.infinity,

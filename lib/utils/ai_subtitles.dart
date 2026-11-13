@@ -405,6 +405,7 @@ class _AiProgressDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return AlertDialog(
       scrollable: true,
       backgroundColor: const Color(0xFF1a1a24),
@@ -482,6 +483,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return AlertDialog(
       scrollable: true,
       backgroundColor: const Color(0xFF1a1a24),

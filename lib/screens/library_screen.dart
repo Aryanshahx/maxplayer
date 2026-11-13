@@ -1,3 +1,4 @@
+import '../services/remote_theme.dart';
 import '../services/app_analytics.dart';
 import '../services/push_service.dart';
 import 'dart:async';
@@ -373,6 +374,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Scaffold(
       body: SafeArea(
         child: _denied && _videos.isEmpty
@@ -412,6 +414,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildHeader(),
+        const SeasonalBanner(),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
           child: DiscoverBanner(
@@ -545,7 +548,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             elevation: 8,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
-              side: const BorderSide(color: AppColors.border),
+              side: BorderSide(color: AppColors.border),
             ),
             onSelected: _openMenu,
             itemBuilder: (context) => [
@@ -735,6 +738,7 @@ class _Tile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     // Old frosted-glass tile (backdrop blur over the shared canvas).
     return Material(
@@ -803,6 +807,7 @@ class _MenuRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Row(
       children: [
         Icon(icon, size: 19, color: AppColors.accent),
@@ -828,6 +833,7 @@ class _GroupedView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final groups = <String, List<AssetEntity>>{};
     for (final a in videos) {
       final rp = a.relativePath ?? 'Other';
@@ -848,7 +854,7 @@ class _GroupedView extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
               child: Text(
                 '$name  ·  ${items.length}',
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -897,19 +903,20 @@ class _PermissionHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.lock_outline_rounded,
               size: 52,
               color: AppColors.textSecondary,
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Permission needed',
               style: TextStyle(
                 fontSize: 18,
@@ -918,7 +925,7 @@ class _PermissionHint extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Max Player needs access to your videos to show the library.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textSecondary),
@@ -947,7 +954,8 @@ class _EmptyHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    Theme.of(context);
+    return Center(
       child: Text(
         'No videos found. Pull down to rescan.',
         style: TextStyle(color: AppColors.textSecondary),

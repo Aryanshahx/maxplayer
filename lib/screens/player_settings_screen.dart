@@ -45,6 +45,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final s = PlayerSettings.instance;
     return SafeArea(
       child: SingleChildScrollView(
@@ -220,6 +221,7 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
       child: Text(
@@ -253,6 +255,7 @@ class _SwitchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       child: Row(
@@ -295,6 +298,7 @@ class _BoostToggleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return ListenableBuilder(
       listenable: AppVolume.instance,
       builder: (context, _) {
@@ -354,6 +358,7 @@ class _MiniDropdown<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return DropdownButton<T>(
       value: value,
       dropdownColor: const Color(0xFF26262f),

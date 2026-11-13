@@ -104,6 +104,7 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     final btnTextColor = accent.computeLuminance() > 0.55
         ? const Color(0xFF14141c)

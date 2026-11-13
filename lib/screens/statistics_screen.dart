@@ -18,6 +18,7 @@ class StatisticsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return Scaffold(
       backgroundColor: const Color(0xFF0a0a0f),
@@ -163,6 +164,7 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return Container(
       width: 150,
@@ -220,6 +222,7 @@ class _TopWatchedRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -290,6 +293,7 @@ class _DayBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     final isToday = _isSameDay(day.day, DateTime.now());
     final fraction = (day.seconds / maxSecs).clamp(0.0, 1.0);

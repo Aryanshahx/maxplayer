@@ -40,15 +40,15 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.border),
+          side: BorderSide(color: AppColors.border),
         ),
-        title: const Text('New playlist',
+        title: Text('New playlist',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 17)),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          style: const TextStyle(color: AppColors.textPrimary),
-          decoration: const InputDecoration(
+          style: TextStyle(color: AppColors.textPrimary),
+          decoration: InputDecoration(
             hintText: 'Playlist name',
             hintStyle: TextStyle(color: AppColors.textSecondary),
           ),
@@ -57,7 +57,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel',
+            child: Text('Cancel',
                 style: TextStyle(color: AppColors.textSecondary)),
           ),
           FilledButton(
@@ -85,6 +85,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final names = _playlists.keys.toList();
     return Scaffold(
       appBar: AppBar(title: const Text('Playlists')),
@@ -119,12 +120,12 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style:
-                            const TextStyle(color: AppColors.textPrimary)),
+                            TextStyle(color: AppColors.textPrimary)),
                     subtitle: Text('${_playlists[name]!.length} videos',
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: AppColors.textSecondary, fontSize: 12)),
                     trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline_rounded,
+                      icon: Icon(Icons.delete_outline_rounded,
                           color: AppColors.danger, size: 20),
                       onPressed: () async {
                         await _store.deletePlaylist(name);
@@ -201,6 +202,7 @@ class _PlaylistVideosScreenState extends State<PlaylistVideosScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: Text(widget.name)),
       floatingActionButton: FloatingActionButton.extended(
@@ -221,7 +223,7 @@ class _PlaylistVideosScreenState extends State<PlaylistVideosScreen> {
                       'Empty playlist.\nTap "Add videos" below to pick videos '
                       'from this device.',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.textSecondary),
+                      style: TextStyle(color: AppColors.textSecondary),
                     ),
                   ),
                 )
@@ -314,6 +316,7 @@ class _AddVideosScreenState extends State<_AddVideosScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: Text('Add to ${widget.name}')),
       floatingActionButton: _selected.isEmpty
@@ -335,12 +338,12 @@ class _AddVideosScreenState extends State<_AddVideosScreen> {
                     child: Text(
                       _error!,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.textSecondary),
+                      style: TextStyle(color: AppColors.textSecondary),
                     ),
                   ),
                 )
               : _videos.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text('No videos on this device',
                           style: TextStyle(color: AppColors.textSecondary)))
                   : GridView.builder(
@@ -390,6 +393,7 @@ class _PickTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
@@ -415,7 +419,7 @@ class _PickTile extends StatelessWidget {
                   FutureBuilder<Uint8List?>(
                     future: videoThumb(asset, const ThumbnailSize(480, 480)),
                     builder: (context, snap) => snap.hasError || snap.data == null
-                        ? const ColoredBox(color: AppColors.surfaceAlt)
+                        ? ColoredBox(color: AppColors.surfaceAlt)
                         : Image.memory(snap.data!,
                             fit: BoxFit.cover, gaplessPlayback: true),
                   ),

@@ -1,3 +1,4 @@
+export const SCREENS = ['home','discover','private','folders','playlists','audio','network','cloud','quickShare','stream','iptv','statistics','external'];
 export const PROJECT = 'max-player-cd43d';
 export const MAX_IMAGE = 300 * 1024;
 export function validate(id, n) {
@@ -10,6 +11,8 @@ export function validate(id, n) {
     const url = new URL(n.link);
     if (url.protocol !== 'https:' || !url.hostname || url.username || url.password || n.link.length > 2048) throw Error('Link must be HTTPS without credentials');
   }
+  if (n.screen !== undefined && !SCREENS.includes(n.screen)) throw Error('Invalid app screen');
+  if (n.screen === 'external' && !n.link) throw Error('External destination needs an HTTPS link');
   if (n.imageData !== undefined) decodeImage(n.imageData);
 }
 export function decodeImage(data) {
@@ -21,6 +24,7 @@ export function decodeImage(data) {
 }
 export function messageData(id, n, image = '') {
   const data = { noticeId: id, title: n.title, message: n.message };
+  if (n.screen) data.screen = n.screen;
   if (image) data.image = image;
   if (n.link) data.link = n.link;
   // FCM permits 4096 bytes for most messages, but topic payloads are capped at 2048.

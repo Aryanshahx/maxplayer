@@ -103,6 +103,7 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(14),

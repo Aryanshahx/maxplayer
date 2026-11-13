@@ -32,6 +32,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final holder = AudioPlayerHolder.instance;
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -44,7 +45,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
             [holder, AppVolume.instance, PlayerSettings.instance]),
         builder: (context, _) {
           if (!holder.hasTrack) {
-            return const Center(
+            return Center(
                 child: Text('Nothing playing',
                     style: TextStyle(color: AppColors.textSecondary)));
           }
@@ -90,7 +91,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 18,
                         fontWeight: FontWeight.w700),
@@ -99,7 +100,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                   Text(
                     '${holder.currentIndex + 1} of ${holder.count}'
                     '${holder.error != null ? '  ·  ⚠ ${holder.error}' : ''}',
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textSecondary, fontSize: 12.5),
                   ),
                   const Spacer(),
@@ -117,11 +118,11 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(formatDuration(pos),
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 12)),
                         Text(formatDuration(dur),
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 12)),
                       ],
@@ -142,7 +143,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                       IconButton(
                         tooltip: 'Previous',
                         iconSize: 34,
-                        icon: const Icon(Icons.skip_previous_rounded,
+                        icon: Icon(Icons.skip_previous_rounded,
                             color: AppColors.textPrimary),
                         onPressed: () => unawaited(holder.prev()),
                       ),
@@ -167,7 +168,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                       IconButton(
                         tooltip: 'Next',
                         iconSize: 34,
-                        icon: const Icon(Icons.skip_next_rounded,
+                        icon: Icon(Icons.skip_next_rounded,
                             color: AppColors.textPrimary),
                         onPressed: () => unawaited(holder.next()),
                       ),
@@ -240,7 +241,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                         width: 42,
                         child: Text(
                           '${AppVolume.instance.level.round()}%',
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: AppColors.textSecondary, fontSize: 12),
                         ),
                       ),
@@ -300,7 +301,7 @@ Future<void> showAudioSpeedSheet(
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Playback speed',
+                  Text('Playback speed',
                       style: TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 16,

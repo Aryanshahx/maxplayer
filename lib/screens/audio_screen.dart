@@ -150,6 +150,7 @@ class _AudioScreenState extends State<AudioScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -239,7 +240,7 @@ class _AudioScreenState extends State<AudioScreen> {
               _query.isEmpty
                   ? 'No audio files found on this device'
                   : 'No matches for "$_query"',
-              style: const TextStyle(color: AppColors.textSecondary)));
+              style: TextStyle(color: AppColors.textSecondary)));
     }
     final holder = AudioPlayerHolder.instance;
     return RefreshIndicator(

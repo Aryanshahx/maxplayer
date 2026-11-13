@@ -11,6 +11,7 @@ class DisplaySettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final s = AppSettings.instance;
     return Scaffold(
       appBar: AppBar(
@@ -90,7 +91,7 @@ class DisplaySettingsScreen extends StatelessWidget {
                         Icon(Icons.favorite_border_rounded,
                             color: AppColors.accent, size: 22),
                         const SizedBox(width: 14),
-                        const Expanded(
+                        Expanded(
                           child: Text('Show only favourites',
                               style: TextStyle(
                                   color: AppColors.textPrimary,
@@ -134,10 +135,11 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 22, bottom: 10, left: 4),
       child: Text(text,
-          style: const TextStyle(
+          style: TextStyle(
               color: AppColors.textSecondary,
               fontSize: 12,
               fontWeight: FontWeight.w800,
@@ -163,6 +165,7 @@ class _ModeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Card(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -194,7 +197,7 @@ class _ModeCard extends StatelessWidget {
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: 2),
                     Text(subtitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: AppColors.textSecondary, fontSize: 12)),
                   ],
                 ),
@@ -214,6 +217,7 @@ class _SortRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final s = AppSettings.instance;
     final selected = s.sortField == field;
     return InkWell(
@@ -272,7 +276,7 @@ class _SortRow extends StatelessWidget {
               )
             else
               Text(sortDirectionLabel(field, s.sortAsc),
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: AppColors.textSecondary, fontSize: 12)),
           ],
         ),
@@ -300,6 +304,7 @@ class _DropdownRow<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -308,7 +313,7 @@ class _DropdownRow<T> extends StatelessWidget {
           const SizedBox(width: 14),
           Expanded(
             child: Text(label,
-                style: const TextStyle(
+                style: TextStyle(
                     color: AppColors.textPrimary, fontSize: 14.5)),
           ),
           DropdownButton<T>(
@@ -316,7 +321,7 @@ class _DropdownRow<T> extends StatelessWidget {
             dropdownColor: AppColors.surfaceAlt,
             underline: const SizedBox.shrink(),
             iconEnabledColor: AppColors.textSecondary,
-            style: const TextStyle(
+            style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 13.5,
                 fontWeight: FontWeight.w600),
@@ -344,6 +349,7 @@ class _AccentDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(

@@ -146,6 +146,7 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -289,6 +290,7 @@ class _PickCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
@@ -351,6 +353,7 @@ class _ThinkingAnimationState extends State<_ThinkingAnimation>
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return Center(
       child: Padding(

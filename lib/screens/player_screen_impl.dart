@@ -581,15 +581,15 @@ class _PlayerScreenState extends State<PlayerScreen>
           backgroundColor: AppColors.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: AppColors.border),
+            side: BorderSide(color: AppColors.border),
           ),
-          title: const Text(
+          title: Text(
             'Resume playback?',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 17),
           ),
           content: Text(
             'Continue from ${formatDuration(Duration(milliseconds: target))}?',
-            style: const TextStyle(color: AppColors.textSecondary),
+            style: TextStyle(color: AppColors.textSecondary),
           ),
           actions: [
             TextButton(
@@ -1481,11 +1481,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                   ),
                 ),
-                title: const Text(
+                title: Text(
                   'HDR tone-mapping',
                   style: TextStyle(color: AppColors.textPrimary),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   'How HDR10/Dolby sources fit your screen',
                   style: TextStyle(color: AppColors.textSecondary),
                 ),
@@ -1493,7 +1493,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   value: _toneMapping,
                   dropdownColor: AppColors.surfaceAlt,
                   underline: const SizedBox.shrink(),
-                  style: const TextStyle(color: AppColors.textPrimary),
+                  style: TextStyle(color: AppColors.textPrimary),
                   items: const [
                     DropdownMenuItem(value: 'auto', child: Text('Auto')),
                     DropdownMenuItem(value: 'mobius', child: Text('Mobius')),
@@ -1538,13 +1538,13 @@ class _PlayerScreenState extends State<PlayerScreen>
       leading: Icon(icon, color: AppColors.accent, size: 24),
       title: Text(
         title,
-        style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+        style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
       ),
       subtitle: subtitle == null
           ? null
           : Text(
               subtitle,
-              style: const TextStyle(color: AppColors.textSecondary),
+              style: TextStyle(color: AppColors.textSecondary),
             ),
       onTap: onTap,
       onLongPress: onLongPress,
@@ -1563,11 +1563,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       leading: Icon(icon, color: AppColors.accent, size: 24),
       title: Text(
         title,
-        style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+        style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
       ),
       subtitle: Text(
         subtitle,
-        style: const TextStyle(color: AppColors.textSecondary),
+        style: TextStyle(color: AppColors.textSecondary),
       ),
       trailing: Switch(value: value, onChanged: onChanged),
       onTap: () => onChanged(!value),
@@ -1600,7 +1600,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
               child: Text(
                 subtitle ? 'Subtitles' : 'Audio track',
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -1637,7 +1637,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   size: 20,
                   color: AppColors.accent,
                 ),
-                title: const Text(
+                title: Text(
                   'Generate with AI ✨',
                   style: TextStyle(
                     color: AppColors.textPrimary,
@@ -1645,7 +1645,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   'On-device · free · works offline after a one-time setup',
                   style: TextStyle(
                     color: AppColors.textSecondary,
@@ -1734,7 +1734,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           padding: const EdgeInsets.symmetric(vertical: 10),
           children: [
             _SheetHandle(),
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
               child: Text(
                 'Trailer language',
@@ -1781,11 +1781,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     return ListTile(
       title: Text(
         name,
-        style: const TextStyle(color: AppColors.textPrimary, fontSize: 16),
+        style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
       ),
       trailing: selected
           ? Icon(Icons.check_circle_rounded, color: AppColors.accent)
-          : const Icon(
+          : Icon(
               Icons.radio_button_off_rounded,
               color: AppColors.textSecondary,
             ),
@@ -1967,7 +1967,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               shrinkWrap: true,
               children: [
                 _SheetHandle(),
-                const Text(
+                Text(
                   'Equalizer & Audio FX',
                   style: TextStyle(
                     color: AppColors.textPrimary,
@@ -2002,7 +2002,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         width: 56,
                         child: Text(
                           labels[i],
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 12,
                           ),
@@ -2026,7 +2026,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         child: Text(
                           '${_bands[i] >= 0 ? '+' : ''}${_bands[i].toStringAsFixed(0)} dB',
                           textAlign: TextAlign.right,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 12,
                           ),
@@ -2078,7 +2078,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           builder: (context, controller) => Column(
             children: [
               _SheetHandle(),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.fromLTRB(20, 4, 20, 10),
                 child: Align(
                   alignment: Alignment.centerLeft,
@@ -2099,7 +2099,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   children: [
                     Text(
                       _title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -2114,7 +2114,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                           children: [
                             Text(
                               row.key,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 11.5,
                               ),
@@ -2122,7 +2122,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                             const SizedBox(height: 2),
                             SelectableText(
                               row.value,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppColors.textPrimary,
                                 fontSize: 12.5,
                               ),
@@ -2130,9 +2130,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                           ],
                         ),
                       ),
-                    const Divider(color: AppColors.border),
+                    Divider(color: AppColors.border),
                     if (state.tracks.video.isNotEmpty)
-                      const Text(
+                      Text(
                         'Video tracks',
                         style: TextStyle(
                           color: AppColors.textPrimary,
@@ -2144,7 +2144,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         padding: const EdgeInsets.only(top: 5),
                         child: Text(
                           _trackLabel(track),
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 12,
                           ),
@@ -2152,7 +2152,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ),
                     if (state.tracks.audio.isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      const Text(
+                      Text(
                         'Audio tracks',
                         style: TextStyle(
                           color: AppColors.textPrimary,
@@ -2165,7 +2165,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         padding: const EdgeInsets.only(top: 5),
                         child: Text(
                           _trackLabel(track),
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 12,
                           ),
@@ -2173,7 +2173,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ),
                     if (state.tracks.subtitle.isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      const Text(
+                      Text(
                         'Subtitle tracks',
                         style: TextStyle(
                           color: AppColors.textPrimary,
@@ -2186,7 +2186,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         padding: const EdgeInsets.only(top: 5),
                         child: Text(
                           _trackLabel(track),
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 12,
                           ),
@@ -2277,7 +2277,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               _SheetHandle(),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.fromLTRB(20, 6, 20, 8),
                 child: Align(
                   alignment: Alignment.centerLeft,
@@ -2293,7 +2293,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
               if (_sleepTimer != null || _sleepUntilEnd)
                 ListTile(
-                  title: const Text(
+                  title: Text(
                     'Turn off timer',
                     style: TextStyle(color: AppColors.textPrimary),
                   ),
@@ -2303,17 +2303,17 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ListTile(
                   title: Text(
                     '$min minutes',
-                    style: const TextStyle(color: AppColors.textPrimary),
+                    style: TextStyle(color: AppColors.textPrimary),
                   ),
                   onTap: () =>
                       Navigator.of(context).pop(_SleepChoice.minutes(min)),
                 ),
               ListTile(
-                title: const Text(
+                title: Text(
                   'Until end',
                   style: TextStyle(color: AppColors.textPrimary),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   'Pause when this video reaches the end',
                   style: TextStyle(color: AppColors.textSecondary),
                 ),
@@ -2570,6 +2570,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Focus(
       autofocus: true,
       onKeyEvent: _locked ? null : _handleRemoteKey,
@@ -2875,6 +2876,7 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Container(
       padding: EdgeInsets.only(
         top: MediaQuery.of(context).padding.top + 2,
@@ -3083,6 +3085,7 @@ class _LoopingTitleState extends State<_LoopingTitle>
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final painter = TextPainter(
@@ -3200,6 +3203,7 @@ class _BottomBarState extends State<_BottomBar> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
       decoration: BoxDecoration(
@@ -3370,7 +3374,7 @@ class _BottomBarState extends State<_BottomBar> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _SheetHandle(),
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.fromLTRB(4, 0, 4, 2),
                     child: Align(
                       alignment: Alignment.centerLeft,
@@ -3416,7 +3420,7 @@ class _BottomBarState extends State<_BottomBar> {
                       PlayerSettings.instance.setPlaybackRate(snapped);
                     },
                   ),
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.only(top: 2, bottom: 10),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -3671,6 +3675,7 @@ class _LockChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Material(
       color: Colors.black.withValues(alpha: .3),
       shape: const CircleBorder(side: BorderSide(color: Colors.white30)),
@@ -3699,6 +3704,7 @@ class _ScrubBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     const bubbleW = 132.0;
     return Container(
       width: bubbleW,
@@ -3747,6 +3753,7 @@ class _NoThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Container(
       color: const Color(0xFF1e1e2a),
       alignment: Alignment.center,
@@ -3765,6 +3772,7 @@ class _IndicatorPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
       decoration: BoxDecoration(
@@ -3812,6 +3820,7 @@ class _BoostBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
       decoration: BoxDecoration(
@@ -3842,6 +3851,7 @@ class _SheetHandle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Center(
       child: Container(
         width: 38,
@@ -3906,6 +3916,7 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return SafeArea(
       child: SizedBox(
         height: MediaQuery.of(context).size.height * 0.75,
@@ -3919,7 +3930,7 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
                   if (_open != null)
                     IconButton(
                       tooltip: 'All playlists',
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.arrow_back_rounded,
                         color: AppColors.textSecondary,
                       ),
@@ -3930,7 +3941,7 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
                       _open ?? 'Playlists',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -3940,7 +3951,7 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
                 ],
               ),
             ),
-            const Divider(height: 1, color: AppColors.border),
+            Divider(height: 1, color: AppColors.border),
             Expanded(child: _open == null ? _list() : _detail()),
           ],
         ),
@@ -3951,7 +3962,7 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
   Widget _list() {
     final names = widget.playlists.keys.toList();
     if (names.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.all(28),
           child: Text(
@@ -3974,19 +3985,19 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
             name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textPrimary,
               fontWeight: FontWeight.w600,
             ),
           ),
           subtitle: Text(
             '$count video${count == 1 ? '' : 's'}',
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textSecondary,
               fontSize: 12,
             ),
           ),
-          trailing: const Icon(
+          trailing: Icon(
             Icons.chevron_right_rounded,
             color: AppColors.textSecondary,
           ),
@@ -4001,7 +4012,7 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
       return Center(child: CircularProgressIndicator(color: AppColors.accent));
     }
     if (_videos.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.all(28),
           child: Text(
@@ -4017,7 +4028,7 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
       itemBuilder: (context, i) {
         final a = _videos[i];
         return ListTile(
-          leading: const Icon(
+          leading: Icon(
             Icons.play_circle_outline_rounded,
             color: AppColors.textSecondary,
           ),
@@ -4025,7 +4036,7 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
             a.title ?? 'Video',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: AppColors.textPrimary),
+            style: TextStyle(color: AppColors.textPrimary),
           ),
           onTap: () => _play(a),
         );
@@ -4050,6 +4061,7 @@ class _KaraokeOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return StreamBuilder<Duration>(
       stream: player.stream.position,
       builder: (context, snap) {
@@ -4103,6 +4115,7 @@ class _LiveTvBufferBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final shown = pct.clamp(0, 100).round();
     return Column(
       mainAxisSize: MainAxisSize.min,

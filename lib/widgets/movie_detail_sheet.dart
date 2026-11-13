@@ -401,6 +401,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final movie = widget.movie;
     final isTv = movie.kind == 'tv';
 
@@ -634,6 +635,7 @@ class _ScreenshotsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 10, bottom: 8),
       child: SizedBox(
@@ -663,6 +665,7 @@ class _DetailedStoryBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final meta = <String>[
       if (formatRuntime(extras.runtimeMinutes).isNotEmpty)
         formatRuntime(extras.runtimeMinutes),
@@ -770,6 +773,7 @@ class _TopCastSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     if (cast.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -902,6 +906,7 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final seasons = widget.seasons;
     final totalEps = seasons.fold<int>(0, (a, s) => a + s.episodes);
     final currentSeasonInfo = seasons.firstWhere(
@@ -1146,6 +1151,7 @@ class _WatchBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     Widget row(String label, List<String> names, Color color) {
       if (names.isEmpty) return const SizedBox.shrink();
       return Padding(
@@ -1222,6 +1228,7 @@ class _ReviewsBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
@@ -1331,6 +1338,7 @@ class _AllDataBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     Widget row(String l, String v) => Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
@@ -1394,6 +1402,7 @@ class _PrimeCta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

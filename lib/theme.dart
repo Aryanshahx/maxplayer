@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'services/remote_theme.dart';
 
 /// MaxPlayer dark design language — true-black neutral surfaces (no blue
 /// tint), hairline borders, themable accent with automatic on-accent
@@ -6,23 +7,28 @@ import 'package:flutter/material.dart';
 class AppColors {
   AppColors._();
 
-  static const background = Color(0xFF060608); // app canvas — true black
-  static const surface = Color(0xFF101013); // cards / inputs
-  static const surfaceAlt = Color(0xFF18181C); // raised elements
-  static const border = Color(0xFF26262C); // 1px hairlines
-  static const textPrimary = Color(0xFFF5F6F8);
-  static const textSecondary = Color(0xFF9296A0);
+  static Color get background =>
+      RemoteTheme.instance.colour('background'); // app canvas — true black
+  static Color get surface =>
+      RemoteTheme.instance.colour('surface'); // cards / inputs
+  static Color get surfaceAlt =>
+      RemoteTheme.instance.colour('surfaceAlt'); // raised elements
+  static Color get border =>
+      RemoteTheme.instance.colour('border'); // 1px hairlines
+  static Color get textPrimary => RemoteTheme.instance.colour('textPrimary');
+  static Color get textSecondary =>
+      RemoteTheme.instance.colour('textSecondary');
 
   /// Mutable — set from Display Settings accent wheel (AppSettings).
   static Color accent = const Color(0xFFFFFFFF); // default: white
-  static const danger = Color(0xFFE5484D);
+  static Color get danger => RemoteTheme.instance.colour('danger');
 
   /// Text/icon colour that stays readable ON TOP of [accent]
   /// (black for the white accent, white for colours).
   static Color get onAccent =>
       ThemeData.estimateBrightnessForColor(accent) == Brightness.light
-          ? const Color(0xFF0B0B0E)
-          : Colors.white;
+      ? const Color(0xFF0B0B0E)
+      : Colors.white;
 }
 
 ThemeData buildAppTheme({Color? accent}) {
@@ -42,7 +48,7 @@ ThemeData buildAppTheme({Color? accent}) {
       onSurface: AppColors.textPrimary,
       error: AppColors.danger,
     ),
-    appBarTheme: const AppBarTheme(
+    appBarTheme: AppBarTheme(
       backgroundColor: AppColors.background,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
@@ -61,23 +67,23 @@ ThemeData buildAppTheme({Color? accent}) {
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: const BorderRadius.all(radius),
-        side: const BorderSide(color: AppColors.border, width: 1),
+        side: BorderSide(color: AppColors.border, width: 1),
       ),
     ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: AppColors.surfaceAlt,
-      contentTextStyle: const TextStyle(color: AppColors.textPrimary),
+      contentTextStyle: TextStyle(color: AppColors.textPrimary),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: AppColors.border),
+        side: BorderSide(color: AppColors.border),
       ),
     ),
-    iconTheme: const IconThemeData(color: AppColors.textPrimary),
-    textTheme: const TextTheme(
+    iconTheme: IconThemeData(color: AppColors.textPrimary),
+    textTheme: TextTheme(
       bodyMedium: TextStyle(color: AppColors.textPrimary),
       bodySmall: TextStyle(color: AppColors.textSecondary),
     ),
-    dividerTheme: const DividerThemeData(color: AppColors.border, thickness: 1),
+    dividerTheme: DividerThemeData(color: AppColors.border, thickness: 1),
   );
 }

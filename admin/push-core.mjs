@@ -1,3 +1,4 @@
+export const SCREENS = ['home','discover','private','folders','playlists','audio','network','cloud','quickShare','stream','iptv','statistics','external'];
 export const MAX_IMAGE_BYTES = 300 * 1024;
 export function fieldsOf(value) {
   if (value === null) return { nullValue: null };
@@ -30,12 +31,15 @@ export function validateDraft(draft) {
   if (!draft.title.trim() || draft.title.length>80) throw Error('Title must be 1–80 characters');
   if (draft.message.length>900) throw Error('Message must be at most 900 characters');
   if (!/^(all|[A-Za-z0-9_-]{1,128})$/.test(draft.target)) throw Error('Paste a valid installation ID from the app');
+  if(draft.screen && !SCREENS.includes(draft.screen))throw Error('Invalid app screen');
+  if(draft.screen==='external'&&!draft.link)throw Error('External destination needs an HTTPS link');
   if (draft.link) {
     const uri=new URL(draft.link);
     if (uri.protocol!=='https:' || !uri.hostname || uri.username || uri.password || draft.link.length>2048) throw Error('Link must be HTTPS without embedded credentials');
   }
   if (draft.imageData && (imageByteSize(draft.imageData)>MAX_IMAGE_BYTES || draft.imageData.length>420000)) throw Error('Picture must be smaller than 300 KiB');
   const data={ noticeId:'x'.repeat(36), title:draft.title, message:draft.message };
+  if(draft.screen)data.screen=draft.screen;
   if(draft.link)data.link=draft.link;
   if(draft.imageData)data.image='https://raw.githubusercontent.com/Aryanshahx/maxplayer/notice-images/notices/'+'x'.repeat(36)+'.jpg';
   const bytes=new TextEncoder().encode(JSON.stringify(data)).length;

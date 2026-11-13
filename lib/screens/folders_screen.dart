@@ -46,6 +46,7 @@ class _FoldersScreenState extends State<FoldersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Folders')),
       body: _paths.isEmpty
@@ -65,11 +66,11 @@ class _FoldersScreenState extends State<FoldersScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style:
-                            const TextStyle(color: AppColors.textPrimary)),
+                            TextStyle(color: AppColors.textPrimary)),
                     subtitle: Text('${_counts[p.id] ?? 0} videos',
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: AppColors.textSecondary, fontSize: 12)),
-                    trailing: const Icon(Icons.chevron_right_rounded,
+                    trailing: Icon(Icons.chevron_right_rounded,
                         color: AppColors.textSecondary),
                     onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
@@ -119,6 +120,7 @@ class _FolderVideosScreenState extends State<FolderVideosScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final visible = _videos.where((a) => !_priv.contains(a.id)).toList();
     return Scaffold(
       appBar: AppBar(title: Text(widget.path.name)),

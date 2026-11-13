@@ -1970,7 +1970,7 @@ https://example.com/orphan.m3u8''';
     });
 
     test('kAppVersionTag tracks the shipped build (v1.0.1+68)', () {
-      expect(AppAnalytics.kAppVersionTag, '1.0.1+71');
+      expect(AppAnalytics.kAppVersionTag, '1.0.1+72');
     });
 
     test('hostOf returns http(s) host only — local paths stay private', () {

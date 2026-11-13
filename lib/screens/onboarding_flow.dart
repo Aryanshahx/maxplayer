@@ -46,6 +46,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -94,6 +95,7 @@ class _OnboardingBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 18),
@@ -156,6 +158,7 @@ class _WelcomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
@@ -226,7 +229,7 @@ class _WelcomePage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
-        const Center(
+        Center(
           child: Text(
             'One player for every video on your phone.',
             textAlign: TextAlign.center,
@@ -268,6 +271,7 @@ class _HowToPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
       children: [
@@ -366,6 +370,7 @@ class _PlayerGuidePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
       children: const [
@@ -440,6 +445,7 @@ class _FeatureRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -477,7 +483,7 @@ class _FeatureRow extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 12.5,
                     height: 1.35,
@@ -505,6 +511,7 @@ class _GestureRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
@@ -529,7 +536,7 @@ class _GestureRow extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             subtitle,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textSecondary,
               fontSize: 12,
               height: 1.3,

@@ -48,6 +48,7 @@ class AboutSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return ListView(
       controller: scrollController,
@@ -213,6 +214,7 @@ class _Heading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 18, bottom: 6),
       child: Text(
@@ -300,6 +302,7 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final d = _data ?? const <String, dynamic>{};
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),

@@ -101,7 +101,7 @@ async function processNotice(doc) {
     batch.update(doc.ref, { status, finishedAt: FieldValue.serverTimestamp(), acceptedRequests, acceptedTokens, failedTokens, tokenCount, errors, warnings, deliveryNote: 'FCM acceptance is not confirmation of device delivery' });
     if (status === 'sent') {
       const history = n.target === 'all' ? db.collection('publishedNotices').doc(doc.id) : db.collection('users').doc(n.target).collection('inbox').doc(doc.id);
-      batch.set(history, { title: n.title, message: n.message, imageUrl: image, link: n.link || '', createdAt: FieldValue.serverTimestamp() });
+      batch.set(history, { title: n.title, message: n.message, imageUrl: image, link: n.link || '', screen: n.screen || 'home', createdAt: FieldValue.serverTimestamp() });
     }
     await batch.commit();
     console.log(`Notice ${doc.id}: ${status}; FCM accepted ${acceptedRequests} request(s)`);

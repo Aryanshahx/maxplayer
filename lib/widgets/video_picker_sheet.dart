@@ -62,6 +62,7 @@ class _VideoPickerSheetState extends State<VideoPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return SafeArea(
       child: Column(
@@ -221,6 +222,7 @@ class _PickerThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
       child: SizedBox(

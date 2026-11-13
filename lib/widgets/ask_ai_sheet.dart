@@ -135,6 +135,7 @@ class _AskAiSheetState extends State<AskAiSheet> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
@@ -326,6 +327,7 @@ class _ThinkingAnimationState extends State<_ThinkingAnimation>
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     return Center(
       child: Padding(

@@ -92,6 +92,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final s = AppSettings.instance;
     final results = _all.where((a) {
       if (_priv.contains(a.id)) return false;
@@ -110,14 +111,14 @@ class _SearchScreenState extends State<SearchScreen> {
           controller: _ctrl,
           autofocus: true,
           onChanged: _onChanged,
-          style: const TextStyle(color: AppColors.textPrimary),
+          style: TextStyle(color: AppColors.textPrimary),
           decoration: InputDecoration(
             hintText: 'Search all videos…',
-            hintStyle: const TextStyle(color: AppColors.textSecondary),
+            hintStyle: TextStyle(color: AppColors.textSecondary),
             border: InputBorder.none,
             suffixIcon: _query.isNotEmpty
                 ? IconButton(
-                    icon: const Icon(Icons.close_rounded,
+                    icon: Icon(Icons.close_rounded,
                         color: AppColors.textSecondary),
                     onPressed: () {
                       _ctrl.clear();
@@ -133,15 +134,15 @@ class _SearchScreenState extends State<SearchScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.search_rounded,
+                  Icon(Icons.search_rounded,
                       size: 46, color: AppColors.textSecondary),
                   const SizedBox(height: 12),
-                  const Text('Type to search every video on this device',
+                  Text('Type to search every video on this device',
                       style: TextStyle(color: AppColors.textSecondary)),
                   if (_loadingMore) ...[
                     const SizedBox(height: 10),
                     Text('Indexing… ${_all.length} scanned',
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: AppColors.textSecondary, fontSize: 11)),
                   ],
                 ],
@@ -154,7 +155,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         ? 'Searching…'
                         : 'Nothing matches "$_query"',
                     style:
-                        const TextStyle(color: AppColors.textSecondary),
+                        TextStyle(color: AppColors.textSecondary),
                   ),
                 )
               : Column(
@@ -164,7 +165,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: Text('${results.length} result(s)',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 12)),
                       ),

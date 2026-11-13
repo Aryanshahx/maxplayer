@@ -255,21 +255,21 @@ class _VideoGridState extends State<VideoGrid> {
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.border),
+          side: BorderSide(color: AppColors.border),
         ),
-        title: const Text(
+        title: Text(
           'Delete video?',
           style: TextStyle(color: AppColors.textPrimary, fontSize: 17),
         ),
         content: Text(
           '"${a.title ?? 'This video'}" will be deleted from your device. '
           'Android will ask you to confirm.',
-          style: const TextStyle(color: AppColors.textSecondary),
+          style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(
+            child: Text(
               'Cancel',
               style: TextStyle(color: AppColors.textSecondary),
             ),
@@ -340,7 +340,7 @@ class _VideoGridState extends State<VideoGrid> {
                 ),
                 title: Text(
                   name,
-                  style: const TextStyle(color: AppColors.textPrimary),
+                  style: TextStyle(color: AppColors.textPrimary),
                 ),
                 trailing: Icon(
                   pls[name]!.contains(a.id)
@@ -390,11 +390,11 @@ class _VideoGridState extends State<VideoGrid> {
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.border),
+          side: BorderSide(color: AppColors.border),
         ),
         title: Text(
           renamedTitleFor(a),
-          style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+          style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
         ),
         content: SingleChildScrollView(
           child: Column(
@@ -420,7 +420,7 @@ class _VideoGridState extends State<VideoGrid> {
               _prop('Modified', fmtDate(a.modifiedDateTime)),
               if (latlng != null)
                 _prop('GPS', '${latlng.latitude}, ${latlng.longitude}'),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 4),
                 child: Text(
                   'Codec / frame-rate / track details: open the video and '
@@ -449,7 +449,7 @@ class _VideoGridState extends State<VideoGrid> {
     padding: const EdgeInsets.only(bottom: 6),
     child: Text(
       '$k:  $v',
-      style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+      style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
     ),
   );
 
@@ -470,7 +470,7 @@ class _VideoGridState extends State<VideoGrid> {
                 renamedTitleFor(a),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textPrimary,
                   fontWeight: FontWeight.w700,
                 ),
@@ -548,17 +548,17 @@ class _VideoGridState extends State<VideoGrid> {
           backgroundColor: AppColors.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: AppColors.border),
+            side: BorderSide(color: AppColors.border),
           ),
-          title: const Text(
+          title: Text(
             'Rename video',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 17),
           ),
           content: TextField(
             controller: ctrl,
             autofocus: true,
-            style: const TextStyle(color: AppColors.textPrimary),
-            decoration: const InputDecoration(
+            style: TextStyle(color: AppColors.textPrimary),
+            decoration: InputDecoration(
               hintText: 'New name',
               hintStyle: TextStyle(color: AppColors.textSecondary),
             ),
@@ -567,7 +567,7 @@ class _VideoGridState extends State<VideoGrid> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text(
+              child: Text(
                 'Cancel',
                 style: TextStyle(color: AppColors.textSecondary),
               ),
@@ -662,6 +662,7 @@ class _VideoGridState extends State<VideoGrid> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         if (widget.listMode) {
@@ -799,6 +800,7 @@ class _VideoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Card(
       clipBehavior: Clip.antiAlias,
       child: ListTile(
@@ -822,7 +824,7 @@ class _VideoRow extends StatelessWidget {
           renamedTitleFor(asset),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+          style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -832,7 +834,7 @@ class _VideoRow extends StatelessWidget {
               future: resolvedQualityBadge(asset),
               builder: (context, snap) => Text(
                 '${snap.data ?? qualityBadge(asset.width, asset.height)} · ${formatDuration(Duration(seconds: asset.duration))}',
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 11.5,
                 ),
@@ -892,6 +894,7 @@ class _VideoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     // Old-player tile: 16:9 thumbnail with quality badge (top-left),
     // favourite toggle (top-right) and duration pill (bottom-right), then
     // title + file size.
@@ -1069,7 +1072,8 @@ class _ThumbFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(
+    Theme.of(context);
+    return ColoredBox(
       color: AppColors.surfaceAlt,
       child: Center(
         child: Icon(

@@ -108,6 +108,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Scaffold(
       backgroundColor: const Color(0xFF0a0a10),
       body: SafeArea(
@@ -216,6 +217,7 @@ class _CategoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final poster = tmdbPosterUrl(movie.posterPath);
     return Material(
       color: Colors.transparent,

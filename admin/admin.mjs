@@ -1,3 +1,4 @@
+import { initControlPanel, exportDetailedReport } from './control-panel.mjs';
 import { bucketActivity, niceScale, ipCountries } from './charts.mjs';
 import { fieldsOf, unpackDoc, validateDraft, imageByteSize, MAX_IMAGE_BYTES, statusText } from './push-core.mjs';
 const PROJECT_ID='max-player-cd43d';
@@ -59,12 +60,13 @@ function signOut(){
 function openDashboard(){
  $('login').style.display='none';$('dash').style.display='block';setText('identity',session.email+' · authenticated admin · '+PROJECT_ID);
  setDates();void refresh();void refreshNotices();
+ window.dispatchEvent(new Event('max-admin-open'));
  if(sessionStorage.getItem('max.push.attempt')) {
   try {
     const saved=JSON.parse(sessionStorage.getItem('max.push.attempt')).draft;
     $('title').value=saved.title;$('message').value=saved.message;
     $('target').value=saved.target==='all'?'all':'one';$('targetUid').value=saved.target==='all'?'':saved.target;
-    $('link').value=saved.link||'';imageData=saved.imageData||'';
+    $('destination').value=saved.screen||(saved.link?'external':'home');$('link').value=saved.link||'';imageData=saved.imageData||'';
     if(imageData){$('previewImage').src=imageData;$('previewImage').hidden=false;}
     updatePreview();
   }catch{}
@@ -76,7 +78,9 @@ async function recentReports(){
  const result=await api(':runQuery',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({structuredQuery:{from:[{collectionId:'reports'}],orderBy:[{field:{fieldPath:'ts'},direction:'DESCENDING'}],limit:100}})});
  return result.filter(x=>x.document).map(x=>x.document);
 }
-function updatePreview(){setText('previewTitle',$('title').value||'Notification title');setText('previewMessage',$('message').value||'Your message appears here.');$('targetUid').hidden=$('target').value!=='one';$('targetUid').required=$('target').value==='one';}
+function updatePreview(){
+ $('link').disabled=$('destination').value!=='external';
+ $('link').required=$('destination').value==='external';setText('previewTitle',$('title').value||'Notification title');setText('previewMessage',$('message').value||'Your message appears here.');$('targetUid').hidden=$('target').value!=='one';$('targetUid').required=$('target').value==='one';}
 function clearPicture(){imageGeneration++;imageBusy=false;$('send').disabled=sending;imageData='';$('picture').value='';$('previewImage').removeAttribute('src');$('previewImage').hidden=true;setText('imageInfo','');}
 async function choosePicture(){
  const generation=++imageGeneration;imageData='';$('previewImage').hidden=true;
@@ -123,7 +127,8 @@ async function sendNotice(event){
  let attempt;try{attempt=JSON.parse(sessionStorage.getItem('max.push.attempt')||'null');}catch{}
  if(!attempt){
   const draft={title:$('title').value.trim(),message:$('message').value,target:$('target').value==='all'?'all':$('targetUid').value.trim(),status:'pending'};
-  if($('link').value.trim())draft.link=$('link').value.trim();if(imageData)draft.imageData=imageData;
+  draft.screen=$('destination').value;
+  if(draft.screen==='external'&&$('link').value.trim())draft.link=$('link').value.trim();if(imageData)draft.imageData=imageData;
   validateDraft(draft);
   if(!confirm(`Queue this notification for ${draft.target==='all'?'EVERYONE':draft.target}? Pictures will be publicly accessible.`))return;
   attempt={id:crypto.randomUUID(),draft};sessionStorage.setItem('max.push.attempt',JSON.stringify(attempt));
@@ -271,8 +276,8 @@ $('from').onchange=$('to').onchange=()=>{$('period').value='custom';paint();};
 $('period').onchange=setDates;
 $('chartMetric').onchange=paint;
 $('refresh').onclick=refresh;
-$('pdfBtn').onclick=downloadPdf;
-$('title').oninput=$('message').oninput=$('target').onchange=updatePreview;
+$('pdfBtn').onclick=()=>exportDetailedReport({$,api,collection,unpackDoc,stats:STATS,periodRows,FEATURE_NAMES,plot,ipCountries,num,countryName,paint});
+$('title').oninput=$('message').oninput=$('target').onchange=$('destination').onchange=updatePreview;
 $('picture').onchange=choosePicture;
 $('removePicture').onclick=clearPicture;
 $('noticeForm').addEventListener('submit',sendNotice);
@@ -281,6 +286,7 @@ $('forgetToken').onclick=()=>{sessionStorage.removeItem(TOKEN_KEY);localStorage.
 $('dispatch').onclick=async()=>{ $('dispatch').disabled=true;try{await assertAdmin();await dispatch();setText('settingsStatus','Workflow start accepted. Watch notice status or open the workflow link.');}catch(e){setText('settingsStatus',e.message);}finally{$('dispatch').disabled=false;} };
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&session)void refreshNotices();});
 setInterval(()=>{if(session&&!document.hidden)void refresh();},60000);
+initControlPanel({$,api,collection,fieldsOf,unpackDoc,dispatch,getSession:()=>session,refresh});
 setDates();updatePreview();
 if(localStorage.getItem(TOKEN_KEY)){$('rememberToken').checked=true;setText('settingsStatus','A dispatch token is remembered on this browser.');}
 else if(sessionStorage.getItem(TOKEN_KEY))setText('settingsStatus','A dispatch token is saved for this tab.');

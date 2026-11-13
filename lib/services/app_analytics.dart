@@ -32,7 +32,7 @@ class AppAnalytics {
   static const String kFirebaseSenderId = '1080871289145';
 
   /// Report tag — bump with the app version each release.
-  static const String kAppVersionTag = '1.0.1+71';
+  static const String kAppVersionTag = '1.0.1+72';
 
   /// true only once Firebase is actually usable (configured + initialised).
   static final ValueNotifier<bool> ready = ValueNotifier<bool>(false);

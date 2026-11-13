@@ -177,6 +177,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final accent = AppColors.accent;
     final canPlay = _urlCtrl.text.trim().isNotEmpty;
 

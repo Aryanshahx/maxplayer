@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "name": "Diwali",
+  "palette": {
+    "background": "#160D08",
+    "surface": "#25180F",
+    "surfaceAlt": "#332217",
+    "border": "#65462B",
+    "accent": "#FFC75A",
+    "textPrimary": "#FFF4DB",
+    "textSecondary": "#D6BFA1",
+    "danger": "#E5484D"
+  },
+  "decoration": "diwali",
+  "headerLabel": "Happy Diwali"
+}

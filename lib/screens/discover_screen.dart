@@ -384,6 +384,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Scaffold(
       backgroundColor: const Color(0xFF0a0a10),
       body: _keyMissing
@@ -960,6 +961,7 @@ class _HeroDotsState extends State<_HeroDots> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Row(
@@ -1012,6 +1014,7 @@ class _PosterRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     if (movies.isEmpty && failed) {
       return _RailError(title: title, onRetry: onRetry);
     }
@@ -1062,6 +1065,7 @@ class _RailHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 9),
       child: Row(
@@ -1133,6 +1137,7 @@ class _RailError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1176,6 +1181,7 @@ class _PosterCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final posterUrl = tmdbPosterUrl(movie.posterPath);
     return SizedBox(
       width: _PosterRail.cardWidth,
@@ -1271,6 +1277,7 @@ class _PosterSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return SizedBox(
       width: _PosterRail.cardWidth,
       child: Column(
@@ -1313,6 +1320,7 @@ class _OttSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 16),
       child: Column(
@@ -1373,6 +1381,7 @@ class _NoKeyBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return const SafeArea(
       child: Center(
         child: Padding(
@@ -1411,6 +1420,7 @@ class _SearchSkeletonTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
