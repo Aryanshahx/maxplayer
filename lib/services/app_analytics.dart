@@ -32,7 +32,7 @@ class AppAnalytics {
   static const String kFirebaseSenderId = '1080871289145';
 
   /// Report tag — bump with the app version each release.
-  static const String kAppVersionTag = '1.0.1+70';
+  static const String kAppVersionTag = '1.0.1+71';
 
   /// true only once Firebase is actually usable (configured + initialised).
   static final ValueNotifier<bool> ready = ValueNotifier<bool>(false);
@@ -72,6 +72,19 @@ class AppAnalytics {
       final prefs = await SharedPreferences.getInstance();
       if (!(prefs.getBool('aa.installCounted') ?? false)) {
         bumpTotal('installs');
+        final day = DateTime.now().toIso8601String().substring(0, 10);
+        final db = _db;
+        if (db != null) {
+          unawaited(
+            db
+                .collection('stats')
+                .doc('daily_$day')
+                .set({
+                  'installs': FieldValue.increment(1),
+                }, SetOptions(merge: true))
+                .catchError((Object _) {}),
+          );
+        }
         await prefs.setBool('aa.installCounted', true);
       }
       // Independent of install counting: upgrades also contribute one new IP sample.

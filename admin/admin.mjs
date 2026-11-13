@@ -201,7 +201,8 @@ function esc(x) { const d = document.createElement('div'); d.textContent = x; re
 function countryName(cc){try{return new Intl.DisplayNames(['en'],{type:'region'}).of(cc)||cc;}catch{return COUNTRY[cc]||cc;}}
 function filteredReports(){return REPORTS.filter(r=>{if(str(r.type)!=='crash')return false;const d=str(r.ts).slice(0,10);return d>=$('from').value && d<=$('to').value;});}
 const FEATURE_NAMES={"feature_discover": "Discover movies", "feature_private": "Private folder", "feature_folders": "Folders", "feature_playlists": "Playlists", "feature_audio": "Audio", "feature_network": "Network storage", "feature_cloud": "Cloud storage", "feature_quickShare": "Quick Share"};
-const METRICS=FEATURE_NAMES;
+const CORE_METRICS={appOpens:'App opens',videosPlayed:'Videos played',installs:'Install registrations',streamsOpened:'Streams opened',iptvPlayed:'IPTV plays'};
+const METRICS={...CORE_METRICS,...FEATURE_NAMES};
 const fmt=n=>new Intl.NumberFormat('en').format(n);
 function shortDate(s){const [y,m,d]=s.split('-');return new Date(Number(y),Number(m)-1,Number(d)).toLocaleDateString('en',{month:'short',day:'numeric'});}
 function plot(host,points,{bars=false,color='#ffffff',label='opens'}={}){
@@ -227,7 +228,7 @@ function rankRows(host,rows,total){
  for(const r of rows){const wrapper=document.createElement('div'),head=document.createElement('div');head.className='rankHead';const name=document.createElement('b'),value=document.createElement('span');name.textContent=r.name;value.textContent=fmt(r.count)+(total?' · '+(100*r.count/total).toFixed(1)+'%':'');head.append(name,value);const track=document.createElement('div'),fill=document.createElement('div');track.className='track';fill.className='fill';fill.style.width=(total?100*r.count/total:0)+'%';if(r.color)fill.style.background=r.color;track.append(fill);wrapper.append(head,track);host.append(wrapper);}
 }
 function paint(){
- const rows=periodRows(),key=$('chartMetric').value||'feature_discover';
+ const rows=periodRows(),key=$('chartMetric').value||'appOpens';
  const total=STATS.find(d=>d.name.split('/').pop()==='total')?.fields||{};
  for(const [id,k] of [['sOpens','appOpens'],['sVideos','videosPlayed'],['sStreams','streamsOpened'],['sIptv','iptvPlayed']])setText(id,fmt(sum(rows,k)));
  setText('sInstalls',fmt(num(total.installs)));
@@ -236,9 +237,9 @@ function paint(){
  setText('chartTotal',fmt(sum(rows,key)));setText('chartSub',label+' · '+(mode==='day'?'daily':mode==='week'?'7-day buckets':'calendar months'));
  plot($('chart'),points.map(p=>({...p,short:mode==='month'?new Date(p.start+'T12:00:00').toLocaleDateString('en',{month:'short',year:'2-digit'}):shortDate(p.start),description:p.start===p.end?p.start:p.start+' to '+p.end})),{label});
  const peak=rows.reduce((a,r)=>num(r.f[key])>num(a?.f[key])?r:a,null);
- setText('chartInsight',peak&&num(peak.f[key])?`Busiest recorded day: ${shortDate(peak.date)} · ${fmt(num(peak.f[key]))} ${label}. Hover or tap the chart for exact values.`:'No events recorded for this metric. Empty dates show zero; they do not confirm that every device reported.');
- $('chartTable').innerHTML=rows.map(r=>`<tr><td>${r.date}</td>${Object.keys(FEATURE_NAMES).map(k=>'<td>'+fmt(num(r.f[k]))+'</td>').join('')}</tr>`).join('');
- const features=Object.entries(FEATURE_NAMES).map(([field,name])=>({name,count:sum(rows,field)}));rankRows($('featureMix'),features,features.reduce((a,r)=>a+r.count,0));
+ setText('chartInsight',key==='installs'?'Daily first-launch registrations start with +71. Earlier dates are unavailable, not verified zero. Existing installations upgrading to +71 are not counted as new installs.':peak&&num(peak.f[key])?`Busiest recorded day: ${shortDate(peak.date)} · ${fmt(num(peak.f[key]))} ${label}. Hover or tap the chart for exact values.`:'No events recorded for this metric. Empty dates show zero; they do not confirm that every device reported.');
+ $('chartTable').innerHTML=rows.map(r=>`<tr><td>${r.date}</td>${Object.keys(METRICS).map(k=>'<td>'+fmt(num(r.f[k]))+'</td>').join('')}</tr>`).join('');
+ const features=Object.entries({videosPlayed:'Videos played',streamsOpened:'Streams opened',iptvPlayed:'IPTV plays',...FEATURE_NAMES}).map(([field,name])=>({name,count:sum(rows,field)}));rankRows($('featureMix'),features,features.reduce((a,r)=>a+r.count,0));
 
  const hours=Array.from({length:24},(_,h)=>({value:sum(rows,'h_'+h),short:String(h).padStart(2,'0')+':00',description:String(h).padStart(2,'0')+':00–'+String(h).padStart(2,'0')+':59'}));plot($('hoursChart'),hours,{bars:true,color:'#bfc2ca',label:'app opens'});
  const busiest=hours.reduce((a,p)=>p.value>a.value?p:a,hours[0]);setText('hourInsight',busiest.value?`Peak local hour: ${busiest.description} · ${fmt(busiest.value)} opens.`:'No hourly activity recorded in this range.');
@@ -259,7 +260,7 @@ function downloadPdf() {
  const rows=periodRows();
  const table=(head,rows)=>`<table><thead><tr>${head.map(x=>'<th>'+esc(String(x))+'</th>').join('')}</tr></thead><tbody>${rows.map(row=>'<tr>'+row.map(x=>'<td>'+esc(String(x))+'</td>').join('')+'</tr>').join('')}</tbody></table>`;
  const total=STATS.find(d=>d.name.split('/').pop()==='total')?.fields||{};
- win.document.write(`<!doctype html><html><head><title>Max Player report</title><style>body{font:12px Arial;color:#111;margin:25px}table{border-collapse:collapse;width:100%;margin:15px 0}td,th{border:1px solid #ccc;padding:6px;text-align:left;white-space:pre-wrap;word-break:break-word}tr{break-inside:avoid}h2{margin-top:25px}@media print{button{display:none}}@page{margin:12mm}</style></head><body><button id="printReport">Print / Save as PDF</button><h1>Max Player activity report</h1><p>${esc($('from').value)} to ${esc($('to').value)} · generated ${esc(new Date().toLocaleString())}</p><p>Use the print destination “Save as PDF”. Install registrations and IP-country samples are all-time; activity and reports follow the selected dates. Country samples are approximate, not historical install locations.</p><h2>Summary</h2>${table(['Metric','Value'],[['Installs (all-time)',num(total.installs)],...['appOpens','videosPlayed','streamsOpened','iptvPlayed','sessions','sessionSeconds',...Object.keys(FEATURE_NAMES)].map(k=>[k,sum(rows,k)])])}<h2>Countries (IP sample since +69; all-time, including upgrades)</h2>${table(['Country','IP samples'],ipCountries(total,num).map(c=>[countryName(c.cc),c.count]))}<h2>Hourly app opens (device-local)</h2>${table(['Hour','Opens'],Array.from({length:24},(_,h)=>[h+':00',sum(rows,'h_'+h)]))}<h2>Daily activity</h2>${table(['Date','Opens','Videos','Streams','IPTV','Seconds'],rows.map(r=>[r.date,...['appOpens','videosPlayed','streamsOpened','iptvPlayed','sessionSeconds'].map(k=>num(r.f[k]))]))}<h2>Captured app errors (not playback failures)</h2>${table(['Type','Time','Details'],filteredReports().map(r=>[str(r.type),str(r.ts),str(r.text)]))}</body></html>`);
+ win.document.write(`<!doctype html><html><head><title>Max Player report</title><style>body{font:12px Arial;color:#111;margin:25px}table{border-collapse:collapse;width:100%;margin:15px 0}td,th{border:1px solid #ccc;padding:6px;text-align:left;white-space:pre-wrap;word-break:break-word}tr{break-inside:avoid}h2{margin-top:25px}@media print{button{display:none}}@page{margin:12mm}</style></head><body><button id="printReport">Print / Save as PDF</button><h1>Max Player activity report</h1><p>${esc($('from').value)} to ${esc($('to').value)} · generated ${esc(new Date().toLocaleString())}</p><p>Use the print destination “Save as PDF”. Install registrations and IP-country samples are all-time; activity and reports follow the selected dates. Country samples are approximate, not historical install locations.</p><p>Daily install registrations start with +71; earlier install dates are unavailable.</p><h2>Summary</h2>${table(['Metric','Value'],[['Installs (all-time)',num(total.installs)],...['appOpens','videosPlayed','streamsOpened','iptvPlayed','sessions','sessionSeconds',...Object.keys(FEATURE_NAMES)].map(k=>[k,sum(rows,k)])])}<h2>Countries (IP sample since +69; all-time, including upgrades)</h2>${table(['Country','IP samples'],ipCountries(total,num).map(c=>[countryName(c.cc),c.count]))}<h2>Hourly app opens (device-local)</h2>${table(['Hour','Opens'],Array.from({length:24},(_,h)=>[h+':00',sum(rows,'h_'+h)]))}<h2>Daily activity</h2>${table(['Date','Opens','Videos','Streams','IPTV','Seconds'],rows.map(r=>[r.date,...['appOpens','videosPlayed','streamsOpened','iptvPlayed','sessionSeconds'].map(k=>num(r.f[k]))]))}<h2>Captured app errors (not playback failures)</h2>${table(['Type','Time','Details'],filteredReports().map(r=>[str(r.type),str(r.ts),str(r.text)]))}</body></html>`);
  win.document.close();win.document.getElementById('printReport').addEventListener('click',()=>win.print());win.focus();setTimeout(()=>win.print(),300);
 }
 
@@ -287,3 +288,14 @@ else if(sessionStorage.getItem(TOKEN_KEY))setText('settingsStatus','A dispatch t
 sessionStorage.removeItem('max.admin.unlocked');
 session=readSession();
 if(session){try{await assertAdmin();openDashboard();}catch(e){session=null;sessionStorage.removeItem(SESSION_KEY);setText('err','Please sign in again. '+e.message);}}
+
+const bottomLinks=[...document.querySelectorAll('.bottomNav a')];
+function highlightBottom(){
+ let active='overview';
+ for(const id of ['overview','audience','composer','issues','settings']){
+  const section=document.getElementById(id);if(section&&section.getBoundingClientRect().top<innerHeight*.4)active=id;
+ }
+ bottomLinks.forEach(a=>{if(a.hash==='#'+active)a.setAttribute('aria-current','location');else a.removeAttribute('aria-current');});
+}
+bottomLinks.forEach(a=>a.addEventListener('click',()=>{if(a.hash==='#settings')$('settings').open=true;}));
+window.addEventListener('scroll',highlightBottom,{passive:true});
