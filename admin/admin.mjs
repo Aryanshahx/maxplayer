@@ -300,7 +300,7 @@ if(session){try{await assertAdmin();openDashboard();}catch(e){session=null;sessi
 const bottomLinks=[...document.querySelectorAll('.bottomNav a')];
 function highlightBottom(){
  let active='overview';
- for(const section of document.querySelectorAll('#overview,#audience,#composer,#issues,#themes,#settings')){
+ for(const section of document.querySelectorAll('#overview,#audience,#composer,#issues,#settings')){
   if(section.getBoundingClientRect().top<innerHeight*.4)active=section.id;
  }
  bottomLinks.forEach(a=>{if(a.hash==='#'+active)a.setAttribute('aria-current','location');else a.removeAttribute('aria-current');});

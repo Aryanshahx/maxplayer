@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'services/push_service.dart';
-import 'services/remote_theme.dart';
 import 'services/notification_destination.dart';
 import 'screens/discover_screen.dart';
 import 'screens/notification_movie_screen.dart';
@@ -87,7 +86,6 @@ Future<void> main() async {
     return false; // still let the default handler act
   };
   FirebaseMessaging.onBackgroundMessage(maxPlayerPushBackground);
-  await RemoteTheme.instance.loadCache();
   runApp(const MaxPlayerApp());
   // v1.0.1+50: AdMob warms up AFTER the first frame — it can never
   // block or crash startup (no Play services? → the app stays ad-free).
@@ -96,7 +94,6 @@ Future<void> main() async {
   // (aggregates only — no names, no URLs, no personal data).
   unawaited(() async {
     await AppAnalytics.instance.trackAppOpen();
-    unawaited(RemoteTheme.instance.start());
     unawaited(_flushCapturedCrash());
     await PushService.instance.start();
   }());
@@ -136,7 +133,6 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
     // offline, so no network is fine).
     if (state == AppLifecycleState.resumed) {
       _resumedAt = DateTime.now();
-      unawaited(RemoteTheme.instance.start());
       unawaited(() async {
         await PushService.instance.start();
         await PushService.instance.requestOnForeground();
@@ -201,14 +197,9 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
     Theme.of(context);
     // Rebuilds MaterialApp when accent changes (Display Settings wheel).
     return ListenableBuilder(
-      listenable: Listenable.merge([
-        AppSettings.instance,
-        RemoteTheme.instance,
-      ]),
+      listenable: AppSettings.instance,
       builder: (context, _) {
-        AppColors.accent = RemoteTheme.instance.active
-            ? RemoteTheme.instance.colour('accent')
-            : AppSettings.instance.accentColor;
+        AppColors.accent = AppSettings.instance.accentColor;
         return MaterialApp(
           title: 'Max Player',
           navigatorKey: rootNavigatorKey,

@@ -28,7 +28,11 @@ name: Play Store AAB
 on:
   workflow_dispatch: {}       # "Run workflow" button in the Actions tab
   push:
+    branches: [main]
     tags: ['v*']              # or build on every tagged push
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -100,6 +104,22 @@ jobs:
             "--dart-define=TMDB_API_KEY=$TMDB_API_KEY" \
             "--dart-define=OPENROUTER_API_KEY=$OPENROUTER_API_KEY"
 
+      - name: Verify signed bundle
+        run: |
+          BUNDLE=build/app/outputs/bundle/release/app-release.aab
+          test -s "$BUNDLE"
+          # Refuse an unsigned/debug fallback bundle: the release key file must exist.
+          test -s android/key.properties
+          jarsigner -verify "$BUNDLE"
+          python3 - <<'PY_VERIFY'
+          import zipfile
+          p='build/app/outputs/bundle/release/app-release.aab'
+          with zipfile.ZipFile(p) as z:
+              names=z.namelist()
+              assert 'base/manifest/AndroidManifest.xml' in names, 'Missing bundle manifest'
+              assert any(n.upper().startswith('META-INF/') and n.upper().endswith('.SF') for n in names), 'Missing JAR signature'
+          PY_VERIFY
+
       - name: Clean up secrets from the runner
         if: always()
         run: |
@@ -111,3 +131,4 @@ jobs:
           name: maxplayer-release-aab
           path: build/app/outputs/bundle/release/app-release.aab
           retention-days: 14
+          if-no-files-found: error

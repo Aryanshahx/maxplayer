@@ -1,24 +1,7 @@
-import {initThemeDesigner} from './theme-designer.mjs';
 import {bucketActivity} from './charts.mjs';
-export const DEFAULT_PALETTE={background:'#060608',surface:'#101013',surfaceAlt:'#18181C',border:'#26262C',textPrimary:'#F5F6F8',textSecondary:'#9296A0',accent:'#FFFFFF',danger:'#E5484D'};
-const luminance=hex=>{const c=hex.slice(1).match(/../g).map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
-export function validateThemeConfig(raw){
- const value=typeof raw==='string'?JSON.parse(raw):raw;
- if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['schemaVersion','name','palette','decoration','headerLabel','visuals'].includes(k)))throw Error('Only schemaVersion, name, palette, decoration, headerLabel and visuals are supported');
- if(![1,2].includes(value.schemaVersion)||typeof value.name!=='string'||!value.name.trim()||value.name.length>60)throw Error('Use schemaVersion: 1 or 2 and a name of 1–60 characters');
- if(!value.palette||typeof value.palette!=='object'||Array.isArray(value.palette)||Object.entries(value.palette).some(([k,v])=>!Object.hasOwn(DEFAULT_PALETTE,k)||typeof v!=='string'||!/^#[0-9a-fA-F]{6}$/.test(v)))throw Error('Use only supported palette keys and #RRGGBB colours');
- const palette={...DEFAULT_PALETTE,...value.palette};
- if((luminance(palette.textPrimary)+.05)/(luminance(palette.background)+.05)<4.5)throw Error('Use a dark background and readable light text (4.5:1 contrast)');
- const decoration=value.decoration??'none',headerLabel=value.headerLabel??'';
- if(!['none','christmas','diwali'].includes(decoration)||typeof headerLabel!=='string'||headerLabel.length>80)throw Error('Invalid decoration or header label');
- const visuals=value.visuals??{};
- if(!visuals||typeof visuals!=='object'||Array.isArray(visuals)||Object.keys(visuals).some(k=>!['buttonStyle','cardStyle','background','rounded'].includes(k))||!['plain','snowcap','lantern'].includes(visuals.buttonStyle??'plain')||!['plain','ribbon','goldOutline'].includes(visuals.cardStyle??'plain')||!['none','snow','stars'].includes(visuals.background??'none')||!['soft','pill'].includes(visuals.rounded??'soft')||(value.schemaVersion===1&&Object.keys(visuals).length))throw Error('Invalid visuals. Use schemaVersion 2 and supported visual presets.');
- return {schemaVersion:value.schemaVersion,name:value.name.trim(),palette,decoration,headerLabel,...(value.schemaVersion===2?{visuals}:{})};
-}
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function initControlPanel({$,api,collection,fieldsOf,unpackDoc,dispatch,getSession,refresh}){
  let jobTimer=null;
- initThemeDesigner({$,api,fieldsOf,collection,unpackDoc,getSession,validateThemeConfig});
  window.addEventListener('max-admin-open',()=>{const id=sessionStorage.getItem('max.reset.pending');if(id)void pollJob(id);});
  async function pollJob(id){
   if(!getSession())return;

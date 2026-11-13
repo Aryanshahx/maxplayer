@@ -2,7 +2,7 @@
 
 **Effective date:** 5 September 2026  
 **Developer:** Hyper Tech Labs (Aryan Shah)  
-**App policy update:** 1.0.1+73
+**App policy update:** 1.0.1+74
 
 ## The short version
 Max Player plays media locally. It also uses online services for aggregate usage statistics, diagnostics, Android push notifications, optional online features and advertising. Your media library is not uploaded by the analytics or notification features. The data described below does leave the device; this policy replaces older statements that the app has no analytics or identifiers.
@@ -44,8 +44,7 @@ Aggregate counters now include opens of Discover, Private folder, Folders, Playl
 
 Captured Flutter/uncaught Dart errors include bounded exception text, stack trace, timestamp, app version and a random report ID. This technical text can contain application context; avoid putting secrets in exception messages. The most recent pending report is kept locally until acknowledged where possible and retried after reopening the app. Playback failures are no longer uploaded as app-crash reports. This is not guaranteed capture of native crashes, ANRs or process kills.
 
-### Remote appearance and admin maintenance (+72)
-Compatible installations read a public, non-secret published appearance configuration and cache its validated palette/header settings locally. Theme reads use the existing Firebase project; no additional theme-image/font host is used. Admin theme templates are access-controlled. Notification data can contain an allowlisted internal screen destination or an external HTTPS link; the private vault's existing authentication still applies. Admins may export recorded analytics/diagnostics, including full captured technical report text; such exports must be handled privately. An explicit privileged maintenance action can delete stored analytics counters and diagnostic reports without deleting device tokens, admin accounts, themes or notices. Connected/offline devices may subsequently send queued or new events, so resetting stored data does not erase local installation identifiers or revoke notification registration.
+### Admin exports and maintenance (+74)
+Admins may export recorded analytics and diagnostics, including full captured technical report text; exported reports must be handled privately. A privileged, explicitly confirmed maintenance action deletes stored analytics counters and diagnostic reports only, without deleting device tokens, admin accounts, notices or historical configuration records. Devices may subsequently send queued or new events, so resetting stored data does not erase installation identifiers or revoke push registration.
 
-### Country-scoped appearance (+73)
-Country-scoped themes use an approximate IP-country code from the existing country lookup provider, not an individual's religion, citizenship or precise location. For theme selection the code and last successful refresh time are cached on-device; a successful lookup is normally reused for 24 hours. The provider necessarily sees the connecting IP; the app does not add that raw IP to theme records. An unknown country receives the global/default look; a cached country may be used offline or after lookup failure. VPNs/travel can affect matching. Religion-labelled admin choices are editable cultural country-list suggestions only: every compatible installation matching the selected country sees the same look, regardless of religion. No religion field/profile is created or sent. Public theme assignments are not a security/geofencing boundary.
+Remote theme publishing, its country/religion-labelled presets, country-for-theme refreshes, local theme rendering and listeners were removed in +74. The app restores its ordinary palette and local accent setting; old cached remote-theme values are not read. Historical configuration records are retained inert, with client read/write access denied by the +74 rules. The existing approximate installation-country analytics sample remains as described above. Older installed APKs retain their old behaviour until updated.

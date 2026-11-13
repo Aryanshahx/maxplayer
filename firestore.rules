@@ -28,32 +28,10 @@ service cloud.firestore {
         && (!('link' in request.resource.data) || (request.resource.data.link is string && request.resource.data.link.size() <= 2048 && (request.resource.data.link == '' || request.resource.data.link.matches('^https://.+'))));
       allow update, delete: if false; // Only Admin SDK can claim/change status.
     }
-    match /themes/{themeId} {
-      allow read: if admin();
-      allow create, update: if admin()
-        && request.resource.data.keys().hasOnly(['name','config','updatedAt'])
-        && request.resource.data.name is string && request.resource.data.name.size() <= 60
-        && request.resource.data.config is map && request.resource.data.updatedAt == request.time;
-      allow delete: if false;
-    }
-    match /appConfig/theme {
-      allow read: if true;
-      allow create, update: if admin()
-        && request.resource.data.keys().hasOnly(['enabled','theme','updatedAt'])
-        && request.resource.data.enabled is bool
-        && (!request.resource.data.enabled || request.resource.data.theme is map)
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if false;
-    }
-    match /appConfig/themeAudience {
-      allow read: if true;
-      allow create, update: if admin()
-        && request.resource.data.keys().hasOnly(['slots','updatedAt'])
-        && request.resource.data.slots is map
-        && request.resource.data.slots.size() <= 260
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if false;
-    }
+    // Remote appearance feature retired in +74; retained historical records are inert.
+    match /themes/{themeId} { allow read, write: if false; }
+    match /appConfig/theme { allow read, write: if false; }
+    match /appConfig/themeAudience { allow read, write: if false; }
     match /adminJobs/{jobId} {
       allow read: if admin();
       allow create: if admin()

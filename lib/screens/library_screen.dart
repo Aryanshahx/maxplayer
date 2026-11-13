@@ -1,5 +1,3 @@
-import '../services/remote_theme.dart';
-import '../widgets/festive_visuals.dart';
 import '../services/app_analytics.dart';
 import '../services/push_service.dart';
 import 'dart:async';
@@ -382,7 +380,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ? _PermissionHint(onRetry: _load)
             : _loading && _videos.isEmpty
             ? Center(child: CircularProgressIndicator(color: AppColors.accent))
-            : FestiveBackdrop(child: _buildHome()),
+            : _buildHome(),
       ),
     );
   }
@@ -415,7 +413,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildHeader(),
-        const SeasonalBanner(),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
           child: DiscoverBanner(
@@ -742,66 +739,53 @@ class _Tile extends StatelessWidget {
     Theme.of(context);
     final accent = AppColors.accent;
     // Old frosted-glass tile (backdrop blur over the shared canvas).
-    return FestiveTile(
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(
-          themeVisual('rounded', 'soft') == 'pill' ? 24 : 12,
-        ),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(
-            themeVisual('rounded', 'soft') == 'pill' ? 24 : 12,
-          ),
-          splashColor: accent.withValues(alpha: 0.25),
-          // v1.0.1+61 (TV): visible focus ring when the D-pad lands here.
-          focusColor: accent.withValues(alpha: 0.30),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(
-              themeVisual('rounded', 'soft') == 'pill' ? 24 : 12,
-            ),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      accent.withValues(alpha: 0.11),
-                      accent.withValues(alpha: 0.04),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(
-                    themeVisual('rounded', 'soft') == 'pill' ? 24 : 12,
-                  ),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.14),
-                    width: 1,
-                  ),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 11,
-                ),
-                child: Row(
-                  children: [
-                    Icon(icon, color: accent, size: 18),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        splashColor: accent.withValues(alpha: 0.25),
+        // v1.0.1+61 (TV): visible focus ring when the D-pad lands here.
+        focusColor: accent.withValues(alpha: 0.30),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    accent.withValues(alpha: 0.11),
+                    accent.withValues(alpha: 0.04),
                   ],
                 ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  width: 1,
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              child: Row(
+                children: [
+                  Icon(icon, color: accent, size: 18),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
