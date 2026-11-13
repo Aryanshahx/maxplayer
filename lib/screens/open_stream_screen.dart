@@ -37,6 +37,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
   List<IptvChannel>? _channels;
   List<IptvChannel>? _filtered;
   bool _loadingPlaylist = false;
+  int _playlistRequest = 0;
   List<String> _groups = const [];
   String? _selectedGroup;
   int _visible = _channelPageSize;
@@ -58,6 +59,10 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
   void _onUrlChanged() {
     final uri = Uri.tryParse(_urlCtrl.text.trim());
     setState(() {
+      _playlistRequest++;
+      _channels = null;
+      _filtered = null;
+      _loadingPlaylist = false;
       _detectedProto = (uri != null && uri.hasScheme)
           ? uri.scheme.toUpperCase()
           : null;
@@ -72,15 +77,41 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
   }
 
   bool _looksLikePlaylist(String url) {
-    final u = url.toLowerCase();
-    return u.contains('.m3u');
+    final path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
+    return path.endsWith('.m3u') || path.endsWith('.m3u8');
   }
 
-  Future<void> _loadPlaylist(String url) async {
+  Future<void> _loadPlaylist(String url, String title) async {
+    final requestId = ++_playlistRequest;
     setState(() => _loadingPlaylist = true);
-    CrashLog.crumb('iptv.playlist', {'url': url});
-    final channels = await fetchM3uChannels(url);
-    if (!mounted) return;
+    CrashLog.crumb('iptv.playlist', {'host': Uri.tryParse(url)?.host ?? ''});
+    final source = await fetchM3uSource(url);
+    if (!mounted || requestId != _playlistRequest) return;
+    setState(() => _loadingPlaylist = false);
+    if (source.isHls) {
+      setState(() {
+        _channels = null;
+        _filtered = null;
+      });
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PlayerScreen.stream(path: url, title: title),
+        ),
+      );
+      await _loadServers();
+      return;
+    }
+    if (source.error != null) {
+      setState(() {
+        _channels = null;
+        _filtered = null;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(source.error!)));
+      return;
+    }
+    final channels = source.channels;
     final groups = <String>{};
     for (final c in channels) {
       final g = c.group;
@@ -123,7 +154,12 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
     });
   }
 
-  Future<void> _play(String url, String title) async {
+  Future<void> _play(
+    String url,
+    String title, {
+    bool fromChannel = false,
+  }) async {
+    if (_loadingPlaylist) return;
     final cleanUrl = url.trim();
     if (cleanUrl.isEmpty) return;
     final name = title.trim().isNotEmpty
@@ -139,9 +175,9 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
     CrashLog.crumb('stream.open', {'url': cleanUrl});
 
     if (!mounted) return;
-    if (_looksLikePlaylist(cleanUrl) && title.trim().isEmpty) {
-      // Treat a raw playlist URL as a channel list, not a single video.
-      await _loadPlaylist(cleanUrl);
+    if (_looksLikePlaylist(cleanUrl) && !fromChannel) {
+      // Inspect contents: HLS plays as one stream; IPTV M3U lists show channels.
+      await _loadPlaylist(cleanUrl, name);
       return;
     }
     await Navigator.of(context).push(
@@ -179,7 +215,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
   Widget build(BuildContext context) {
     Theme.of(context);
     final accent = AppColors.accent;
-    final canPlay = _urlCtrl.text.trim().isNotEmpty;
+    final canPlay = _urlCtrl.text.trim().isNotEmpty && !_loadingPlaylist;
 
     return Scaffold(
       backgroundColor: const Color(0xFF14141c),
@@ -332,7 +368,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'IPTV lives here: paste a channel list (.m3u / .m3u8) - it plays directly.',
+            'Paste a direct stream or an IPTV channel list. HLS (.m3u8) plays as one stream; channel lists open below.',
             style: TextStyle(color: Colors.white38, fontSize: 11),
           ),
           if (_loadingPlaylist) ...[
@@ -467,7 +503,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                           fontSize: 11,
                         ),
                       ),
-                      onTap: () => _play(ch.url, ch.name),
+                      onTap: () => _play(ch.url, ch.name, fromChannel: true),
                     ),
                   );
                 },

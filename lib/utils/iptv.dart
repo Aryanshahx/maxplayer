@@ -4,39 +4,78 @@ import 'dart:io';
 import 'crash_log.dart';
 import 'm3u.dart';
 import 'network_headers.dart' show kMaxPlayerUserAgent;
-
 export 'network_headers.dart' show kMaxPlayerUserAgent;
 
-/// Browser-style UA lives in network_headers.dart; several playlist/CDN
-/// hosts 403-empty the default Dart/11 HttpClient agent.
+class M3uSource {
+  final bool isHls;
+  final List<IptvChannel> channels;
+  final String? error;
+  const M3uSource({this.isHls = false, this.channels = const [], this.error});
+}
 
-/// Fetch an M3U playlist URL and return parsed channels.
-/// Never throws — returns an empty list on network/parse failure and logs
-/// a crash breadcrumb (Open Stream screen shows an inline hint then).
-Future<List<IptvChannel>> fetchM3uChannels(String url) async {
+M3uSource classifyM3u(String body, Uri source) {
+  final text = body.replaceFirst('\uFEFF', '').trimLeft();
+  if (!text.startsWith('#EXTM3U')) {
+    return const M3uSource(
+      error:
+          'This address did not return an M3U playlist. Use a direct media or playlist link, not a website page.',
+    );
+  }
+  if (isHlsManifest(text)) return const M3uSource(isHls: true);
+  final channels = parseM3u(text, baseUri: source);
+  return M3uSource(
+    channels: channels,
+    error: channels.isEmpty
+        ? 'No playable network channels found in this playlist.'
+        : null,
+  );
+}
+
+/// Inspect playlist contents, never treat HLS variants/segments as channels.
+/// Resolve IPTV entries against the final response URL after redirects.
+Future<M3uSource> fetchM3uSource(String url) async {
+  final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
   try {
-    final client = HttpClient()
-      // Big iptv-org index (~5–20 MB) lists need generous limits.
-      ..connectionTimeout = const Duration(seconds: 20);
+    final source = Uri.parse(url);
+    if (!['http', 'https'].contains(source.scheme) || source.host.isEmpty) {
+      return const M3uSource(
+        error: 'A network playlist needs an HTTP or HTTPS address.',
+      );
+    }
     final req = await client
-        .getUrl(Uri.parse(url))
+        .getUrl(source)
         .timeout(const Duration(seconds: 20));
     req.headers.set(HttpHeaders.userAgentHeader, kMaxPlayerUserAgent);
     final res = await req.close().timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) {
-      client.close();
-      return [];
+      return M3uSource(error: 'Playlist host returned HTTP ${res.statusCode}.');
     }
-    final body = await res
-        .transform(utf8.decoder)
-        .join()
-        .timeout(const Duration(seconds: 90));
-    client.close();
-    return parseM3u(body);
+    var finalUri = source;
+    for (final redirect in res.redirects) {
+      finalUri = finalUri.resolveUri(redirect.location);
+    }
+    final bytes = <int>[];
+    await for (final chunk in res.timeout(const Duration(seconds: 30))) {
+      if (bytes.length + chunk.length > 24 * 1024 * 1024) {
+        return const M3uSource(
+          error: 'Playlist exceeds the 24 MiB safety limit.',
+        );
+      }
+      bytes.addAll(chunk);
+    }
+    return classifyM3u(utf8.decode(bytes, allowMalformed: true), finalUri);
   } catch (e) {
-    CrashLog.error('iptv.fetch_failed', e, {'url': url});
-    return [];
+    CrashLog.error('iptv.fetch_failed', e, {
+      'host': Uri.tryParse(url)?.host ?? '',
+    });
+    return const M3uSource(
+      error:
+          'Could not fetch this playlist. Check your connection or try again later.',
+    );
+  } finally {
+    client.close(force: true);
   }
 }
 
-
+Future<List<IptvChannel>> fetchM3uChannels(String url) async =>
+    (await fetchM3uSource(url)).channels;
