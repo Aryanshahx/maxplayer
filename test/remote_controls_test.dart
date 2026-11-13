@@ -71,7 +71,17 @@ void main() {
   );
   test('supported screen destinations are allowlisted', () {
     for (final screen in notificationScreens) {
-      expect(notificationDestination({'screen': screen}), screen);
+      expect(
+        notificationDestination({
+          'screen': screen,
+          if (screen == 'movie') ...{
+            'movieId': '550',
+            'movieKind': 'movie',
+            'movieTitle': 'Fixture',
+          },
+        }),
+        screen,
+      );
     }
     expect(notificationDestination({'screen': 'execute:bad'}), 'home');
     expect(notificationDestination({'screen': 7}), 'home');

@@ -8,6 +8,7 @@ import 'services/push_service.dart';
 import 'services/remote_theme.dart';
 import 'services/notification_destination.dart';
 import 'screens/discover_screen.dart';
+import 'screens/notification_movie_screen.dart';
 
 import 'screens/private_screen.dart';
 
@@ -170,6 +171,7 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
         return;
       }
       final Widget page = switch (screen) {
+        'movie' => NotificationMovieScreen(data: data),
         'discover' => const DiscoverScreen(videos: []),
         'private' => const PrivateScreen(),
         'folders' => const FoldersScreen(),

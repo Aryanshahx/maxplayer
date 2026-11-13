@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/remote_theme.dart';
+import 'widgets/festive_visuals.dart';
 
 /// MaxPlayer dark design language — true-black neutral surfaces (no blue
 /// tint), hairline borders, themable accent with automatic on-accent
@@ -36,7 +37,9 @@ ThemeData buildAppTheme({Color? accent}) {
   final onAc = ThemeData.estimateBrightnessForColor(ac) == Brightness.light
       ? const Color(0xFF0B0B0E)
       : Colors.white;
-  const radius = Radius.circular(16);
+  final radius = Radius.circular(
+    themeVisual('rounded', 'soft') == 'pill' ? 28 : 16,
+  );
   return ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
@@ -66,7 +69,7 @@ ThemeData buildAppTheme({Color? accent}) {
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.all(radius),
+        borderRadius: BorderRadius.all(radius),
         side: BorderSide(color: AppColors.border, width: 1),
       ),
     ),
@@ -77,6 +80,21 @@ ThemeData buildAppTheme({Color? accent}) {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: AppColors.border),
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(radius)),
+      ),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(radius)),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(radius)),
       ),
     ),
     iconTheme: IconThemeData(color: AppColors.textPrimary),

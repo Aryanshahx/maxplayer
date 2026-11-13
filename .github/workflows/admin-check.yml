@@ -17,4 +17,4 @@ jobs:
         with:
           node-version: '22'
       - run: node --check admin/admin.mjs
-      - run: node --test admin/push-core.test.mjs admin/charts.test.mjs admin/control-panel.test.mjs
+      - run: node --test admin/*.test.mjs

@@ -14,7 +14,7 @@ service cloud.firestore {
       allow read: if admin();
       allow create: if admin()
         && request.resource.data.keys().hasAll(['title','message','target','status','createdAt'])
-        && request.resource.data.keys().hasOnly(['title','message','target','status','createdAt','imageData','link','screen'])
+        && request.resource.data.keys().hasOnly(['title','message','target','status','createdAt','imageData','link','screen','movieId','movieKind','movieTitle'])
         && request.resource.data.title is string
         && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 80
         && request.resource.data.message is string && request.resource.data.message.size() <= 900
@@ -22,7 +22,8 @@ service cloud.firestore {
         && request.resource.data.target.matches('^(all|[A-Za-z0-9_-]{1,128})$')
         && request.resource.data.status == 'pending'
         && request.resource.data.createdAt == request.time
-        && (!('screen' in request.resource.data) || request.resource.data.screen in ['home','discover','private','folders','playlists','audio','network','cloud','quickShare','stream','iptv','statistics','external'])
+        && (!('screen' in request.resource.data) || request.resource.data.screen in ['home','discover','private','folders','playlists','audio','network','cloud','quickShare','stream','iptv','statistics','movie','external'])
+        && (!('screen' in request.resource.data) || request.resource.data.screen != 'movie' || (request.resource.data.movieId is string && request.resource.data.movieId.matches('^[1-9][0-9]{0,8}$') && request.resource.data.movieKind in ['movie','tv'] && request.resource.data.movieTitle is string && request.resource.data.movieTitle.size() > 0 && request.resource.data.movieTitle.size() <= 150))
         && (!('imageData' in request.resource.data) || (request.resource.data.imageData is string && request.resource.data.imageData.size() <= 420000 && request.resource.data.imageData.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')))
         && (!('link' in request.resource.data) || (request.resource.data.link is string && request.resource.data.link.size() <= 2048 && (request.resource.data.link == '' || request.resource.data.link.matches('^https://.+'))));
       allow update, delete: if false; // Only Admin SDK can claim/change status.
@@ -41,6 +42,15 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['enabled','theme','updatedAt'])
         && request.resource.data.enabled is bool
         && (!request.resource.data.enabled || request.resource.data.theme is map)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+    match /appConfig/themeAudience {
+      allow read: if true;
+      allow create, update: if admin()
+        && request.resource.data.keys().hasOnly(['slots','updatedAt'])
+        && request.resource.data.slots is map
+        && request.resource.data.slots.size() <= 260
         && request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }

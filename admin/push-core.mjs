@@ -1,4 +1,4 @@
-export const SCREENS = ['home','discover','private','folders','playlists','audio','network','cloud','quickShare','stream','iptv','statistics','external'];
+export const SCREENS = ['home','discover','private','folders','playlists','audio','network','cloud','quickShare','stream','iptv','statistics','movie','external'];
 export const MAX_IMAGE_BYTES = 300 * 1024;
 export function fieldsOf(value) {
   if (value === null) return { nullValue: null };
@@ -27,6 +27,15 @@ export function imageByteSize(data) {
   const b64=data.slice(data.indexOf(',')+1);
   return b64.length*3/4-(b64.endsWith('==')?2:b64.endsWith('=')?1:0);
 }
+export function validateMovie(draft) {
+ if(!/^[1-9][0-9]{0,8}$/.test(String(draft.movieId))||!['movie','tv'].includes(draft.movieKind)||typeof draft.movieTitle!=='string'||!draft.movieTitle.trim()||draft.movieTitle.length>150)throw Error('Choose a valid TMDB movie/series (ID, kind and title)');
+ return {movieId:String(draft.movieId),movieKind:draft.movieKind,movieTitle:draft.movieTitle};
+}
+export function parseMovieLink(raw,title){
+ const u=new URL(raw),m=u.pathname.match(/^\/(movie|tv)\/([1-9][0-9]{0,8})(?:-|\/|$)/);
+ if(u.protocol!=='https:'||!['www.themoviedb.org','themoviedb.org'].includes(u.hostname)||u.username||u.password||!m)throw Error('Paste a https://www.themoviedb.org/movie/… or /tv/… details link');
+ return validateMovie({movieId:m[2],movieKind:m[1],movieTitle:title.trim()});
+}
 export function validateDraft(draft) {
   if (!draft.title.trim() || draft.title.length>80) throw Error('Title must be 1–80 characters');
   if (draft.message.length>900) throw Error('Message must be at most 900 characters');
@@ -40,6 +49,7 @@ export function validateDraft(draft) {
   if (draft.imageData && (imageByteSize(draft.imageData)>MAX_IMAGE_BYTES || draft.imageData.length>420000)) throw Error('Picture must be smaller than 300 KiB');
   const data={ noticeId:'x'.repeat(36), title:draft.title, message:draft.message };
   if(draft.screen)data.screen=draft.screen;
+  if(draft.screen==='movie'){const m=validateMovie(draft);Object.assign(data,m);}
   if(draft.link)data.link=draft.link;
   if(draft.imageData)data.image='https://raw.githubusercontent.com/Aryanshahx/maxplayer/notice-images/notices/'+'x'.repeat(36)+'.jpg';
   const bytes=new TextEncoder().encode(JSON.stringify(data)).length;

@@ -2,7 +2,7 @@
 
 **Effective date:** 5 September 2026  
 **Developer:** Hyper Tech Labs (Aryan Shah)  
-**App policy update:** 1.0.1+70
+**App policy update:** 1.0.1+73
 
 ## The short version
 Max Player plays media locally. It also uses online services for aggregate usage statistics, diagnostics, Android push notifications, optional online features and advertising. Your media library is not uploaded by the analytics or notification features. The data described below does leave the device; this policy replaces older statements that the app has no analytics or identifiers.
@@ -46,3 +46,6 @@ Captured Flutter/uncaught Dart errors include bounded exception text, stack trac
 
 ### Remote appearance and admin maintenance (+72)
 Compatible installations read a public, non-secret published appearance configuration and cache its validated palette/header settings locally. Theme reads use the existing Firebase project; no additional theme-image/font host is used. Admin theme templates are access-controlled. Notification data can contain an allowlisted internal screen destination or an external HTTPS link; the private vault's existing authentication still applies. Admins may export recorded analytics/diagnostics, including full captured technical report text; such exports must be handled privately. An explicit privileged maintenance action can delete stored analytics counters and diagnostic reports without deleting device tokens, admin accounts, themes or notices. Connected/offline devices may subsequently send queued or new events, so resetting stored data does not erase local installation identifiers or revoke notification registration.
+
+### Country-scoped appearance (+73)
+Country-scoped themes use an approximate IP-country code from the existing country lookup provider, not an individual's religion, citizenship or precise location. For theme selection the code and last successful refresh time are cached on-device; a successful lookup is normally reused for 24 hours. The provider necessarily sees the connecting IP; the app does not add that raw IP to theme records. An unknown country receives the global/default look; a cached country may be used offline or after lookup failure. VPNs/travel can affect matching. Religion-labelled admin choices are editable cultural country-list suggestions only: every compatible installation matching the selected country sees the same look, regardless of religion. No religion field/profile is created or sent. Public theme assignments are not a security/geofencing boundary.

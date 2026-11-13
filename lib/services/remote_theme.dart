@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_analytics.dart';
+import 'country_lookup.dart';
 
 const themeDefaults = <String, String>{
   'background': '#060608',
@@ -24,11 +25,12 @@ Map<String, dynamic> validateTheme(Map<String, dynamic> value) {
       'palette',
       'decoration',
       'headerLabel',
+      'visuals',
     ].contains(k),
   )) {
     throw const FormatException('Unknown theme property');
   }
-  if (value['schemaVersion'] != 1 ||
+  if (![1, 2].contains(value['schemaVersion']) ||
       value['name'] is! String ||
       (value['name'] as String).trim().isEmpty ||
       (value['name'] as String).length > 60) {
@@ -62,8 +64,33 @@ Map<String, dynamic> validateTheme(Map<String, dynamic> value) {
   if (header is! String || header.length > 80) {
     throw const FormatException('Header label is too long');
   }
+  final visuals = value['visuals'] ?? <String, dynamic>{};
+  if (visuals is! Map ||
+      visuals.keys.any(
+        (k) =>
+            !['buttonStyle', 'cardStyle', 'background', 'rounded'].contains(k),
+      ) ||
+      ![
+        'plain',
+        'snowcap',
+        'lantern',
+      ].contains(visuals['buttonStyle'] ?? 'plain') ||
+      ![
+        'plain',
+        'ribbon',
+        'goldOutline',
+      ].contains(visuals['cardStyle'] ?? 'plain') ||
+      !['none', 'snow', 'stars'].contains(visuals['background'] ?? 'none') ||
+      !['soft', 'pill'].contains(visuals['rounded'] ?? 'soft') ||
+      (value['schemaVersion'] == 1 && visuals.isNotEmpty)) {
+    throw const FormatException(
+      'Invalid visuals; use schemaVersion 2 and supported visual presets',
+    );
+  }
   return {
-    'schemaVersion': 1,
+    'schemaVersion': value['schemaVersion'],
+    if (value['schemaVersion'] == 2)
+      'visuals': Map<String, dynamic>.from(visuals),
     'name': (value['name'] as String).trim(),
     'palette': merged,
     'decoration': decoration,
@@ -96,35 +123,81 @@ class RemoteTheme extends ChangeNotifier {
     }
   }
 
+  String country = '';
+  Map<String, dynamic>? _legacy, _audience;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _audienceSubscription;
+  bool _countryBusy = false;
+  Future<void> _resolveCountry() async {
+    if (_countryBusy) return;
+    _countryBusy = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      country =
+          prefs.getString('theme.country.code') ??
+          prefs.getString('aa.ipCountryV1.code') ??
+          '';
+      final at = prefs.getInt('theme.country.at') ?? 0;
+      if (DateTime.now().millisecondsSinceEpoch - at > 86400000) {
+        final fresh = await lookupIpCountry();
+        if (fresh.isNotEmpty) {
+          country = fresh;
+          await prefs.setString('theme.country.code', fresh);
+          await prefs.setInt(
+            'theme.country.at',
+            DateTime.now().millisecondsSinceEpoch,
+          );
+        }
+      }
+      await _apply();
+    } finally {
+      _countryBusy = false;
+    }
+  }
+
+  Future<void> _apply() async {
+    try {
+      final next = selectThemePublication(_audience, country, _legacy);
+      current = next;
+      final prefs = await SharedPreferences.getInstance();
+      if (next == null) {
+        await prefs.remove('remote.theme.v1');
+      } else {
+        await prefs.setString('remote.theme.v1', jsonEncode(next));
+      }
+      notifyListeners();
+    } catch (_) {
+      /* malformed publication keeps last-known-good */
+    }
+  }
+
   Future<void> start() async {
-    if (_subscription != null || !AppAnalytics.ready.value) return;
-    _subscription = FirebaseFirestore.instance
+    if (!AppAnalytics.ready.value) return;
+    unawaited(_resolveCountry());
+    _subscription ??= FirebaseFirestore.instance
         .collection('appConfig')
         .doc('theme')
         .snapshots()
         .listen(
-          (snapshot) async {
-            try {
-              final data = snapshot.data();
-              final next = data == null || data['enabled'] != true
-                  ? null
-                  : validateTheme(
-                      Map<String, dynamic>.from(data['theme'] as Map),
-                    );
-              current = next;
-              final prefs = await SharedPreferences.getInstance();
-              if (next == null) {
-                await prefs.remove('remote.theme.v1');
-              } else {
-                await prefs.setString('remote.theme.v1', jsonEncode(next));
-              }
-              notifyListeners();
-            } catch (_) {
-              /* malformed publication keeps last known good theme */
-            }
+          (s) {
+            _legacy = s.data();
+            unawaited(_apply());
           },
           onError: (Object _) {
             _subscription = null;
+          },
+        );
+    _audienceSubscription ??= FirebaseFirestore.instance
+        .collection('appConfig')
+        .doc('themeAudience')
+        .snapshots()
+        .listen(
+          (s) {
+            _audience = s.data();
+            unawaited(_apply());
+          },
+          onError: (Object _) {
+            _audienceSubscription = null;
           },
         );
   }
@@ -184,4 +257,18 @@ class SeasonalBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Country overrides are appearance preferences, never authorization boundaries.
+Map<String, dynamic>? selectThemePublication(
+  Map<String, dynamic>? audience,
+  String country,
+  Map<String, dynamic>? legacy,
+) {
+  final slots = audience?['slots'];
+  final publication = slots is Map
+      ? (slots[country] ?? slots['ALL'] ?? legacy)
+      : legacy;
+  if (publication == null || publication['enabled'] != true) return null;
+  return validateTheme(Map<String, dynamic>.from(publication['theme'] as Map));
 }

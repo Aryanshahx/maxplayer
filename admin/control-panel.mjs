@@ -1,39 +1,25 @@
+import {initThemeDesigner} from './theme-designer.mjs';
 import {bucketActivity} from './charts.mjs';
 export const DEFAULT_PALETTE={background:'#060608',surface:'#101013',surfaceAlt:'#18181C',border:'#26262C',textPrimary:'#F5F6F8',textSecondary:'#9296A0',accent:'#FFFFFF',danger:'#E5484D'};
 const luminance=hex=>{const c=hex.slice(1).match(/../g).map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722;};
 export function validateThemeConfig(raw){
  const value=typeof raw==='string'?JSON.parse(raw):raw;
- if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['schemaVersion','name','palette','decoration','headerLabel'].includes(k)))throw Error('Only schemaVersion, name, palette, decoration and headerLabel are supported');
- if(value.schemaVersion!==1||typeof value.name!=='string'||!value.name.trim()||value.name.length>60)throw Error('Use schemaVersion: 1 and a name of 1–60 characters');
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['schemaVersion','name','palette','decoration','headerLabel','visuals'].includes(k)))throw Error('Only schemaVersion, name, palette, decoration, headerLabel and visuals are supported');
+ if(![1,2].includes(value.schemaVersion)||typeof value.name!=='string'||!value.name.trim()||value.name.length>60)throw Error('Use schemaVersion: 1 or 2 and a name of 1–60 characters');
  if(!value.palette||typeof value.palette!=='object'||Array.isArray(value.palette)||Object.entries(value.palette).some(([k,v])=>!Object.hasOwn(DEFAULT_PALETTE,k)||typeof v!=='string'||!/^#[0-9a-fA-F]{6}$/.test(v)))throw Error('Use only supported palette keys and #RRGGBB colours');
  const palette={...DEFAULT_PALETTE,...value.palette};
  if((luminance(palette.textPrimary)+.05)/(luminance(palette.background)+.05)<4.5)throw Error('Use a dark background and readable light text (4.5:1 contrast)');
  const decoration=value.decoration??'none',headerLabel=value.headerLabel??'';
  if(!['none','christmas','diwali'].includes(decoration)||typeof headerLabel!=='string'||headerLabel.length>80)throw Error('Invalid decoration or header label');
- return {schemaVersion:1,name:value.name.trim(),palette,decoration,headerLabel};
+ const visuals=value.visuals??{};
+ if(!visuals||typeof visuals!=='object'||Array.isArray(visuals)||Object.keys(visuals).some(k=>!['buttonStyle','cardStyle','background','rounded'].includes(k))||!['plain','snowcap','lantern'].includes(visuals.buttonStyle??'plain')||!['plain','ribbon','goldOutline'].includes(visuals.cardStyle??'plain')||!['none','snow','stars'].includes(visuals.background??'none')||!['soft','pill'].includes(visuals.rounded??'soft')||(value.schemaVersion===1&&Object.keys(visuals).length))throw Error('Invalid visuals. Use schemaVersion 2 and supported visual presets.');
+ return {schemaVersion:value.schemaVersion,name:value.name.trim(),palette,decoration,headerLabel,...(value.schemaVersion===2?{visuals}:{})};
 }
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function initControlPanel({$,api,collection,fieldsOf,unpackDoc,dispatch,getSession,refresh}){
- let saved=new Map(),loadedFor='',jobTimer=null;
- async function write(path,fields){
-  await api(':commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({writes:[{update:{name:`projects/max-player-cd43d/databases/(default)/documents/${path}`,fields:Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,fieldsOf(v)]))},updateTransforms:[{fieldPath:'updatedAt',setToServerValue:'REQUEST_TIME'}]}]})});
- }
- function preview(){const theme=validateThemeConfig($('themeCode').value),host=$('themePreview');host.replaceChildren();host.style.background=theme.palette.background;host.style.color=theme.palette.textPrimary;host.style.borderColor=theme.palette.accent;const title=document.createElement('strong'),body=document.createElement('p');title.textContent=theme.name;title.style.color=theme.palette.accent;body.textContent=(theme.decoration==='christmas'?'❄ ':theme.decoration==='diwali'?'✦ ':'')+(theme.headerLabel||'App theme preview');host.append(title,body);return theme;}
- async function loadSaved(){if(!getSession())return;const docs=await collection('themes');saved=new Map(docs.map(d=>{const t=unpackDoc(d);return[t.id,t];}));$('themeList').replaceChildren(new Option('Choose a saved theme',''));for(const [id,t]of saved)$('themeList').add(new Option(t.name,id));loadedFor=getSession()?.uid;}
- async function run(action){try{await action();}catch(e){$('themeStatus').textContent=e.message;}}
- $('loadPreset').onclick=()=>{
-  const christmas=$('themePreset').value==='christmas';
-  $('themeCode').value=JSON.stringify({schemaVersion:1,name:christmas?'Christmas':'Diwali',palette:christmas?{background:'#081810',surface:'#10251B',surfaceAlt:'#173322',border:'#32533D',accent:'#FFD98A',textPrimary:'#FFF8E8',textSecondary:'#C6D8C9'}:{background:'#160D08',surface:'#25180F',surfaceAlt:'#332217',border:'#65462B',accent:'#FFC75A',textPrimary:'#FFF4DB',textSecondary:'#D6BFA1'},decoration:christmas?'christmas':'diwali',headerLabel:christmas?'Merry Christmas':'Happy Diwali'},null,2);
-  try{preview();$('themeStatus').textContent='Preset loaded. Edit, Save and Publish when ready.';}catch(e){$('themeStatus').textContent=e.message;}
- };
- $('validateTheme').onclick=()=>run(async()=>{preview();$('themeStatus').textContent='JSON valid. Preview is illustrative; native app components retain their layouts.';});
- $('saveTheme').onclick=()=>run(async()=>{const theme=preview(),id=$('themeList').value||crypto.randomUUID();await write('themes/'+id,{name:theme.name,config:theme});await loadSaved();$('themeList').value=id;$('themeStatus').textContent='Saved '+theme.name+'. Save does not publish.';});
- $('loadTheme').onclick=()=>run(async()=>{if(!saved.size)await loadSaved();const theme=saved.get($('themeList').value);if(!theme)throw Error('Choose a saved theme');$('themeCode').value=JSON.stringify(theme.config,null,2);preview();});
- $('publishTheme').onclick=()=>run(async()=>{const theme=preview();if(!confirm('Publish '+theme.name+' to all compatible +72 apps?'))return;await write('appConfig/theme',{enabled:true,theme});$('themeStatus').textContent='Published '+theme.name+'. Online +72 apps update through Firestore; offline apps keep their cached theme.';});
- $('defaultTheme').onclick=()=>run(async()=>{if(!confirm('Switch compatible apps back to Default?'))return;await write('appConfig/theme',{enabled:false});$('themeStatus').textContent='Default published. Apps restore their normal palette and user-selected accent when connected.';});
- window.addEventListener('max-admin-open',()=>{void run(loadSaved);const id=sessionStorage.getItem('max.reset.pending');if(id)void pollJob(id);});
- $('themes').addEventListener('pointerenter',()=>{if(getSession()&&loadedFor!==getSession().uid)void run(loadSaved);});
- $('themeList').addEventListener('focus',()=>{if(getSession()&&loadedFor!==getSession().uid)void run(loadSaved);});
+ let jobTimer=null;
+ initThemeDesigner({$,api,fieldsOf,collection,unpackDoc,getSession,validateThemeConfig});
+ window.addEventListener('max-admin-open',()=>{const id=sessionStorage.getItem('max.reset.pending');if(id)void pollJob(id);});
  async function pollJob(id){
   if(!getSession())return;
   try{const job=unpackDoc(await api('adminJobs/'+id));$('resetStatus').textContent=`${job.status}: ${job.message||job.error||'Waiting for workflow'}`;if(['sent','done','failed','partial'].includes(job.status)){sessionStorage.removeItem('max.reset.pending');void refresh();return;}}catch(e){$('resetStatus').textContent=e.message;}

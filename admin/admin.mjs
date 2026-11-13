@@ -1,6 +1,6 @@
 import { initControlPanel, exportDetailedReport } from './control-panel.mjs';
 import { bucketActivity, niceScale, ipCountries } from './charts.mjs';
-import { fieldsOf, unpackDoc, validateDraft, imageByteSize, MAX_IMAGE_BYTES, statusText } from './push-core.mjs';
+import { fieldsOf, unpackDoc, validateDraft, parseMovieLink, imageByteSize, MAX_IMAGE_BYTES, statusText } from './push-core.mjs';
 const PROJECT_ID='max-player-cd43d';
 const API_KEY='AIzaSyDOz1FWZPP4aOzfiRYvE6xy8CF2mXiXPOY';
 const ROOT=`projects/${PROJECT_ID}/databases/(default)/documents`;
@@ -66,7 +66,7 @@ function openDashboard(){
     const saved=JSON.parse(sessionStorage.getItem('max.push.attempt')).draft;
     $('title').value=saved.title;$('message').value=saved.message;
     $('target').value=saved.target==='all'?'all':'one';$('targetUid').value=saved.target==='all'?'':saved.target;
-    $('destination').value=saved.screen||(saved.link?'external':'home');$('link').value=saved.link||'';imageData=saved.imageData||'';
+    $('destination').value=saved.screen||(saved.link?'external':'home');$('link').value=saved.link||'';if(saved.movieId){$('movieLink').value='https://www.themoviedb.org/'+saved.movieKind+'/'+saved.movieId;$('movieTitle').value=saved.movieTitle||'';}imageData=saved.imageData||'';
     if(imageData){$('previewImage').src=imageData;$('previewImage').hidden=false;}
     updatePreview();
   }catch{}
@@ -79,6 +79,7 @@ async function recentReports(){
  return result.filter(x=>x.document).map(x=>x.document);
 }
 function updatePreview(){
+ $('movieFields').hidden=$('destination').value!=='movie';
  $('link').disabled=$('destination').value!=='external';
  $('link').required=$('destination').value==='external';setText('previewTitle',$('title').value||'Notification title');setText('previewMessage',$('message').value||'Your message appears here.');$('targetUid').hidden=$('target').value!=='one';$('targetUid').required=$('target').value==='one';}
 function clearPicture(){imageGeneration++;imageBusy=false;$('send').disabled=sending;imageData='';$('picture').value='';$('previewImage').removeAttribute('src');$('previewImage').hidden=true;setText('imageInfo','');}
@@ -128,6 +129,7 @@ async function sendNotice(event){
  if(!attempt){
   const draft={title:$('title').value.trim(),message:$('message').value,target:$('target').value==='all'?'all':$('targetUid').value.trim(),status:'pending'};
   draft.screen=$('destination').value;
+  if(draft.screen==='movie')Object.assign(draft,parseMovieLink($('movieLink').value,$('movieTitle').value));
   if(draft.screen==='external'&&$('link').value.trim())draft.link=$('link').value.trim();if(imageData)draft.imageData=imageData;
   validateDraft(draft);
   if(!confirm(`Queue this notification for ${draft.target==='all'?'EVERYONE':draft.target}? Pictures will be publicly accessible.`))return;
@@ -298,10 +300,13 @@ if(session){try{await assertAdmin();openDashboard();}catch(e){session=null;sessi
 const bottomLinks=[...document.querySelectorAll('.bottomNav a')];
 function highlightBottom(){
  let active='overview';
- for(const id of ['overview','audience','composer','issues','settings']){
-  const section=document.getElementById(id);if(section&&section.getBoundingClientRect().top<innerHeight*.4)active=id;
+ for(const section of document.querySelectorAll('#overview,#audience,#composer,#issues,#themes,#settings')){
+  if(section.getBoundingClientRect().top<innerHeight*.4)active=section.id;
  }
  bottomLinks.forEach(a=>{if(a.hash==='#'+active)a.setAttribute('aria-current','location');else a.removeAttribute('aria-current');});
 }
 bottomLinks.forEach(a=>a.addEventListener('click',()=>{if(a.hash==='#settings')$('settings').open=true;}));
 window.addEventListener('scroll',highlightBottom,{passive:true});
+
+function updateMovieSelection(){try{const m=parseMovieLink($('movieLink').value,$('movieTitle').value);setText('movieSelection',m.movieTitle+' · '+(m.movieKind==='tv'?'Series':'Movie')+' · TMDB '+m.movieId+' · opens in app');}catch(e){setText('movieSelection',e.message);}}
+$('movieLink').oninput=$('movieTitle').oninput=updateMovieSelection;

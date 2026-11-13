@@ -1,16 +1,22 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "Christmas",
   "palette": {
-    "background": "#081810",
-    "surface": "#10251B",
-    "surfaceAlt": "#173322",
-    "border": "#32533D",
-    "accent": "#FFD98A",
-    "textPrimary": "#FFF8E8",
-    "textSecondary": "#C6D8C9",
-    "danger": "#E5484D"
+    "background": "#07150F",
+    "surface": "#10271D",
+    "surfaceAlt": "#19392A",
+    "border": "#426047",
+    "accent": "#FFD580",
+    "textPrimary": "#FFF8EB",
+    "textSecondary": "#C8D8C9",
+    "danger": "#FF7474"
   },
   "decoration": "christmas",
-  "headerLabel": "Merry Christmas"
+  "headerLabel": "Merry Christmas",
+  "visuals": {
+    "buttonStyle": "snowcap",
+    "cardStyle": "ribbon",
+    "background": "snow",
+    "rounded": "pill"
+  }
 }

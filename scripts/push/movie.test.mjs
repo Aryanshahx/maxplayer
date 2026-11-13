@@ -1,0 +1,3 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {validate,messageData} from './core.mjs';
+const fixture=()=>({title:'Fixture',message:'Body',target:'all',createdAt:{toMillis:()=>Date.now()},screen:'movie',movieId:'550',movieKind:'movie',movieTitle:'Fixture movie'});
+test('movie route validated and forwarded to protected FCM data',()=>{validate('fixture',fixture());assert.deepEqual(messageData('fixture',fixture()),{noticeId:'fixture',title:'Fixture',message:'Body',screen:'movie',movieId:'550',movieKind:'movie',movieTitle:'Fixture movie'});for(const change of [{movieId:'0'},{movieId:'bad'},{movieKind:'person'},{movieTitle:''}])assert.throws(()=>validate('fixture',{...fixture(),...change}));});
