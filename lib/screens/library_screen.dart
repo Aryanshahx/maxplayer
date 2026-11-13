@@ -1,3 +1,4 @@
+import '../services/app_analytics.dart';
 import '../services/push_service.dart';
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
@@ -416,13 +417,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
           child: DiscoverBanner(
             // v1.0.1+50: test interstitial before Discover (capped at one
             // per session; user is NEVER blocked if no ad is ready).
-            onTap: () => AdService.instance.showInterstitialThenProceed(
-              () => Navigator.of(context).push(
+            onTap: () => AdService.instance.showInterstitialThenProceed(() {
+              AppAnalytics.instance.trackFeatureOpen('discover');
+              Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => DiscoverScreen(videos: videos),
                 ),
-              ),
-            ),
+              );
+            }),
           ),
         ),
         // v28-old: the quick tiles slide away when scrolling down.
@@ -637,9 +639,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
   int _tilePage = 0;
 
   Widget _buildTiles() {
-    void push(Widget page) => Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => page)).then((_) => _refresh());
+    void push(Widget page, [String? feature]) {
+      if (feature != null) AppAnalytics.instance.trackFeatureOpen(feature);
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => page)).then((_) => _refresh());
+    }
 
     // v1.0.20: tiles are DATA-DRIVEN (lib/utils/quick_tiles.dart) — the
     // File Manager tile was replaced by Audio, and the positions of Cloud
@@ -647,18 +652,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final actions = <String, VoidCallback>{
       // v1.0.1+56: interstitial gate (session-capped; never blocks).
       'privateSpace': () => AdService.instance.showInterstitialThenProceed(
-        () => push(PrivateScreen(libraryVideos: _videos)),
+        () => push(PrivateScreen(libraryVideos: _videos), 'private'),
       ),
-      'playlists': () => push(const PlaylistsScreen()),
-      'folders': () => push(const FoldersScreen()),
-      'audio': () => push(const AudioScreen()),
-      'networkStorage': () => push(const NetworkStorageScreen()),
-      'cloudStorage': () => push(const CloudStorageScreen()),
+      'playlists': () => push(const PlaylistsScreen(), 'playlists'),
+      'folders': () => push(const FoldersScreen(), 'folders'),
+      'audio': () => push(const AudioScreen(), 'audio'),
+      'networkStorage': () => push(const NetworkStorageScreen(), 'network'),
+      'cloudStorage': () => push(const CloudStorageScreen(), 'cloud'),
       // v1.0.1+56: interstitial gate (session-capped; never blocks).
       'openStream': () => AdService.instance.showInterstitialThenProceed(
         () => push(const OpenStreamScreen()),
       ),
-      'quickShare': () => push(const QuickShareScreen()),
+      'quickShare': () => push(const QuickShareScreen(), 'quickShare'),
     };
 
     Widget tileAt(QuickTileSpec spec) =>

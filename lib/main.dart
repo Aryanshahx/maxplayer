@@ -20,6 +20,19 @@ import 'utils/settings.dart';
 /// notification deep links that used it are gone).
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
+Future<void> _flushCapturedCrash() async {
+  if (!AppAnalytics.ready.value) return;
+  try {
+    final report = await CrashLog.peekCrashReport();
+    if (report != null &&
+        await AppAnalytics.instance.uploadCapturedCrash(report)) {
+      await CrashLog.clearCrashReport(report);
+    }
+  } catch (_) {
+    /* keep the report for a later launch */
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // v0.6: the whole app rotates — library included (tablet landscape).
@@ -36,10 +49,17 @@ Future<void> main() async {
   // v1.0.1+65: fold framework errors into CrashLog so the next launch
   // can upload them to the admin panel as crash reports.
   FlutterError.onError = (details) {
-    CrashLog.error('flutter.error', details.exceptionAsString());
+    FlutterError.presentError(details);
+    CrashLog.captureCrash(
+      'flutter.error',
+      details.exceptionAsString(),
+      details.stack,
+      fatal: false,
+    );
+    unawaited(_flushCapturedCrash());
   };
   PlatformDispatcher.instance.onError = (error, stack) {
-    CrashLog.error('dart.error', error, {'stack': stack.toString()});
+    CrashLog.captureCrash('dart.error', error, stack, fatal: true);
     return false; // still let the default handler act
   };
   FirebaseMessaging.onBackgroundMessage(maxPlayerPushBackground);
@@ -51,6 +71,7 @@ Future<void> main() async {
   // (aggregates only — no names, no URLs, no personal data).
   unawaited(() async {
     await AppAnalytics.instance.trackAppOpen();
+    unawaited(_flushCapturedCrash());
     await PushService.instance.start();
   }());
 }
@@ -107,12 +128,6 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
   }
 
   Future<void> _postLaunchTasks() async {
-    try {
-      final report = await CrashLog.takeReport();
-      if (report != null) {
-        AppAnalytics.instance.sendReport(type: 'crash', text: report);
-      }
-    } catch (_) {}
     PushService.instance.onTap = (data) {
       // A tray tap opens MaxPlayer, or an explicitly supplied safe HTTPS link.
       final link = Uri.tryParse(data['link'] as String? ?? '');

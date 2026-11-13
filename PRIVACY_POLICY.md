@@ -2,7 +2,7 @@
 
 **Effective date:** 5 September 2026  
 **Developer:** Hyper Tech Labs (Aryan Shah)  
-**App policy update:** 1.0.1+69
+**App policy update:** 1.0.1+70
 
 ## The short version
 Max Player plays media locally. It also uses online services for aggregate usage statistics, diagnostics, Android push notifications, optional online features and advertising. Your media library is not uploaded by the analytics or notification features. The data described below does leave the device; this policy replaces older statements that the app has no analytics or identifiers.
@@ -38,3 +38,8 @@ The app includes analytics, diagnostics, approximate country lookup, identifiers
 
 ## Contact and requests
 Contact Hyper Tech Labs (Aryan Shah) through https://github.com/Aryanshahx/maxplayer. Do not post passwords, tokens or private information in public issues. Ask for a private channel for data-related requests. Pseudonymous token/installation records and aggregate counters have different identification and deletion limitations; aggregates may not be attributable to a particular person. Policy changes are published in this repository and bundled in the app.
+
+## Feature and error diagnostics update (+70)
+Aggregate counters now include opens of Discover, Private folder, Folders, Playlists, Audio, Network storage, Cloud storage and Quick Share from the library. They do not contain media names, private-folder contents, queries or network credentials. A private-folder screen open does not mean the folder was unlocked.
+
+Captured Flutter/uncaught Dart errors include bounded exception text, stack trace, timestamp, app version and a random report ID. This technical text can contain application context; avoid putting secrets in exception messages. The most recent pending report is kept locally until acknowledged where possible and retried after reopening the app. Playback failures are no longer uploaded as app-crash reports. This is not guaranteed capture of native crashes, ANRs or process kills.

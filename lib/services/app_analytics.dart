@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'country_lookup.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -31,7 +32,7 @@ class AppAnalytics {
   static const String kFirebaseSenderId = '1080871289145';
 
   /// Report tag — bump with the app version each release.
-  static const String kAppVersionTag = '1.0.1+69';
+  static const String kAppVersionTag = '1.0.1+70';
 
   /// true only once Firebase is actually usable (configured + initialised).
   static final ValueNotifier<bool> ready = ValueNotifier<bool>(false);
@@ -101,6 +102,53 @@ class AppAnalytics {
       // Best-effort aggregate; never block playback or push initialization.
     } finally {
       _countryLookupRunning = false;
+    }
+  }
+
+  static const featureKeys = <String>[
+    'discover',
+    'private',
+    'folders',
+    'playlists',
+    'audio',
+    'network',
+    'cloud',
+    'quickShare',
+  ];
+  void trackFeatureOpen(String key) {
+    if (!featureKeys.contains(key)) return;
+    final db = _db;
+    if (db == null) return;
+    final day = DateTime.now().toIso8601String().substring(0, 10);
+    unawaited(
+      db
+          .collection('stats')
+          .doc('daily_$day')
+          .set({
+            'feature_$key': FieldValue.increment(1),
+          }, SetOptions(merge: true))
+          .catchError((Object _) {}),
+    );
+  }
+
+  Future<bool> uploadCapturedCrash(String text) async {
+    await ensureInit();
+    final db = _db;
+    if (db == null) return false;
+    final parsed = jsonDecode(text) as Map<String, dynamic>;
+    final id = parsed['id'] as String?;
+    if (id == null || !RegExp(r'^[a-f0-9]{32}$').hasMatch(id)) return false;
+    try {
+      await db.collection('reports').doc('crash_$id').set({
+        'type': 'crash',
+        'ts': DateTime.now().toIso8601String(),
+        'app': kAppVersionTag,
+        'kind': 'captured_app_error',
+        'text': text.length > 14000 ? text.substring(0, 14000) : text,
+      });
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

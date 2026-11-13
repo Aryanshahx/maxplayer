@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:path_provider/path_provider.dart';
 
@@ -21,6 +22,54 @@ class CrashLog {
     if (!logs.existsSync()) logs.createSync(recursive: true);
     _eventsFile = File('${logs.path}/events.jsonl');
     _reportFile = File('${logs.path}/report.last');
+    _crashFile = File('${logs.path}/crash.last');
+  }
+
+  static File? _crashFile;
+  static void captureCrash(
+    String event,
+    Object error,
+    StackTrace? stack, {
+    required bool fatal,
+  }) {
+    try {
+      final report = jsonEncode({
+        'id': List.generate(
+          16,
+          (_) => Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0'),
+        ).join(),
+        't': DateTime.now().toIso8601String(),
+        'event': event,
+        'fatal': fatal,
+        'error': error.toString().substring(
+          0,
+          error.toString().length.clamp(0, 3000),
+        ),
+        'stack': (stack?.toString() ?? '').substring(
+          0,
+          (stack?.toString() ?? '').length.clamp(0, 9000),
+        ),
+      });
+      _crashFile?.writeAsStringSync(report, flush: true);
+    } catch (_) {}
+  }
+
+  static Future<String?> peekCrashReport() async {
+    try {
+      final f = _crashFile;
+      return f != null && f.existsSync() ? await f.readAsString() : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> clearCrashReport(String expected) async {
+    try {
+      final f = _crashFile;
+      if (f != null && f.existsSync() && await f.readAsString() == expected) {
+        await f.delete();
+      }
+    } catch (_) {}
   }
 
   /// Log a breadcrumb (tap, route decision, engine error, ...).
