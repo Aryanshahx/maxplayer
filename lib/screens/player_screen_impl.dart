@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -583,7 +584,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             borderRadius: BorderRadius.circular(16),
             side: BorderSide(color: AppColors.border),
           ),
-          title: Text(
+          title: LText(
             'Resume playback?',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 17),
           ),
@@ -594,11 +595,11 @@ class _PlayerScreenState extends State<PlayerScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Start over'),
+              child: const LText('Start over'),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Resume'),
+              child: const LText('Resume'),
             ),
           ],
         ),
@@ -795,7 +796,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       builder: (dlgCtx) => AlertDialog(
         backgroundColor: const Color(0xFF16161f),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text(
+        title: const LText(
           'Video could not be played',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
         ),
@@ -843,11 +844,11 @@ class _PlayerScreenState extends State<PlayerScreen>
               }
             },
             icon: const Icon(Icons.copy, size: 16),
-            label: const Text('COPY REPORT'),
+            label: const LText('COPY REPORT'),
           ),
           TextButton(
             onPressed: () => Navigator.of(dlgCtx).pop(),
-            child: const Text('CLOSE'),
+            child: const LText('CLOSE'),
           ),
         ],
       ),
@@ -1471,7 +1472,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 leading: SizedBox(
                   width: 30,
                   child: Center(
-                    child: Text(
+                    child: LText(
                       'HDR',
                       style: TextStyle(
                         color: AppColors.accent,
@@ -1481,11 +1482,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                   ),
                 ),
-                title: Text(
+                title: LText(
                   'HDR tone-mapping',
                   style: TextStyle(color: AppColors.textPrimary),
                 ),
-                subtitle: Text(
+                subtitle: LText(
                   'How HDR10/Dolby sources fit your screen',
                   style: TextStyle(color: AppColors.textSecondary),
                 ),
@@ -1495,10 +1496,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                   underline: const SizedBox.shrink(),
                   style: TextStyle(color: AppColors.textPrimary),
                   items: const [
-                    DropdownMenuItem(value: 'auto', child: Text('Auto')),
-                    DropdownMenuItem(value: 'mobius', child: Text('Mobius')),
-                    DropdownMenuItem(value: 'hable', child: Text('Hable')),
-                    DropdownMenuItem(value: 'bt.2390', child: Text('BT.2390')),
+                    DropdownMenuItem(value: 'auto', child: LText('Auto')),
+                    DropdownMenuItem(value: 'mobius', child: LText('Mobius')),
+                    DropdownMenuItem(value: 'hable', child: LText('Hable')),
+                    DropdownMenuItem(value: 'bt.2390', child: LText('BT.2390')),
                   ],
                   onChanged: (v) {
                     if (v != null) {
@@ -1637,7 +1638,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   size: 20,
                   color: AppColors.accent,
                 ),
-                title: Text(
+                title: LText(
                   'Generate with AI ✨',
                   style: TextStyle(
                     color: AppColors.textPrimary,
@@ -1645,7 +1646,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                subtitle: Text(
+                subtitle: LText(
                   'On-device · free · works offline after a one-time setup',
                   style: TextStyle(
                     color: AppColors.textSecondary,
@@ -1736,7 +1737,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             _SheetHandle(),
             Padding(
               padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Text(
+              child: LText(
                 'Trailer language',
                 style: TextStyle(
                   color: AppColors.textPrimary,
@@ -1967,7 +1968,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               shrinkWrap: true,
               children: [
                 _SheetHandle(),
-                Text(
+                LText(
                   'Equalizer & Audio FX',
                   style: TextStyle(
                     color: AppColors.textPrimary,
@@ -2082,7 +2083,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 padding: EdgeInsets.fromLTRB(20, 4, 20, 10),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(
+                  child: LText(
                     'Video info',
                     style: TextStyle(
                       color: AppColors.textPrimary,
@@ -2132,7 +2133,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ),
                     Divider(color: AppColors.border),
                     if (state.tracks.video.isNotEmpty)
-                      Text(
+                      LText(
                         'Video tracks',
                         style: TextStyle(
                           color: AppColors.textPrimary,
@@ -2152,7 +2153,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ),
                     if (state.tracks.audio.isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      Text(
+                      LText(
                         'Audio tracks',
                         style: TextStyle(
                           color: AppColors.textPrimary,
@@ -2173,7 +2174,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ),
                     if (state.tracks.subtitle.isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      Text(
+                      LText(
                         'Subtitle tracks',
                         style: TextStyle(
                           color: AppColors.textPrimary,
@@ -2281,7 +2282,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 padding: EdgeInsets.fromLTRB(20, 6, 20, 8),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(
+                  child: LText(
                     'Sleep timer',
                     style: TextStyle(
                       color: AppColors.textPrimary,
@@ -2293,7 +2294,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
               if (_sleepTimer != null || _sleepUntilEnd)
                 ListTile(
-                  title: Text(
+                  title: LText(
                     'Turn off timer',
                     style: TextStyle(color: AppColors.textPrimary),
                   ),
@@ -2309,11 +2310,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                       Navigator.of(context).pop(_SleepChoice.minutes(min)),
                 ),
               ListTile(
-                title: Text(
+                title: LText(
                   'Until end',
                   style: TextStyle(color: AppColors.textPrimary),
                 ),
-                subtitle: Text(
+                subtitle: LText(
                   'Pause when this video reaches the end',
                   style: TextStyle(color: AppColors.textSecondary),
                 ),
@@ -3378,7 +3379,7 @@ class _BottomBarState extends State<_BottomBar> {
                     padding: EdgeInsets.fromLTRB(4, 0, 4, 2),
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: Text(
+                      child: LText(
                         'Playback speed',
                         style: TextStyle(
                           color: AppColors.textPrimary,
@@ -3425,14 +3426,14 @@ class _BottomBarState extends State<_BottomBar> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
+                        LText(
                           '0.5×',
                           style: TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 11.5,
                           ),
                         ),
-                        Text(
+                        LText(
                           '4.0×',
                           style: TextStyle(
                             color: AppColors.textSecondary,
@@ -3965,7 +3966,7 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
       return Center(
         child: Padding(
           padding: EdgeInsets.all(28),
-          child: Text(
+          child: LText(
             'No playlists yet.\nCreate one from the home screen '
             '(Playlists tile), then long-press a video → "Add to playlist".',
             textAlign: TextAlign.center,
@@ -4015,7 +4016,7 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
       return Center(
         child: Padding(
           padding: EdgeInsets.all(28),
-          child: Text(
+          child: LText(
             'No playable videos in this playlist.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.textSecondary),

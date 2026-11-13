@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 
 import '../app_info.dart';
@@ -56,7 +57,7 @@ class UserManualSheet extends StatelessWidget {
           children: [
             Icon(Icons.menu_book_outlined, color: accent),
             const SizedBox(width: 10),
-            const Text(
+            const LText(
               'User manual',
               style: TextStyle(
                 color: Colors.white,
@@ -75,7 +76,7 @@ class UserManualSheet extends StatelessWidget {
         _SectionTitle('Gesture controls', accent),
         const Padding(
           padding: EdgeInsets.only(bottom: 6),
-          child: Text(
+          child: LText(
             'All gestures work both in windowed and full-screen mode, on '
             'every video. Each one can be switched off individually in the '
             'player\'s ⚙ settings sheet.',

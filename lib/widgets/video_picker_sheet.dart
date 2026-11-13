@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -114,7 +115,7 @@ class _VideoPickerSheetState extends State<VideoPickerSheet> {
           Expanded(
             child: widget.videos.isEmpty
                 ? const Center(
-                    child: Text(
+                    child: LText(
                       'No videos in the library yet - rescan first.',
                       style: TextStyle(color: Colors.white54),
                     ),

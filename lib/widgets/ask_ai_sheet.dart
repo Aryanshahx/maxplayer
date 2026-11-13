@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -173,7 +174,7 @@ class _AskAiSheetState extends State<AskAiSheet> {
             ],
           ),
           const SizedBox(height: 4),
-          Text(
+          LText(
             'Ask about the plot, characters, ending, recommendations or trivia.',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.45),
@@ -221,7 +222,7 @@ class _AskAiSheetState extends State<AskAiSheet> {
                   textInputAction: TextInputAction.send,
                   onSubmitted: _ask,
                   style: const TextStyle(color: Colors.white, fontSize: 14),
-                  decoration: InputDecoration(
+                  decoration: LInputDecoration(
                     isDense: true,
                     hintText: 'Your own movie question...',
                     hintStyle: const TextStyle(color: Colors.white38),
@@ -249,7 +250,7 @@ class _AskAiSheetState extends State<AskAiSheet> {
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Ask'),
+                    : const LText('Ask'),
               ),
             ],
           ),
@@ -340,7 +341,7 @@ class _ThinkingAnimationState extends State<_ThinkingAnimation>
               children: [
                 Icon(Icons.auto_awesome, color: accent, size: 18),
                 const SizedBox(width: 8),
-                Text(
+                LText(
                   'AI is thinking…',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.85),

@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -91,7 +92,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
       _playPicked(path, name);
       messenger?.showSnackBar(
         const SnackBar(
-          content: Text('Already on this device - opening it'),
+          content: LText('Already on this device - opening it'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -102,7 +103,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1b1b24),
-        title: const Text('Play or keep?',
+        title: const LText('Play or keep?',
             style: TextStyle(color: Colors.white, fontSize: 17)),
         content: Text(
           '"$name" came from a cloud app and is stored only as a temporary '
@@ -113,7 +114,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop('play'),
-            child: const Text('Play once'),
+            child: const LText('Play once'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
@@ -121,7 +122,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
               foregroundColor: AppColors.onAccent,
             ),
             onPressed: () => Navigator.of(ctx).pop('save'),
-            child: const Text('Save to device'),
+            child: const LText('Save to device'),
           ),
         ],
       ),
@@ -172,7 +173,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1b1b24),
-        title: const Text('Importing video…',
+        title: const LText('Importing video…',
             style: TextStyle(color: Colors.white, fontSize: 17)),
         content: AnimatedBuilder(
           animation: Listenable.merge([_progDone, _progTotal]),
@@ -198,7 +199,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
                   style:
                       const TextStyle(color: Colors.white70, fontSize: 12.5),
                 ),
-                const Text(
+                const LText(
                   'The video is being copied from the storage app.',
                   style: TextStyle(color: Colors.white38, fontSize: 11.5),
                 ),
@@ -212,7 +213,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
               NativeBridge.abortPickCopy();
               Navigator.of(ctx).pop();
             },
-            child: const Text('Cancel'),
+            child: const LText('Cancel'),
           ),
         ],
       ),
@@ -234,7 +235,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('OK'),
+            child: const LText('OK'),
           ),
         ],
       ),
@@ -249,7 +250,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
       backgroundColor: const Color(0xFF14141c),
       appBar: AppBar(
         backgroundColor: const Color(0xFF14141c),
-        title: const Text('Import from cloud storage',
+        title: const LText('Import from cloud storage',
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
       ),
       body: Center(
@@ -269,7 +270,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
                     size: 38, color: accent),
               ),
               const SizedBox(height: 16),
-              const Text(
+              const LText(
                 'Import a video',
                 style: TextStyle(
                   color: Colors.white,
@@ -278,7 +279,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              const LText(
                 "Android's file picker opens with Google Drive, Dropbox, "
                 'OneDrive or any storage app you use - videos only. The '
                 'picked file is copied into Max Player with a live '
@@ -308,7 +309,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              const Text(
+              const LText(
                 'No sign-in at all - the picker hands Max Player one '
                 'file at a time, read-only.',
                 textAlign: TextAlign.center,
@@ -369,12 +370,12 @@ class _PcloudBanner extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Running out of space?',
+                          LText('Running out of space?',
                               style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w800,
                                   fontSize: 14)),
-                          Text(
+                          LText(
                               'pCloud — secure cloud storage, free plan '
                               'included',
                               style: TextStyle(
@@ -387,7 +388,7 @@ class _PcloudBanner extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(
+                LText(
                   'Partner link — Max Player may earn a commission at no '
                   'extra cost to you.',
                   style: TextStyle(

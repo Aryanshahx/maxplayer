@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -61,7 +62,7 @@ class TrailerPlayerScreen {
             ),
             SizedBox(width: 16),
             Expanded(
-              child: Text(
+              child: LText(
                 'Loading trailer…',
                 style: TextStyle(color: Colors.white70, fontSize: 14),
               ),
@@ -74,7 +75,7 @@ class TrailerPlayerScreen {
               canceled = true;
               closeDialog();
             },
-            child: const Text('CANCEL'),
+            child: const LText('CANCEL'),
           ),
         ],
       ),
@@ -162,7 +163,7 @@ class TrailerPlayerScreen {
             ),
             SizedBox(width: 16),
             Expanded(
-              child: Text(
+              child: LText(
                 'Loading trailer…',
                 style: TextStyle(color: Colors.white70, fontSize: 14),
               ),
@@ -175,7 +176,7 @@ class TrailerPlayerScreen {
               canceled = true;
               closeDialog();
             },
-            child: const Text('CANCEL'),
+            child: const LText('CANCEL'),
           ),
         ],
       ),
@@ -481,7 +482,7 @@ Future<bool> showTrailerUnavailable(
     builder: (dlgCtx) => AlertDialog(
       backgroundColor: const Color(0xFF16161f),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      title: const Text(
+      title: const LText(
         'Trailer unavailable',
         style: TextStyle(
           color: Colors.white,
@@ -527,11 +528,11 @@ Future<bool> showTrailerUnavailable(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dlgCtx).pop(false),
-          child: const Text('CLOSE'),
+          child: const LText('CLOSE'),
         ),
         FilledButton(
           onPressed: () => Navigator.of(dlgCtx).pop(true),
-          child: const Text('RETRY'),
+          child: const LText('RETRY'),
         ),
       ],
     ),

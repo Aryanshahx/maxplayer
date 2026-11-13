@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -43,16 +44,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: AppColors.border),
         ),
-        title: Text('Clear history?',
+        title: LText('Clear history?',
             style: TextStyle(color: AppColors.textPrimary)),
-        content: Text(
+        content: LText(
           'This also resets the saved resume position of every video.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text('Cancel',
+            child: LText('Cancel',
                 style: TextStyle(color: AppColors.textSecondary)),
           ),
           FilledButton(
@@ -61,7 +62,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               foregroundColor: AppColors.onAccent,
             ),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Clear'),
+            child: const LText('Clear'),
           ),
         ],
       ),
@@ -77,7 +78,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('History'),
+        title: const LText('History'),
         actions: [
           if (_items.isNotEmpty)
             IconButton(
@@ -94,7 +95,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 children: [
                   Icon(Icons.history, size: 48, color: Colors.white24),
                   SizedBox(height: 12),
-                  Text(
+                  LText(
                     'Nothing watched yet.\nVideos you open will show up here.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 16),
@@ -154,7 +155,7 @@ class _HistoryTileState extends State<_HistoryTile> {
     if (asset == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('This video no longer exists')));
+            const SnackBar(content: LText('This video no longer exists')));
       }
       return;
     }

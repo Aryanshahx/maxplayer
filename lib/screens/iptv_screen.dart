@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -113,7 +114,7 @@ class _IptvScreenState extends State<IptvScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
-        title: const Text(
+        title: const LText(
           'LIVE TV',
           style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2),
         ),
@@ -149,7 +150,7 @@ class _IptvScreenState extends State<IptvScreen> {
                 _query = v;
                 _applyFilters();
               }),
-              decoration: InputDecoration(
+              decoration: LInputDecoration(
                 hintText: 'Search channels…',
                 hintStyle: TextStyle(
                   color: Colors.white.withValues(alpha: 0.35),
@@ -237,7 +238,7 @@ class _IptvScreenState extends State<IptvScreen> {
           ),
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
-            child: Text(
+            child: LText(
               'Free & legal streams collected by the iptv-org open project',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.3),

@@ -2,7 +2,7 @@
 
 **Effective date:** 5 September 2026  
 **Developer:** Hyper Tech Labs (Aryan Shah)  
-**App policy update:** 1.0.1+74
+**App policy update:** 1.0.1+76
 
 ## The short version
 Max Player plays media locally. It also uses online services for aggregate usage statistics, diagnostics, Android push notifications, optional online features and advertising. Your media library is not uploaded by the analytics or notification features. The data described below does leave the device; this policy replaces older statements that the app has no analytics or identifiers.
@@ -48,3 +48,8 @@ Captured Flutter/uncaught Dart errors include bounded exception text, stack trac
 Admins may export recorded analytics and diagnostics, including full captured technical report text; exported reports must be handled privately. A privileged, explicitly confirmed maintenance action deletes stored analytics counters and diagnostic reports only, without deleting device tokens, admin accounts, notices or historical configuration records. Devices may subsequently send queued or new events, so resetting stored data does not erase installation identifiers or revoke push registration.
 
 Remote theme publishing, its country/religion-labelled presets, country-for-theme refreshes, local theme rendering and listeners were removed in +74. The app restores its ordinary palette and local accent setting; old cached remote-theme values are not read. Historical configuration records are retained inert, with client read/write access denied by the +74 rules. The existing approximate installation-country analytics sample remains as described above. Older installed APKs retain their old behaviour until updated.
+
+### Interface language and Advertising ID declaration (+76)
+The chosen interface language is stored locally. Bundled interface translations work offline; no user/media text is submitted to an online translation service when changing languages. Filenames, movie/channel titles and supplied content are not translated by this feature. Existing online features still use their normal providers.
+
+The Android manifest explicitly declares com.google.android.gms.permission.AD_ID to align the release artifact with the existing Google Mobile Ads integration and Play Advertising ID declaration. This is not a new custom analytics identifier or a replacement for the existing consent flow. Advertising identifiers and advertising data remain subject to the SDK, Android privacy controls and disclosures above. Developers must keep Play declarations accurate for all enabled SDKs and settings.

@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -413,7 +414,7 @@ class _AiProgressDialog extends StatelessWidget {
         children: [
           Icon(Icons.auto_awesome, color: AppColors.accent, size: 20),
           const SizedBox(width: 8),
-          const Text('AI subtitles', style: TextStyle(color: Colors.white)),
+          const LText('AI subtitles', style: TextStyle(color: Colors.white)),
         ],
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -450,7 +451,7 @@ class _AiProgressDialog extends StatelessWidget {
           );
         },
       ),
-      actions: [TextButton(onPressed: onCancel, child: const Text('Cancel'))],
+      actions: [TextButton(onPressed: onCancel, child: const LText('Cancel'))],
     );
   }
 }
@@ -506,11 +507,11 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                LText(
                   'AI subtitles',
                   style: TextStyle(color: Colors.white, fontSize: 17),
                 ),
-                Text(
+                LText(
                   'On-device Whisper · works offline · free',
                   style: TextStyle(color: Colors.white38, fontSize: 11),
                 ),
@@ -539,7 +540,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
             onChanged: (v) => setState(() => _language = v ?? 'auto'),
           ),
           const SizedBox(height: 6),
-          const Text(
+          const LText(
             'Tip: pinning the language is quicker AND more accurate than '
             'auto-detect.',
             style: TextStyle(color: Colors.white38, fontSize: 11),
@@ -571,7 +572,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
           if (_translate)
             const Padding(
               padding: EdgeInsets.only(top: 6),
-              child: Text(
+              child: LText(
                 'Foreign speech becomes ENGLISH subtitles (AI translate).',
                 style: TextStyle(color: Colors.white38, fontSize: 11.5),
               ),
@@ -594,7 +595,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
               dense: true,
               contentPadding: const EdgeInsets.only(left: 12, right: 4),
               activeThumbColor: AppColors.accent,
-              title: const Text(
+              title: const LText(
                 'Karaoke style',
                 style: TextStyle(
                   color: Colors.white,
@@ -602,7 +603,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              subtitle: const Text(
+              subtitle: const LText(
                 'Word-by-word flow subtitles',
                 style: TextStyle(color: Colors.white38, fontSize: 11),
               ),
@@ -625,7 +626,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
                   ),
                 ),
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text(
+                child: const LText(
                   'Cancel',
                   style: TextStyle(color: Colors.white70),
                 ),
@@ -733,7 +734,7 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
                               ).withValues(alpha: 0.18),
                               borderRadius: BorderRadius.circular(5),
                             ),
-                            child: const Text(
+                            child: const LText(
                               'QUICK',
                               style: TextStyle(
                                 color: Color(0xFF4ade80),

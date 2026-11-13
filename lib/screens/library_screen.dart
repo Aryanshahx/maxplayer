@@ -1,3 +1,5 @@
+import 'language_screen.dart';
+import '../utils/app_language.dart';
 import '../services/app_analytics.dart';
 import '../services/push_service.dart';
 import 'dart:async';
@@ -214,7 +216,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
       CrashLog.error('library.scan_failed', e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not scan videos on this device')),
+          const SnackBar(
+            content: LText('Could not scan videos on this device'),
+          ),
         );
       }
     } finally {
@@ -323,6 +327,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   void _openMenu(_MenuAction a) {
     switch (a) {
+      case _MenuAction.language:
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const LanguageScreen()));
+        break;
       case _MenuAction.display:
         Navigator.of(context)
             .push(
@@ -497,7 +506,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       Color(0xFF22D3EE),
                     ],
                   ).createShader(bounds),
-                  child: const Text(
+                  child: const LText(
                     'Max Player',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -508,7 +517,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ),
                   ),
                 ),
-                const Text(
+                const LText(
                   'Proudly Developed in India 🇮🇳',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -550,6 +559,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
             onSelected: _openMenu,
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: _MenuAction.language,
+                child: _MenuRow(icon: Icons.language, label: 'Language'),
+              ),
               PopupMenuItem(
                 value: _MenuAction.display,
                 height: 44,
@@ -774,7 +787,7 @@ class _Tile extends StatelessWidget {
                   Icon(icon, color: accent, size: 18),
                   const SizedBox(width: 8),
                   Flexible(
-                    child: Text(
+                    child: LText(
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -795,7 +808,16 @@ class _Tile extends StatelessWidget {
   }
 }
 
-enum _MenuAction { display, stats, manual, about, privacy, report, instagram }
+enum _MenuAction {
+  language,
+  display,
+  stats,
+  manual,
+  about,
+  privacy,
+  report,
+  instagram,
+}
 
 class _MenuRow extends StatelessWidget {
   const _MenuRow({required this.icon, required this.label});
@@ -810,7 +832,14 @@ class _MenuRow extends StatelessWidget {
       children: [
         Icon(icon, size: 19, color: AppColors.accent),
         const SizedBox(width: 12),
-        Text(label, style: const TextStyle(color: Colors.white)),
+        Expanded(
+          child: LText(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
       ],
     );
   }
@@ -914,7 +943,7 @@ class _PermissionHint extends StatelessWidget {
               color: AppColors.textSecondary,
             ),
             const SizedBox(height: 16),
-            Text(
+            LText(
               'Permission needed',
               style: TextStyle(
                 fontSize: 18,
@@ -923,7 +952,7 @@ class _PermissionHint extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
+            LText(
               'Max Player needs access to your videos to show the library.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textSecondary),
@@ -938,7 +967,7 @@ class _PermissionHint extends StatelessWidget {
                 ),
               ),
               onPressed: onRetry,
-              child: const Text('Grant access'),
+              child: const LText('Grant access'),
             ),
           ],
         ),
@@ -954,7 +983,7 @@ class _EmptyHint extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Center(
-      child: Text(
+      child: LText(
         'No videos found. Pull down to rescan.',
         style: TextStyle(color: AppColors.textSecondary),
       ),

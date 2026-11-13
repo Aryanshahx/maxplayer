@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -251,7 +252,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
         ..clearSnackBars()
         ..showSnackBar(
           const SnackBar(
-            content: Text('Microphone needed for voice search'),
+            content: LText('Microphone needed for voice search'),
             duration: Duration(milliseconds: 1800),
           ),
         );
@@ -338,7 +339,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                const LText(
                   'Discover',
                   style: TextStyle(
                     color: Colors.white,
@@ -387,7 +388,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
               child: TextField(
                 controller: _searchCtrl,
                 style: const TextStyle(color: Colors.white, fontSize: 14.5),
-                decoration: const InputDecoration(
+                decoration: const LInputDecoration(
                   hintText: 'Search movies & series…',
                   hintStyle: TextStyle(color: Colors.white30, fontSize: 14),
                   border: InputBorder.none,
@@ -483,7 +484,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(28),
-          child: Text(
+          child: LText(
             'Nothing to show yet — check the connection and pull to retry.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white38, fontSize: 13),
@@ -500,7 +501,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(28),
-          child: Text(
+          child: LText(
             'No movies or series match that title.',
             style: TextStyle(color: Colors.white38, fontSize: 13),
           ),

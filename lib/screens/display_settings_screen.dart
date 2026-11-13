@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
@@ -16,14 +17,18 @@ class DisplaySettingsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 4,
-        title: const Text('Display Settings'),
+        title: const LText('Display Settings'),
         leading: const BackButton(),
       ),
       body: ListenableBuilder(
         listenable: s,
         builder: (context, _) => ListView(
-          padding:
-              const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 32),
+          padding: const EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 8,
+            bottom: 32,
+          ),
           children: [
             const _SectionTitle('LAYOUT & VIEW MODE'),
             Row(
@@ -85,17 +90,25 @@ class DisplaySettingsScreen extends StatelessWidget {
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   Padding(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 6),
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
                     child: Row(
                       children: [
-                        Icon(Icons.favorite_border_rounded,
-                            color: AppColors.accent, size: 22),
+                        Icon(
+                          Icons.favorite_border_rounded,
+                          color: AppColors.accent,
+                          size: 22,
+                        ),
                         const SizedBox(width: 14),
                         Expanded(
-                          child: Text('Show only favourites',
-                              style: TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 14.5)),
+                          child: LText(
+                            'Show only favourites',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 14.5,
+                            ),
+                          ),
                         ),
                         Switch(
                           value: s.onlyFavs,
@@ -138,12 +151,15 @@ class _SectionTitle extends StatelessWidget {
     Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 22, bottom: 10, left: 4),
-      child: Text(text,
-          style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1)),
+      child: LText(
+        text,
+        style: TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.1,
+        ),
+      ),
     );
   }
 }
@@ -170,8 +186,9 @@ class _ModeCard extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-            color: selected ? AppColors.accent : AppColors.border,
-            width: selected ? 1.6 : 1),
+          color: selected ? AppColors.accent : AppColors.border,
+          width: selected ? 1.6 : 1,
+        ),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -180,25 +197,34 @@ class _ModeCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
           child: Row(
             children: [
-              Icon(icon,
-                  color: selected ? AppColors.accent : AppColors.textSecondary,
-                  size: 26),
+              Icon(
+                icon,
+                color: selected ? AppColors.accent : AppColors.textSecondary,
+                size: 26,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title,
-                        style: TextStyle(
-                            color: selected
-                                ? AppColors.textPrimary
-                                : AppColors.textSecondary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700)),
+                    LText(
+                      title,
+                      style: TextStyle(
+                        color: selected
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    Text(subtitle,
-                        style: TextStyle(
-                            color: AppColors.textSecondary, fontSize: 12)),
+                    LText(
+                      subtitle,
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -244,19 +270,23 @@ class _SortRow extends StatelessWidget {
             ),
             const SizedBox(width: 14),
             Expanded(
-              child: Text(sortFieldLabel(field),
-                  style: TextStyle(
-                      color: selected
-                          ? AppColors.textPrimary
-                          : AppColors.textSecondary,
-                      fontSize: 14.5,
-                      fontWeight:
-                          selected ? FontWeight.w600 : FontWeight.w400)),
+              child: LText(
+                sortFieldLabel(field),
+                style: TextStyle(
+                  color: selected
+                      ? AppColors.textPrimary
+                      : AppColors.textSecondary,
+                  fontSize: 14.5,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
             ),
             if (selected)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.accent.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(9),
@@ -264,20 +294,28 @@ class _SortRow extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(sortDirectionLabel(field, s.sortAsc),
-                        style: TextStyle(
-                            color: AppColors.accent,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700)),
+                    LText(
+                      sortDirectionLabel(field, s.sortAsc),
+                      style: TextStyle(
+                        color: AppColors.accent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     const SizedBox(width: 4),
-                    Icon(Icons.check_rounded, color: AppColors.accent, size: 14),
+                    Icon(
+                      Icons.check_rounded,
+                      color: AppColors.accent,
+                      size: 14,
+                    ),
                   ],
                 ),
               )
             else
-              Text(sortDirectionLabel(field, s.sortAsc),
-                  style: TextStyle(
-                      color: AppColors.textSecondary, fontSize: 12)),
+              LText(
+                sortDirectionLabel(field, s.sortAsc),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
           ],
         ),
       ),
@@ -312,9 +350,10 @@ class _DropdownRow<T> extends StatelessWidget {
           Icon(icon, color: AppColors.accent, size: 22),
           const SizedBox(width: 14),
           Expanded(
-            child: Text(label,
-                style: TextStyle(
-                    color: AppColors.textPrimary, fontSize: 14.5)),
+            child: LText(
+              label,
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 14.5),
+            ),
           ),
           DropdownButton<T>(
             value: value,
@@ -322,12 +361,13 @@ class _DropdownRow<T> extends StatelessWidget {
             underline: const SizedBox.shrink(),
             iconEnabledColor: AppColors.textSecondary,
             style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600),
+              color: AppColors.textPrimary,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+            ),
             items: [
               for (final v in values)
-                DropdownMenuItem(value: v, child: Text(labelOf(v))),
+                DropdownMenuItem(value: v, child: LText(labelOf(v))),
             ],
             onChanged: (v) {
               if (v != null) onChanged(v);
@@ -340,8 +380,11 @@ class _DropdownRow<T> extends StatelessWidget {
 }
 
 class _AccentDot extends StatelessWidget {
-  const _AccentDot(
-      {required this.color, required this.selected, required this.onTap});
+  const _AccentDot({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
 
   final Color color;
   final bool selected;
@@ -360,24 +403,32 @@ class _AccentDot extends StatelessWidget {
           shape: BoxShape.circle,
           border: selected
               ? Border.all(
-                      color: ThemeData.estimateBrightnessForColor(color) ==
-                              Brightness.light
-                          ? Colors.black
-                          : Colors.white,
-                      width: 3)
+                  color:
+                      ThemeData.estimateBrightnessForColor(color) ==
+                          Brightness.light
+                      ? Colors.black
+                      : Colors.white,
+                  width: 3,
+                )
               : Border.all(color: Colors.transparent, width: 3),
           boxShadow: const [
             BoxShadow(
-                color: Colors.black45, blurRadius: 6, offset: Offset(0, 2))
+              color: Colors.black45,
+              blurRadius: 6,
+              offset: Offset(0, 2),
+            ),
           ],
         ),
         child: selected
-            ? Icon(Icons.check_rounded,
-                color: ThemeData.estimateBrightnessForColor(color) ==
+            ? Icon(
+                Icons.check_rounded,
+                color:
+                    ThemeData.estimateBrightnessForColor(color) ==
                         Brightness.light
                     ? Colors.black
                     : Colors.white,
-                size: 22)
+                size: 22,
+              )
             : null,
       ),
     );

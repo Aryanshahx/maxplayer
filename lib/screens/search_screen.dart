@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -112,7 +113,7 @@ class _SearchScreenState extends State<SearchScreen> {
           autofocus: true,
           onChanged: _onChanged,
           style: TextStyle(color: AppColors.textPrimary),
-          decoration: InputDecoration(
+          decoration: LInputDecoration(
             hintText: 'Search all videos…',
             hintStyle: TextStyle(color: AppColors.textSecondary),
             border: InputBorder.none,
@@ -137,7 +138,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   Icon(Icons.search_rounded,
                       size: 46, color: AppColors.textSecondary),
                   const SizedBox(height: 12),
-                  Text('Type to search every video on this device',
+                  LText('Type to search every video on this device',
                       style: TextStyle(color: AppColors.textSecondary)),
                   if (_loadingMore) ...[
                     const SizedBox(height: 10),

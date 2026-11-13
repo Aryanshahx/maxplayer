@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -99,7 +100,7 @@ class VideoGrid extends StatefulWidget {
       CrashLog.error('video.open_failed', e, {'id': asset.id});
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open this video')),
+          const SnackBar(content: LText('Could not open this video')),
         );
       }
     }
@@ -177,7 +178,7 @@ class _VideoGridState extends State<VideoGrid> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
+          content: LText(
             'Private folder needs storage permission: allow it, then '
             'long-press the video again',
           ),
@@ -190,7 +191,7 @@ class _VideoGridState extends State<VideoGrid> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a24),
-        title: const Text(
+        title: const LText(
           'Move to Private folder?',
           style: TextStyle(color: Colors.white, fontSize: 17),
         ),
@@ -207,11 +208,11 @@ class _VideoGridState extends State<VideoGrid> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
+            child: const LText('Cancel'),
           ),
           FilledButton.icon(
             icon: const Icon(Icons.lock_outline, size: 16),
-            label: const Text('Hide'),
+            label: const LText('Hide'),
             onPressed: () => Navigator.of(dialogContext).pop(true),
           ),
         ],
@@ -229,7 +230,7 @@ class _VideoGridState extends State<VideoGrid> {
       CrashLog.crumb('video.hidden', {'id': a.id});
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Moved to Private folder')),
+          const SnackBar(content: LText('Moved to Private folder')),
         );
       }
     } catch (e) {
@@ -257,7 +258,7 @@ class _VideoGridState extends State<VideoGrid> {
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: AppColors.border),
         ),
-        title: Text(
+        title: LText(
           'Delete video?',
           style: TextStyle(color: AppColors.textPrimary, fontSize: 17),
         ),
@@ -269,7 +270,7 @@ class _VideoGridState extends State<VideoGrid> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: Text(
+            child: LText(
               'Cancel',
               style: TextStyle(color: AppColors.textSecondary),
             ),
@@ -283,7 +284,7 @@ class _VideoGridState extends State<VideoGrid> {
               ),
             ),
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
+            child: const LText('Delete'),
           ),
         ],
       ),
@@ -304,7 +305,7 @@ class _VideoGridState extends State<VideoGrid> {
     if (pls.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
+          content: LText(
             'No playlists yet — create one from the Playlists tile',
           ),
         ),
@@ -323,7 +324,7 @@ class _VideoGridState extends State<VideoGrid> {
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(
+              child: LText(
                 'Add to playlist',
                 style: TextStyle(
                   color: AppColors.accent,
@@ -422,7 +423,7 @@ class _VideoGridState extends State<VideoGrid> {
                 _prop('GPS', '${latlng.latitude}, ${latlng.longitude}'),
               Padding(
                 padding: EdgeInsets.only(top: 4),
-                child: Text(
+                child: LText(
                   'Codec / frame-rate / track details: open the video and '
                   'tap the (i) button — the player reads them live from MPV.',
                   style: TextStyle(
@@ -438,7 +439,7 @@ class _VideoGridState extends State<VideoGrid> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text('Close', style: TextStyle(color: AppColors.accent)),
+            child: LText('Close', style: TextStyle(color: AppColors.accent)),
           ),
         ],
       ),
@@ -550,7 +551,7 @@ class _VideoGridState extends State<VideoGrid> {
             borderRadius: BorderRadius.circular(16),
             side: BorderSide(color: AppColors.border),
           ),
-          title: Text(
+          title: LText(
             'Rename video',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 17),
           ),
@@ -558,7 +559,7 @@ class _VideoGridState extends State<VideoGrid> {
             controller: ctrl,
             autofocus: true,
             style: TextStyle(color: AppColors.textPrimary),
-            decoration: InputDecoration(
+            decoration: LInputDecoration(
               hintText: 'New name',
               hintStyle: TextStyle(color: AppColors.textSecondary),
             ),
@@ -567,7 +568,7 @@ class _VideoGridState extends State<VideoGrid> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text(
+              child: LText(
                 'Cancel',
                 style: TextStyle(color: AppColors.textSecondary),
               ),
@@ -581,7 +582,7 @@ class _VideoGridState extends State<VideoGrid> {
                 ),
               ),
               onPressed: () => Navigator.of(context).pop(ctrl.text.trim()),
-              child: const Text('Rename'),
+              child: const LText('Rename'),
             ),
           ],
         ),
@@ -592,7 +593,7 @@ class _VideoGridState extends State<VideoGrid> {
       if (File(targetPath).existsSync()) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('A file with that name exists')),
+            const SnackBar(content: LText('A file with that name exists')),
           );
         }
         return;
@@ -634,7 +635,7 @@ class _VideoGridState extends State<VideoGrid> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
+            content: LText(
               'Rename failed - the file may be protected or in use',
             ),
           ),

@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -173,7 +174,7 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            const LText(
                               'Discover movies',
                               style: TextStyle(
                                 color: Colors.white,
@@ -182,7 +183,7 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
+                            LText(
                               'Latest posters, ratings & trailers',
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.7),

@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -170,7 +171,7 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
               Icon(Icons.auto_awesome, color: accent, size: 22),
               const SizedBox(width: 8),
               const Expanded(
-                child: Text(
+                child: LText(
                   'AI Suggestor',
                   style: TextStyle(
                       color: Colors.white,
@@ -181,7 +182,7 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
             ],
           ),
           const SizedBox(height: 4),
-          const Text(
+          const LText(
             'Describe your movie type - AI suggests the best ones for you.',
             style: TextStyle(color: Colors.white54, fontSize: 12.5),
           ),
@@ -192,7 +193,7 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
             maxLines: 3,
             style: const TextStyle(color: Colors.white, fontSize: 14),
             onSubmitted: (_) => _suggest(),
-            decoration: InputDecoration(
+            decoration: LInputDecoration(
               isDense: true,
               hintText: 'e.g. funny action like Dhoom',
               hintStyle: const TextStyle(color: Colors.white38),
@@ -270,7 +271,7 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 18),
               child: Center(
-                child: Text(
+                child: LText(
                   'Tap a mood above or describe your own.',
                   style: TextStyle(color: Colors.white30, fontSize: 12.5),
                 ),
@@ -366,7 +367,7 @@ class _ThinkingAnimationState extends State<_ThinkingAnimation>
               children: [
                 Icon(Icons.auto_awesome, color: accent, size: 20),
                 const SizedBox(width: 8),
-                Text(
+                LText(
                   'AI is thinking…',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.85),

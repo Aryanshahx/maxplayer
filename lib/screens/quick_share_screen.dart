@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -85,7 +86,7 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
       CrashLog.error('quickshare.failed', e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Share failed')));
+            const SnackBar(content: LText('Share failed')));
       }
     }
     if (mounted) setState(() => _busy = false);
@@ -103,7 +104,7 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
       CrashLog.error('quickshare.direct_failed', e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Could not start the direct-share server')));
+            content: LText('Could not start the direct-share server')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -122,7 +123,7 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
     final vids = _videos;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Quick Share'),
+        title: const LText('Quick Share'),
         actions: [
           IconButton(
             tooltip: 'Receive from another device',
@@ -139,7 +140,7 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
                     child: CircularProgressIndicator(color: AppColors.accent))
                 : vids.isEmpty
                     ? Center(
-                        child: Text('No videos on this device.',
+                        child: LText('No videos on this device.',
                             style:
                                 TextStyle(color: AppColors.textSecondary)))
                     : ListView.separated(
@@ -189,7 +190,7 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
                         onPressed: _busy ? null : _directSend,
                         icon: const Icon(Icons.wifi_tethering_rounded,
                             size: 18),
-                        label: const Text('Direct send'),
+                        label: const LText('Direct send'),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -197,7 +198,7 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
                       child: OutlinedButton.icon(
                         onPressed: _busy ? null : _shareViaApps,
                         icon: const Icon(Icons.ios_share_rounded, size: 18),
-                        label: const Text('Via other apps'),
+                        label: const LText('Via other apps'),
                       ),
                     ),
                   ],
@@ -315,7 +316,7 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
                     fontSize: 17,
                     fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
-            Text(
+            LText(
               'Receiver must be on the same Wi-Fi. Open this link there — '
               'with Max Player Receive or any browser.',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
@@ -361,7 +362,7 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: url));
                   ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Link copied')));
+                      const SnackBar(content: LText('Link copied')));
                 },
                 child: Padding(
                   padding: const EdgeInsets.all(6),
@@ -404,7 +405,7 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
                 ),
               Padding(
                 padding: EdgeInsets.only(top: 8),
-                child: Text(
+                child: LText(
                   'If the page opens slowly: both phones must be on the SAME '
                   'Wi-Fi • turn OFF VPN / "data saver" on the receiving phone '
                   '• large videos crawl on busy 2.4GHz Wi-Fi — keep both '
@@ -552,7 +553,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Receive videos',
+            LText('Receive videos',
                 style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 17,
@@ -565,7 +566,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
                     controller: _addr,
                     keyboardType: TextInputType.url,
                     style: const TextStyle(fontSize: 14),
-                    decoration: InputDecoration(
+                    decoration: LInputDecoration(
                       hintText: 'Sender address, e.g. 192.168.1.5:4747',
                       isDense: true,
                       filled: true,
@@ -581,7 +582,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
                 const SizedBox(width: 8),
                 FilledButton(
                   onPressed: _busy ? null : _fetch,
-                  child: const Text('Find'),
+                  child: const LText('Find'),
                 ),
               ],
             ),

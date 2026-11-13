@@ -4,6 +4,8 @@
 /// the home feed.
 library;
 
+import '../utils/app_language.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -171,14 +173,14 @@ class _CategoryScreenState extends State<CategoryScreen> {
                             size: 30,
                           ),
                           const SizedBox(height: 10),
-                          const Text(
+                          const LText(
                             'Could not load this category',
                             style: TextStyle(color: Colors.white54),
                           ),
                           const SizedBox(height: 12),
                           FilledButton(
                             onPressed: () => unawaited(_load(1)),
-                            child: const Text('Retry'),
+                            child: const LText('Retry'),
                           ),
                         ],
                       ),

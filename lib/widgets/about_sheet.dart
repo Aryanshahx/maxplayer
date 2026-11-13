@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -70,7 +71,7 @@ class AboutSheet extends StatelessWidget {
         const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            LText(
               'Max Player',
               style: TextStyle(
                 color: Colors.white,
@@ -80,14 +81,14 @@ class AboutSheet extends StatelessWidget {
               ),
             ),
             SizedBox(height: 2),
-            Text(
+            LText(
               'by Hyper Tech Labs',
               style: TextStyle(color: Colors.white54, fontSize: 13),
             ),
           ],
         ),
         const SizedBox(height: 14),
-        const Text(
+        const LText(
           'Max Player is a next-generation media player designed to make '
           'watching and listening effortless. Built from the ground up with '
           'performance, simplicity, and reliability in mind, Max Player '
@@ -102,7 +103,7 @@ class AboutSheet extends StatelessWidget {
         ),
 
         _Heading('Our mission', accent),
-        const Text(
+        const LText(
           'At Max Player, our goal is simple: to create the most seamless, '
           'distraction-free media experience possible. We believe great '
           'software should feel invisible - it should just work, every time, '
@@ -146,7 +147,7 @@ class AboutSheet extends StatelessWidget {
           ),
 
         _Heading('Our story', accent),
-        const Text(
+        const LText(
           'Max Player was created out of a simple frustration: too many '
           'media players were bloated, slow, or filled with intrusive ads '
           'and unnecessary features. We set out to build something '
@@ -156,7 +157,7 @@ class AboutSheet extends StatelessWidget {
         ),
 
         _Heading('The team behind Max Player', accent),
-        const Text(
+        const LText(
           'Max Player is proudly developed and maintained by Hyper Tech '
           'Labs, a technology company focused on building thoughtful, '
           'high-quality applications for everyday use. Founded by Aryan '
@@ -167,7 +168,7 @@ class AboutSheet extends StatelessWidget {
         ),
 
         _Heading('Looking ahead', accent),
-        const Text(
+        const LText(
           'We\'re constantly working to improve Max Player - adding new '
           'features, refining performance, and listening closely to our '
           'users. This is just the beginning, and we\'re excited to keep '
@@ -178,7 +179,7 @@ class AboutSheet extends StatelessWidget {
           child: TextButton.icon(
             onPressed: () => showPrivacyPolicyDialog(context),
             icon: const Icon(Icons.privacy_tip_outlined, size: 16),
-            label: const Text('Privacy policy'),
+            label: const LText('Privacy policy'),
             style: TextButton.styleFrom(
               foregroundColor: Colors.white54,
               textStyle: const TextStyle(fontSize: 12.5),
@@ -189,7 +190,7 @@ class AboutSheet extends StatelessWidget {
           child: TextButton.icon(
             onPressed: () => _showDiagnostics(context),
             icon: const Icon(Icons.bug_report_outlined, size: 16),
-            label: const Text('System diagnostics'),
+            label: const LText('System diagnostics'),
             style: TextButton.styleFrom(
               foregroundColor: Colors.white54,
               textStyle: const TextStyle(fontSize: 12.5),
@@ -329,7 +330,7 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
                 size: 20,
               ),
               const SizedBox(width: 8),
-              const Text(
+              const LText(
                 'System diagnostics',
                 style: TextStyle(
                   color: Colors.white,
@@ -345,12 +346,12 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
                         await Clipboard.setData(ClipboardData(text: _report()));
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Diagnostics copied')),
+                            const SnackBar(content: LText('Diagnostics copied')),
                           );
                         }
                       },
                 icon: const Icon(Icons.copy, size: 15),
-                label: const Text('Copy'),
+                label: const LText('Copy'),
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.white70,
                   textStyle: const TextStyle(fontSize: 12.5),
@@ -359,7 +360,7 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
             ],
           ),
           const SizedBox(height: 6),
-          const Text(
+          const LText(
             'Reads live on-device state. Share this (Copy → paste) if '
             'playback misbehaves.',
             style: TextStyle(color: Colors.white38, fontSize: 12),

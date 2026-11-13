@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -292,7 +293,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         ..clearSnackBars()
         ..showSnackBar(
           const SnackBar(
-            content: Text('Microphone needed for voice search'),
+            content: LText('Microphone needed for voice search'),
             duration: Duration(milliseconds: 1800),
           ),
         );
@@ -512,7 +513,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                         color: Colors.white,
                         fontSize: 14.5,
                       ),
-                      decoration: const InputDecoration(
+                      decoration: const LInputDecoration(
                         hintText: 'Search movies, series…',
                         hintStyle: TextStyle(
                           color: Colors.white30,
@@ -598,7 +599,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   children: [
                     Icon(Icons.auto_awesome, color: Colors.white, size: 16),
                     SizedBox(width: 6),
-                    Text(
+                    LText(
                       'AI',
                       style: TextStyle(
                         color: Colors.white,
@@ -785,7 +786,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   size: 21,
                 ),
                 SizedBox(width: 7),
-                Text(
+                LText(
                   'Hot searches',
                   style: TextStyle(
                     color: Colors.white,
@@ -882,7 +883,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(28),
-          child: Text(
+          child: LText(
             'No movies or series match that title.',
             style: TextStyle(color: Colors.white38, fontSize: 13),
           ),
@@ -1106,7 +1107,7 @@ class _RailHeader extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 child: Row(
                   children: [
-                    Text(
+                    LText(
                       'SEE ALL',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.55),
@@ -1155,7 +1156,7 @@ class _RailError extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: Colors.white10),
               ),
-              child: Text(
+              child: LText(
                 'Could not load — tap to retry',
                 style: TextStyle(
                   color: AppColors.accent.withValues(alpha: 0.85),
@@ -1391,7 +1392,7 @@ class _NoKeyBody extends StatelessWidget {
             children: [
               Icon(Icons.vpn_key_off, color: Colors.white24, size: 46),
               SizedBox(height: 14),
-              Text(
+              LText(
                 'TMDB key missing',
                 style: TextStyle(
                   color: Colors.white,
@@ -1400,7 +1401,7 @@ class _NoKeyBody extends StatelessWidget {
                 ),
               ),
               SizedBox(height: 8),
-              Text(
+              LText(
                 'Build with --dart-define=TMDB_TOKEN=… to enable Discover.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white38, fontSize: 12.5),

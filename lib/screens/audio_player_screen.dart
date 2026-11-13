@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -37,7 +38,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Now playing'),
+        title: const LText('Now playing'),
         centerTitle: false,
       ),
       body: AnimatedBuilder(
@@ -46,7 +47,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
         builder: (context, _) {
           if (!holder.hasTrack) {
             return Center(
-                child: Text('Nothing playing',
+                child: LText('Nothing playing',
                     style: TextStyle(color: AppColors.textSecondary)));
           }
           final pos = holder.position;
@@ -301,7 +302,7 @@ Future<void> showAudioSpeedSheet(
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Playback speed',
+                  LText('Playback speed',
                       style: TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 16,

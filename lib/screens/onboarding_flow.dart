@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
@@ -107,7 +108,7 @@ class _OnboardingBar extends StatelessWidget {
               foregroundColor: Colors.white54,
               minimumSize: const Size(64, 44),
             ),
-            child: const Text('Skip', style: TextStyle(fontSize: 14)),
+            child: const LText('Skip', style: TextStyle(fontSize: 14)),
           ),
           Expanded(
             child: Row(
@@ -211,7 +212,7 @@ class _WelcomePage extends StatelessWidget {
             shaderCallback: (bounds) => const LinearGradient(
               colors: [Color(0xFFA78BFA), Color(0xFF8B5CF6), Color(0xFF22D3EE)],
             ).createShader(bounds),
-            child: const Text(
+            child: const LText(
               'Max Player',
               style: TextStyle(
                 fontSize: 34,
@@ -223,14 +224,14 @@ class _WelcomePage extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         const Center(
-          child: Text(
+          child: LText(
             'Proudly Developed in India 🇮🇳',
             style: TextStyle(color: Colors.white54, fontSize: 12.5),
           ),
         ),
         const SizedBox(height: 18),
         Center(
-          child: Text(
+          child: LText(
             'One player for every video on your phone.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.textPrimary, fontSize: 15.5),
@@ -275,7 +276,7 @@ class _HowToPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
       children: [
-        const Text(
+        const LText(
           'How to use',
           style: TextStyle(
             color: Colors.white,
@@ -284,7 +285,7 @@ class _HowToPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        const Text(
+        const LText(
           'Get to know your video library.',
           style: TextStyle(color: Colors.white54, fontSize: 13.5),
         ),
@@ -374,7 +375,7 @@ class _PlayerGuidePage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
       children: const [
-        Text(
+        LText(
           'Video player',
           style: TextStyle(
             color: Colors.white,
@@ -383,7 +384,7 @@ class _PlayerGuidePage extends StatelessWidget {
           ),
         ),
         SizedBox(height: 4),
-        Text(
+        LText(
           'Tap, swipe and pinch — every gesture works in full-screen too.',
           style: TextStyle(color: Colors.white54, fontSize: 13.5),
         ),

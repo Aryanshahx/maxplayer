@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
@@ -25,7 +26,7 @@ class StatisticsScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.black.withValues(alpha: 0.3),
         elevation: 0,
-        title: const Text('Statistics'),
+        title: const LText('Statistics'),
       ),
       body: FutureBuilder<_StatsBundle>(
         future: _load(),
@@ -61,7 +62,7 @@ class StatisticsScreen extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const Text(
+                  const LText(
                     'watched this week',
                     style: TextStyle(color: Colors.white38, fontSize: 14),
                   ),
@@ -111,7 +112,7 @@ class StatisticsScreen extends StatelessWidget {
                   ),
                   if (topWatched.isNotEmpty) ...[
                     const SizedBox(height: 28),
-                    Text(
+                    LText(
                       'Most watched',
                       style: TextStyle(
                         color: accent,
@@ -120,7 +121,7 @@ class StatisticsScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    const Text(
+                    const LText(
                       'Total time spent per video (since this update)',
                       style: TextStyle(color: Colors.white38, fontSize: 12),
                     ),

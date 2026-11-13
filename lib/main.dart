@@ -1,3 +1,5 @@
+import 'utils/app_language.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
@@ -62,6 +64,7 @@ Future<void> main() async {
   SystemChrome.setPreferredOrientations(DeviceOrientation.values);
   MediaKit.ensureInitialized(); // MPV core
   await CrashLog.init(); // forensics armed before first frame
+  await AppLanguage.instance.load();
   await AppSettings.instance.load(); // display settings + accent
   // Single dispatcher for every `maxplayer/native` incoming event
   // (PiP button, whisper AI-subtitle progress, voice-search callbacks).
@@ -124,6 +127,11 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    unawaited(AppLanguage.instance.refreshSystem());
   }
 
   @override
@@ -197,11 +205,19 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
     Theme.of(context);
     // Rebuilds MaterialApp when accent changes (Display Settings wheel).
     return ListenableBuilder(
-      listenable: AppSettings.instance,
+      listenable: Listenable.merge([
+        AppSettings.instance,
+        AppLanguage.instance,
+      ]),
       builder: (context, _) {
         AppColors.accent = AppSettings.instance.accentColor;
         return MaterialApp(
           title: 'Max Player',
+          locale: AppLanguage.instance.locale,
+          supportedLocales: uiLanguages.map((l) => Locale(l.code)).toList(),
+          // Pinned CI Flutter 3.47 uses flutter_localizations.
+          // ignore: deprecated_member_use
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           navigatorKey: rootNavigatorKey,
           debugShowCheckedModeBanner: false,
           theme: buildAppTheme(accent: AppColors.accent),

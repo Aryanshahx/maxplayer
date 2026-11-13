@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 
 import '../models/network_location.dart';
@@ -113,7 +114,7 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
       backgroundColor: const Color(0xFF14141c),
       appBar: AppBar(
         backgroundColor: const Color(0xFF14141c),
-        title: const Text('Network Storage (NAS / Share)',
+        title: const LText('Network Storage (NAS / Share)',
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
         actions: [
           if (!_showAddForm && !_loading)
@@ -195,7 +196,7 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
           children: [
             const Icon(Icons.dns_outlined, size: 48, color: Colors.white24),
             const SizedBox(height: 12),
-            const Text(
+            const LText(
               'No saved network storage connections',
               style: TextStyle(color: Colors.white54, fontSize: 14),
             ),
@@ -209,7 +210,7 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
               ),
               onPressed: () => setState(() => _showAddForm = true),
               icon: const Icon(Icons.add),
-              label: const Text('Add Network Storage',
+              label: const LText('Add Network Storage',
                   style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
@@ -278,7 +279,7 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
                         borderRadius: BorderRadius.circular(10)),
                   ),
                   onPressed: () => setState(() => _showAddForm = false),
-                  child: const Text('Cancel'),
+                  child: const LText('Cancel'),
                 ),
               ),
               const SizedBox(width: 10),
@@ -292,7 +293,7 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
                         borderRadius: BorderRadius.circular(10)),
                   ),
                   onPressed: _saveLocation,
-                  child: const Text('Save & Connect',
+                  child: const LText('Save & Connect',
                       style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
@@ -335,7 +336,7 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
         controller: ctrl,
         obscureText: obscure,
         style: const TextStyle(color: Colors.white, fontSize: 13.5),
-        decoration: InputDecoration(
+        decoration: LInputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(color: Colors.white38, fontSize: 12.5),
           border: InputBorder.none,

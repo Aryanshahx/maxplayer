@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -111,7 +112,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
         CrashLog.crumb('private.recovery_unsupported');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
+              content: LText(
                   'No device lock found — set a screen lock in Android settings first')));
         }
         return;
@@ -130,7 +131,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
     if (!unlocked) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Phone unlock failed or cancelled - PIN not reset'),
+          content: LText('Phone unlock failed or cancelled - PIN not reset'),
         ),
       );
       return;
@@ -139,9 +140,9 @@ class _PrivateScreenState extends State<PrivateScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a24),
-        title: const Text('Forgot your PIN?',
+        title: const LText('Forgot your PIN?',
             style: TextStyle(color: Colors.white, fontSize: 17)),
-        content: const Text(
+        content: const LText(
           'Your hidden videos are SAFE - they stay in the app\'s private '
           'folder either way.\n\nResetting removes the old PIN so you can '
           'create a new one. You just unlocked the phone, so we know it\'s '
@@ -151,11 +152,11 @@ class _PrivateScreenState extends State<PrivateScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Keep trying'),
+            child: const LText('Keep trying'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Reset PIN'),
+            child: const LText('Reset PIN'),
           ),
         ],
       ),
@@ -208,7 +209,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
+          content: LText(
             'Adding videos needs storage permission: allow it, then '
             'tap + again',
           ),
@@ -271,7 +272,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
       CrashLog.error('private.unhide_failed', e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not move the video out')),
+          const SnackBar(content: LText('Could not move the video out')),
         );
       }
     }
@@ -285,7 +286,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
       backgroundColor: const Color(0xFF0f0f14),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1a1a24),
-        title: const Text('Private folder'),
+        title: const LText('Private folder'),
         actions: [
           if (_unlocked)
             IconButton(
@@ -358,7 +359,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
               const SizedBox(height: 6),
               TextButton(
                 onPressed: _busy ? null : _forgotPin,
-                child: Text(
+                child: LText(
                   'Forgot PIN?',
                   style: TextStyle(
                       color: accent.withValues(alpha: 0.6), fontSize: 12.5),
@@ -367,7 +368,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
             ],
             if (creating) ...[
               const SizedBox(height: 14),
-              const Text(
+              const LText(
                 'Warning: uninstalling the app also deletes hidden videos. '
                 'Move them out first.',
                 textAlign: TextAlign.center,
@@ -388,7 +389,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
       maxLength: 8,
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       style: const TextStyle(color: Colors.white, letterSpacing: 4),
-      decoration: InputDecoration(
+      decoration: LInputDecoration(
         counterText: '',
         hintText: hint,
         hintStyle: const TextStyle(color: Colors.white38),
@@ -422,7 +423,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
               TextButton.icon(
                 onPressed: _refresh,
                 icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Retry'),
+                label: const LText('Retry'),
               ),
             ],
           ),
@@ -443,14 +444,14 @@ class _PrivateScreenState extends State<PrivateScreen> {
               Icon(Icons.lock_outline,
                   size: 44, color: accent.withValues(alpha: 0.65)),
               const SizedBox(height: 12),
-              const Text(
+              const LText(
                 'Hold on a video in the Library to add it to the Private folder',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     color: Colors.white70, fontSize: 14, height: 1.4),
               ),
               const SizedBox(height: 6),
-              const Text(
+              const LText(
                 'Nothing is hidden yet.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white38, height: 1.5),
@@ -463,7 +464,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
                 ),
                 onPressed: _busy ? null : _addVideos,
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text('Add videos'),
+                label: const LText('Add videos'),
               ),
             ],
           ),
@@ -495,7 +496,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
             trailing: TextButton.icon(
               onPressed: () => _confirmUnhide(f),
               icon: const Icon(Icons.lock_open, size: 16),
-              label: const Text('Move out'),
+              label: const LText('Move out'),
             ),
           );
         },
@@ -509,7 +510,7 @@ class _PrivateScreenState extends State<PrivateScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a24),
-        title: const Text('Move out of Private?',
+        title: const LText('Move out of Private?',
             style: TextStyle(color: Colors.white)),
         content: Text(
           '"$name" will move to the Movies folder and become visible to '
@@ -519,14 +520,14 @@ class _PrivateScreenState extends State<PrivateScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
+            child: const LText('Cancel'),
           ),
           FilledButton(
             onPressed: () {
               Navigator.of(dialogContext).pop();
               _unhide(f);
             },
-            child: const Text('Move out'),
+            child: const LText('Move out'),
           ),
         ],
       ),

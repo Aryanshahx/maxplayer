@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -128,7 +129,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
     if (channels.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No channels found — is that a public M3U link?'),
+          content: LText('No channels found — is that a public M3U link?'),
         ),
       );
     }
@@ -221,7 +222,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
       backgroundColor: const Color(0xFF14141c),
       appBar: AppBar(
         backgroundColor: const Color(0xFF14141c),
-        title: const Text(
+        title: const LText(
           'Open Stream(iptv)',
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
         ),
@@ -284,7 +285,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                   child: TextField(
                     controller: _urlCtrl,
                     style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                    decoration: const InputDecoration(
+                    decoration: const LInputDecoration(
                       hintText: 'https://, http://, rtsp://, ftp://…',
                       hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
                       border: InputBorder.none,
@@ -315,7 +316,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
             child: TextField(
               controller: _titleCtrl,
               style: const TextStyle(color: Colors.white, fontSize: 13),
-              decoration: const InputDecoration(
+              decoration: const LInputDecoration(
                 hintText: 'Stream title (optional)',
                 hintStyle: TextStyle(color: Colors.white24, fontSize: 12.5),
                 border: InputBorder.none,
@@ -341,7 +342,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                 context,
               ).push(MaterialPageRoute(builder: (_) => const IptvScreen())),
               icon: const Icon(Icons.live_tv_rounded),
-              label: const Text(
+              label: const LText(
                 'LIVE TV — free channels',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
@@ -361,13 +362,13 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                 ? () => _play(_urlCtrl.text, _titleCtrl.text)
                 : null,
             icon: const Icon(Icons.play_arrow),
-            label: const Text(
+            label: const LText(
               'Play Stream',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
+          const LText(
             'Paste a direct stream or an IPTV channel list. HLS (.m3u8) plays as one stream; channel lists open below.',
             style: TextStyle(color: Colors.white38, fontSize: 11),
           ),
@@ -376,7 +377,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
             Center(child: CircularProgressIndicator(color: accent)),
             const SizedBox(height: 8),
             const Center(
-              child: Text(
+              child: LText(
                 'Fetching playlist… big lists take a moment',
                 style: TextStyle(color: Colors.white38, fontSize: 11),
               ),
@@ -407,7 +408,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                     child: TextField(
                       controller: _searchCtrl,
                       style: const TextStyle(color: Colors.white, fontSize: 13),
-                      decoration: const InputDecoration(
+                      decoration: const LInputDecoration(
                         hintText: 'Search channels…',
                         hintStyle: TextStyle(
                           color: Colors.white24,
@@ -440,7 +441,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: ChoiceChip(
-                        label: const Text(
+                        label: const LText(
                           'All',
                           style: TextStyle(fontSize: 11),
                         ),
@@ -525,7 +526,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
               children: [
                 Icon(Icons.history, color: accent, size: 16),
                 const SizedBox(width: 6),
-                Text(
+                LText(
                   'Saved & Recent Streams',
                   style: TextStyle(
                     color: accent,

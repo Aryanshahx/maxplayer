@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -101,7 +102,7 @@ class _AudioScreenState extends State<AudioScreen> {
       if (mounted) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Could not scan audio on this device')));
+            content: LText('Could not scan audio on this device')));
       }
     }
   }
@@ -178,7 +179,7 @@ class _AudioScreenState extends State<AudioScreen> {
                 controller: _searchCtrl,
                 onChanged: (v) => setState(() => _query = v),
                 style: const TextStyle(fontSize: 14),
-                decoration: InputDecoration(
+                decoration: LInputDecoration(
                   hintText: 'Search songs…',
                   isDense: true,
                   prefixIcon: const Icon(Icons.search_rounded, size: 20),
@@ -219,14 +220,14 @@ class _AudioScreenState extends State<AudioScreen> {
             children: [
               const Icon(Icons.library_music_outlined, size: 56),
               const SizedBox(height: 12),
-              const Text(
+              const LText(
                 'Audio permission is needed to list songs on this device.',
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _scan,
-                child: const Text('Grant & retry'),
+                child: const LText('Grant & retry'),
               ),
             ],
           ),

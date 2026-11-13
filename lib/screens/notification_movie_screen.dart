@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 import '../utils/tmdb.dart';
 import '../services/notification_destination.dart';
@@ -48,14 +49,14 @@ class _NotificationMovieState extends State<NotificationMovieScreen> {
       final full = s.data;
       if (full == null) {
         return Scaffold(
-          appBar: AppBar(title: const Text('Movie details')),
+          appBar: AppBar(title: const LText('Movie details')),
           body: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Padding(
                   padding: EdgeInsets.all(24),
-                  child: Text(
+                  child: LText(
                     'Could not load this title. Check your connection or try again later.',
                   ),
                 ),
@@ -63,12 +64,12 @@ class _NotificationMovieState extends State<NotificationMovieScreen> {
                   onPressed: () => setState(() {
                     _future = _load();
                   }),
-                  child: const Text('Retry'),
+                  child: const LText('Retry'),
                 ),
                 TextButton(
                   onPressed: () =>
                       Navigator.of(context).popUntil((r) => r.isFirst),
-                  child: const Text('Go Home'),
+                  child: const LText('Go Home'),
                 ),
               ],
             ),

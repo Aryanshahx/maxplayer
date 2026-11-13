@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -249,7 +250,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                             color: AppColors.accent,
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text(
+                          child: LText(
                             'TRAILER',
                             style: TextStyle(
                               color: AppColors.onAccent,
@@ -291,7 +292,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                                 size: 30,
                               ),
                               const SizedBox(height: 8),
-                              const Text(
+                              const LText(
                                 'Trailer could not be loaded right now.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
@@ -323,7 +324,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                       child: TextButton.icon(
                         onPressed: () => _launchTrailer(detailMovie),
                         icon: const Icon(Icons.refresh, size: 16),
-                        label: const Text('RETRY'),
+                        label: const LText('RETRY'),
                       ),
                     ),
                     Positioned(
@@ -534,7 +535,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                   ),
                   onPressed: () => AskAiSheet.show(context, movie: movie),
                   icon: const Icon(Icons.auto_awesome, size: 16),
-                  label: const Text(
+                  label: const LText(
                     'Ask AI',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
@@ -585,14 +586,14 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                   child: Row(
                     children: [
                       const Expanded(
-                        child: Text(
+                        child: LText(
                           'Details could not load. Check network connection.',
                           style: TextStyle(color: Colors.white38, fontSize: 12),
                         ),
                       ),
                       TextButton(
                         onPressed: _retryDetail,
-                        child: const Text('Retry'),
+                        child: const LText('Retry'),
                       ),
                     ],
                   ),
@@ -729,7 +730,7 @@ class _DetailedStoryBlock extends StatelessWidget {
                 ],
               ),
             ),
-          const Text(
+          const LText(
             'Storyline',
             style: TextStyle(
               color: Colors.white,
@@ -780,7 +781,7 @@ class _TopCastSlider extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          const LText(
             'Top Cast',
             style: TextStyle(
               color: Colors.white,
@@ -1197,7 +1198,7 @@ class _WatchBlock extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          LText(
             'Where to watch (India)',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.75),
@@ -1236,7 +1237,7 @@ class _ReviewsBlock extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Text(
+              const LText(
                 'User Reviews',
                 style: TextStyle(
                   color: Colors.white,
@@ -1426,7 +1427,7 @@ class _PrimeCta extends StatelessWidget {
                     size: 20,
                   ),
                   SizedBox(width: 8),
-                  Text(
+                  LText(
                     'Watch on Prime Video',
                     style: TextStyle(
                       color: Colors.white,
@@ -1446,7 +1447,7 @@ class _PrimeCta extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 3),
-        Text(
+        LText(
           'Partner link — as an Amazon Associate, Max Player earns from '
           'qualifying purchases.',
           style: TextStyle(

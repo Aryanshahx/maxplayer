@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
@@ -71,7 +72,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
-                child: Text(
+                child: LText(
                   'Player settings',
                   style: TextStyle(
                     color: AppColors.accent,
@@ -313,7 +314,7 @@ class _BoostToggleTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    const LText(
                       'Volume boost (up to 200%)',
                       style: TextStyle(color: Colors.white, fontSize: 15),
                     ),

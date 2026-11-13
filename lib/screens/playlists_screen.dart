@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -42,13 +43,13 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: AppColors.border),
         ),
-        title: Text('New playlist',
+        title: LText('New playlist',
             style: TextStyle(color: AppColors.textPrimary, fontSize: 17)),
         content: TextField(
           controller: ctrl,
           autofocus: true,
           style: TextStyle(color: AppColors.textPrimary),
-          decoration: InputDecoration(
+          decoration: LInputDecoration(
             hintText: 'Playlist name',
             hintStyle: TextStyle(color: AppColors.textSecondary),
           ),
@@ -57,7 +58,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel',
+            child: LText('Cancel',
                 style: TextStyle(color: AppColors.textSecondary)),
           ),
           FilledButton(
@@ -68,7 +69,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                   borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () => Navigator.of(context).pop(ctrl.text.trim()),
-            child: const Text('Create'),
+            child: const LText('Create'),
           ),
         ],
       ),
@@ -77,7 +78,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
     final ok = await _store.createPlaylist(name);
     if (mounted && !ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('A playlist with that name exists')));
+          const SnackBar(content: LText('A playlist with that name exists')));
     }
     CrashLog.crumb('playlist.created', {'name': name});
     _reload();
@@ -88,18 +89,18 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
     Theme.of(context);
     final names = _playlists.keys.toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('Playlists')),
+      appBar: AppBar(title: const LText('Playlists')),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.accent,
         icon: Icon(Icons.add_rounded, color: AppColors.onAccent),
-        label: Text('New', style: TextStyle(color: AppColors.onAccent)),
+        label: LText('New', style: TextStyle(color: AppColors.onAccent)),
         onPressed: _create,
       ),
       body: names.isEmpty
           ? Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
-                child: Text(
+                child: LText(
                   'No playlists yet.\nCreate one, then long-press any video → "Add to playlist".',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.textSecondary),
@@ -208,7 +209,7 @@ class _PlaylistVideosScreenState extends State<PlaylistVideosScreen> {
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.accent,
         icon: Icon(Icons.playlist_add_rounded, color: AppColors.onAccent),
-        label: Text('Add videos',
+        label: LText('Add videos',
             style: TextStyle(color: AppColors.onAccent)),
         onPressed: _addVideos,
       ),
@@ -219,7 +220,7 @@ class _PlaylistVideosScreenState extends State<PlaylistVideosScreen> {
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(32),
-                    child: Text(
+                    child: LText(
                       'Empty playlist.\nTap "Add videos" below to pick videos '
                       'from this device.',
                       textAlign: TextAlign.center,
@@ -344,7 +345,7 @@ class _AddVideosScreenState extends State<_AddVideosScreen> {
                 )
               : _videos.isEmpty
                   ? Center(
-                      child: Text('No videos on this device',
+                      child: LText('No videos on this device',
                           style: TextStyle(color: AppColors.textSecondary)))
                   : GridView.builder(
                       padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
@@ -434,7 +435,7 @@ class _PickTile extends StatelessWidget {
                           color: Colors.black.withValues(alpha: 0.7),
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: const Text('Added',
+                        child: const LText('Added',
                             style:
                                 TextStyle(fontSize: 10, color: Colors.white)),
                       ),

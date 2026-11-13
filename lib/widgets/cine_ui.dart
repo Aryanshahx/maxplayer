@@ -7,6 +7,8 @@
 /// Pure helpers (`cineBootEase`, `cineBootWord`, …) are pinned by tests.
 library;
 
+import '../utils/app_language.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -711,11 +713,11 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
         cineMono(10, Colors.white.withValues(alpha: 0.5), letterSpacing: 1.5);
     Widget sep() => Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Text('|', style: st()),
+      child: LText('|', style: st()),
     );
     Widget dot() => Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Text('·', style: st()),
+      child: LText('·', style: st()),
     );
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -768,7 +770,7 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
                       size: 19,
                     ),
                     SizedBox(width: 6),
-                    Text(
+                    LText(
                       'PLAY NOW',
                       style: TextStyle(
                         color: Colors.black,
@@ -969,7 +971,7 @@ class _CineTopTenState extends State<CineTopTen>
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
+              LText(
                 'TRENDING NOW',
                 style: cineMono(
                   10,
@@ -982,7 +984,10 @@ class _CineTopTenState extends State<CineTopTen>
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
-          child: Text('TOP 10 THIS WEEK', style: cineDisplay(28, Colors.white)),
+          child: LText(
+            'TOP 10 THIS WEEK',
+            style: cineDisplay(28, Colors.white),
+          ),
         ),
         SizedBox(
           // v1.0.1+39: rail height is COMPUTED from the poster size (was

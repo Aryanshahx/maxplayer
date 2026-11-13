@@ -11,6 +11,8 @@
 /// directly. No webview ships in this file at all.
 library;
 
+import '../utils/app_language.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -269,7 +271,7 @@ class _CinePlayerPageState extends State<_CinePlayerPage> {
                       ),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Text(
+                    child: const LText(
                       'TRAILER',
                       style: TextStyle(
                         color: kCineCyan,
@@ -309,7 +311,7 @@ class _CinePlayerPageState extends State<_CinePlayerPage> {
         FilledButton.icon(
           onPressed: () => unawaited(_openOnYoutube()),
           icon: const Icon(Icons.play_arrow_rounded, size: 18),
-          label: const Text('WATCH TRAILER ON YOUTUBE'),
+          label: const LText('WATCH TRAILER ON YOUTUBE'),
           style: FilledButton.styleFrom(
             backgroundColor: kCineCyan,
             foregroundColor: Colors.black,
@@ -317,7 +319,7 @@ class _CinePlayerPageState extends State<_CinePlayerPage> {
           ),
         ),
         const SizedBox(height: 10),
-        Text(
+        LText(
           'OPENS IN THE YOUTUBE APP',
           style: TextStyle(
             fontFamily: kCineMono,
@@ -360,7 +362,7 @@ class _CinePlayerPageState extends State<_CinePlayerPage> {
           ),
         ),
         const SizedBox(height: 10),
-        Text(
+        LText(
           'STREAM COMING SOON',
           style: TextStyle(
             fontFamily: kCineMono,

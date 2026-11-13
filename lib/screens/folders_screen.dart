@@ -1,3 +1,4 @@
+import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
@@ -48,7 +49,7 @@ class _FoldersScreenState extends State<FoldersScreen> {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Folders')),
+      appBar: AppBar(title: const LText('Folders')),
       body: _paths.isEmpty
           ? Center(
               child: CircularProgressIndicator(color: AppColors.accent))
@@ -126,7 +127,7 @@ class _FolderVideosScreenState extends State<FolderVideosScreen> {
       appBar: AppBar(title: Text(widget.path.name)),
       body: visible.isEmpty
           ? Center(
-              child: Text('Empty folder',
+              child: LText('Empty folder',
                   style: TextStyle(color: AppColors.textSecondary)))
           : NotificationListener<ScrollNotification>(
               onNotification: (n) {
