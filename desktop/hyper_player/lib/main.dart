@@ -8,6 +8,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'playlist.dart';
+import 'desktop_store.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,6 +38,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   final player = Player();
   late final VideoController controller = VideoController(player);
   final queue = <String>[];
+  final collections = DesktopStore();
   StreamSubscription<String>? errors;
   StreamSubscription<bool>? completion;
   int selected = -1;
@@ -54,6 +56,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
   Future<void> restore() async {
     final prefs = await SharedPreferences.getInstance();
+    await collections.load();
     if (!mounted) { return; }
     setState(() => queue.addAll(decodeQueue(prefs.getString('hyper.queue.v1'))));
   }
@@ -77,6 +80,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         return;
       }
       await player.open(Media(source));
+      await collections.record(source);
     } catch (e) { notify('Cannot open media: $e'); }
   }
   Future<void> add(List<String> paths) async {
@@ -130,6 +134,145 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   void dispose() {
     errors?.cancel(); completion?.cancel(); player.dispose(); super.dispose();
   }
+  Future<String?> askText(String title, {String hint = ''}) async {
+    String value = '';
+    return showDialog<String>(context: context, builder: (context) => AlertDialog(
+      title: Text(title), content: SizedBox(width: 480, child: TextField(
+        autofocus: true, decoration: InputDecoration(hintText: hint),
+        onChanged: (text) => value = text,
+        onSubmitted: (text) => Navigator.pop(context, text.trim()),
+      )), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(context, value.trim()), child: const Text('Continue'))],
+    ));
+  }
+
+  Future<void> sourceList(String title, List<String> sources) async {
+    final snapshot = List<String>.of(sources);
+    if (!mounted) { return; }
+    await showDialog<void>(context: context, builder: (context) => AlertDialog(
+      title: Text('$title · ${snapshot.length}'),
+      content: SizedBox(width: 650, height: 400, child: snapshot.isEmpty
+        ? const Center(child: Text('No entries yet.')) : ListView.builder(itemCount: snapshot.length,
+          itemBuilder: (context, i) => ListTile(title: Text(labelFor(snapshot[i])),
+            subtitle: Text(validStream(snapshot[i]) ? 'Network media' : 'Local file', maxLines: 1),
+            onTap: () async {
+              Navigator.pop(context);
+              var index = queue.indexOf(snapshot[i]);
+              if (index < 0) {
+                setState(() => queue.add(snapshot[i]));
+                await save(); index = queue.length - 1;
+              }
+              if (mounted) { await play(index); }
+            },
+          ))),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+    ));
+  }
+
+  Future<void> namedPlaylists() async {
+    final action = await showDialog<String>(context: context, builder: (context) => SimpleDialog(
+      title: const Text('Playlists'), children: [
+        SimpleDialogOption(onPressed: () => Navigator.pop(context, 'current'), child: const Text('Current queue')),
+        SimpleDialogOption(onPressed: () => Navigator.pop(context, 'save'), child: const Text('Save current queue as a named playlist')),
+        SimpleDialogOption(onPressed: () => Navigator.pop(context, 'delete'), child: const Text('Delete a named playlist')),
+        for (final name in collections.playlists.keys) SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, 'open:$name'), child: Text(name)),
+      ],
+    ));
+    if (!mounted || action == null) { return; }
+    if (action == 'current') { await showQueue(); }
+    else if (action == 'save') {
+      if (queue.isEmpty) { notify('Add media first.'); return; }
+      final name = await askText('Playlist name');
+      if (name == null || name.isEmpty || !mounted) { return; }
+      if (collections.playlists.containsKey(name)) { notify('That name already exists. Choose a different name.'); return; }
+      collections.playlists[name] = List.of(queue);
+      await collections.save(); notify('Playlist saved.');
+    } else if (action == 'delete') {
+      final name = await askText('Exact playlist name to delete');
+      if (name == null || !mounted) { return; }
+      final removed = collections.playlists.remove(name);
+      await collections.save(); notify(removed == null ? 'Playlist not found.' : 'Playlist deleted; files were not deleted.');
+    } else if (action.startsWith('open:')) {
+      final name = action.substring(5);
+      await sourceList(name, collections.playlists[name] ?? []);
+    }
+  }
+
+  Future<void> toggleFavourite() async {
+    if (selected < 0 || selected >= queue.length) { notify('Play media first.'); return; }
+    final source = queue[selected];
+    if (!collections.favourites.remove(source)) { collections.favourites.add(source); }
+    await collections.save();
+    notify(collections.favourites.contains(source) ? 'Added to favourites.' : 'Removed from favourites.');
+  }
+
+  Future<void> searchMedia() async {
+    final text = await askText('Search media', hint: 'Search filenames in queue and history');
+    if (text == null || !mounted) { return; }
+    final all = {...queue, ...collections.history, ...collections.favourites};
+    await sourceList('Search results', all.where((s) => labelFor(s).toLowerCase().contains(text.toLowerCase())).toList());
+  }
+
+  Future<void> importIptv() async {
+    try {
+      final kind = await showDialog<String>(context: context, builder: (context) => SimpleDialog(
+        title: const Text('Import M3U playlist'), children: [
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'file'), child: const Text('From a local M3U file')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'url'), child: const Text('From an HTTP/HTTPS URL')),
+        ],
+      ));
+      if (kind == null || !mounted) { return; }
+      String text; Uri base;
+      if (kind == 'file') {
+        final file = await openFile(acceptedTypeGroups: [const XTypeGroup(label: 'M3U playlist', extensions: ['m3u', 'm3u8'])]);
+        if (file == null) { return; }
+        if (await file.length() > 2 * 1024 * 1024) { throw const FormatException('Playlist exceeds 2 MB.'); }
+        text = await file.readAsString(); base = Uri.file(file.path, windows: true);
+      } else {
+        final value = await askText('Playlist URL');
+        if (value == null || !mounted) { return; }
+        if (!validStream(value)) { throw const FormatException('Enter an HTTP/HTTPS URL.'); }
+        base = Uri.parse(value);
+        final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+        try {
+          final request = await client.getUrl(base).timeout(const Duration(seconds: 20));
+          final response = await request.close().timeout(const Duration(seconds: 20));
+          if (response.statusCode != 200) { throw HttpException('HTTP ${response.statusCode}'); }
+          for (final redirect in response.redirects) { base = base.resolveUri(redirect.location); }
+          final bytes = <int>[];
+          await for (final chunk in response.timeout(const Duration(seconds: 20))) {
+            bytes.addAll(chunk);
+            if (bytes.length > 2 * 1024 * 1024) { throw const FormatException('Playlist exceeds 2 MB.'); }
+          }
+          text = utf8.decode(bytes);
+        } finally { client.close(force: true); }
+      }
+      final entries = parseM3u(text, base);
+      if (entries.isEmpty) { notify('No supported playlist entries found.'); return; }
+      await add(entries); notify('Imported ${entries.length} entries. No EPG or channel logos in this version.');
+    } catch (e) { notify('Playlist import failed: $e'); }
+  }
+
+  Future<void> externalSubtitles() async {
+    if (selected < 0) { notify('Play a video first.'); return; }
+    try {
+      final file = await openFile(acceptedTypeGroups: [const XTypeGroup(label: 'Subtitles', extensions: ['srt', 'ass', 'ssa', 'vtt'])]);
+      if (file == null) { return; }
+      await player.setSubtitleTrack(SubtitleTrack.uri(file.path));
+      notify('Subtitle track loaded.');
+    } catch (e) { notify('Could not load subtitles: $e'); }
+  }
+
+  Future<void> playbackOptions() async {
+    await showDialog<void>(context: context, builder: (context) => SimpleDialog(
+      title: const Text('Playback speed'), children: [
+        for (final rate in [.5, .75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]) SimpleDialogOption(
+          onPressed: () { player.setRate(rate); Navigator.pop(context); }, child: Text('${rate}×')),
+      ],
+    ));
+  }
+
   Future<void> unavailable(String title) async {
     await showDialog<void>(context: context, builder: (context) => AlertDialog(
       title: Text(title),
@@ -182,7 +325,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     final columns = size.maxWidth >= 1300 ? 8 : size.maxWidth >= 700 ? 4 : 2;
     final tiles = <Widget>[
       quickTile(Icons.lock_outline_rounded, 'Private Space', () => unavailable('Private Space'), planned: true),
-      quickTile(Icons.queue_music_outlined, 'Playlists', showQueue),
+      quickTile(Icons.queue_music_outlined, 'Playlists', namedPlaylists),
       quickTile(Icons.folder_outlined, 'Folders', folder),
       quickTile(Icons.music_note_outlined, 'Audio', files),
       quickTile(Icons.dns_outlined, 'Network Storage', () => unavailable('Network Storage'), planned: true),
@@ -247,14 +390,22 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     },
     child: Focus(autofocus: true, child: Scaffold(
       appBar: AppBar(toolbarHeight: 76, title: brandTitle(), actions: [
+        IconButton(tooltip: 'Search media', onPressed: searchMedia, icon: const Icon(Icons.search)),
         if (viewingPlayer) IconButton(tooltip: 'Back to library (playback continues)', onPressed: () => setState(() => viewingPlayer = false), icon: const Icon(Icons.home_outlined)),
         IconButton(tooltip: 'Open files (Ctrl+O)', onPressed: files, icon: const Icon(Icons.video_file_outlined)),
         IconButton(tooltip: 'Current playlist', onPressed: showQueue, icon: const Icon(Icons.queue_music)),
         PopupMenuButton<String>(onSelected: (value) {
           if (value == 'Clear queue') { clearQueue(); }
           else if (value == 'Open folder') { folder(); }
+          else if (value == 'History') { sourceList('History', collections.history); }
+          else if (value == 'Favourites') { sourceList('Favourites', collections.favourites); }
+          else if (value == 'Toggle favourite') { toggleFavourite(); }
+          else if (value == 'Named playlists') { namedPlaylists(); }
+          else if (value == 'Import IPTV playlist') { importIptv(); }
+          else if (value == 'Load subtitle file') { externalSubtitles(); }
+          else if (value == 'Playback speed') { playbackOptions(); }
           else { unavailable(value); }
-        }, itemBuilder: (context) => ['Language', 'Display settings', 'Watch statistics', 'History', 'User manual', 'AI subtitles', 'Open folder', 'Clear queue'].map((name) => PopupMenuItem(value: name, child: Text(name))).toList()),
+        }, itemBuilder: (context) => ['Favourites', 'Toggle favourite', 'Named playlists', 'Import IPTV playlist', 'Load subtitle file', 'Playback speed', 'Language', 'Display settings', 'Watch statistics', 'History', 'User manual', 'AI subtitles', 'Open folder', 'Clear queue'].map((name) => PopupMenuItem(value: name, child: Text(name))).toList()),
         const SizedBox(width: 12),
       ]),
       body: Column(children: [
