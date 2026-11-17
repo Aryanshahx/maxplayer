@@ -61,7 +61,9 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     await prefs.setString('hyper.queue.v1', snapshot);
   }
   void notify(String message) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    }
   }
   Future<void> play(int index) async {
     if (index < 0 || index >= queue.length) return;
@@ -97,7 +99,9 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       final paths = <String>[];
       // Non-recursive by design: do not silently scan entire drives.
       await for (final entity in Directory(path).list(followLinks: false)) {
-        if (entity is File && isMediaPath(entity.path)) paths.add(entity.path);
+        if (entity is File && isMediaPath(entity.path)) {
+          paths.add(entity.path);
+        }
       }
       paths.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       await add(paths);
