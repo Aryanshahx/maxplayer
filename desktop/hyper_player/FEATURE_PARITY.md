@@ -26,9 +26,9 @@ No media file is deleted by playlist deletion or queue clear.
 Discover/TMDB/trailers, private vault, Windows Whisper transcription,
 cloud authentication/provider import, NAS browsing, Quick Share server,
 Android-like audio library, file operations/thumbnail indexing, AI assistants,
-40-language desktop localization, detailed statistics, notification backend,
+40-language desktop localization, advanced statistics, notification backend,
 casting, Windows compact overlay, equalizer/dialogue boost/HDR-specific UI,
-A–B/sleep controls and complete Android settings parity.
+complete Android settings parity.
 Existing placeholder actions remain explicitly marked as unavailable.
 No real-money gaming or Gamezop integration.
 No Firebase/admin parity claim. Android version/name and code unchanged.
@@ -40,3 +40,18 @@ preview workflow on updated main. Only install after analysis/tests/build succee
 Verify each new function on Windows including missing files and malformed M3U.
 Do not submit to Microsoft Store yet: installer, signing, licenses, privacy,
 real screenshots and certification remain separate requirements.
+
+## Additional playback tools in this cumulative update
+- Sleep timer: pause after 15/30/45/60/90/120 minutes, or cancel.
+  Timers do not survive application exit. Windows sleep may delay firing.
+- A–B repeat: set A, seek forward, set B, or disable. Reset on media switch.
+  Uses a 1-second position poll, not sample-accurate looping. Sources must seek.
+- Video fit: Fit/Crop/Stretch; applies to the current app session.
+- Subtitle delay: +/-60000 milliseconds via Windows native mpv property.
+- Local approximate playback seconds and successful playback-start count.
+  Saved every 15 seconds and best-effort at shutdown; not attention metrics.
+All new controls appear in the top-right menu.
+This installer includes the previous collections/IPTV/subtitle patch too.
+No code signing, Microsoft Store packaging or Android changes are included.
+API existence checked against media_kit 1.2.6 archive; Flutter analysis, tests,
+and Windows compilation remain pending CI. No claim of a passed native build.

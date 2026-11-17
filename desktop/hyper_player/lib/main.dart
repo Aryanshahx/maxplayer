@@ -45,6 +45,15 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   bool busy = false;
   bool viewingPlayer = false;
   bool listMode = false;
+  BoxFit videoFit = BoxFit.contain;
+  Timer? sleep;
+  Timer? ticker;
+  DateTime? sleepDeadline;
+  Duration? repeatA;
+  Duration? repeatB;
+  bool repeatSeeking = false;
+  int watchSeconds = 0;
+  int playStarts = 0;
   @override
   void initState() {
     super.initState();
@@ -53,10 +62,24 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       if (done && selected + 1 < queue.length) { play(selected + 1); }
     });
     restore();
+    ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (player.state.playing && !player.state.buffering) {
+        watchSeconds++;
+        if (watchSeconds % 15 == 0) { unawaited(saveStats()); }
+      }
+      final a = repeatA;
+      final b = repeatB;
+      if (a != null && b != null && player.state.playing && player.state.position >= b && !repeatSeeking) {
+        repeatSeeking = true;
+        player.seek(a).whenComplete(() => repeatSeeking = false);
+      }
+    });
   }
   Future<void> restore() async {
     final prefs = await SharedPreferences.getInstance();
     await collections.load();
+    watchSeconds += prefs.getInt('hyper.watch.seconds.v1') ?? 0;
+    playStarts += prefs.getInt('hyper.play.starts.v1') ?? 0;
     if (!mounted) { return; }
     setState(() => queue.addAll(decodeQueue(prefs.getString('hyper.queue.v1'))));
   }
@@ -79,7 +102,10 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         notify('File is no longer available. Open it again from its current location.');
         return;
       }
+      repeatA = null; repeatB = null;
       await player.open(Media(source));
+      playStarts++;
+      await saveStats();
       await collections.record(source);
     } catch (e) { notify('Cannot open media: $e'); }
   }
@@ -132,6 +158,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
   @override
   void dispose() {
+    sleep?.cancel(); ticker?.cancel(); unawaited(saveStats());
     errors?.cancel(); completion?.cancel(); player.dispose(); super.dispose();
   }
   Future<String?> askText(String title, {String hint = ''}) async {
@@ -273,6 +300,85 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     ));
   }
 
+  Future<void> sleepTimer() async {
+    final minutes = await showDialog<int>(context: context, builder: (context) => SimpleDialog(
+      title: const Text('Sleep timer'), children: [
+        SimpleDialogOption(onPressed: () => Navigator.pop(context, 0), child: const Text('Cancel timer')),
+        for (final value in [15, 30, 45, 60, 90, 120]) SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, value), child: Text('$value minutes')),
+      ],
+    ));
+    if (minutes == null || !mounted) { return; }
+    sleep?.cancel();
+    sleepDeadline = minutes == 0 ? null : DateTime.now().add(Duration(minutes: minutes));
+    if (minutes > 0) {
+      sleep = Timer(Duration(minutes: minutes), () {
+        player.pause(); sleepDeadline = null; notify('Sleep timer: playback paused.');
+      });
+    }
+    notify(minutes == 0 ? 'Sleep timer cancelled.' : 'Playback will pause in $minutes minutes.');
+  }
+
+  Future<void> repeatControls() async {
+    await showDialog<void>(context: context, builder: (context) => SimpleDialog(
+      title: const Text('A–B repeat'), children: [
+        SimpleDialogOption(onPressed: () {
+          if (selected < 0) { notify('Play media first.'); return; }
+          repeatA = player.state.position; repeatB = null;
+          Navigator.pop(context); notify('Start point A set. Seek forward, then set B.');
+        }, child: const Text('Set A at current position')),
+        SimpleDialogOption(onPressed: () {
+          final a = repeatA;
+          if (a == null || player.state.position <= a + const Duration(seconds: 1)) {
+            notify('Set A first, then set B at least one second later.'); return;
+          }
+          repeatB = player.state.position;
+          Navigator.pop(context); notify('A–B repeat enabled.');
+        }, child: const Text('Set B at current position')),
+        SimpleDialogOption(onPressed: () {
+          repeatA = null; repeatB = null; Navigator.pop(context); notify('A–B repeat disabled.');
+        }, child: const Text('Disable repeat')),
+      ],
+    ));
+  }
+
+  Future<void> fitOptions() async {
+    final choice = await showDialog<BoxFit>(context: context, builder: (context) => SimpleDialog(
+      title: const Text('Video fit'), children: [
+        for (final entry in {'Fit': BoxFit.contain, 'Crop': BoxFit.cover, 'Stretch': BoxFit.fill}.entries)
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, entry.value), child: Text(entry.key)),
+      ],
+    ));
+    if (choice != null && mounted) { setState(() => videoFit = choice); }
+  }
+
+  Future<void> subtitleDelay() async {
+    final input = await askText('Subtitle delay in milliseconds', hint: 'Example: 500 or -500; 0 resets');
+    if (input == null || !mounted) { return; }
+    final ms = int.tryParse(input);
+    if (ms == null || ms.abs() > 60000) { notify('Enter a whole number between -60000 and 60000.'); return; }
+    try {
+      await (player.platform as NativePlayer).setProperty('sub-delay', (ms / 1000).toString());
+      notify('Subtitle delay set to $ms ms.');
+    } catch (e) { notify('Subtitle delay unavailable: $e'); }
+  }
+
+  Future<void> watchStatistics() async {
+    await showDialog<void>(context: context, builder: (context) => AlertDialog(
+      title: const Text('Watch statistics'),
+      content: Text('Playback starts: $playStarts\nApproximate playback time: ${watchSeconds ~/ 60} minutes ${watchSeconds % 60} seconds\nFavourites: ${collections.favourites.length}\nNamed playlists: ${collections.playlists.length}\n\n${sleepDeadline == null ? "No sleep timer active." : "Sleep timer ends at ${sleepDeadline!.toLocal()}."}\n\nStored on this laptop only. Time is sampled while playing (not buffering); not a measure of attention. Saved every 15 seconds; abrupt exit can lose the last interval.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+    ));
+  }
+
+  Future<void> saveStats() async {
+    final seconds = watchSeconds;
+    final starts = playStarts;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('hyper.watch.seconds.v1', seconds);
+    await prefs.setInt('hyper.play.starts.v1', starts);
+  }
+
   Future<void> unavailable(String title) async {
     await showDialog<void>(context: context, builder: (context) => AlertDialog(
       title: Text(title),
@@ -404,14 +510,19 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
           else if (value == 'Import IPTV playlist') { importIptv(); }
           else if (value == 'Load subtitle file') { externalSubtitles(); }
           else if (value == 'Playback speed') { playbackOptions(); }
+          else if (value == 'Watch statistics') { watchStatistics(); }
+          else if (value == 'Sleep timer') { sleepTimer(); }
+          else if (value == 'A–B repeat') { repeatControls(); }
+          else if (value == 'Video fit') { fitOptions(); }
+          else if (value == 'Subtitle delay') { subtitleDelay(); }
           else { unavailable(value); }
-        }, itemBuilder: (context) => ['Favourites', 'Toggle favourite', 'Named playlists', 'Import IPTV playlist', 'Load subtitle file', 'Playback speed', 'Language', 'Display settings', 'Watch statistics', 'History', 'User manual', 'AI subtitles', 'Open folder', 'Clear queue'].map((name) => PopupMenuItem(value: name, child: Text(name))).toList()),
+        }, itemBuilder: (context) => ['Sleep timer', 'A–B repeat', 'Video fit', 'Subtitle delay', 'Favourites', 'Toggle favourite', 'Named playlists', 'Import IPTV playlist', 'Load subtitle file', 'Playback speed', 'Language', 'Display settings', 'Watch statistics', 'History', 'User manual', 'AI subtitles', 'Open folder', 'Clear queue'].map((name) => PopupMenuItem(value: name, child: Text(name))).toList()),
         const SizedBox(width: 12),
       ]),
       body: Column(children: [
         if (busy) const LinearProgressIndicator(),
         Expanded(child: viewingPlayer ? Row(children: [
-          Expanded(child: Video(controller: controller, controls: AdaptiveVideoControls)),
+          Expanded(child: Video(controller: controller, fit: videoFit, controls: AdaptiveVideoControls)),
           SizedBox(width: MediaQuery.sizeOf(context).width < 800 ? 210 : 280, child: ListView.builder(
             itemCount: queue.length, itemBuilder: (context, i) => ListTile(selected: i == selected,
               leading: Icon(i == selected ? Icons.play_arrow : Icons.music_video),
@@ -429,6 +540,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   );
 
   Future<void> clearQueue() async {
+    repeatA = null; repeatB = null;
     await player.stop();
     if (!mounted) { return; }
     setState(() { queue.clear(); selected = -1; viewingPlayer = false; });
