@@ -46,13 +46,13 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     super.initState();
     errors = player.stream.error.listen((message) => notify('Playback error: $message'));
     completion = player.stream.completed.listen((done) {
-      if (done && selected + 1 < queue.length) play(selected + 1);
+      if (done && selected + 1 < queue.length) { play(selected + 1); }
     });
     restore();
   }
   Future<void> restore() async {
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
+    if (!mounted) { return; }
     setState(() => queue.addAll(decodeQueue(prefs.getString('hyper.queue.v1'))));
   }
   Future<void> save() async {
@@ -66,7 +66,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     }
   }
   Future<void> play(int index) async {
-    if (index < 0 || index >= queue.length) return;
+    if (index < 0 || index >= queue.length) { return; }
     setState(() => selected = index);
     try {
       final source = queue[index];
@@ -78,11 +78,11 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     } catch (e) { notify('Cannot open media: $e'); }
   }
   Future<void> add(List<String> paths) async {
-    if (!mounted || paths.isEmpty) return;
+    if (!mounted || paths.isEmpty) { return; }
     final start = queue.length;
     setState(() => queue.addAll(paths));
     await save();
-    if (selected == -1) await play(start);
+    if (selected == -1) { await play(start); }
   }
   Future<void> files() async {
     try {
@@ -91,10 +91,10 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     } catch (e) { notify('File picker failed: $e'); }
   }
   Future<void> folder() async {
-    if (busy) return;
+    if (busy) { return; }
     try {
       final path = await getDirectoryPath();
-      if (path == null || !mounted) return;
+      if (path == null || !mounted) { return; }
       setState(() => busy = true);
       final paths = <String>[];
       // Non-recursive by design: do not silently scan entire drives.
@@ -105,9 +105,9 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       }
       paths.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       await add(paths);
-      if (paths.isEmpty) notify('No supported media found directly inside this folder.');
+      if (paths.isEmpty) { notify('No supported media found directly inside this folder.'); }
     } catch (e) { notify('Could not read folder: $e'); }
-    finally { if (mounted) setState(() => busy = false); }
+    finally { if (mounted) { setState(() => busy = false); } }
   }
   Future<void> stream() async {
     final input = TextEditingController();
@@ -120,7 +120,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         FilledButton(onPressed: () => Navigator.pop(context, input.text.trim()), child: const Text('Add'))],
     ));
     // The dialog route may still be animating out; no controller reuse is needed.
-    if (value == null) return;
+    if (value == null) { return; }
     if (!validStream(value)) { notify('Enter a valid HTTP or HTTPS URL.'); return; }
     await add([value]);
   }
@@ -157,7 +157,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
               ListTile(title: Text('Playlist (${queue.length})'), trailing: IconButton(
                 tooltip: 'Clear playlist', icon: const Icon(Icons.delete_sweep_outlined), onPressed: () async {
                   await player.stop();
-                  if (!mounted) return;
+                  if (!mounted) { return; }
                   setState(() { queue.clear(); selected = -1; });
                   await save();
                 })),
