@@ -295,7 +295,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     await showDialog<void>(context: context, builder: (context) => SimpleDialog(
       title: const Text('Playback speed'), children: [
         for (final rate in [.5, .75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]) SimpleDialogOption(
-          onPressed: () { player.setRate(rate); Navigator.pop(context); }, child: Text('${rate}×')),
+          onPressed: () { player.setRate(rate); Navigator.pop(context); }, child: Text('$rate×')),
       ],
     ));
   }
