@@ -530,7 +530,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
           )),
         ]) : library()),
         if (!viewingPlayer && selected >= 0 && selected < queue.length) Material(color: const Color(0xff101013), child: ListTile(
-          leading: IconButton(tooltip: 'Play/pause', onPressed: () => player.playOrPause(), icon: const Icon(Icons.play_pause)),
+          leading: IconButton(tooltip: 'Play/pause', onPressed: () => player.playOrPause(), icon: const Icon(Icons.play_arrow)),
           title: Text(labelFor(queue[selected]), maxLines: 1, overflow: TextOverflow.ellipsis),
           trailing: TextButton(onPressed: () => setState(() => viewingPlayer = true), child: const Text('Open player')),
         )),
