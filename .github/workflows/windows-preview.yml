@@ -1,0 +1,38 @@
+name: Windows desktop preview
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        working-directory: desktop/hyper_player
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate Windows runner
+        run: flutter create --platforms=windows --project-name hyper_player --org com.hypertechlabs .
+      - name: Remove generated demo test
+        shell: pwsh
+        run: Remove-Item test/widget_test.dart -ErrorAction SilentlyContinue
+      - run: flutter pub get
+      - run: dart format lib test
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build windows --release
+      - name: Bundle complete portable application
+        shell: pwsh
+        run: |
+          Copy-Item README.md build/windows/x64/runner/Release/README.txt
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Hyper-Player-Windows-x64-preview.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hyper-Player-Windows-x64-preview
+          path: desktop/hyper_player/Hyper-Player-Windows-x64-preview.zip
+          retention-days: 14
+          if-no-files-found: error
