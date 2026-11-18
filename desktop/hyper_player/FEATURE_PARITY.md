@@ -55,3 +55,12 @@ This installer includes the previous collections/IPTV/subtitle patch too.
 No code signing, Microsoft Store packaging or Android changes are included.
 API existence checked against media_kit 1.2.6 archive; Flutter analysis, tests,
 and Windows compilation remain pending CI. No claim of a passed native build.
+
+
+## Superseding home/Discover update
+See DISCOVER_AND_HOME.md for current status. The earlier Discover, localization,
+manual, privacy and basic display-settings placeholders have now been replaced.
+Live TMDB metadata integration is implemented; trailers open in your browser.
+Advanced Android-only features remain outside this update.
+Current validation: Flutter 3.47.0 analyzer clean; 13 tests pass on Linux.
+Windows binary and live TMDB connectivity still need CI/laptop validation.

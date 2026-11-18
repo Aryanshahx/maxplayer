@@ -25,7 +25,21 @@ jobs:
       - run: dart format lib test
       - run: flutter analyze
       - run: flutter test
-      - run: flutter build windows --release
+      - name: Build Windows with Discover token
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TMDB_API_KEY)) {
+            throw "TMDB_API_KEY is missing. Add the TMDB read-access token to repository Actions secrets."
+          }
+          @{ TMDB_API_KEY = $env:TMDB_API_KEY } | ConvertTo-Json -Compress | Set-Content -Encoding utf8 -NoNewline "$env:RUNNER_TEMP/hyper-discover.json"
+          try {
+            flutter build windows --release "--dart-define-from-file=$env:RUNNER_TEMP/hyper-discover.json"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            Remove-Item "$env:RUNNER_TEMP/hyper-discover.json" -ErrorAction SilentlyContinue
+          }
       - name: Bundle complete portable application
         shell: pwsh
         run: |

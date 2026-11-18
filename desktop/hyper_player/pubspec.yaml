@@ -1,12 +1,16 @@
 name: hyper_player
 description: Hyper Player Windows desktop preview.
 publish_to: none
-version: 0.1.0+1
+version: 0.2.0+2
 environment:
   sdk: '>=3.4.0 <4.0.0'
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  path_provider: ^2.1.6
+  url_launcher: ^6.3.2
   media_kit: 1.2.6
   media_kit_video: 2.0.1
   media_kit_libs_windows_video: ^1.0.11
@@ -18,3 +22,5 @@ dev_dependencies:
     sdk: flutter
 flutter:
   uses-material-design: true
+  assets:
+    - assets/i18n/
