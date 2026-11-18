@@ -1067,14 +1067,6 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                       tooltip: 'Back to library (playback continues)',
                       onPressed: () => setState(() => viewingPlayer = false),
                       icon: const Icon(Icons.home_outlined)),
-                IconButton(
-                    tooltip: 'Open files (Ctrl+O)',
-                    onPressed: files,
-                    icon: const Icon(Icons.video_file_outlined)),
-                IconButton(
-                    tooltip: 'Current playlist',
-                    onPressed: showQueue,
-                    icon: const Icon(Icons.queue_music)),
                 PopupMenuButton<String>(
                     onSelected: (value) {
                       if (value == 'Clear queue') {
