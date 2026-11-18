@@ -18,6 +18,7 @@ import 'screens/stream_screen.dart';
 import 'screens/library_screens.dart';
 import 'screens/desktop_display_screen.dart';
 import 'screens/info_sheets.dart';
+import 'screens/search_screen.dart';
 import 'screens/statistics_screen.dart';
 import 'watch_days.dart';
 import 'utils/app_language.dart';
@@ -389,20 +390,20 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
 
   Future<void> searchMedia() async {
-    final text = await askText(
-      'Search media',
-      hint: 'Search filenames in queue and history',
-    );
-    if (text == null || !mounted) {
-      return;
+    final all = {
+      ...queue,
+      ...collections.history,
+      ...collections.favourites,
+      for (final list in collections.playlists.values) ...list
+    };
+    final source = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => DesktopSearchScreen(
+                sources: all.toList(), listMode: listMode)));
+    if (source != null && mounted) {
+      await playSource(source);
     }
-    final all = {...queue, ...collections.history, ...collections.favourites};
-    await sourceList(
-      'Search results',
-      all
-          .where((s) => labelFor(s).toLowerCase().contains(text.toLowerCase()))
-          .toList(),
-    );
   }
 
   Future<void> importIptv() async {

@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'config.dart';
 import 'tmdb.dart';
+import 'android_browse.dart';
 
 const tmdbNotice =
     'This product uses the TMDB API but is not endorsed or certified by TMDB. Ratings via TMDB. Provider availability via TMDB / JustWatch (India).';
@@ -43,6 +45,10 @@ class DiscoverScreen extends StatefulWidget {
 class _DiscoverScreenState extends State<DiscoverScreen> {
   final client = TmdbClient();
   final search = TextEditingController();
+  final searchFocus = FocusNode();
+  Timer? debounce;
+  final shelves = <String, List<TmdbMovie>>{};
+  bool shelvesLoading = false;
   DiscoverFilter filter = kDiscoverFilters.first;
   List<TmdbMovie> movies = [];
   bool loading = false;
@@ -51,6 +57,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   @override
   void initState() {
     super.initState();
+    searchFocus.addListener(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
     boot();
   }
 
@@ -62,6 +73,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     } catch (_) {/* Network browsing remains usable without disk cache. */}
     if (mounted) {
       await load();
+      if (mounted) {
+        unawaited(loadShelves());
+      }
     }
   }
 
@@ -102,126 +116,327 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   @override
   void dispose() {
+    debounce?.cancel();
+    searchFocus.dispose();
     search.dispose();
     super.dispose();
   }
 
+  void openMovie(TmdbMovie movie) {
+    Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => DiscoverDetail(client: client, movie: movie)));
+  }
+
+  Future<void> loadShelves({bool force = false}) async {
+    if (shelvesLoading || AppConfig.tmdbToken.isEmpty) {
+      return;
+    }
+    setState(() => shelvesLoading = true);
+    final chosen = kDiscoverFilters.where((f) =>
+        ['bollywood', 'hollywood', 'animation', 'action'].contains(f.key));
+    await Future.wait(chosen.map((f) async {
+      try {
+        final result = await client.browse(f, force: force);
+        if (mounted) {
+          setState(() => shelves[f.key] = result.items);
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() => shelves[f.key] = []);
+        }
+      }
+    }));
+    if (mounted) {
+      setState(() => shelvesLoading = false);
+    }
+  }
+
+  void selectFilter(DiscoverFilter value) {
+    search.clear();
+    searchFocus.unfocus();
+    setState(() => filter = value);
+    load();
+  }
+
+  Widget socialButton(String label, IconData icon, String url) => Expanded(
+          child: OutlinedButton.icon(
+        onPressed: () => openDiscoverLink(context, Uri.parse(url)),
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            side: const BorderSide(color: Colors.white12),
+            backgroundColor: Colors.white.withValues(alpha: .03)),
+      ));
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Discover movies'), actions: [
-          IconButton(
-              tooltip: 'Refresh catalogue',
-              onPressed: () => load(force: true),
-              icon: const Icon(Icons.refresh))
-        ]),
-        body: AppConfig.tmdbToken.isEmpty
-            ? const Center(
-                child: Padding(
-                    padding: EdgeInsets.all(30),
-                    child: SelectableText(
-                        'Discover needs the TMDB_API_KEY repository secret. Add your TMDB API read-access token in GitHub Settings → Secrets and variables → Actions, then build a new Windows artifact. No token is embedded in source.')))
-            : Column(children: [
-                Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: TextField(
-                        controller: search,
-                        decoration: InputDecoration(
-                            hintText: 'Search movies and series',
-                            prefixIcon: const Icon(Icons.search),
-                            suffixIcon: IconButton(
-                                onPressed: () => load(),
-                                icon: const Icon(Icons.arrow_forward))),
-                        onSubmitted: (_) => load())),
-                SizedBox(
-                    height: 48,
-                    child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        children: [
-                          for (final f in kAllFilters)
-                            Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ChoiceChip(
-                                  label: Text(
-                                      f.tv ? 'Series · ${f.label}' : f.label),
-                                  selected: f.key == filter.key &&
-                                      search.text.trim().isEmpty,
-                                  onSelected: (_) {
-                                    search.clear();
-                                    setState(() => filter = f);
+  Widget build(BuildContext context) {
+    final home = search.text.trim().isEmpty &&
+        filter.key == 'trending' &&
+        page == 1 &&
+        !searchFocus.hasFocus;
+    final hot = searchFocus.hasFocus && search.text.trim().isEmpty;
+    return Scaffold(
+        backgroundColor: const Color(0xff0a0a10),
+        body: SafeArea(
+            child: Column(children: [
+          Container(
+              padding: const EdgeInsets.fromLTRB(6, 8, 14, 8),
+              color: const Color(0xff0a0a10),
+              child: Row(children: [
+                const BackButton(),
+                Expanded(
+                    child: Container(
+                        height: 44,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: .07),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                                color: search.text.isEmpty
+                                    ? Colors.white10
+                                    : Colors.white60)),
+                        child: Row(children: [
+                          const Icon(Icons.search,
+                              size: 19, color: Colors.white54),
+                          const SizedBox(width: 9),
+                          Expanded(
+                              child: TextField(
+                                  controller: search,
+                                  focusNode: searchFocus,
+                                  style: const TextStyle(fontSize: 14.5),
+                                  onChanged: (_) {
+                                    debounce?.cancel();
+                                    setState(() {});
+                                    debounce = Timer(
+                                        const Duration(milliseconds: 350),
+                                        () => load());
+                                  },
+                                  onSubmitted: (_) {
+                                    debounce?.cancel();
+                                    searchFocus.unfocus();
                                     load();
                                   },
-                                )),
-                        ])),
-                if (loading) const LinearProgressIndicator(),
-                if (error != null)
-                  Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(children: [
-                        Expanded(child: Text(error!)),
-                        TextButton(
-                            onPressed: () => load(force: true),
-                            child: const Text('Retry'))
+                                  decoration: const InputDecoration(
+                                      hintText: 'Search movies, series…',
+                                      hintStyle: TextStyle(
+                                          color: Colors.white30, fontSize: 14),
+                                      border: InputBorder.none,
+                                      isDense: true))),
+                          if (search.text.isNotEmpty)
+                            IconButton(
+                                tooltip: 'Clear search',
+                                icon: const Icon(Icons.close_rounded, size: 18),
+                                onPressed: () {
+                                  search.clear();
+                                  searchFocus.unfocus();
+                                  selectFilter(kDiscoverFilters.first);
+                                }),
+                        ]))),
+                const Tooltip(
+                    message:
+                        'Voice search is not implemented in this Windows build',
+                    child: IconButton(
+                        onPressed: null,
+                        icon: Icon(Icons.mic_none_rounded, size: 21))),
+                Tooltip(
+                    message:
+                        'AI Suggestor is not implemented in this Windows build',
+                    child: Opacity(
+                        opacity: .45,
+                        child: Container(
+                            height: 40,
+                            padding: const EdgeInsets.symmetric(horizontal: 13),
+                            decoration: BoxDecoration(
+                                gradient: const LinearGradient(colors: [
+                                  Color(0xff7b61ff),
+                                  Color(0xffe553b3)
+                                ]),
+                                borderRadius: BorderRadius.circular(22)),
+                            child: const Row(children: [
+                              Icon(Icons.auto_awesome, size: 16),
+                              SizedBox(width: 6),
+                              Text('AI',
+                                  style: TextStyle(fontWeight: FontWeight.w800))
+                            ])))),
+                IconButton(
+                    tooltip: 'Refresh catalogue',
+                    onPressed: loading
+                        ? null
+                        : () {
+                            load(force: true);
+                            loadShelves(force: true);
+                          },
+                    icon: const Icon(Icons.refresh, size: 20)),
+              ])),
+          if (AppConfig.tmdbToken.isEmpty)
+            const Expanded(
+                child: Center(
+                    child: Padding(
+                        padding: EdgeInsets.all(28),
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.vpn_key_off,
+                              color: Colors.white24, size: 46),
+                          SizedBox(height: 14),
+                          Text('TMDB key missing',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold)),
+                          SizedBox(height: 8),
+                          Text(
+                              'Set TMDB_API_KEY in GitHub Actions secrets and rebuild Windows.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  color: Colors.white38, fontSize: 12.5))
+                        ]))))
+          else ...[
+            if (!hot)
+              SizedBox(
+                  height: 46,
+                  child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      children: [
+                        for (final f in kAllFilters)
+                          Padding(
+                              padding: const EdgeInsets.only(right: 7),
+                              child: ChoiceChip(
+                                  label: Text(
+                                      f.tv ? 'Series · ${f.label}' : f.label,
+                                      style: const TextStyle(fontSize: 12)),
+                                  selected: f.key == filter.key &&
+                                      search.text.isEmpty,
+                                  onSelected: (_) => selectFilter(f)))
                       ])),
-                Expanded(
-                    child: GridView.builder(
-                        padding: const EdgeInsets.all(16),
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                                maxCrossAxisExtent: 210,
-                                childAspectRatio: .57,
-                                crossAxisSpacing: 14,
-                                mainAxisSpacing: 14),
-                        itemCount: movies.length,
-                        itemBuilder: (context, i) =>
-                            movieCard(context, client, movies[i]))),
-                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  TextButton(
-                      onPressed: page > 1 && !loading
-                          ? () => load(next: page - 1)
-                          : null,
-                      child: const Text('Previous')),
-                  Text('Page $page / $totalPages'),
-                  TextButton(
-                      onPressed: page < totalPages && !loading
-                          ? () => load(next: page + 1)
-                          : null,
-                      child: const Text('Next')),
-                ]),
-                const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Text(tmdbNotice,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 10, color: Colors.grey))),
+            if (loading)
+              const LinearProgressIndicator(minHeight: 2, color: Colors.white),
+            if (error != null)
+              Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(children: [
+                    Expanded(
+                        child: Text(error!,
+                            style: const TextStyle(
+                                color: Colors.white54, fontSize: 12))),
+                    TextButton(
+                        onPressed: () => load(force: true),
+                        child: const Text('Retry'))
+                  ])),
+            Expanded(
+                child: hot
+                    ? ListView(padding: const EdgeInsets.all(14), children: [
+                        const ListTile(
+                            leading: Icon(Icons.local_fire_department_rounded,
+                                color: Colors.deepOrangeAccent),
+                            title: Text('Hot searches',
+                                style: TextStyle(fontWeight: FontWeight.w800))),
+                        for (final m in movies.take(12))
+                          ListTile(
+                              leading: const Icon(Icons.trending_up,
+                                  color: Colors.white38),
+                              title: Text(m.title),
+                              onTap: () {
+                                search.text = m.title;
+                                searchFocus.unfocus();
+                                load();
+                              }),
+                      ])
+                    : home
+                        ? ListView(children: [
+                            if (movies.isNotEmpty)
+                              AndroidFeaturedMovies(
+                                  movies: movies, onOpen: openMovie),
+                            Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                                child: Row(children: [
+                                  socialButton(
+                                      'Instagram',
+                                      Icons.camera_alt_outlined,
+                                      'https://www.instagram.com/maxplayer_official/'),
+                                  const SizedBox(width: 8),
+                                  socialButton('Telegram', Icons.send_outlined,
+                                      'https://t.me/maxofficial_channel')
+                                ])),
+                            if (movies.isNotEmpty)
+                              DiscoverShelf(
+                                  title: 'TOP 10 THIS WEEK',
+                                  movies: movies.take(10).toList(),
+                                  onOpen: openMovie,
+                                  ranked: true),
+                            for (final f in kDiscoverFilters
+                                .where((f) => shelves.containsKey(f.key)))
+                              if (shelves[f.key]!.isNotEmpty)
+                                DiscoverShelf(
+                                    title: f.label,
+                                    movies: shelves[f.key]!,
+                                    onOpen: openMovie,
+                                    onSeeAll: () => selectFilter(f))
+                              else
+                                Padding(
+                                    padding: const EdgeInsets.all(14),
+                                    child: OutlinedButton(
+                                        onPressed: () =>
+                                            loadShelves(force: true),
+                                        child: Text(
+                                            '${f.label} · Could not load — tap to retry'))),
+                            if (shelvesLoading)
+                              const Padding(
+                                  padding: EdgeInsets.all(20),
+                                  child: Center(
+                                      child: CircularProgressIndicator())),
+                            const Padding(
+                                padding: EdgeInsets.all(18),
+                                child: Text(
+                                    'Top 10 is the first ten items from TMDB’s weekly trending response, not a Hyper Player viewing chart.',
+                                    style: TextStyle(
+                                        color: Colors.white38, fontSize: 10))),
+                          ])
+                        : GridView.builder(
+                            padding: const EdgeInsets.all(14),
+                            gridDelegate:
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                                    maxCrossAxisExtent: 180,
+                                    childAspectRatio: .55,
+                                    crossAxisSpacing: 12,
+                                    mainAxisSpacing: 16),
+                            itemCount: movies.length,
+                            itemBuilder: (context, i) => AndroidDiscoverPoster(
+                                movie: movies[i],
+                                onTap: () => openMovie(movies[i])))),
+            if (!home && !hot)
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                TextButton(
+                    onPressed: page > 1 && !loading
+                        ? () => load(next: page - 1)
+                        : null,
+                    child: const Text('Previous')),
+                Text('Page $page / $totalPages',
+                    style: const TextStyle(fontSize: 12)),
+                TextButton(
+                    onPressed: page < totalPages && !loading
+                        ? () => load(next: page + 1)
+                        : null,
+                    child: const Text('Next')),
               ]),
-      );
+          ],
+          const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text(tmdbNotice,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 10, color: Colors.white38))),
+        ])));
+  }
 }
 
 Widget movieCard(BuildContext context, TmdbClient client, TmdbMovie movie) =>
-    Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(
-                  builder: (_) =>
-                      DiscoverDetail(client: client, movie: movie))),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(
-                child: SizedBox(
-                    width: double.infinity, child: poster(movie.posterPath))),
-            Padding(
-                padding: const EdgeInsets.fromLTRB(10, 9, 10, 3),
-                child: Text(movie.title,
-                    maxLines: 2, overflow: TextOverflow.ellipsis)),
-            Padding(
-                padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                child: Text(
-                    '${movie.year ?? "—"} · ${movie.kind == "tv" ? "Series" : "Movie"} · ★ ${tmdbRatingText(movie.rating)}',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey))),
-          ]),
-        ));
+    AndroidDiscoverPoster(
+        movie: movie,
+        onTap: () => Navigator.push<void>(
+            context,
+            MaterialPageRoute(
+                builder: (_) => DiscoverDetail(client: client, movie: movie))));
 
 class DiscoverDetail extends StatefulWidget {
   final TmdbClient client;
