@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'config.dart';
 import 'tmdb.dart';
 import 'android_browse.dart';
+import 'android_details.dart';
 
 const tmdbNotice =
     'This product uses the TMDB API but is not endorsed or certified by TMDB. Ratings via TMDB. Provider availability via TMDB / JustWatch (India).';
@@ -448,184 +449,118 @@ class DiscoverDetail extends StatefulWidget {
 
 class _DiscoverDetailState extends State<DiscoverDetail> {
   late Future<TmdbFull?> detail;
+  late Future<List<TmdbMovie>> related;
   @override
   void initState() {
     super.initState();
     detail = widget.client.fullDetail(widget.movie.id, kind: widget.movie.kind);
+    related = widget.client.similar(widget.movie.id, kind: widget.movie.kind);
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text(widget.movie.title)),
-        body: FutureBuilder<TmdbFull?>(
-            future: detail,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final full = snapshot.data;
-              if (full == null) {
-                return Center(
-                    child: FilledButton(
-                        onPressed: () => setState(() => detail = widget.client
-                            .fullDetail(widget.movie.id,
-                                kind: widget.movie.kind, force: true)),
-                        child: const Text('Could not load details · Retry')));
-              }
-              final m = full.movie;
-              final e = full.extras;
-              return ListView(padding: const EdgeInsets.all(24), children: [
-                Wrap(spacing: 24, runSpacing: 18, children: [
-                  SizedBox(
-                      width: 210,
-                      height: 310,
-                      child: ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: poster(m.posterPath))),
-                  SizedBox(
-                      width: 620,
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(m.title,
-                                style: const TextStyle(
-                                    fontSize: 30, fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 12),
-                            Text(
-                                '${m.year ?? "—"} · ★ ${tmdbRatingText(m.rating)} via TMDB · ${e.runtimeMinutes} min · ${e.certification}'),
-                            const SizedBox(height: 12),
-                            Text(e.genres.join(' · ')),
-                            const SizedBox(height: 12),
-                            Text(e.tagline,
-                                style: const TextStyle(
-                                    fontStyle: FontStyle.italic,
-                                    color: Colors.grey)),
-                            const SizedBox(height: 12),
-                            SelectableText(m.overview),
-                            const SizedBox(height: 18),
-                            if (m.trailerKey != null)
-                              FilledButton.icon(
-                                  onPressed: () => openDiscoverLink(
-                                      context,
-                                      Uri.https('www.youtube.com', '/watch',
-                                          {'v': m.trailerKey!})),
-                                  icon: const Icon(Icons.play_arrow),
-                                  label:
-                                      const Text('Watch trailer on YouTube ↗')),
-                            for (final trailer in m.trailerVariants)
-                              TextButton(
-                                  onPressed: () => openDiscoverLink(
-                                      context,
-                                      Uri.https('www.youtube.com', '/watch',
-                                          {'v': trailer.key})),
-                                  child: Text('Trailer · ${trailer.name} ↗')),
-                            TextButton(
-                                onPressed: () => openDiscoverLink(
-                                    context,
-                                    Uri.https(
-                                        'www.themoviedb.org',
-                                        '/${m.kind}/${m.id}/watch',
-                                        {'locale': 'IN'})),
-                                child: const Text(
-                                    'Where to watch · Open provider listings ↗')),
-                            const Text(
-                                'Discover provides metadata and trailers, not full-length films. Provider subscriptions may be required.',
-                                style: TextStyle(
-                                    color: Colors.grey, fontSize: 12)),
-                          ])),
-                ]),
-                const SizedBox(height: 24),
-                Text(
-                    'Director / creator: ${e.director}\nStatus: ${e.status}\nRelease: ${e.releaseDate}\nLanguages: ${e.spokenLanguages.join(", ")}\nProduction: ${e.companies.join(", ")}'),
-                const SizedBox(height: 20),
-                const Text('Cast',
-                    style:
-                        TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 12),
-                Wrap(spacing: 12, runSpacing: 12, children: [
-                  for (final member in e.castMembers.take(24))
-                    SizedBox(
-                        width: 115,
-                        child: Column(children: [
-                          SizedBox(
-                              height: 145,
-                              width: 105,
-                              child: poster(member.profilePath)),
-                          const SizedBox(height: 6),
-                          Text(member.name),
-                          Text(member.character,
-                              style: const TextStyle(
-                                  fontSize: 11, color: Colors.grey)),
-                        ]))
-                ]),
-                const SizedBox(height: 20),
-                if (!full.watch.isEmpty)
-                  SelectableText(
-                      'Where to watch (India)\nStream: ${full.watch.stream.join(", ")}\nRent: ${full.watch.rent.join(", ")}\nBuy: ${full.watch.buy.join(", ")}\nAvailability via TMDB / JustWatch; check providers for current offers.'),
-                for (final season in full.seasons)
-                  ListTile(
-                      title: Text(season.name),
-                      subtitle: Text('${season.episodes} episodes'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute<void>(
-                              builder: (_) => SeasonScreen(
-                                  client: widget.client,
-                                  tvId: m.id,
-                                  season: season)))),
-                if (full.screenshots.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  const Text('Images'),
-                  SizedBox(
-                      height: 190,
-                      child:
-                          ListView(scrollDirection: Axis.horizontal, children: [
-                        for (final path in full.screenshots.take(12))
-                          Padding(
-                              padding: const EdgeInsets.all(6),
-                              child: Image.network(
-                                  'https://image.tmdb.org/t/p/w500$path',
-                                  errorBuilder: (context, error, stack) =>
-                                      const Icon(Icons.broken_image_outlined)))
-                      ]))
-                ],
-                if (full.reviews.isNotEmpty)
-                  const Padding(
-                      padding: EdgeInsets.only(top: 20),
-                      child: Text('TMDB user reviews',
-                          style: TextStyle(fontSize: 21))),
-                for (final review in full.reviews.take(5))
-                  ExpansionTile(
-                      title: Text(review.author),
-                      subtitle: Text(review.rating == null
-                          ? 'No score'
-                          : '★ ${review.rating}'),
-                      children: [
-                        Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: SelectableText(review.text))
-                      ]),
-                const SizedBox(height: 24),
-                const Text('Related titles', style: TextStyle(fontSize: 21)),
-                SizedBox(
-                    height: 320,
-                    child: FutureBuilder<List<TmdbMovie>>(
-                        future: widget.client.similar(m.id, kind: m.kind),
-                        builder: (context, related) => ListView(
-                                scrollDirection: Axis.horizontal,
-                                children: [
-                                  for (final title
-                                      in related.data ?? <TmdbMovie>[])
-                                    SizedBox(
-                                        width: 180,
-                                        child: movieCard(
-                                            context, widget.client, title))
-                                ]))),
-                const Text(tmdbNotice,
-                    style: TextStyle(color: Colors.grey, fontSize: 11)),
-              ]);
-            }),
+        backgroundColor: const Color(0xff14141c),
+        body: Stack(children: [
+          Positioned.fill(
+              child: FutureBuilder<TmdbFull?>(
+                  future: detail,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final full = snapshot.data;
+                    if (full == null) {
+                      return Center(
+                          child: TextButton(
+                              onPressed: () => setState(() => detail =
+                                  widget.client.fullDetail(widget.movie.id,
+                                      kind: widget.movie.kind, force: true)),
+                              child: const Text(
+                                  'Could not load details · Retry')));
+                    }
+                    final m = full.movie;
+                    return SingleChildScrollView(
+                        padding: EdgeInsets.only(
+                            top: MediaQuery.paddingOf(context).top + 56),
+                        child: Center(
+                            child: ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 1200),
+                                child: Column(children: [
+                                  AndroidMovieDetails(
+                                    full: full,
+                                    onTrailer: (key) => openDiscoverLink(
+                                        context,
+                                        Uri.https('www.youtube.com', '/watch',
+                                            {'v': key})),
+                                    onWatch: () => openDiscoverLink(
+                                        context,
+                                        Uri.https(
+                                            'www.themoviedb.org',
+                                            '/${m.kind}/${m.id}/watch',
+                                            {'locale': 'IN'})),
+                                    seasons: full.seasons.isEmpty
+                                        ? null
+                                        : AndroidSeasonBrowser(
+                                            seasons: full.seasons,
+                                            loader: (number, force) => widget
+                                                .client
+                                                .seasonDetail(m.id, number,
+                                                    force: force)),
+                                    related: FutureBuilder<List<TmdbMovie>>(
+                                        future: related,
+                                        builder: (context, results) {
+                                          if (results.connectionState !=
+                                              ConnectionState.done) {
+                                            return const Padding(
+                                                padding: EdgeInsets.all(16),
+                                                child: LinearProgressIndicator(
+                                                    minHeight: 2));
+                                          }
+                                          if ((results.data ?? []).isEmpty) {
+                                            return const SizedBox.shrink();
+                                          }
+                                          return DiscoverShelf(
+                                              title: 'Related titles',
+                                              movies: results.data!,
+                                              onOpen: (movie) =>
+                                                  Navigator.push<void>(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                          builder: (_) =>
+                                                              DiscoverDetail(
+                                                                  client: widget
+                                                                      .client,
+                                                                  movie:
+                                                                      movie))));
+                                        }),
+                                  ),
+                                  const Padding(
+                                      padding:
+                                          EdgeInsets.fromLTRB(16, 0, 16, 24),
+                                      child: Text(tmdbNotice,
+                                          style: TextStyle(
+                                              color: Colors.white38,
+                                              fontSize: 10))),
+                                ]))));
+                  })),
+          Positioned(
+              top: MediaQuery.paddingOf(context).top + 10,
+              left: 12,
+              child: Tooltip(
+                  message: 'Back',
+                  child: Material(
+                    color: Colors.black.withValues(alpha: .45),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: () => Navigator.maybePop(context),
+                        child: const Padding(
+                            padding: EdgeInsets.all(10),
+                            child: Icon(Icons.arrow_back_ios_new_rounded,
+                                color: Colors.white, size: 18))),
+                  ))),
+        ]),
       );
 }
 
@@ -667,19 +602,9 @@ class _SeasonScreenState extends State<SeasonScreen> {
                             force: true)),
                     child: const Text('Could not load episodes · Retry')));
           }
-          return ListView(children: [
-            for (final episode in snapshot.data!.episodes)
-              ExpansionTile(
-                title: Text('${episode.episodeNumber}. ${episode.name}'),
-                subtitle: Text(
-                    '${episode.airDate ?? ""} · ${episode.runtimeMinutes} min · ★ ${episode.rating.toStringAsFixed(1)}'),
-                children: [
-                  Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: SelectableText(episode.overview))
-                ],
-              )
-          ]);
+          return SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: AndroidEpisodeSection(detail: snapshot.data!));
         },
       ));
 }
