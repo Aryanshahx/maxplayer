@@ -1,3 +1,4 @@
+import 'screens/media_info_sheet.dart';
 import 'screens/track_sheet.dart';
 import 'screens/playback_sheets.dart';
 import 'dart:async';
@@ -606,51 +607,92 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     );
   }
 
+  Future<void> videoInfo() async {
+    final state = player.state;
+    final source =
+        selected >= 0 && selected < queue.length ? queue[selected] : null;
+    await MediaInfoSheet.show(
+        context,
+        MediaInfoSheet(
+          title: source == null ? 'No media selected' : labelFor(source),
+          rows: [
+            if (source != null) MapEntry('Source', source),
+            MapEntry('Position',
+                '${mediaClock(state.position)} / ${mediaClock(state.duration)}'),
+            MapEntry('Remaining', mediaClock(state.duration - state.position)),
+            MapEntry('Playback speed', '${state.rate}x'),
+            if (state.videoParams.w != null && state.videoParams.h != null)
+              MapEntry('Resolution',
+                  '${state.videoParams.w} × ${state.videoParams.h}'),
+            if (state.audioBitrate != null)
+              MapEntry('Audio bitrate', '${state.audioBitrate} bit/s'),
+          ],
+          tracks: {
+            'Video tracks': [
+              for (final t in state.tracks.video)
+                if (t.id != 'no' && t.id != 'auto')
+                  desktopTrackLabel(
+                      id: t.id,
+                      title: t.title,
+                      language: t.language,
+                      codec: t.codec)
+            ],
+            'Audio tracks': [
+              for (final t in state.tracks.audio)
+                if (t.id != 'no' && t.id != 'auto')
+                  desktopTrackLabel(
+                      id: t.id,
+                      title: t.title,
+                      language: t.language,
+                      codec: t.codec)
+            ],
+            'Subtitles': [
+              for (final t in state.tracks.subtitle)
+                if (t.id != 'no' && t.id != 'auto')
+                  desktopTrackLabel(
+                      id: t.id,
+                      title: t.title,
+                      language: t.language,
+                      codec: t.codec)
+            ],
+          },
+        ));
+  }
+
   Future<void> repeatControls() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const LText('A–B repeat'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () {
-              if (selected < 0) {
-                notify('Play media first.');
-                return;
-              }
-              repeatA = player.state.position;
-              repeatB = null;
-              Navigator.pop(context);
-              notify('Start point A set. Seek forward, then set B.');
-            },
-            child: const LText('Set A at current position'),
-          ),
-          SimpleDialogOption(
-            onPressed: () {
-              final a = repeatA;
-              if (a == null ||
-                  player.state.position <= a + const Duration(seconds: 1)) {
-                notify('Set A first, then set B at least one second later.');
-                return;
-              }
-              repeatB = player.state.position;
-              Navigator.pop(context);
-              notify('A–B repeat enabled.');
-            },
-            child: const LText('Set B at current position'),
-          ),
-          SimpleDialogOption(
-            onPressed: () {
-              repeatA = null;
-              repeatB = null;
-              Navigator.pop(context);
-              notify('A–B repeat disabled.');
-            },
-            child: const LText('Disable repeat'),
-          ),
-        ],
-      ),
-    );
+    await showPlaybackSheet<void>(
+        context,
+        Builder(
+            builder: (sheetContext) => RepeatControlSheet(
+                a: repeatA,
+                b: repeatB,
+                onAction: (action) {
+                  if (action == 'a') {
+                    if (selected < 0) {
+                      notify('Play media first.');
+                      return;
+                    }
+                    repeatA = player.state.position;
+                    repeatB = null;
+                    notify('Start point A set. Seek forward, then set B.');
+                  } else if (action == 'b') {
+                    final a = repeatA;
+                    if (a == null ||
+                        player.state.position <=
+                            a + const Duration(seconds: 1)) {
+                      notify(
+                          'Set A first, then set B at least one second later.');
+                      return;
+                    }
+                    repeatB = player.state.position;
+                    notify('A–B repeat enabled.');
+                  } else {
+                    repeatA = null;
+                    repeatB = null;
+                    notify('A–B repeat disabled.');
+                  }
+                  Navigator.pop(sheetContext);
+                })));
   }
 
   Future<void> fitOptions() async {
@@ -1237,6 +1279,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                       watchStatistics();
                     } else if (value == 'Sleep timer') {
                       sleepTimer();
+                    } else if (value == 'Video info') {
+                      videoInfo();
                     } else if (value == 'A–B repeat') {
                       repeatControls();
                     } else if (value == 'Video fit') {
@@ -1284,6 +1328,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                     const PopupMenuDivider(),
                     for (final name in [
                       'Sleep timer',
+                      'Video info',
                       'A–B repeat',
                       'Video fit',
                       'Subtitle delay',
