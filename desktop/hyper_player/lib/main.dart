@@ -1,3 +1,4 @@
+import 'screens/video_adjustment_sheets.dart';
 import 'screens/media_info_sheet.dart';
 import 'screens/track_sheet.dart';
 import 'screens/playback_sheets.dart';
@@ -696,50 +697,24 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
 
   Future<void> fitOptions() async {
-    final choice = await showDialog<BoxFit>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const LText('Video fit'),
-        children: [
-          for (final entry in {
-            'Fit': BoxFit.contain,
-            'Crop': BoxFit.cover,
-            'Stretch': BoxFit.fill,
-          }.entries)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, entry.value),
-              child: Text(entry.key),
-            ),
-        ],
-      ),
-    );
+    final choice = await showPlaybackSheet<BoxFit>(
+        context,
+        Builder(
+            builder: (sheetContext) => VideoFitSheet(
+                selected: videoFit,
+                onSelect: (fit) => Navigator.pop(sheetContext, fit))));
     if (choice != null && mounted) {
       setState(() => videoFit = choice);
     }
   }
 
   Future<void> subtitleDelay() async {
-    final input = await askText(
-      'Subtitle delay in milliseconds',
-      hint: 'Example: 500 or -500; 0 resets',
-    );
-    if (input == null || !mounted) {
-      return;
-    }
-    final ms = int.tryParse(input);
-    if (ms == null || ms.abs() > 60000) {
-      notify('Enter a whole number between -60000 and 60000.');
-      return;
-    }
-    try {
-      await (player.platform as NativePlayer).setProperty(
-        'sub-delay',
-        (ms / 1000).toString(),
-      );
+    await showPlaybackSheet<void>(context,
+        SubtitleDelaySheet(onApply: (ms) async {
+      await (player.platform as NativePlayer)
+          .setProperty('sub-delay', (ms / 1000).toString());
       notify('Subtitle delay set to $ms ms.');
-    } catch (e) {
-      notify('Subtitle delay unavailable: $e');
-    }
+    }));
   }
 
   Future<void> watchStatistics() async {
