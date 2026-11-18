@@ -1,3 +1,4 @@
+import 'screens/playback_sheets.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -522,42 +523,18 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
 
   Future<void> playbackOptions() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const LText('Playback speed'),
-        children: [
-          for (final rate in [.5, .75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0])
-            SimpleDialogOption(
-              onPressed: () {
-                player.setRate(rate);
-                Navigator.pop(context);
-              },
-              child: Text('$rate×'),
-            ),
-        ],
-      ),
-    );
+    await showPlaybackSheet<void>(context,
+        PlaybackSpeedSheet(rate: player.state.rate, onRate: player.setRate),
+        color: const Color(0xff1a1a24));
   }
 
   Future<void> sleepTimer() async {
-    final minutes = await showDialog<int>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const LText('Sleep timer'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 0),
-            child: const LText('Cancel timer'),
-          ),
-          for (final value in [15, 30, 45, 60, 90, 120])
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, value),
-              child: Text('$value minutes'),
-            ),
-        ],
-      ),
-    );
+    final minutes = await showPlaybackSheet<int>(
+        context,
+        Builder(
+            builder: (sheetContext) => SleepTimerSheet(
+                deadline: sleepDeadline,
+                onMinutes: (minutes) => Navigator.pop(sheetContext, minutes))));
     if (minutes == null || !mounted) {
       return;
     }
