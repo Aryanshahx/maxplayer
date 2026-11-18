@@ -1,3 +1,4 @@
+import 'screens/track_sheet.dart';
 import 'screens/playback_sheets.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -496,6 +497,56 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     } catch (e) {
       notify('Playlist import failed: $e');
     }
+  }
+
+  Future<void> trackPicker({required bool subtitle}) async {
+    final tracks = player.state.tracks;
+    await showPlaybackSheet<void>(
+        context,
+        Builder(
+            builder: (sheetContext) => DesktopTrackSheet(
+                  subtitle: subtitle,
+                  selected: subtitle
+                      ? player.state.track.subtitle.id
+                      : player.state.track.audio.id,
+                  tracks: subtitle
+                      ? [
+                          for (final t in tracks.subtitle)
+                            if (t.id != 'no' && t.id != 'auto')
+                              DesktopTrackChoice(
+                                  t.id,
+                                  desktopTrackLabel(
+                                      id: t.id,
+                                      title: t.title,
+                                      language: t.language,
+                                      codec: t.codec))
+                        ]
+                      : [
+                          for (final t in tracks.audio)
+                            if (t.id != 'no' && t.id != 'auto')
+                              DesktopTrackChoice(
+                                  t.id,
+                                  desktopTrackLabel(
+                                      id: t.id,
+                                      title: t.title,
+                                      language: t.language,
+                                      codec: t.codec))
+                        ],
+                  onSelect: (id) async {
+                    if (subtitle) {
+                      await player.setSubtitleTrack(id == 'no'
+                          ? SubtitleTrack.no()
+                          : tracks.subtitle.firstWhere((t) => t.id == id));
+                    } else {
+                      await player.setAudioTrack(
+                          tracks.audio.firstWhere((t) => t.id == id));
+                    }
+                  },
+                  onExternal: () {
+                    Navigator.pop(sheetContext);
+                    externalSubtitles();
+                  },
+                )));
   }
 
   Future<void> externalSubtitles() async {
@@ -1174,6 +1225,10 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                       namedPlaylists();
                     } else if (value == 'Import IPTV playlist') {
                       importIptv();
+                    } else if (value == 'Audio track') {
+                      trackPicker(subtitle: false);
+                    } else if (value == 'Subtitles') {
+                      trackPicker(subtitle: true);
                     } else if (value == 'Load subtitle file') {
                       externalSubtitles();
                     } else if (value == 'Playback speed') {
@@ -1236,6 +1291,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                       'Toggle favourite',
                       'Named playlists',
                       'Import IPTV playlist',
+                      'Audio track',
+                      'Subtitles',
                       'Load subtitle file',
                       'Playback speed',
                       'AI subtitles',
