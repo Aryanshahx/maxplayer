@@ -15,6 +15,8 @@ import 'discover/discover_screen.dart';
 import 'screens/language_screen.dart';
 import 'screens/collection_screens.dart';
 import 'screens/stream_screen.dart';
+import 'screens/library_screens.dart';
+import 'screens/desktop_display_screen.dart';
 import 'utils/app_language.dart';
 
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -743,46 +745,59 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     );
   }
 
-  Future<void> displaySettings() async {
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const LText('Display settings'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'grid'),
-            child: const LText('Grid view'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'list'),
-            child: const LText('List view'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'sort'),
-            child: const LText('Sort current queue by name'),
-          ),
-        ],
-      ),
-    );
-    if (result == null || !mounted) {
-      return;
-    }
-    setState(() {
-      if (result == 'sort') {
-        final playing =
-            selected >= 0 && selected < queue.length ? queue[selected] : null;
-        queue.sort(
-          (a, b) =>
-              labelFor(a).toLowerCase().compareTo(labelFor(b).toLowerCase()),
-        );
-        selected = playing == null ? -1 : queue.indexOf(playing);
-      } else {
-        listMode = result == 'list';
-      }
-    });
+  Future<void> browseFolders() async {
+    final source = await Navigator.push<String>(context,
+        MaterialPageRoute(builder: (_) => const DesktopFoldersScreen()));
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('hyper.list.mode.v1', listMode);
-    await save();
+    scanFolders
+      ..clear()
+      ..addAll(prefs.getStringList('hyper.scan.folders.v1') ?? []);
+    if (source != null && mounted) {
+      await playSource(source);
+    }
+  }
+
+  Future<void> browseAudio() async {
+    final source = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => DesktopAudioScreen(
+                knownSources: {...queue, ...collections.history}.toList())));
+    if (source != null && mounted) {
+      await playSource(source);
+    }
+  }
+
+  Future<void> displaySettings() async {
+    await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => DesktopDisplayScreen(
+                listMode: listMode,
+                onChange: (value, order) async {
+                  if (!mounted) {
+                    return;
+                  }
+                  setState(() {
+                    listMode = value;
+                    if (order != null) {
+                      final playing = selected >= 0 && selected < queue.length
+                          ? queue[selected]
+                          : null;
+                      queue.sort((a, b) => order == 'nameDesc'
+                          ? labelFor(b)
+                              .toLowerCase()
+                              .compareTo(labelFor(a).toLowerCase())
+                          : labelFor(a)
+                              .toLowerCase()
+                              .compareTo(labelFor(b).toLowerCase()));
+                      selected = playing == null ? -1 : queue.indexOf(playing);
+                    }
+                  });
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setBool('hyper.list.mode.v1', listMode);
+                  await save();
+                })));
   }
 
   Future<void> homeMenu(String value) async {
@@ -973,8 +988,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
               planned: true,
             ),
             quickTile(Icons.queue_music_outlined, 'Playlists', namedPlaylists),
-            quickTile(Icons.folder_outlined, 'Folders', folder),
-            quickTile(Icons.music_note_outlined, 'Audio', files),
+            quickTile(Icons.folder_outlined, 'Folders', browseFolders),
+            quickTile(Icons.music_note_outlined, 'Audio', browseAudio),
             quickTile(
               Icons.dns_outlined,
               'Network Storage',
