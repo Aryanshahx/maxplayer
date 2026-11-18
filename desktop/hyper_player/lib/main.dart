@@ -17,6 +17,9 @@ import 'screens/collection_screens.dart';
 import 'screens/stream_screen.dart';
 import 'screens/library_screens.dart';
 import 'screens/desktop_display_screen.dart';
+import 'screens/info_sheets.dart';
+import 'screens/statistics_screen.dart';
+import 'watch_days.dart';
 import 'utils/app_language.dart';
 
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -106,6 +109,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   Duration? repeatA;
   Duration? repeatB;
   bool repeatSeeking = false;
+  final dailyWatch = WatchDays();
   int watchSeconds = 0;
   int playStarts = 0;
   @override
@@ -123,6 +127,9 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (player.state.playing && !player.state.buffering) {
         watchSeconds++;
+        if (selected >= 0 && selected < queue.length) {
+          dailyWatch.record(DateTime.now(), labelFor(queue[selected]));
+        }
         if (watchSeconds % 15 == 0) {
           unawaited(saveStats());
         }
@@ -143,6 +150,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   Future<void> restore() async {
     final prefs = await SharedPreferences.getInstance();
     await collections.load();
+    await dailyWatch.load();
     scanFolders.addAll(prefs.getStringList('hyper.scan.folders.v1') ?? []);
     listMode = prefs.getBool('hyper.list.mode.v1') ?? false;
     watchSeconds += prefs.getInt('hyper.watch.seconds.v1') ?? 0;
@@ -664,21 +672,13 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
 
   Future<void> watchStatistics() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const LText('Watch statistics'),
-        content: Text(
-          'Playback starts: $playStarts\nApproximate playback time: ${watchSeconds ~/ 60} minutes ${watchSeconds % 60} seconds\nFavourites: ${collections.favourites.length}\nNamed playlists: ${collections.playlists.length}\n\n${sleepDeadline == null ? "No sleep timer active." : "Sleep timer ends at ${sleepDeadline!.toLocal()}."}\n\nStored on this laptop only. Time is sampled while playing (not buffering); not a measure of attention. Saved every 15 seconds; abrupt exit can lose the last interval.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const LText('Close'),
-          ),
-        ],
-      ),
-    );
+    await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => DesktopStatisticsScreen(
+                stats: dailyWatch,
+                lifetimeSeconds: watchSeconds,
+                starts: playStarts)));
   }
 
   Future<void> saveStats() async {
@@ -687,6 +687,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('hyper.watch.seconds.v1', seconds);
     await prefs.setInt('hyper.play.starts.v1', starts);
+    await dailyWatch.save();
   }
 
   Future<void> rescan() async {
@@ -727,22 +728,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
 
   Future<void> infoDialog(String title, String body) async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: LText(title),
-        content: SizedBox(
-          width: 620,
-          child: SingleChildScrollView(child: SelectableText(body)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const LText('Close'),
-          ),
-        ],
-      ),
-    );
+    await showAndroidInfoSheet(context, title, body);
   }
 
   Future<void> browseFolders() async {
@@ -822,7 +808,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       case 'Privacy policy':
         await infoDialog(
           value,
-          'Windows preview privacy\n\nLocal media is not uploaded. Queue, folder paths, history, favourites, playlists, language and approximate playback statistics are stored locally, without encryption. URLs can contain credentials; do not share local application data.\n\nDiscover connects to TMDB API and image hosts. Search terms and requested title IDs are sent to TMDB. Metadata is cached locally. Hosts receive network connection information including IP address. Where-to-watch information is for India.\n\nTrailers and external links open your browser or email application and follow those providers’ policies. Network streams contact their source hosts.\n\nThis Windows build does not integrate Android Firebase analytics, AdMob or FCM push.\n\nContact: techlabs.hyper@gmail.com. This is a preview disclosure; review the final public Windows privacy policy before Store submission.',
+          'Windows preview privacy\n\nLocal media is not uploaded. Queue, folder paths, history, favourites, playlists, language, daily playback seconds and most-watched filename counters are stored locally, without encryption. URLs can contain credentials; do not share local application data.\n\nDiscover connects to TMDB API and image hosts. Search terms and requested title IDs are sent to TMDB. Metadata is cached locally. Hosts receive network connection information including IP address. Where-to-watch information is for India.\n\nTrailers and external links open your browser or email application and follow those providers’ policies. Network streams contact their source hosts.\n\nThis Windows build does not integrate Android Firebase analytics, AdMob or FCM push.\n\nContact: techlabs.hyper@gmail.com. This is a preview disclosure; review the final public Windows privacy policy before Store submission.',
         );
       case 'Report a problem':
         await openDiscoverLink(
