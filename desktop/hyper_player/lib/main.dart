@@ -1,3 +1,5 @@
+import 'screens/about_android.dart';
+import 'local_thumbnail.dart';
 import 'screens/video_adjustment_sheets.dart';
 import 'screens/media_info_sheet.dart';
 import 'screens/track_sheet.dart';
@@ -847,15 +849,11 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
           'Open files (Ctrl+O) or import a folder. Rescan checks saved folders for new direct-child media; it does not search your whole disk or remove missing entries. Search finds entries in queue/history/favourites.\n\nPlaylists saves the queue under a name. Use the extra tools menu entries for IPTV import, subtitles, speed, A–B repeat and sleep timer.\n\nDiscover uses TMDB metadata and opens trailers on YouTube in your browser. It does not supply full movies. Construction-marked tiles remain unimplemented.',
         );
       case 'About Hyper Player':
-        await infoDialog(
-          value,
-          'Hyper Player - All Formats\nWindows preview 0.2.0\nHyper Tech Labs\n\nAndroid-inspired native desktop application.\n\n$tmdbNotice',
-        );
+        await AboutSheet.show(context);
+        break;
       case 'Privacy policy':
-        await infoDialog(
-          value,
-          'Windows preview privacy\n\nLocal media is not uploaded. Queue, folder paths, history, favourites, playlists, language, daily playback seconds and most-watched filename counters are stored locally, without encryption. URLs can contain credentials; do not share local application data.\n\nDiscover connects to TMDB API and image hosts. Search terms and requested title IDs are sent to TMDB. Metadata is cached locally. Hosts receive network connection information including IP address. Where-to-watch information is for India.\n\nTrailers and external links open your browser or email application and follow those providers’ policies. Network streams contact their source hosts.\n\nThis Windows build does not integrate Android Firebase analytics, AdMob or FCM push.\n\nContact: techlabs.hyper@gmail.com. This is a preview disclosure; review the final public Windows privacy policy before Store submission.',
-        );
+        showWindowsPrivacy(context);
+        break;
       case 'Report a problem':
         await openDiscoverLink(
           context,
@@ -1119,7 +1117,10 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                 SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, i) => ListTile(
-                      leading: const Icon(Icons.movie_outlined),
+                      leading: SizedBox(
+                          width: 96,
+                          height: 54,
+                          child: LocalThumbnail(queue[i])),
                       title: Text(labelFor(queue[i])),
                       subtitle: Text(
                         validStream(queue[i])
@@ -1159,20 +1160,10 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Expanded(
-                                  child: Center(
-                                    child: Icon(
-                                      Icons.play_circle_outline,
-                                      size: 42,
-                                      color: Color(0xff9296a0),
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  labelFor(queue[i]),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                Expanded(
+                                    child: SizedBox(
+                                        width: double.infinity,
+                                        child: LocalThumbnail(queue[i]))),
                                 const SizedBox(height: 5),
                                 Text(
                                   validStream(queue[i])
@@ -1283,7 +1274,6 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                       'Language': Icons.language,
                       'Display settings': Icons.tune_rounded,
                       'Watch statistics': Icons.bar_chart_rounded,
-                      'History': Icons.history,
                       'User manual': Icons.menu_book_outlined,
                       'About Hyper Player': Icons.info_outline_rounded,
                       'Privacy policy': Icons.privacy_tip_outlined,
@@ -1300,26 +1290,27 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                           ],
                         ),
                       ),
-                    const PopupMenuDivider(),
-                    for (final name in [
-                      'Sleep timer',
-                      'Video info',
-                      'A–B repeat',
-                      'Video fit',
-                      'Subtitle delay',
-                      'Favourites',
-                      'Toggle favourite',
-                      'Named playlists',
-                      'Import IPTV playlist',
-                      'Audio track',
-                      'Subtitles',
-                      'Load subtitle file',
-                      'Playback speed',
-                      'AI subtitles',
-                      'Open folder',
-                      'Clear queue',
-                    ])
-                      PopupMenuItem(value: name, child: LText(name)),
+                    if (viewingPlayer) const PopupMenuDivider(),
+                    if (viewingPlayer)
+                      for (final name in [
+                        'Sleep timer',
+                        'Video info',
+                        'A–B repeat',
+                        'Video fit',
+                        'Subtitle delay',
+                        'Favourites',
+                        'Toggle favourite',
+                        'Named playlists',
+                        'Import IPTV playlist',
+                        'Audio track',
+                        'Subtitles',
+                        'Load subtitle file',
+                        'Playback speed',
+                        'AI subtitles',
+                        'Open folder',
+                        'Clear queue',
+                      ])
+                        PopupMenuItem(value: name, child: LText(name)),
                     const PopupMenuDivider(),
                     const PopupMenuItem<String>(
                       enabled: false,
@@ -1341,12 +1332,89 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                       ? Row(
                           children: [
                             Expanded(
-                              child: Video(
-                                controller: controller,
-                                fit: videoFit,
-                                controls: AdaptiveVideoControls,
-                              ),
-                            ),
+                                child: Column(children: [
+                              Expanded(
+                                  child: Video(
+                                      controller: controller,
+                                      fit: videoFit,
+                                      controls: AdaptiveVideoControls)),
+                              Material(
+                                  color: const Color(0xff101013),
+                                  child: SizedBox(
+                                      height: 52,
+                                      child: ListView(
+                                          scrollDirection: Axis.horizontal,
+                                          children: [
+                                            IconButton(
+                                                tooltip: 'Previous',
+                                                onPressed: selected > 0
+                                                    ? () => play(selected - 1)
+                                                    : null,
+                                                icon: const Icon(Icons
+                                                    .skip_previous_rounded)),
+                                            IconButton(
+                                                tooltip: 'Play/pause',
+                                                onPressed: () =>
+                                                    player.playOrPause(),
+                                                icon: const Icon(
+                                                    Icons.play_arrow_rounded)),
+                                            IconButton(
+                                                tooltip: 'Next',
+                                                onPressed: selected + 1 <
+                                                        queue.length
+                                                    ? () => play(selected + 1)
+                                                    : null,
+                                                icon: const Icon(
+                                                    Icons.skip_next_rounded)),
+                                            IconButton(
+                                                tooltip: 'Audio track',
+                                                onPressed: () => trackPicker(
+                                                    subtitle: false),
+                                                icon: const Icon(
+                                                    Icons.music_note_rounded)),
+                                            IconButton(
+                                                tooltip: 'Subtitles',
+                                                onPressed: () =>
+                                                    trackPicker(subtitle: true),
+                                                icon: const Icon(
+                                                    Icons.subtitles_rounded)),
+                                            IconButton(
+                                                tooltip: 'Playback speed',
+                                                onPressed: playbackOptions,
+                                                icon: const Icon(
+                                                    Icons.speed_rounded)),
+                                            IconButton(
+                                                tooltip: 'Video fit',
+                                                onPressed: fitOptions,
+                                                icon: const Icon(
+                                                    Icons.fit_screen_rounded)),
+                                            IconButton(
+                                                tooltip: 'A–B repeat',
+                                                onPressed: repeatControls,
+                                                icon: const Icon(
+                                                    Icons.repeat_rounded)),
+                                            IconButton(
+                                                tooltip: 'Sleep timer',
+                                                onPressed: sleepTimer,
+                                                icon: const Icon(
+                                                    Icons.bedtime_outlined)),
+                                            IconButton(
+                                                tooltip: 'Video info',
+                                                onPressed: videoInfo,
+                                                icon: const Icon(Icons
+                                                    .info_outline_rounded)),
+                                            IconButton(
+                                                tooltip: 'Subtitle delay',
+                                                onPressed: subtitleDelay,
+                                                icon: const Icon(
+                                                    Icons.subtitles_outlined)),
+                                            IconButton(
+                                                tooltip: 'Toggle favourite',
+                                                onPressed: toggleFavourite,
+                                                icon: const Icon(Icons
+                                                    .favorite_border_rounded)),
+                                          ]))),
+                            ])),
                             SizedBox(
                               width: MediaQuery.sizeOf(context).width < 800
                                   ? 210

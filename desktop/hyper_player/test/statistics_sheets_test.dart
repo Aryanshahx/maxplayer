@@ -68,7 +68,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(DraggableScrollableSheet), findsOneWidget);
     expect(find.text('User manual'), findsOneWidget);
-    expect(find.text('Home screen'), findsOneWidget);
+    expect(find.text('HOME SCREEN'), findsOneWidget);
     expect(find.byType(AlertDialog), findsNothing);
   });
 }

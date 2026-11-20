@@ -27,24 +27,25 @@ class AndroidInfoContent extends StatelessWidget {
   const AndroidInfoContent(
       {super.key, required this.title, required this.body, this.controller});
   Widget heading(String value) => Padding(
-      padding: const EdgeInsets.only(top: 22, bottom: 10),
-      child: LText(value,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)));
+      padding: const EdgeInsets.only(top: 18, bottom: 6),
+      child: LText(value.toUpperCase(),
+          style: const TextStyle(
+              fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.1)));
   Widget item(IconData icon, String name, String description) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 9),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(icon, size: 21, color: Colors.white70),
+        Icon(icon, size: 20, color: Colors.white70),
         const SizedBox(width: 12),
         Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           LText(name,
               style:
-                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 3),
+                  const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 2),
           Text(description,
               style: const TextStyle(
-                  color: Colors.white54, fontSize: 12, height: 1.45)),
+                  color: Colors.white54, fontSize: 12.5, height: 1.35)),
         ])),
       ]));
   @override
@@ -86,7 +87,7 @@ class AndroidInfoContent extends StatelessWidget {
             item(Icons.sync, 'Rescan',
                 'Look for new direct-child media in folders you chose. This is not whole-PC indexing.'),
             item(Icons.more_vert, 'More options',
-                'Language, Display Settings, Statistics, History, support and playback tools.'),
+                'Language, Display Settings, Statistics, User manual, About, Privacy, Report a problem and Instagram. Playback tools are in the player, not the Home menu.'),
             heading('Your library'),
             item(Icons.folder_outlined, 'Folders',
                 'Choose a folder, browse its media cards, then select a file to play.'),
@@ -162,4 +163,24 @@ class AndroidInfoContent extends StatelessWidget {
           ],
         ]);
   }
+}
+
+void showWindowsPrivacy(BuildContext context) {
+  showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xff1b1b24),
+            title: const Text('Privacy policy',
+                style: TextStyle(color: Colors.white, fontSize: 17)),
+            scrollable: true,
+            content: const Text(
+                'HYPER PLAYER — WINDOWS PREVIEW\nDeveloper: Hyper Tech Labs\n\nLocal media and settings\nLocal media is not uploaded. Queue, folder paths, history, favourites, playlists, language and playback counters are stored locally without encryption. URLs may contain credentials; do not share application data. Windows Shell is used locally for cached video thumbnails.\n\nOnline features\nDiscover sends queries/title IDs to TMDB; API and image hosts receive network connections including IP addresses. Metadata is cached locally. Network streams contact their source hosts. Trailers and external links open their respective apps and follow provider policies.\n\nAndroid services\nThis Windows preview does not integrate Android Firebase analytics, AdMob or FCM notifications. Android policy statements must not be assumed to describe this build.\n\nContact\ntechlabs.hyper@gmail.com',
+                style: TextStyle(
+                    color: Colors.white70, fontSize: 13, height: 1.45)),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'))
+            ],
+          ));
 }

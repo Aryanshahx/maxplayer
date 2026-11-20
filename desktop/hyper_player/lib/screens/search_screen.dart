@@ -1,3 +1,4 @@
+import '../local_thumbnail.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../playlist.dart';
@@ -85,7 +86,10 @@ class _DesktopSearchScreenState extends State<DesktopSearchScreen> {
                             separatorBuilder: (context, i) =>
                                 const Divider(height: 1, indent: 72),
                             itemBuilder: (context, i) => ListTile(
-                                leading: const Icon(Icons.movie_outlined),
+                                leading: SizedBox(
+                                    width: 96,
+                                    height: 54,
+                                    child: LocalThumbnail(results[i])),
                                 title: Text(labelFor(results[i]),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis),
@@ -113,13 +117,11 @@ class _DesktopSearchScreenState extends State<DesktopSearchScreen> {
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
-                                            const Expanded(
-                                                child: Center(
-                                                    child: Icon(
-                                                        Icons
-                                                            .play_circle_outline,
-                                                        color: Colors.white24,
-                                                        size: 42))),
+                                            Expanded(
+                                                child: SizedBox(
+                                                    width: double.infinity,
+                                                    child: LocalThumbnail(
+                                                        results[i]))),
                                             Text(labelFor(results[i]),
                                                 maxLines: 2,
                                                 overflow:
