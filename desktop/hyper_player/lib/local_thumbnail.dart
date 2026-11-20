@@ -1,3 +1,5 @@
+import 'player/frame_preview_decoder.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -16,6 +18,7 @@ class _LocalThumbnailState extends State<LocalThumbnail> {
   @override
   void initState() {
     super.initState();
+    WindowsThumbnails.retain(widget.source);
     image = WindowsThumbnails.get(widget.source);
   }
 
@@ -23,8 +26,16 @@ class _LocalThumbnailState extends State<LocalThumbnail> {
   void didUpdateWidget(covariant LocalThumbnail oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.source != widget.source) {
+      WindowsThumbnails.release(oldWidget.source);
+      WindowsThumbnails.retain(widget.source);
       image = WindowsThumbnails.get(widget.source);
     }
+  }
+
+  @override
+  void dispose() {
+    WindowsThumbnails.release(widget.source);
+    super.dispose();
   }
 
   @override
@@ -51,7 +62,37 @@ class _LocalThumbnailState extends State<LocalThumbnail> {
 }
 
 class WindowsThumbnails {
-  static Future<void> _tail = Future.value();
+  static final _visible = <String, int>{};
+  static void retain(String source) =>
+      _visible.update(source, (count) => count + 1, ifAbsent: () => 1);
+  static void release(String source) {
+    final count = _visible[source] ?? 0;
+    if (count <= 1) {
+      _visible.remove(source);
+    } else {
+      _visible[source] = count - 1;
+    }
+  }
+
+  static final List<Future<void>> _lanes =
+      List.generate(3, (_) => Future.value());
+  static int _nextLane = 0;
+  static final _fallbackDecoder = FramePreviewDecoder();
+  static Future<void> _decoderTail = Future.value();
+  static final _failedUntil = <String, DateTime>{};
+  static Future<String?> _decodeFallback(String source, String output) {
+    final task = _decoderTail.then((_) async {
+      if (await File(output).exists()) return output;
+      final bytes =
+          await _fallbackDecoder.frame(source, const Duration(seconds: 1));
+      if (bytes == null || bytes.isEmpty) return null;
+      await File(output).writeAsBytes(bytes, flush: true);
+      return output;
+    });
+    _decoderTail = task.then<void>((_) {}, onError: (Object _) {});
+    return task;
+  }
+
   static final Map<String, Future<String?>> _pending = {};
   static Future<String?> get(String source) {
     if (!Platform.isWindows ||
@@ -59,11 +100,24 @@ class WindowsThumbnails {
         source.startsWith('https://')) {
       return Future.value();
     }
+    final retryAt = _failedUntil[source];
+    if (retryAt != null && DateTime.now().isBefore(retryAt)) {
+      return Future.value();
+    }
     return _pending.putIfAbsent(source, () {
-      final task = _tail.then((_) => _extract(source));
-      _tail = task.then<void>((_) {}, onError: (Object _) {});
+      final task = _extract(source);
       // Deduplicate concurrent requests, not permanent failures or changed files.
-      task.whenComplete(() => _pending.remove(source));
+      task.then((result) {
+        _pending.remove(source);
+        if (result == null && _visible.containsKey(source)) {
+          _failedUntil[source] = DateTime.now().add(const Duration(minutes: 2));
+        }
+        if (_failedUntil.length > 500) {
+          _failedUntil.remove(_failedUntil.keys.first);
+        }
+      }, onError: (Object _) {
+        _pending.remove(source);
+      });
       return task;
     });
   }
@@ -80,31 +134,46 @@ class WindowsThumbnails {
         hash = ((hash ^ c) * 16777619) & 0xffffffff;
       }
       final directory = Directory(
-          '${(await getTemporaryDirectory()).path}/hyper_video_thumbnails');
+          '${(await getApplicationCacheDirectory()).path}/hyper_video_thumbnails');
       await directory.create(recursive: true);
       final output = '${directory.path}/${hash.toRadixString(16)}.png';
       if (await File(output).exists()) return output;
-      final encoded =
-          base64Encode(utf8.encode(script).expand((b) => [b, 0]).toList());
-      final process = await Process.start('powershell.exe', [
-        '-NoLogo',
-        '-NoProfile',
-        '-NonInteractive',
-        '-EncodedCommand',
-        encoded
-      ], environment: {
-        'HYPER_THUMB_SOURCE': file.absolute.path,
-        'HYPER_THUMB_OUTPUT': output
-      });
-      // Drain both pipes while waiting; kill stalled handlers after 15 seconds.
-      process.stdout.drain<void>();
-      process.stderr.drain<void>();
-      final result = await process.exitCode.timeout(const Duration(seconds: 15),
-          onTimeout: () {
-        process.kill();
-        return -1;
-      });
-      return result == 0 && await File(output).exists() ? output : null;
+      // Look up disk cache BEFORE waiting for a decoder slot. Cached cards
+      // must not queue behind slow Shell handlers for unrelated files.
+      final lane = _nextLane++ % _lanes.length;
+      final previous = _lanes[lane];
+      final slot = Completer<void>();
+      _lanes[lane] = slot.future;
+      await previous;
+      try {
+        // A rapidly scrolled-away tile must not delay the now-visible grid.
+        if (!_visible.containsKey(source)) return null;
+        if (await File(output).exists()) return output;
+        final encoded =
+            base64Encode(utf8.encode(script).expand((b) => [b, 0]).toList());
+        final process = await Process.start('powershell.exe', [
+          '-NoLogo',
+          '-NoProfile',
+          '-NonInteractive',
+          '-EncodedCommand',
+          encoded
+        ], environment: {
+          'HYPER_THUMB_SOURCE': file.absolute.path,
+          'HYPER_THUMB_OUTPUT': output
+        });
+        // Drain both pipes while waiting; kill stalled handlers after 15 seconds.
+        process.stdout.drain<void>();
+        process.stderr.drain<void>();
+        final result = await process.exitCode
+            .timeout(const Duration(seconds: 5), onTimeout: () {
+          process.kill();
+          return -1;
+        });
+        if (result == 0 && await File(output).exists()) return output;
+        return await _decodeFallback(source, output);
+      } finally {
+        slot.complete();
+      }
     } catch (_) {
       return null;
     }

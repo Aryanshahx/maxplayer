@@ -7,6 +7,17 @@ enum AppDesignMode { android, compact, cinema }
 /// toggle. Density, typography, control geometry and surface shapes all change.
 class AppDesign extends ChangeNotifier {
   static final instance = AppDesign();
+  static const accentPalette = [
+    Colors.white,
+    Color(0xff8b5cf6),
+    Color(0xff22d3ee),
+    Color(0xff34d399),
+    Color(0xfffb923c),
+    Color(0xfff472b6),
+    Color(0xff3d6bff)
+  ];
+  int accentIndex = 0;
+  Color get accent => accentPalette[accentIndex];
   AppDesignMode mode = AppDesignMode.android;
   double get mediaExtent => switch (mode) {
         AppDesignMode.android => 300,
@@ -30,6 +41,8 @@ class AppDesign extends ChangeNotifier {
       };
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
+    accentIndex = (prefs.getInt('hyper.design.accent.v1') ?? 0)
+        .clamp(0, accentPalette.length - 1);
     final stored = prefs.getString('hyper.design.v1');
     mode = AppDesignMode.values.firstWhere((value) => value.name == stored,
         orElse: () => AppDesignMode.android);
@@ -45,7 +58,22 @@ class AppDesign extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> selectAccent(int value) async {
+    if (value < 0 || value >= accentPalette.length) {
+      throw RangeError.index(value, accentPalette);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.setInt('hyper.design.accent.v1', value)) {
+      throw StateError('Could not save accent');
+    }
+    accentIndex = value;
+    notifyListeners();
+  }
+
   ThemeData theme(ThemeData base) {
+    base = base.copyWith(
+        colorScheme:
+            base.colorScheme.copyWith(primary: accent, secondary: accent));
     if (mode == AppDesignMode.android) return base;
     final compact = mode == AppDesignMode.compact;
     final radius = compact ? 6.0 : 24.0;

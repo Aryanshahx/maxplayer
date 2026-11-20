@@ -133,9 +133,9 @@ class _DesktopDisplayScreenState extends State<DesktopDisplayScreen> {
                                 AppDesignMode.android =>
                                   'Android-style default',
                                 AppDesignMode.compact =>
-                                  'Dense controls, compact typography and squared surfaces',
+                                  'Sidebar navigation and desktop library workspace',
                                 AppDesignMode.cinema =>
-                                  'Large typography, spacious controls and rounded surfaces'
+                                  'Horizontal navigation and large cinema video shelves'
                               }),
                               trailing: Icon(mode == AppDesign.instance.mode
                                   ? Icons.radio_button_checked
@@ -175,7 +175,13 @@ class _DesktopDisplayScreenState extends State<DesktopDisplayScreen> {
                         for (final entry in {
                           'queue': 'Queue order',
                           'nameAsc': 'Name · A–Z',
-                          'nameDesc': 'Name · Z–A'
+                          'nameDesc': 'Name · Z–A',
+                          'dateAsc': 'Date Added · oldest first',
+                          'dateDesc': 'Date Added · newest first',
+                          'sizeAsc': 'File Size · smallest first',
+                          'sizeDesc': 'File Size · largest first',
+                          'lengthAsc': 'Video Length · shortest first',
+                          'lengthDesc': 'Video Length · longest first'
                         }.entries) ...[
                           ListTile(
                               leading: const Icon(Icons.sort_by_alpha),
@@ -192,6 +198,42 @@ class _DesktopDisplayScreenState extends State<DesktopDisplayScreen> {
                             const Divider(height: 1, indent: 16, endIndent: 16),
                         ]
                       ])),
+                      const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Text(
+                              'Date Added uses library import order. File sizes load locally. Length uses decoded media durations; unknown/unplayed lengths appear last, not as zero. Cinema uses shelves instead of the grid/list toggle.')),
+                      section('ACCENT COLOUR'),
+                      Wrap(spacing: 12, children: [
+                        for (var i = 0; i < AppDesign.accentPalette.length; i++)
+                          IconButton(
+                              tooltip: 'Accent colour ${i + 1}',
+                              onPressed: saving
+                                  ? null
+                                  : () async {
+                                      setState(() => saving = true);
+                                      try {
+                                        await AppDesign.instance
+                                            .selectAccent(i);
+                                      } catch (_) {
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(this.context)
+                                              .showSnackBar(const SnackBar(
+                                                  content: Text(
+                                                      'Could not save accent colour.')));
+                                        }
+                                      } finally {
+                                        if (mounted) {
+                                          setState(() => saving = false);
+                                        }
+                                      }
+                                    },
+                              icon: Icon(
+                                  AppDesign.instance.accentIndex == i
+                                      ? Icons.check_circle
+                                      : Icons.circle,
+                                  color: AppDesign.accentPalette[i],
+                                  size: 32))
+                      ]),
                       section('GROUPING & ACTIONS'),
                       Card(
                           child: SwitchListTile(

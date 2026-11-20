@@ -1,3 +1,5 @@
+import 'windows_voice.dart';
+import 'ai_suggest.dart';
 import 'moving_poster_strip.dart';
 import 'dart:io';
 import 'dart:async';
@@ -128,6 +130,109 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     searchFocus.dispose();
     search.dispose();
     super.dispose();
+  }
+
+  bool listening = false;
+  Future<void> voiceSearch() async {
+    if (listening) return;
+    setState(() => listening = true);
+    try {
+      final text = await recognizeWindowsSpeech();
+      if (!mounted) return;
+      search.text = text;
+      await load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
+      }
+    } finally {
+      if (mounted) setState(() => listening = false);
+    }
+  }
+
+  Future<void> suggestions() async {
+    final input = TextEditingController(text: search.text);
+    final keyInput = TextEditingController();
+    final taste = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+              title: const Text('Movie suggestions'),
+              content: Column(mainAxisSize: MainAxisSize.min, children: [
+                TextField(
+                    controller: input,
+                    autofocus: true,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                        hintText: 'Describe the films you enjoy…',
+                        helperText:
+                            'Online AI if configured; otherwise labelled catalogue matching')),
+                TextField(
+                    controller: keyInput,
+                    obscureText: true,
+                    enableSuggestions: false,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                        labelText: 'Optional OpenRouter key',
+                        helperText:
+                            'Free-model requests only. Key is not stored.'))
+              ]),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(ctx, input.text),
+                    child: const Text('Find movies'))
+              ],
+            ));
+    // Dispose after the dialog route finishes its reverse transition.
+    final suppliedKey = keyInput.text.trim();
+    Future<void>.delayed(const Duration(seconds: 1), () {
+      input.dispose();
+      keyInput.dispose();
+    });
+    if (taste == null || taste.trim().isEmpty || !mounted) return;
+    final suggestor = suppliedKey.isEmpty
+        ? AiSuggestor(client)
+        : AiSuggestor(client, apiKey: suppliedKey);
+    showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()));
+    final result = await suggestor
+        .suggest(taste)
+        .timeout(const Duration(seconds: 65), onTimeout: () => null);
+    if (!mounted) return;
+    Navigator.pop(context);
+    await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (ctx) => SizedBox(
+            height: MediaQuery.sizeOf(ctx).height * .75,
+            child: Column(children: [
+              Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(suggestor.source)),
+              Expanded(
+                  child: result == null || result.isEmpty
+                      ? const Center(
+                          child: Text(
+                              'No matching titles. Check catalogue connectivity/configuration.'))
+                      : ListView(children: [
+                          for (final movie in result)
+                            ListTile(
+                                leading: SizedBox(
+                                    width: 44, child: poster(movie.posterPath)),
+                                title: Text(movie.title),
+                                subtitle:
+                                    Text('${movie.year ?? ''} · via TMDB'),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  openMovie(movie);
+                                })
+                        ])),
+            ])));
   }
 
   void openMovie(TmdbMovie movie) {
@@ -292,32 +397,17 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                                   selectFilter(kDiscoverFilters.first);
                                 }),
                         ]))),
-                const Tooltip(
-                    message:
-                        'Voice search is not implemented in this Windows build',
-                    child: IconButton(
-                        onPressed: null,
-                        icon: Icon(Icons.mic_none_rounded, size: 21))),
-                Tooltip(
-                    message:
-                        'AI Suggestor is not implemented in this Windows build',
-                    child: Opacity(
-                        opacity: .45,
-                        child: Container(
-                            height: 40,
-                            padding: const EdgeInsets.symmetric(horizontal: 13),
-                            decoration: BoxDecoration(
-                                gradient: const LinearGradient(colors: [
-                                  Color(0xff7b61ff),
-                                  Color(0xffe553b3)
-                                ]),
-                                borderRadius: BorderRadius.circular(22)),
-                            child: const Row(children: [
-                              Icon(Icons.auto_awesome, size: 16),
-                              SizedBox(width: 6),
-                              Text('AI',
-                                  style: TextStyle(fontWeight: FontWeight.w800))
-                            ])))),
+                IconButton(
+                    tooltip: listening
+                        ? 'Listening (up to ten seconds)…'
+                        : 'Voice search · Windows speech',
+                    onPressed: listening ? null : voiceSearch,
+                    icon: Icon(
+                        listening ? Icons.hearing : Icons.mic_none_rounded)),
+                TextButton.icon(
+                    onPressed: suggestions,
+                    icon: const Icon(Icons.auto_awesome),
+                    label: const Text('AI / Suggestions')),
                 IconButton(
                     tooltip: 'Refresh catalogue',
                     onPressed: loading

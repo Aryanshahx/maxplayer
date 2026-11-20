@@ -1,3 +1,7 @@
+# Latest correction boundary
+
+See **STRUCTURAL_LAYOUT_AI_UPDATE.md**: three structural library compositions, optional downloadable local speech pipeline, Android onboarding, input/thumbnail/mini-player corrections. Windows notifications are NOT implemented; native execution/performance needs Windows validation. This section supersedes conflicting older claims below.
+
 # Consolidated Windows update — implementation and verification status
 
 Prepared 2026-09-05. Starting desktop baseline:

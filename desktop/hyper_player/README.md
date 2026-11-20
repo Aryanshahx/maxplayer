@@ -1,3 +1,7 @@
+# Latest correction
+
+Read `STRUCTURAL_LAYOUT_AI_UPDATE.md` first for structural layouts, input/thumbnail corrections, onboarding, optional local AI and the unresolved Windows notification integration. Older docs describe earlier snapshots.
+
 # Hyper Player - All Formats — consolidated Windows preview
 
 Separate Flutter desktop project by Hyper Tech Labs. Android package, source,

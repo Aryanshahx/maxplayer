@@ -538,24 +538,21 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                             ? null
                             : () {
                                 final details = doubleTapDetails;
-                                if (details?.kind == PointerDeviceKind.touch) {
-                                  final width = context.size?.width ?? 800;
-                                  if (details!.localPosition.dx < width / 3) {
-                                    if (!prefs.doubleTapSides) return;
+                                final width = context.size?.width ?? 800;
+                                final x =
+                                    details?.localPosition.dx ?? width / 2;
+                                if (x < width / 3) {
+                                  if (prefs.doubleTapSides) {
                                     seekBy(-prefs.seekStep);
-                                  } else if (details.localPosition.dx >
-                                      width * 2 / 3) {
-                                    if (!prefs.doubleTapSides) return;
-                                    seekBy(prefs.seekStep);
-                                  } else {
-                                    if (prefs.doubleTapMiddle) {
-                                      widget.onPlayPause();
-                                    }
                                   }
-                                  wake();
-                                } else {
-                                  widget.onFullscreen();
+                                } else if (x > width * 2 / 3) {
+                                  if (prefs.doubleTapSides) {
+                                    seekBy(prefs.seekStep);
+                                  }
+                                } else if (prefs.doubleTapMiddle) {
+                                  widget.onPlayPause();
                                 }
+                                wake();
                               },
                         onLongPressStart: (_) {
                           if (!locked &&
@@ -583,7 +580,7 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                             }
                           },
                           onPointerDown: (event) => touchInput =
-                              event.kind == PointerDeviceKind.touch,
+                              event.kind != PointerDeviceKind.trackpad,
                           child: const SizedBox.expand(),
                         )),
                     if (brightness < 1)
@@ -682,6 +679,10 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                                         },
                                         itemBuilder: (_) => [
                                               for (final row in const [
+                                                (
+                                                  'AI subtitles',
+                                                  Icons.auto_awesome
+                                                ),
                                                 (
                                                   'Playback queue',
                                                   Icons.queue_music
@@ -906,12 +907,6 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                           right: 24,
                           bottom: visible ? 180 : 48,
                           child: widget.karaokeOverlay!),
-                    if (!locked && visible)
-                      Positioned(
-                          left: 12,
-                          top: 60,
-                          child: button('Brightness & volume (B)',
-                              Icons.brightness_6_outlined, adjustments)),
                     if (!locked && visible && prefs.screenLock)
                       Positioned(
                           right: 12,

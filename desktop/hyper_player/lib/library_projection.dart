@@ -4,7 +4,9 @@ List<int> visibleLibraryIndices(List<String> queue,
     {required bool onlyFavourites,
     required Iterable<String> favourites,
     String sort = 'queue',
-    String Function(String)? labelOf}) {
+    String Function(String)? labelOf,
+    Map<String, int> sizes = const {},
+    Map<String, int> lengths = const {}}) {
   final allowed = onlyFavourites ? favourites.toSet() : null;
   final indices = <int>[
     for (var i = 0; i < queue.length; i++)
@@ -16,6 +18,20 @@ List<int> visibleLibraryIndices(List<String> queue,
       final right = (labelOf?.call(queue[b]) ?? queue[b]).toLowerCase();
       final result =
           sort == 'nameDesc' ? right.compareTo(left) : left.compareTo(right);
+      return result == 0 ? a.compareTo(b) : result;
+    });
+  }
+  if (sort == 'dateAsc' || sort == 'dateDesc') {
+    indices.sort((a, b) => sort == 'dateAsc' ? a.compareTo(b) : b.compareTo(a));
+  }
+  if (['sizeAsc', 'sizeDesc', 'lengthAsc', 'lengthDesc'].contains(sort)) {
+    final values = sort.startsWith('size') ? sizes : lengths;
+    indices.sort((a, b) {
+      final left = values[queue[a]], right = values[queue[b]];
+      if (left == null) return right == null ? a.compareTo(b) : 1;
+      if (right == null) return -1;
+      final result =
+          sort.endsWith('Asc') ? left.compareTo(right) : right.compareTo(left);
       return result == 0 ? a.compareTo(b) : result;
     });
   }

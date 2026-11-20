@@ -94,7 +94,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                           title: Text('Player keyboard & mouse'),
                           content: SingleChildScrollView(
                               child: Text(
-                                  'Space: play/pause\nLeft / Right: seek configured step\nUp / Down or mouse wheel: volume\nM: mute\nB: brightness and volume sliders\n[ / ]: video brightness\nZ: cycle video fit\nI / O: zoom\nShift+arrows: pan while zoomed\nHold R: temporary speed boost\nH: show/hide controls\nL: lock controls\nF: fullscreen\nEscape: unlock\nDouble-click video: fullscreen\nCtrl+O: open files\nCtrl+L: open streams\n\nShortcuts require player focus; not active while typing in a dialog.'))))),
+                                  'Space: play/pause\nLeft / Right: seek configured step\nUp / Down or mouse wheel: volume\nM: mute\nB: brightness and volume sliders\n[ / ]: video brightness\nZ: cycle video fit\nI / O: zoom\nShift+arrows: pan while zoomed\nHold R: temporary speed boost\nH: show/hide controls\nL: lock controls\nF: fullscreen\nEscape: unlock\nDouble-click sides: seek; centre: play/pause. Use F for fullscreen\nCtrl+O: open files\nCtrl+L: open streams\n\nShortcuts require player focus; not active while typing in a dialog.'))))),
               if (!_loaded)
                 Padding(
                   padding: const EdgeInsets.all(32),
@@ -107,7 +107,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 _SwitchTile(
                   icon: Icons.touch_app_outlined,
                   label: 'Double-tap sides to seek',
-                  subtitle: 'Double-tap left/right edge',
+                  subtitle:
+                      'Touch or mouse, windowed/fullscreen. Keyboard: Left / Right',
                   value: s.doubleTapSides,
                   onChanged: s.setDoubleTapSides,
                   trailing: s.doubleTapSides
@@ -126,19 +127,23 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 _SwitchTile(
                   icon: Icons.play_circle_outline,
                   label: 'Double-tap middle to play/pause',
+                  subtitle: 'Keyboard: Space. Fullscreen is F, not double-tap.',
                   value: s.doubleTapMiddle,
                   onChanged: s.setDoubleTapMiddle,
                 ),
                 _SwitchTile(
                   icon: Icons.brightness_6_outlined,
                   label: 'Swipe left side for brightness',
+                  subtitle:
+                      'Drag up/down on left. Keys [ darker / ] brighter; B opens sliders. Video brightness only.',
                   value: s.swipeBrightness,
                   onChanged: s.setSwipeBrightness,
                 ),
                 _SwitchTile(
                   icon: Icons.volume_up_outlined,
                   label: 'Swipe right side for volume',
-                  subtitle: 'In-app volume; boost allows up to 200%',
+                  subtitle:
+                      'Up/Down keys or wheel. In-app volume; boost allows up to 200%',
                   value: s.swipeVolume,
                   onChanged: s.setSwipeVolume,
                 ),
@@ -152,7 +157,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 _SwitchTile(
                   icon: Icons.pinch_outlined,
                   label: 'Two-finger pinch to zoom',
-                  subtitle: 'OFF (default): spread 2 fingers = Fit, Crop, '
+                  subtitle:
+                      'Keyboard: Z fit; I zoom in / O out; Shift+arrows pan. OFF (default): spread 2 fingers = Fit, Crop, '
                       'Stretch, 16:9... then keep spreading to zoom in. '
                       'ON: pinch zooms straight away. 2-finger tap = Fit.',
                   value: s.pinchZoom,

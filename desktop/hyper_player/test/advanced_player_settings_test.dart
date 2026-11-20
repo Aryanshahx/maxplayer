@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hyper_player/utils/player_settings.dart';
@@ -61,6 +62,8 @@ void main() {
       {ValueChanged<Duration>? seek,
       ValueChanged<double>? rate,
       ValueChanged<double>? volume,
+      VoidCallback? fullscreen,
+      VoidCallback? playPause,
       void Function(double, Offset)? transform}) async {
     final playback = ValueNotifier(const PlaybackSnapshot(
         position: Duration(seconds: 30),
@@ -78,7 +81,7 @@ void main() {
       canPrevious: true,
       canNext: true,
       onBack: () {},
-      onPlayPause: () {},
+      onPlayPause: playPause ?? () {},
       onPrevious: () {},
       onNext: () {},
       onShuffle: () {},
@@ -88,7 +91,9 @@ void main() {
       onExtras: () {},
       onQueue: () {},
       onSettings: () {},
-      onFullscreen: () async {},
+      onFullscreen: () async {
+        fullscreen?.call();
+      },
       onMenu: (_) {},
       onSeek: seek ?? (_) {},
       onVolume: volume ?? (_) {},
@@ -111,6 +116,42 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Brightness & volume'), findsOneWidget);
     expect(find.byType(Slider), findsWidgets);
+  });
+  testWidgets(
+      'Windowed mouse double click seeks sides without entering fullscreen',
+      (tester) async {
+    Duration? seek;
+    var fullscreenCalls = 0, playCalls = 0;
+    await controls(tester,
+        seek: (v) => seek = v,
+        fullscreen: () => fullscreenCalls++,
+        playPause: () => playCalls++);
+    await tester.tapAt(const Offset(100, 220), kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tapAt(const Offset(100, 220), kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 320));
+    expect(seek, const Duration(seconds: 20));
+    expect(fullscreenCalls, 0);
+    await tester.tapAt(const Offset(400, 220), kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tapAt(const Offset(400, 220), kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 320));
+    expect(playCalls, 1);
+    expect(fullscreenCalls, 0);
+    expect(find.byTooltip('Brightness & volume (B)'), findsNothing);
+  });
+  testWidgets('Windowed mouse drag adjusts video brightness with feedback',
+      (tester) async {
+    await controls(tester);
+    final mouse = await tester.startGesture(const Offset(180, 320),
+        kind: PointerDeviceKind.mouse);
+    await mouse.moveBy(const Offset(0, 40));
+    await tester.pump(const Duration(milliseconds: 40));
+    await mouse.moveBy(const Offset(0, 80));
+    await tester.pump(const Duration(milliseconds: 40));
+    await mouse.up();
+    await tester.pump();
+    expect(find.textContaining('Video brightness'), findsWidgets);
   });
   testWidgets('Long-press restores the exact prior playback rate on release',
       (tester) async {

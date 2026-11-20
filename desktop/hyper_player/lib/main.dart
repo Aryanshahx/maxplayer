@@ -1,3 +1,8 @@
+import 'screens/local_ai_screen.dart';
+import 'screens/user_manual_android.dart';
+import 'screens/library_layouts.dart';
+import 'screens/onboarding_flow.dart';
+import 'utils/onboarding.dart';
 import 'player/native_properties.dart';
 import 'windows_drives.dart';
 import 'player/karaoke_overlay.dart';
@@ -135,6 +140,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   final miniWindow = MiniPlayerWindow(WindowsMiniWindowPort());
   bool miniTransition = false;
   final player = Player();
+  final mediaSizes = <String, int>{};
+  final mediaLengths = <String, int>{};
   late final VideoController controller = VideoController(player);
   final queue = <String>[];
   final collections = DesktopStore();
@@ -186,6 +193,11 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     void updateView(dynamic _) {
       if (!mounted) return;
       final state = player.state;
+      if (selected >= 0 &&
+          selected < queue.length &&
+          state.duration > Duration.zero) {
+        mediaLengths[queue[selected]] = state.duration.inMilliseconds;
+      }
       playbackView.value = PlaybackSnapshot(
           position: state.position,
           duration: state.duration,
@@ -261,7 +273,17 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     onlyFavourites = prefs.getBool('hyper.library.onlyFavourites.v1') ?? false;
     groupByFolder = prefs.getBool('hyper.library.groupFolder.v1') ?? false;
     final savedSort = prefs.getString('hyper.library.sort.v1');
-    if (['queue', 'nameAsc', 'nameDesc'].contains(savedSort)) {
+    if ([
+      'queue',
+      'nameAsc',
+      'nameDesc',
+      'dateAsc',
+      'dateDesc',
+      'sizeAsc',
+      'sizeDesc',
+      'lengthAsc',
+      'lengthDesc'
+    ].contains(savedSort)) {
       librarySort = savedSort!;
     }
     autoHide = inputSettings.autoHide;
@@ -290,6 +312,10 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     setState(
       () => queue.addAll(decodeQueue(prefs.getString('hyper.queue.v1'))),
     );
+    if (!await Onboarding.hasSeen() && mounted) {
+      await Navigator.push<void>(
+          context, MaterialPageRoute(builder: (_) => const OnboardingFlow()));
+    }
     if (Platform.isWindows &&
         queue.isEmpty &&
         !(prefs.getBool('hyper.scan.intro.v1') ?? false)) {
@@ -344,7 +370,12 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       final start = resumeEnabled && !validStream(source)
           ? resumePositions[source] ?? 0
           : 0;
-      await player.open(Media(source, start: Duration(milliseconds: start)));
+      // Let the windowed Video attach before opening its decoder. Playback
+      // starts explicitly; stats/preference IO is not on the start path.
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || request != playRequest) return;
+      await player.open(Media(source, start: Duration(milliseconds: start)),
+          play: true);
       if (!mounted || request != playRequest) return;
       await player.setRate((await SharedPreferences.getInstance())
               .getDouble('hyper.player.rate.v1') ??
@@ -356,7 +387,9 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     } catch (e) {
       notify('Cannot open media: $e');
     } finally {
-      if (request == playRequest) openingMedia = false;
+      if (mounted && request == playRequest) {
+        setState(() => openingMedia = false);
+      }
     }
   }
 
@@ -1043,6 +1076,15 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                 Column(mainAxisSize: MainAxisSize.min, children: [
                   const PlaybackSheetHandle(),
                   ListTile(
+                      leading: const Icon(Icons.auto_awesome),
+                      title: const Text('AI subtitles · generate locally'),
+                      subtitle: const Text(
+                          'Download tools/model once; no video upload'),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        generateAiSubtitles();
+                      }),
+                  ListTile(
                       leading: const Icon(Icons.subtitles_rounded),
                       title: const Text('Subtitles'),
                       onTap: () {
@@ -1196,6 +1238,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
 
   void playerMenu(String action) {
     switch (action) {
+      case 'AI subtitles':
+        generateAiSubtitles();
       case 'Playback queue':
         showQueue();
       case 'Cast to TV':
@@ -1666,7 +1710,22 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     }
   }
 
+  Future<void> refreshMediaMetadata() async {
+    for (final source in queue.toList()) {
+      if (!mounted) return;
+      if (validStream(source)) continue;
+      try {
+        final stat = await File(source).stat();
+        if (stat.type == FileSystemEntityType.file) {
+          mediaSizes[source] = stat.size;
+        }
+      } catch (_) {/* Unavailable metadata remains unknown, sorted last. */}
+    }
+    if (mounted) setState(() {});
+  }
+
   Future<void> displaySettings() async {
+    unawaited(refreshMediaMetadata());
     await Navigator.push<void>(
         context,
         MaterialPageRoute(
@@ -1719,6 +1778,20 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                 })));
   }
 
+  Future<void> generateAiSubtitles() async {
+    if (selected < 0 || selected >= queue.length) {
+      notify('Open a local video first.');
+      return;
+    }
+    final source = queue[selected];
+    final path = await Navigator.push<String>(context,
+        MaterialPageRoute(builder: (_) => LocalAiScreen(source: source)));
+    if (path != null && mounted && selected >= 0 && queue[selected] == source) {
+      await player.setSubtitleTrack(SubtitleTrack.uri(path));
+      notify('Generated subtitles loaded.');
+    }
+  }
+
   Future<void> homeMenu(String value) async {
     switch (value) {
       case 'Language':
@@ -1729,10 +1802,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       case 'Display settings':
         await displaySettings();
       case 'User manual':
-        await infoDialog(
-          value,
-          'Open files (Ctrl+O) or import a folder. Rescan checks saved folders for new direct-child media; it does not search your whole disk or remove missing entries. Search finds entries in queue/history/favourites.\n\nPlaylists saves the queue under a name. Use the extra tools menu entries for IPTV import, subtitles, speed, A–B repeat and sleep timer.\n\nDiscover uses TMDB metadata and opens trailers on YouTube in your browser. It does not supply full movies. Construction-marked tiles remain unimplemented.',
-        );
+        await UserManualSheet.show(context);
+        break;
       case 'About Hyper Player':
         await AboutSheet.show(context);
         break;
@@ -1903,13 +1974,56 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         ],
       );
 
-  Widget library() => LayoutBuilder(
+  Widget library() => LibraryLayouts(
+        mode: AppDesign.instance.mode,
+        androidLibrary: androidLibrary(
+            workspace: AppDesign.instance.mode == AppDesignMode.compact),
+        videos: visibleLibraryIndices(queue,
+                onlyFavourites: onlyFavourites,
+                favourites: collections.favourites,
+                sort: librarySort,
+                labelOf: labelFor,
+                sizes: mediaSizes,
+                lengths: mediaLengths)
+            .where((i) => !isAudioPath(queue[i]))
+            .map((i) => queue[i])
+            .toList(),
+        play: playSource,
+        destinations: [
+          LibraryDestination(
+              'Discover',
+              Icons.explore_outlined,
+              () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => DiscoverScreen(
+                          localSources: queue.toList(),
+                          onPlayLocal: playSource)))),
+          LibraryDestination('Open File', Icons.video_file_outlined, files),
+          LibraryDestination('Folders', Icons.folder_outlined, browseFolders),
+          LibraryDestination('Audio', Icons.music_note, browseAudio),
+          LibraryDestination('Playlists', Icons.queue_music, namedPlaylists),
+          LibraryDestination('Network', Icons.dns_outlined, browseNetwork),
+          LibraryDestination('Cloud', Icons.cloud_outlined, browseCloud),
+          LibraryDestination(
+              'Display Settings', Icons.dashboard_customize, displaySettings),
+          LibraryDestination(
+              'Welcome guide',
+              Icons.help_outline,
+              () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const OnboardingFlow()))),
+        ],
+      );
+
+  Widget androidLibrary({bool workspace = false}) => LayoutBuilder(
         builder: (context, size) {
           final visible = visibleLibraryIndices(queue,
                   onlyFavourites: onlyFavourites,
                   favourites: collections.favourites,
                   sort: librarySort,
-                  labelOf: labelFor)
+                  labelOf: labelFor,
+                  sizes: mediaSizes,
+                  lengths: mediaLengths)
               .where((index) => !isAudioPath(queue[index]))
               .toList();
           final groups =
@@ -1947,29 +2061,30 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
           ];
           return CustomScrollView(
             slivers: [
-              SliverToBoxAdapter(
-                  child: Padding(
-                      padding: const EdgeInsets.fromLTRB(6, 12, 6, 0),
-                      child: DiscoverHomeBanner(
-                          localSources: {
-                            ...queue,
-                            ...collections.history,
-                            ...collections.favourites,
-                            ...collections.playlists.values
-                                .expand((items) => items)
-                          }.toList(),
-                          onPlayLocal: (source) {
-                            Navigator.of(context)
-                                .popUntil((route) => route.isFirst);
-                            playSource(source);
-                          }))),
+              if (!workspace)
+                SliverToBoxAdapter(
+                    child: Padding(
+                        padding: const EdgeInsets.fromLTRB(6, 12, 6, 0),
+                        child: DiscoverHomeBanner(
+                            localSources: {
+                              ...queue,
+                              ...collections.history,
+                              ...collections.favourites,
+                              ...collections.playlists.values
+                                  .expand((items) => items)
+                            }.toList(),
+                            onPlayLocal: (source) {
+                              Navigator.of(context)
+                                  .popUntil((route) => route.isFirst);
+                              playSource(source);
+                            }))),
               SliverPadding(
                 padding: const EdgeInsets.all(16),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     const SizedBox(height: 12),
                     for (var start = 0;
-                        start < tiles.length;
+                        !workspace && start < tiles.length;
                         start += columns) ...[
                       Row(
                         children: [
@@ -2168,6 +2283,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                             trackPicker(subtitle: true);
                           } else if (value == 'Load subtitle file') {
                             externalSubtitles();
+                          } else if (value == 'AI subtitles') {
+                            generateAiSubtitles();
                           } else if (value == 'Playback speed') {
                             playbackOptions();
                           } else if (value == 'Watch statistics') {
@@ -2276,28 +2393,48 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                 if (!viewingPlayer && selected >= 0 && selected < queue.length)
                   Material(
                     color: const Color(0xff101013),
-                    child: ListTile(
-                      leading: IconButton(
-                        tooltip: 'Play/pause',
-                        onPressed: () => player.playOrPause(),
-                        icon: const Icon(Icons.play_arrow),
-                      ),
-                      title: Text(
-                        labelFor(queue[selected]),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: TextButton(
-                        onPressed: () => setState(() => viewingPlayer = true),
-                        child: const LText('Open player'),
-                      ),
-                    ),
+                    child: ValueListenableBuilder<PlaybackSnapshot>(
+                        valueListenable: playbackView,
+                        builder: (context, state, _) => ListTile(
+                              leading: SizedBox(
+                                  width: 72,
+                                  height: 48,
+                                  child: LocalThumbnail(queue[selected])),
+                              onTap: () => setState(() => viewingPlayer = true),
+                              title: Text(
+                                labelFor(queue[selected]),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                        tooltip:
+                                            state.playing ? 'Pause' : 'Play',
+                                        onPressed: () async {
+                                          if (player.state.completed) {
+                                            await player.seek(Duration.zero);
+                                            await player.play();
+                                          } else {
+                                            await player.playOrPause();
+                                          }
+                                        },
+                                        icon: Icon(state.playing
+                                            ? Icons.pause
+                                            : Icons.play_arrow)),
+                                    TextButton(
+                                        onPressed: () => setState(
+                                            () => viewingPlayer = true),
+                                        child: const LText('Open player')),
+                                  ]),
+                            )),
                   ),
                 if (!viewingPlayer)
                   const Padding(
                     padding: EdgeInsets.all(6),
                     child: LText(
-                      'Windows preview · Construction icon = integration pending · Folder import scans direct children only',
+                      'Windows preview · Scan accessible local drives from Folders · AI tools download separately',
                       style: TextStyle(fontSize: 10, color: Color(0xff9296a0)),
                     ),
                   ),
