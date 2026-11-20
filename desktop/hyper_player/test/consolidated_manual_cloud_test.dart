@@ -111,7 +111,7 @@ void main() {
     expect(find.text('Quick tiles under Discover'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('KEYBOARD & MOUSE'), 350);
     expect(find.text('KEYBOARD & MOUSE'), findsOneWidget);
-    expect(find.textContaining('Android-only touch gestures are not presented'),
+    expect(find.textContaining('configurable touch gestures on a touchscreen'),
         findsOneWidget);
   });
 }

@@ -76,7 +76,7 @@ class UserManualSheet extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.only(bottom: 6),
           child: LText(
-            'Use these PC controls while the video has keyboard focus. Android-only touch gestures are not presented as working Windows controls.',
+            'Use keyboard/mouse on a normal PC or the configurable touch gestures on a touchscreen. Native renderer behaviour still requires Windows validation.',
             style: TextStyle(color: Colors.white54, fontSize: 12.5),
           ),
         ),
@@ -240,7 +240,7 @@ class _GestureItem {
 
 const List<_Item> _homeItems = [
   _Item(Icons.sync, 'Rescan button (⟳ top bar)',
-      'Checks the direct-child media in folders you chose. This is not a whole-PC or recursive scan. Missing folders are reported rather than silently removed.'),
+      'Choose folder/drive roots or rescan saved roots, including accessible subfolders. Add each drive root to cover a device. Progress/Cancel and partial results are shown; 20,000 media and 100,000 directory bounds apply. Protected folders/links are skipped; missing entries are not deleted.'),
   _Item(Icons.search, 'Search',
       'Search filenames in the queue, history, favourites and saved playlists. Media names remain in their original language.'),
   _Item(Icons.tune, 'Display settings',
@@ -255,20 +255,24 @@ const List<_Item> _homeItems = [
       'Watch statistics shows recorded daily playback, a seven-day chart and most-watched filenames. No historical viewing time is invented.'),
 ];
 const List<_GestureItem> _gestureItems = [
+  _GestureItem(DesktopInputKind.click, 'Touchscreen gestures',
+      'Configure side double-tap seek, centre double-tap play/pause, left brightness, right volume and horizontal seek in Player settings. Long-press temporarily speeds up and restores the prior rate on release. Pinch mode OFF cycles fits; ON enables 1–4x focal zoom and pan. A quick two-finger tap resets to the default fit. Brightness is video-only dimming, not system brightness.'),
   _GestureItem(DesktopInputKind.click, 'Single click — show / hide controls',
-      'Click the video background to show or hide the overlay. Move the mouse to show controls. During playback, auto-hide waits four seconds unless disabled in Player settings.'),
+      'Click the video background to show or hide the overlay. Move the mouse to show controls. During playback, auto-hide uses the configured 3–6 second delay unless disabled in Player settings.'),
   _GestureItem(DesktopInputKind.keyboard, 'Space / Left / Right',
-      'With the video focused, Space toggles playback. Left and Right seek ten seconds. For live streams without a known duration, seeking may be unavailable.'),
+      'With the video focused, Space toggles playback. Left and Right seek the configured 5/10/15/30-second step. For live streams without a known duration, seeking may be unavailable.'),
   _GestureItem(DesktopInputKind.keyboard, 'Volume, mute & fullscreen',
       'Up/Down change volume, M toggles mute and F toggles fullscreen. Double-click the video background also toggles fullscreen.'),
   _GestureItem(DesktopInputKind.click, 'Lock / unlock controls',
       'The lock button hides player controls. Click the video to reveal the unlock button, or press Escape to unlock. This is an input lock, not a secure vault.'),
 ];
 const List<_Item> _playerItems = [
+  _Item(Icons.image_search_outlined, 'Timeline frame preview',
+      'Hover the progress bar to request a local-file frame with a separate muted decoder. It does not seek main playback, fetch network streams, save frames to disk or use private-vault files. Loading and Preview unavailable are explicit. Codec/native renderer support must be checked on Windows.'),
   _Item(Icons.play_circle_outline, 'Playback & queue',
       'Use Previous, Play/Pause and Next. Shuffle visits queue entries without repeating within a cycle; Previous follows playback history. Repeat cycles Off / All / One.'),
   _Item(Icons.volume_up, 'Volume',
-      'Use the volume slider or mute button. This preview uses the standard 0–100% range; Android volume boost is not claimed.'),
+      'Use touch right-side swipe, mouse wheel or Up/Down; M or the mute button toggles sound. The Sound setting allows amplification up to 200%, which can distort audio; disabling boost caps volume at 100%.'),
   _Item(Icons.speed, 'Playback speed',
       'The rate pill opens the speed sheet. Choose a preset or release the slider from 0.5× to 4×. Actual rate support depends on the media/backend.'),
   _Item(Icons.tune, 'Subtitles, audio tracks & A–B',
@@ -278,7 +282,7 @@ const List<_Item> _playerItems = [
   _Item(Icons.playlist_play, 'Playlists',
       'The player queue sheet highlights the selected item and links to your saved playlists. Select an item to play it.'),
   _Item(Icons.more_vert, 'More actions',
-      'Video info, Equalizer & Audio FX, Screenshot and Sleep timer. Cast and Picture-in-Picture are visibly unavailable until native integration exists.'),
+      'Video info, Equalizer & Audio FX, Screenshot, Sleep timer, Windows wireless display and Windows mini-player. Cast opens the system Miracast chooser, not Chromecast/DLNA media casting. PiP is an always-on-top mini-window with Return to full player. Both native integrations require Windows validation.'),
   _Item(Icons.settings_outlined, 'Player settings',
       'Auto-hide and local-file resume are saved on this PC. Rotation is a phone feature, not a Windows toggle.'),
 ];
@@ -312,5 +316,5 @@ const List<_Item> _tipItems = [
   _Item(Icons.lock_outline, 'Private Space (experimental)',
       'Use a 12–128 character password. Encrypted copies require the original Windows account and vault key file; there is no password reset. Original files remain outside the vault. Export creates an unencrypted copy. In-app private playback is unavailable. Windows lifecycle and DPAPI validation are pending. Do not remove setup.lock or recovery files blindly after a failed setup.'),
   _Item(Icons.construction_outlined, 'Availability',
-      'Private Space encrypted-copy storage is experimental and has no in-app playback yet. FTP/FTPS and direct NAS credential login, Whisper, casting, PiP, karaoke and video-enhancement integrations are not complete. Their presence in Android does not make them working Windows features.'),
+      'Private Space encrypted-copy storage is experimental and has no in-app playback yet. FTP/FTPS and direct NAS credential login, Whisper, Chromecast/DLNA casting, karaoke and video-enhancement integrations are not complete. Windows wireless-display/mini-player and preview-frame decoding are source-integrated but need native validation. Their presence in Android does not make them working Windows features.'),
 ];

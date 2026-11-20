@@ -3,6 +3,13 @@
 Prepared 2026-09-05. Starting desktop baseline:
 `ec10d8eb96993f03c9d327f87324f3d86f0feb54`.
 
+## New player/input/scanning follow-up
+Read **PLAYER_FOLLOWUP.md** for the latest changes. Its more specific status
+supersedes the original rows below for gesture settings, recursive selected-root
+scanning, sleep badge, hover decoder, Windows mini-player and system wireless-
+display chooser. These integrations are not proof of native Windows acceptance.
+The original all-features/native-release caveats still apply.
+
 ## Read first
 This delivery consolidates the desktop work into ONE root-applied script. It does
 **not** mean all Android features are implemented or visually/native verified.
@@ -28,7 +35,7 @@ Android source/package/signing/version are not included in the update payload.
 ## Explicitly incomplete / unavailable
 - Safe in-app encrypted-vault playback and full native lifecycle/recovery testing.
 - Whisper/AI subtitle generation/model management, karaoke timing/rendering.
-- Cast receiver discovery/control, native picture-in-picture window integration.
+- Chromecast/DLNA receiver discovery/control; native validation of the Windows wireless-display launcher and always-on-top mini-player.
 - Verified HDR tone mapping/video enhancement and full advanced player preferences.
 - FTP/FTPS, direct app-managed NAS credentials, complete WebDAV browsing.
 - Cloud account OAuth/API integrations; native other-app sharing/discovery/QR/resume.

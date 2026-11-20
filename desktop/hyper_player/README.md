@@ -4,7 +4,7 @@ Separate Flutter desktop project by Hyper Tech Labs. Android package, source,
 signing configuration and version are not changed by this update.
 
 **This is an unsigned Windows preview, NOT full Android feature parity or a
-security-audited release.** Read `CONSOLIDATED_STATUS.md` before building or using
+security-audited release.** Read `PLAYER_FOLLOWUP.md` and `CONSOLIDATED_STATUS.md` before building or using
 Private Space. The application name is not a guarantee of every codec/format.
 
 ## Build and launch
@@ -31,13 +31,13 @@ next Windows run; it has not been executed in the Linux preparation environment.
   Quick Share. No Open files/Current playlist buttons in the Home header.
 - **Ctrl+O:** open files. The empty-library action also opens the picker.
 - **Ctrl+L:** open a direct HTTP(S) stream. A web page is not necessarily playable.
-- Folders/rescan operate only on chosen direct-child directories, not the whole PC.
+- Folders/rescan include accessible subfolders of chosen folder/drive roots. Add every drive root you want scanned; progress/cancel and partial-result bounds apply.
 - Display Settings saves grid/list, name sort, folder grouping, favourites filter
   and Queue All/Play Single. View sort/filter/group never remove/reorder the actual
   playback queue. Play Single stops automatic advance including queue repeat;
   manual next/previous still work.
 - The player has Android-adapted video controls and a separate audio composition.
-  Use the in-app User manual for keyboard/mouse and supported control details.
+  Player Settings now ports the Android gesture/hold/zoom/sound/playback sections and includes a keyboard manual. See PLAYER_FOLLOWUP.md for the Windows mini-player, wireless-display launcher and local timeline-frame decoder integration; native validation is pending.
 - Discover provides metadata, external trailers and conservative local-library
   matching, not full movie/episode streaming or downloads.
 

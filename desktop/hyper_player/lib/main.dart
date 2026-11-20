@@ -1,9 +1,16 @@
+import 'utils/player_settings.dart';
+import 'screens/player_settings_android.dart';
+import 'dart:math' as math;
+import 'package:url_launcher/url_launcher.dart';
+import 'player/frame_preview_decoder.dart';
+import 'player/mini_player.dart';
+import 'package:window_manager/window_manager.dart';
 import 'library_projection.dart';
 import 'screens/private_space_screen.dart';
 import 'screens/quick_share_screen.dart';
 import 'screens/network_storage_screen.dart';
 import 'screens/cloud_storage_screen.dart';
-import 'local_media_index.dart' show isAudioPath;
+import 'local_media_index.dart' show isAudioPath, scanLocalMedia;
 import 'player/audio_now_playing.dart';
 import 'player/android_controls.dart';
 import 'player/fit.dart';
@@ -46,6 +53,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  if (Platform.isWindows) await windowManager.ensureInitialized();
   await AppLanguage.instance.load();
   runApp(const HyperPlayer());
 }
@@ -110,6 +118,10 @@ class DesktopPlayer extends StatefulWidget {
 }
 
 class _DesktopPlayerState extends State<DesktopPlayer> {
+  final inputSettings = PlayerSettings.instance;
+  final framePreview = FramePreviewDecoder();
+  final miniWindow = MiniPlayerWindow(WindowsMiniWindowPort());
+  bool miniTransition = false;
   final player = Player();
   late final VideoController controller = VideoController(player);
   final queue = <String>[];
@@ -119,6 +131,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   StreamSubscription<bool>? completion;
   int selected = -1;
   bool busy = false;
+  bool scanCancelled = false;
+  int scanFilesSeen = 0, scanDirectoriesSeen = 0;
   bool viewingPlayer = false;
   bool listMode = false;
   bool queueAll = true;
@@ -178,7 +192,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         resumePositions.remove(queue[selected]);
       }
       if (sleepUntilEnd) {
-        sleepUntilEnd = false;
+        setState(() => sleepUntilEnd = false);
         player.pause();
         notify('Sleep timer — playback paused at end.');
         return;
@@ -187,6 +201,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       final next = order.next(selected, queue.length, completed: true);
       if (next != null) play(next);
     });
+    inputSettings.addListener(inputSettingsChanged);
     restore();
     ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (player.state.playing && !player.state.buffering) {
@@ -216,6 +231,11 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   Future<void> restore() async {
     final prefs = await SharedPreferences.getInstance();
     await collections.load();
+    await inputSettings.load();
+    if (mounted) {
+      autoHide = inputSettings.autoHide;
+      resumeEnabled = inputSettings.resume;
+    }
     await dailyWatch.load();
     scanFolders.addAll(prefs.getStringList('hyper.scan.folders.v1') ?? []);
     listMode = prefs.getBool('hyper.list.mode.v1') ?? false;
@@ -226,8 +246,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     if (['queue', 'nameAsc', 'nameDesc'].contains(savedSort)) {
       librarySort = savedSort!;
     }
-    autoHide = prefs.getBool('hyper.player.autohide.v1') ?? true;
-    resumeEnabled = prefs.getBool('hyper.player.resume.v1') ?? true;
+    autoHide = inputSettings.autoHide;
+    resumeEnabled = inputSettings.resume;
     final fitIndex = prefs.getInt('hyper.player.fit.v1') ?? 0;
     fitMode = FitMode.values[fitIndex.clamp(0, FitMode.values.length - 1)];
     order.shuffle = prefs.getBool('hyper.player.shuffle.v1') ?? false;
@@ -288,6 +308,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       rememberPosition();
       setState(() {
         selected = index;
+        fitMode = FitMode.values[inputSettings.defaultFit];
         viewingPlayer = true;
         openingMedia = true;
       });
@@ -302,6 +323,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       await player.setRate((await SharedPreferences.getInstance())
               .getDouble('hyper.player.rate.v1') ??
           1);
+      await applyInputProfile();
       playStarts++;
       await saveStats();
       await collections.record(source);
@@ -352,18 +374,29 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       if (!mounted) {
         return;
       }
-      setState(() => busy = true);
-      final paths = <String>[];
-      // Non-recursive by design: do not silently scan entire drives.
-      await for (final entity in Directory(path).list(followLinks: false)) {
-        if (entity is File && isMediaPath(entity.path)) {
-          paths.add(entity.path);
-        }
+      setState(() {
+        busy = true;
+        scanCancelled = false;
+        scanFilesSeen = 0;
+        scanDirectoriesSeen = 0;
+      });
+      final result = await scanLocalMedia([path],
+          recursive: true,
+          cancelled: () => !mounted || scanCancelled,
+          onProgress: updateScanProgress);
+      if (!mounted) return;
+      final paths = result.folders.values
+          .expand((items) => items.map((entry) => entry.path))
+          .toList();
+      if (result.truncated || result.unavailable.isNotEmpty) {
+        notify(
+            'Scan partial: ${result.unavailable.length} folders unavailable; limit/cancellation: ${result.truncated}.');
       }
       paths.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       await add(paths);
       if (paths.isEmpty) {
-        notify('No supported media found directly inside this folder.');
+        notify(
+            'No supported media found in this folder or its accessible subfolders.');
       }
     } catch (e) {
       notify('Could not read folder: $e');
@@ -394,6 +427,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
 
   @override
   void dispose() {
+    inputSettings.removeListener(inputSettingsChanged);
     rememberPosition();
     unawaited(savePlayerPreferences());
     sleep?.cancel();
@@ -405,6 +439,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     unawaited(saveStats());
     errors?.cancel();
     completion?.cancel();
+    unawaited(framePreview.dispose());
     player.dispose();
     super.dispose();
   }
@@ -717,10 +752,11 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     if (minutes > 0) {
       sleep = Timer(Duration(minutes: minutes), () {
         player.pause();
-        sleepDeadline = null;
+        if (mounted) setState(() => sleepDeadline = null);
         notify('Sleep timer: playback paused.');
       });
     }
+    setState(() {});
     notify(
       minutes == -1
           ? 'Playback will pause at the end of this item.'
@@ -805,24 +841,33 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     }
   }
 
+  void inputSettingsChanged() {
+    if (!mounted) return;
+    setState(() {
+      autoHide = inputSettings.autoHide;
+      resumeEnabled = inputSettings.resume;
+    });
+    if (selected >= 0) unawaited(applyInputProfile());
+  }
+
+  Future<void> applyInputProfile() async {
+    final native = player.platform;
+    if (native is! NativePlayer) return;
+    try {
+      await native.setProperty(
+          'volume-max', inputSettings.volumeBoost ? '200' : '100');
+      if (!inputSettings.volumeBoost && player.state.volume > 100) {
+        await player.setVolume(100);
+      }
+      await native.setProperty(
+          'framedrop', inputSettings.performanceMode == 'on' ? 'vo' : 'no');
+    } catch (_) {
+      notify('Some native sound/performance settings could not be applied.');
+    }
+  }
+
   Future<void> playerSettings() async {
-    await showPlaybackSheet<void>(
-        context,
-        StatefulBuilder(
-            builder: (sheetContext, update) => DesktopPlayerSettings(
-                  autoHide: autoHide,
-                  resume: resumeEnabled,
-                  onAutoHide: (value) {
-                    setState(() => autoHide = value);
-                    update(() {});
-                    unawaited(savePlayerPreferences());
-                  },
-                  onResume: (value) {
-                    setState(() => resumeEnabled = value);
-                    update(() {});
-                    unawaited(savePlayerPreferences());
-                  },
-                )));
+    await showPlaybackSheet<void>(context, const PlayerSettingsSheet());
   }
 
   Future<void> extras() async {
@@ -891,8 +936,62 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                 ])));
   }
 
+  Future<void> castToTv() async {
+    if (!Platform.isWindows) {
+      notify('Wireless display is available on Windows.');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+              title: const Text('Cast to TV · Windows wireless display'),
+              content: const Text(
+                  'Open the Windows wireless-display chooser to select a compatible Miracast TV or adapter. This mirrors the screen, including other visible apps. Your PC and TV must support wireless display. This is not Chromecast, DLNA or private media-only casting. Stop projection from Windows when finished.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: const Text('Cancel')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(dialogContext, true),
+                    child: const Text('Open Windows Cast')),
+              ],
+            ));
+    if (confirmed != true || !mounted) return;
+    try {
+      if (!await launchUrl(
+          Uri.parse('ms-settings-connectabledevices:devicediscovery'),
+          mode: LaunchMode.externalApplication)) {
+        throw StateError('Wireless display chooser unavailable.');
+      }
+    } catch (_) {
+      notify(
+          'Could not open Windows Cast. Press Windows+K and check wireless-display support.');
+    }
+  }
+
+  Future<void> toggleMiniPlayer() async {
+    if (!Platform.isWindows || miniTransition) return;
+    setState(() => miniTransition = true);
+    try {
+      if (miniWindow.active) {
+        await miniWindow.restore();
+      } else {
+        await miniWindow.enter();
+      }
+    } catch (_) {
+      notify(
+          'Windows mini-player could not change window state. Use Return to full player to retry restoration.');
+    } finally {
+      if (mounted) setState(() => miniTransition = false);
+    }
+  }
+
   void playerMenu(String action) {
     switch (action) {
+      case 'Cast to TV':
+        castToTv();
+      case 'Picture-in-Picture':
+        toggleMiniPlayer();
       case 'Video info':
         videoInfo();
       case 'Equalizer & Audio FX':
@@ -905,9 +1004,12 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
 
   Widget buildVideoPlayer() {
+    final currentSource =
+        selected >= 0 && selected < queue.length ? queue[selected] : null;
     if (selected >= 0 &&
         selected < queue.length &&
-        isAudioPath(queue[selected])) {
+        isAudioPath(queue[selected]) &&
+        !miniWindow.active) {
       return AudioNowPlaying(
           playback: playbackView,
           title: labelFor(queue[selected]),
@@ -943,54 +1045,102 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
 
     Widget output = Video(
         controller: controller,
-        fit: fitMode.boxFit,
-        controls: (videoState) => AndroidPlayerControls(
-              playback: playbackView,
-              title: selected >= 0 && selected < queue.length
-                  ? labelFor(queue[selected])
-                  : 'Hyper Player',
-              shuffle: order.shuffle,
-              repeat: order.repeat,
-              fit: fitMode,
-              autoHide: autoHide,
-              canPrevious: order.hasPrevious(selected, queue.length),
-              canNext: order.hasNext(selected, queue.length),
-              onBack: () {
-                if (videoState.isFullscreen()) {
-                  videoState.exitFullscreen();
-                } else {
-                  setState(() => viewingPlayer = false);
-                }
-              },
-              onPlayPause: () => player.playOrPause(),
-              onPrevious: () => skipPlayer(previous: true),
-              onNext: () => skipPlayer(),
-              onShuffle: () {
-                setState(() => order.setShuffle(!order.shuffle,
-                    current: selected, length: queue.length));
-                unawaited(savePlayerPreferences());
-              },
-              onRepeat: () {
-                setState(() => order.repeat =
-                    QueueRepeat.values[(order.repeat.index + 1) % 3]);
-                unawaited(savePlayerPreferences());
-              },
-              onFit: () {
-                setState(() => fitMode = nextFitMode(fitMode));
-                unawaited(savePlayerPreferences());
-              },
-              onSpeed: playbackOptions,
-              onExtras: extras,
-              onQueue: showQueue,
-              onSettings: playerSettings,
-              onFullscreen: () => videoState.isFullscreen()
-                  ? videoState.exitFullscreen()
-                  : videoState.enterFullscreen(),
-              onMenu: playerMenu,
-              onSeek: (value) => player.seek(value),
-              onVolume: (value) => player.setVolume(value),
-            ));
-    final ratio = fitMode.aspectRatio;
+        fit: miniWindow.active ? BoxFit.contain : fitMode.boxFit,
+        controls: (videoState) => miniWindow.active
+            ? ValueListenableBuilder<PlaybackSnapshot>(
+                valueListenable: playbackView,
+                builder: (_, state, __) => MiniPlayerControls(
+                    title: selected >= 0 && selected < queue.length
+                        ? labelFor(queue[selected])
+                        : 'Hyper Player',
+                    playing: state.playing,
+                    onPlayPause: () => player.playOrPause(),
+                    onRestore: toggleMiniPlayer))
+            : AndroidPlayerControls(
+                playback: playbackView,
+                onTransform: (zoom, pan) async {
+                  final native = player.platform;
+                  if (native is NativePlayer) {
+                    try {
+                      await native.setProperty(
+                          'video-zoom', '${math.log(zoom) / math.ln2}');
+                      await native.setProperty('video-pan-x', '${pan.dx}');
+                      await native.setProperty('video-pan-y', '${pan.dy}');
+                    } catch (_) {
+                      notify(
+                          'Video zoom/pan is unavailable for this renderer.');
+                    }
+                  }
+                },
+                onTemporaryRate: (rate) async {
+                  try {
+                    await player.setRate(rate);
+                  } catch (_) {}
+                },
+                onSelectFit: (fit) {
+                  setState(() => fitMode = fit);
+                  unawaited(savePlayerPreferences());
+                },
+                previewSourceKey: currentSource ?? '',
+                previewLoader: currentSource != null &&
+                        !validStream(currentSource) &&
+                        !isAudioPath(currentSource)
+                    ? (position) => framePreview.frame(currentSource, position)
+                    : null,
+                title: selected >= 0 && selected < queue.length
+                    ? labelFor(queue[selected])
+                    : 'Hyper Player',
+                shuffle: order.shuffle,
+                repeat: order.repeat,
+                fit: fitMode,
+                autoHide: autoHide,
+                sleepDeadline: sleepDeadline,
+                sleepUntilEnd: sleepUntilEnd,
+                canPrevious: order.hasPrevious(selected, queue.length),
+                canNext: order.hasNext(selected, queue.length),
+                onBack: () {
+                  if (videoState.isFullscreen()) {
+                    videoState.exitFullscreen();
+                  } else {
+                    setState(() => viewingPlayer = false);
+                  }
+                },
+                onPlayPause: () => player.playOrPause(),
+                onPrevious: () => skipPlayer(previous: true),
+                onNext: () => skipPlayer(),
+                onShuffle: () {
+                  setState(() => order.setShuffle(!order.shuffle,
+                      current: selected, length: queue.length));
+                  unawaited(savePlayerPreferences());
+                },
+                onRepeat: () {
+                  setState(() => order.repeat =
+                      QueueRepeat.values[(order.repeat.index + 1) % 3]);
+                  unawaited(savePlayerPreferences());
+                },
+                onFit: () {
+                  setState(() => fitMode = nextFitMode(fitMode));
+                  unawaited(savePlayerPreferences());
+                },
+                onSpeed: playbackOptions,
+                onExtras: extras,
+                onQueue: showQueue,
+                onSettings: playerSettings,
+                onFullscreen: () => videoState.isFullscreen()
+                    ? videoState.exitFullscreen()
+                    : videoState.enterFullscreen(),
+                onMenu: (action) async {
+                  if ((action == 'Picture-in-Picture' ||
+                          action == 'Cast to TV') &&
+                      videoState.isFullscreen()) {
+                    await videoState.exitFullscreen();
+                  }
+                  playerMenu(action);
+                },
+                onSeek: (value) => player.seek(value),
+                onVolume: (value) => player.setVolume(value),
+              ));
+    final ratio = miniWindow.active ? null : fitMode.aspectRatio;
     if (ratio != null) {
       output = Center(child: AspectRatio(aspectRatio: ratio, child: output));
     }
@@ -1126,6 +1276,41 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     await dailyWatch.save();
   }
 
+  void updateScanProgress(int files, int directories) {
+    if (mounted) {
+      setState(() {
+        scanFilesSeen = files;
+        scanDirectoriesSeen = directories;
+      });
+    }
+  }
+
+  Future<void> scanLibraryOptions() async {
+    if (busy) return;
+    final choice = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+              title: const Text('Scan videos and audio'),
+              content: const Text(
+                  'Scanning includes subfolders, not just files directly inside a folder. To cover a device, choose a drive root such as C:\u005c or D:\u005c, then add other drives the same way. Only accessible locations are read; protected folders and links are skipped. Each scan is bounded to 20,000 media files and 100,000 directories and reports partial results. You can cancel without deleting existing library entries.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Cancel')),
+                if (scanFolders.isNotEmpty)
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialogContext, 'saved'),
+                      child: const Text('Rescan saved roots')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(dialogContext, 'choose'),
+                    child: const Text('Choose folder / drive')),
+              ],
+            ));
+    if (!mounted) return;
+    if (choice == 'choose') await folder();
+    if (choice == 'saved') await rescan();
+  }
+
   Future<void> rescan() async {
     if (busy) {
       return;
@@ -1134,20 +1319,20 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       await folder();
       return;
     }
-    setState(() => busy = true);
-    final found = <String>{};
-    int failures = 0;
-    for (final path in scanFolders) {
-      try {
-        await for (final entry in Directory(path).list(followLinks: false)) {
-          if (entry is File && isMediaPath(entry.path)) {
-            found.add(entry.path);
-          }
-        }
-      } catch (_) {
-        failures++;
-      }
-    }
+    setState(() {
+      busy = true;
+      scanCancelled = false;
+      scanFilesSeen = 0;
+      scanDirectoriesSeen = 0;
+    });
+    final result = await scanLocalMedia(scanFolders,
+        recursive: true,
+        cancelled: () => !mounted || scanCancelled,
+        onProgress: updateScanProgress);
+    final found = result.folders.values
+        .expand((items) => items.map((entry) => entry.path))
+        .toSet();
+    final failures = result.unavailable.length;
     if (!mounted) {
       return;
     }
@@ -1159,7 +1344,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     });
     await save();
     notify(
-      'Rescan: ${additions.length} new files. $failures folders unavailable. Existing entries retained.',
+      'Rescan: ${additions.length} new files. $failures folders unavailable. ${result.truncated ? 'Partial scan: limit or cancellation. ' : ''}Existing entries retained.',
     );
   }
 
@@ -1702,8 +1887,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                         icon: const Icon(Icons.search),
                       ),
                       IconButton(
-                        tooltip: 'Rescan saved folders',
-                        onPressed: busy ? null : rescan,
+                        tooltip: 'Scan folders / drives',
+                        onPressed: busy ? null : scanLibraryOptions,
                         icon: const Icon(Icons.sync),
                       ),
                       if (viewingPlayer)
@@ -1823,7 +2008,20 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                   ),
             body: Column(
               children: [
-                if (busy) const LinearProgressIndicator(),
+                if (busy) ...[
+                  const LinearProgressIndicator(),
+                  Row(children: [
+                    const SizedBox(width: 16),
+                    Expanded(
+                        child: Text(
+                            'Scanning: $scanFilesSeen media · $scanDirectoriesSeen folders${scanCancelled ? ' · stopping…' : ''}')),
+                    TextButton(
+                        onPressed: scanCancelled
+                            ? null
+                            : () => setState(() => scanCancelled = true),
+                        child: const Text('Cancel scan'))
+                  ]),
+                ],
                 Expanded(
                   child: viewingPlayer ? buildVideoPlayer() : library(),
                 ),

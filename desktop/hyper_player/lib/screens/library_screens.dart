@@ -33,12 +33,15 @@ class _DesktopFoldersScreenState extends State<DesktopFoldersScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getStringList('hyper.scan.folders.v1') ?? [];
-      final result = await scanLocalMedia(saved);
+      final result = await scanLocalMedia(saved,
+          recursive: true, cancelled: () => !mounted);
       if (mounted) {
         setState(() {
           paths
             ..clear()
-            ..addAll(saved);
+            ..addAll(result.folders.entries
+                .where((e) => e.value.isNotEmpty || saved.contains(e.key))
+                .map((e) => e.key));
           scan = result;
         });
       }
@@ -104,7 +107,7 @@ class _DesktopFoldersScreenState extends State<DesktopFoldersScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                     child: Text(
                         error ??
-                            'Chosen folders only · direct-child files · ${scan?.truncated == true ? "20,000-file scan limit reached" : "no whole-PC scan"}',
+                            'Chosen roots and subfolders · ${scan?.truncated == true ? "Partial scan: file/directory limit or cancellation" : "no whole-PC scan"}',
                         style:
                             const TextStyle(color: secondary, fontSize: 11))),
                 Expanded(
@@ -244,7 +247,7 @@ class _DesktopAudioScreenState extends State<DesktopAudioScreen> {
         setState(() {
           songs = all.values.toList();
           warning = result.truncated
-              ? '20,000-file scan limit reached.'
+              ? 'Partial scan: file/directory limit or cancellation.'
               : result.unavailable.isNotEmpty
                   ? '${result.unavailable.length} folders unavailable.'
                   : null;

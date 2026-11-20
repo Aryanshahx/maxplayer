@@ -201,6 +201,25 @@ class DesktopPlayerSettings extends StatelessWidget {
                         fontSize: 12,
                         letterSpacing: 1.1,
                         fontWeight: FontWeight.bold))),
+            ListTile(
+              leading: const Icon(Icons.menu_book_outlined),
+              title: const Text('User manual · keyboard & mouse'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => showDialog<void>(
+                  context: context,
+                  builder: (_) => const AlertDialog(
+                        title: Text('Player keyboard & mouse'),
+                        content: SingleChildScrollView(
+                            child: Text(
+                                'Space: play/pause\nLeft / Right: seek 10 seconds\nUp / Down: volume 5%\nM: mute / restore volume\nF: fullscreen\nEscape: unlock player controls\nDouble-click video: fullscreen\nMove mouse: reveal controls\n\nApp shortcuts: Ctrl+O opens files; Ctrl+L opens streams.\n\nShortcuts apply while the player has focus, not while typing in a text field or using a modal.')),
+                      )),
+            ),
+            const Padding(
+                padding: EdgeInsets.fromLTRB(20, 8, 20, 8),
+                child: Text(
+                    'TOUCHSCREEN: Double-tap left/right: seek 10s; centre: play/pause. Swipe horizontally: seek; swipe vertically on right: volume, left: video-only brightness. Pinch cycles fit once per gesture (not free zoom).',
+                    style: TextStyle(
+                        color: Colors.white70, fontSize: 12.5, height: 1.6))),
             const Padding(
                 padding: EdgeInsets.fromLTRB(20, 6, 20, 20),
                 child: Text(
