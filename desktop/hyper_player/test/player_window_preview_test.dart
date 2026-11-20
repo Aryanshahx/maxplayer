@@ -106,7 +106,7 @@ void main() {
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: const Offset(400, 300));
     await mouse.moveTo(const Offset(420, 300));
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 50));
     expect(calls, 0);
     await tester.pump(const Duration(milliseconds: 150));
     await tester.pump();

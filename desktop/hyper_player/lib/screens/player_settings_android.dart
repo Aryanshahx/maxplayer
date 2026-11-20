@@ -94,7 +94,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                           title: Text('Player keyboard & mouse'),
                           content: SingleChildScrollView(
                               child: Text(
-                                  'Space: play/pause\nLeft / Right: seek configured step\nUp / Down or mouse wheel: volume\nM: mute\nB: brightness and volume sliders\n[ / ]: video brightness\nZ: cycle video fit\nI / O: zoom\nShift+arrows: pan while zoomed\nHold R: temporary speed boost\nH: show/hide controls\nL: lock controls\nF: fullscreen\nEscape: unlock\nDouble-click sides: seek; centre: play/pause. Use F for fullscreen\nCtrl+O: open files\nCtrl+L: open streams\n\nShortcuts require player focus; not active while typing in a dialog.'))))),
+                                  'Space: play/pause\nLeft / Right: seek configured step\nUp / Down or mouse wheel: volume\nM: mute\nB: brightness and volume sliders\nPage Down / Page Up: video brightness\nZ: cycle video fit\n+ / −: zoom\nShift+arrows: pan while zoomed\nHold R: temporary speed boost\nH: show/hide controls\nL: lock controls\nF: fullscreen\nEscape: unlock\nDouble-click sides: seek; centre: play/pause. Use F for fullscreen\nCtrl+O: open files\nCtrl+L: open streams\n\nShortcuts require player focus; not active while typing in a dialog.'))))),
               if (!_loaded)
                 Padding(
                   padding: const EdgeInsets.all(32),
@@ -135,7 +135,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   icon: Icons.brightness_6_outlined,
                   label: 'Swipe left side for brightness',
                   subtitle:
-                      'Drag up/down on left. Keys [ darker / ] brighter; B opens sliders. Video brightness only.',
+                      'Drag up/down on left. Keys Page Down darker / Page Up brighter; B opens sliders. Video brightness only.',
                   value: s.swipeBrightness,
                   onChanged: s.setSwipeBrightness,
                 ),
@@ -158,7 +158,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   icon: Icons.pinch_outlined,
                   label: 'Two-finger pinch to zoom',
                   subtitle:
-                      'Keyboard: Z fit; I zoom in / O out; Shift+arrows pan. OFF (default): spread 2 fingers = Fit, Crop, '
+                      'Keyboard: Z fit; + zoom in / − out; Shift+arrows pan. OFF (default): spread 2 fingers = Fit, Crop, '
                       'Stretch, 16:9... then keep spreading to zoom in. '
                       'ON: pinch zooms straight away. 2-finger tap = Fit.',
                   value: s.pinchZoom,

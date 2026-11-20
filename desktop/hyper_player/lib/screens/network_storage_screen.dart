@@ -1,3 +1,4 @@
+import 'ftp_screen.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -177,6 +178,30 @@ class _DesktopNetworkStorageScreenState
           title: const Text('Network Storage (NAS / Share)',
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
           actions: [
+            TextButton(
+                onPressed: () async {
+                  final source = await Navigator.push<String>(context,
+                      MaterialPageRoute(builder: (_) => const FtpScreen()));
+                  if (source != null && context.mounted) {
+                    Navigator.pop(context, source);
+                  }
+                },
+                child: const Text('FTP / FTPS')),
+            IconButton(
+                tooltip: 'How to use Network Storage',
+                icon: const Icon(Icons.info_outline),
+                onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                            title: const Text('Network Storage · help'),
+                            content: const SingleChildScrollView(
+                                child: Text(
+                                    'Windows share: enter the server/IP and shared folder, not a website URL. Sign in to the share in Windows Explorer first; Windows manages that authentication.\n\nHTTP(S): enter a direct media-file URL, not a normal web page. HTTPS certificates must be valid.\n\nFTP/FTPS: use an explicit server connection and keep passwords private. FTPS encrypts the connection; ordinary FTP does not. Connection availability depends on your network/firewall.')),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text('Close'))
+                            ]))),
             if (!form && !loading && !loadFailed)
               IconButton(
                   tooltip: 'Add Connection',
@@ -230,14 +255,23 @@ class _DesktopNetworkStorageScreenState
                                             : (_) => setState(() => protocol =
                                                 DesktopNetworkProtocol
                                                     .webFile)),
-                                    const Tooltip(
-                                        message:
-                                            'FTP/FTPS authentication and protocol support are not implemented here',
-                                        child: ChoiceChip(
-                                            label: Text(
-                                                'FTP / FTPS · unavailable'),
-                                            selected: false,
-                                            onSelected: null))
+                                    ActionChip(
+                                        label: const Text('FTP / FTPS'),
+                                        onPressed: saving
+                                            ? null
+                                            : () async {
+                                                final source = await Navigator.push<
+                                                        String>(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                        builder: (_) =>
+                                                            const FtpScreen()));
+                                                if (source != null &&
+                                                    context.mounted) {
+                                                  Navigator.pop(
+                                                      context, source);
+                                                }
+                                              })
                                   ]),
                                   const SizedBox(height: 18),
                                   field(name, 'Connection name',

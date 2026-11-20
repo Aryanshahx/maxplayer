@@ -8,6 +8,8 @@ import 'package:media_kit_video/media_kit_video.dart';
 /// only (no stream requests, private-vault material, screenshots on disk/history).
 /// The Windows renderer must still be validated with real codec fixtures.
 class FramePreviewDecoder {
+  final _cache = <String, Uint8List>{};
+  int _cacheBytes = 0;
   Player? _player;
   VideoController? _video;
   String? _source;
@@ -17,6 +19,12 @@ class FramePreviewDecoder {
   ({String source, Duration position, Completer<Uint8List?> reply})? _pending;
   Future<Uint8List?> frame(String source, Duration position) {
     if (_disposed || !Platform.isWindows) return Future.value();
+    final cacheKey = '$source|${position.inSeconds}';
+    final cached = _cache.remove(cacheKey);
+    if (cached != null) {
+      _cache[cacheKey] = cached;
+      return Future.value(cached);
+    }
     _idle?.cancel();
     _pending?.reply.complete(null);
     final reply = Completer<Uint8List?>();
@@ -32,6 +40,16 @@ class FramePreviewDecoder {
         final request = _pending!;
         _pending = null;
         final result = await _decode(request.source, request.position);
+        if (result != null && !_disposed) {
+          final key = '${request.source}|${request.position.inSeconds}';
+          final old = _cache.remove(key);
+          _cacheBytes -= old?.length ?? 0;
+          _cache[key] = result;
+          _cacheBytes += result.length;
+          while (_cache.length > 48 || _cacheBytes > 12 * 1024 * 1024) {
+            _cacheBytes -= _cache.remove(_cache.keys.first)!.length;
+          }
+        }
         request.reply.complete(_disposed ? null : result);
       }
     } finally {
@@ -115,6 +133,8 @@ class FramePreviewDecoder {
 
   Future<void> dispose() async {
     _disposed = true;
+    _cache.clear();
+    _cacheBytes = 0;
     _idle?.cancel();
     _pending?.reply.complete(null);
     _pending = null;

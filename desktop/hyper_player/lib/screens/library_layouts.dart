@@ -18,13 +18,15 @@ class LibraryLayouts extends StatelessWidget {
   final List<LibraryDestination> destinations;
   final List<String> videos;
   final ValueChanged<String> play;
+  final String Function(String)? details;
   const LibraryLayouts(
       {super.key,
       required this.mode,
       required this.androidLibrary,
       required this.destinations,
       required this.videos,
-      required this.play});
+      required this.play,
+      this.details});
   @override
   Widget build(BuildContext context) {
     if (mode == AppDesignMode.android) return androidLibrary;
@@ -97,6 +99,13 @@ class LibraryLayouts extends StatelessWidget {
                                         child: Text(labelFor(sources[index]),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis)),
+                                    if (details != null)
+                                      Text(details!(sources[index]),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.white54)),
                                   ]))))),
         ]);
     return ListView(children: [

@@ -1,3 +1,4 @@
+import '../stream_probe.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ class _DesktopStreamScreenState extends State<DesktopStreamScreen> {
   final title = TextEditingController();
   final saved = <String, String>{};
   String? error;
+  bool probing = false;
   @override
   void initState() {
     super.initState();
@@ -60,13 +62,41 @@ class _DesktopStreamScreenState extends State<DesktopStreamScreen> {
       setState(() => error = null);
       return true;
     }
-    setState(() => error = 'Enter a direct HTTP or HTTPS media URL.');
+    setState(() =>
+        error = 'Enter a direct HTTP(S), RTSP, RTMP(S), UDP or RTP media URL.');
     return false;
   }
 
-  void play() {
-    if (validate()) {
-      Navigator.pop(context, url.text.trim());
+  Future<void> play() async {
+    if (probing || !validate()) return;
+    final source = url.text.trim();
+    setState(() => probing = true);
+    try {
+      final channels = await probeStreamChannels(source);
+      if (!mounted) return;
+      if (channels.isEmpty) {
+        Navigator.pop(context, source);
+        return;
+      }
+      final selected = await Navigator.push<String>(
+          context,
+          MaterialPageRoute(
+              builder: (_) => Scaffold(
+                    appBar: AppBar(
+                        title: Text('IPTV channels · ${channels.length}')),
+                    body: ListView.builder(
+                        itemCount: channels.length,
+                        itemBuilder: (ctx, index) => ListTile(
+                            leading: const Icon(Icons.live_tv),
+                            title: Text(channels[index].title),
+                            onTap: () =>
+                                Navigator.pop(ctx, channels[index].source))),
+                  )));
+      if (mounted && selected != null) Navigator.pop(context, selected);
+    } catch (e) {
+      if (mounted) setState(() => error = '$e');
+    } finally {
+      if (mounted) setState(() => probing = false);
     }
   }
 
@@ -270,11 +300,11 @@ class _DesktopStreamScreenState extends State<DesktopStreamScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                onPressed: url.text.trim().isEmpty ? null : play,
+                onPressed: url.text.trim().isEmpty || probing ? null : play,
                 icon: const Icon(Icons.play_arrow),
-                label: const LText(
-                  'Play Stream',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                label: Text(
+                  probing ? 'Checking stream / channels…' : 'Play Stream',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
               const SizedBox(height: 8),

@@ -54,7 +54,9 @@ void main() {
     await tester.tap(find.text('Play Stream'));
     await tester.pumpAndSettle();
     expect(
-        find.text('Enter a direct HTTP or HTTPS media URL.'), findsOneWidget);
+        find.text(
+            'Enter a direct HTTP(S), RTSP, RTMP(S), UDP or RTP media URL.'),
+        findsOneWidget);
     expect(find.byType(Scaffold), findsOneWidget);
   });
 }

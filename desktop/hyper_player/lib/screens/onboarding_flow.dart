@@ -224,7 +224,7 @@ class _WelcomePage extends StatelessWidget {
         const SizedBox(height: 4),
         const Center(
           child: LText(
-            'Proudly Developed in India 🇮🇳',
+            'Proudly Developed in India',
             style: TextStyle(color: Colors.white54, fontSize: 12.5),
           ),
         ),

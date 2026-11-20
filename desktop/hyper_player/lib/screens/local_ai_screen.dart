@@ -1,5 +1,40 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import '../player/local_ai.dart';
+
+const Map<String, String> speechLanguages = {
+  'auto': 'Auto-detect',
+  'en': 'English',
+  'hi': 'Hindi',
+  'ur': 'Urdu',
+  'ar': 'Arabic',
+  'bn': 'Bengali',
+  'ta': 'Tamil',
+  'te': 'Telugu',
+  'pa': 'Punjabi',
+  'mr': 'Marathi',
+  'gu': 'Gujarati',
+  'kn': 'Kannada',
+  'ml': 'Malayalam',
+  'ne': 'Nepali',
+  'es': 'Spanish',
+  'fr': 'French',
+  'de': 'German',
+  'it': 'Italian',
+  'pt': 'Portuguese',
+  'ru': 'Russian',
+  'ja': 'Japanese',
+  'ko': 'Korean',
+  'id': 'Indonesian',
+  'tr': 'Turkish',
+  'fa': 'Persian',
+  'vi': 'Vietnamese',
+  'th': 'Thai',
+  'uk': 'Ukrainian',
+  'pl': 'Polish',
+  'nl': 'Dutch',
+  'he': 'Hebrew',
+};
 
 class LocalAiScreen extends StatefulWidget {
   final String source;
@@ -11,7 +46,28 @@ class LocalAiScreen extends StatefulWidget {
 class _LocalAiScreenState extends State<LocalAiScreen> {
   final job = LocalSpeechJob();
   SpeechModel model = speechModels.first;
-  bool translate = false;
+  bool translate = false, karaokeStyle = false;
+  String language = 'auto';
+  @override
+  void initState() {
+    super.initState();
+    loadSettings();
+  }
+
+  Future<void> loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      model = speechModels.firstWhere(
+          (m) => m.name == prefs.getString('hyper.ai.model'),
+          orElse: () => speechModels.first);
+      final saved = prefs.getString('hyper.ai.language') ?? 'auto';
+      language = speechLanguages.containsKey(saved) ? saved : 'auto';
+      translate = prefs.getBool('hyper.ai.translate') ?? false;
+      karaokeStyle = prefs.getBool('hyper.ai.karaokeStyle') ?? false;
+    });
+  }
+
   String? output, error;
   @override
   void dispose() {
@@ -25,8 +81,13 @@ class _LocalAiScreenState extends State<LocalAiScreen> {
       output = null;
     });
     try {
-      final path =
-          await job.transcribe(widget.source, model, translate: translate);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('hyper.ai.model', model.name);
+      await prefs.setString('hyper.ai.language', language);
+      await prefs.setBool('hyper.ai.translate', translate);
+      await prefs.setBool('hyper.ai.karaokeStyle', karaokeStyle);
+      final path = await job.transcribe(widget.source, model,
+          translate: translate, language: language, karaokeStyle: karaokeStyle);
       if (mounted) setState(() => output = path);
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
@@ -51,15 +112,37 @@ class _LocalAiScreenState extends State<LocalAiScreen> {
                             ? Icons.radio_button_checked
                             : Icons.radio_button_off),
                         title: Text(
-                            'Whisper ${candidate.name} · ${(candidate.bytes / 1048576).round()} MB model'),
-                        subtitle: Text(candidate.name == 'base'
-                            ? 'Fastest option; lower accuracy'
-                            : candidate.name == 'small'
-                                ? 'Better accuracy; more CPU/RAM'
-                                : 'Higher capacity; several GB RAM; slow on CPU'),
+                            '${candidate.name == 'base-q5_1' ? 'Fast (recommended)' : 'Whisper ${candidate.name}'} · ${(candidate.bytes / 1048576).round()} MB model'),
+                        subtitle: Text(candidate.name == 'base-q5_1'
+                            ? 'Android fast option · quantized model'
+                            : candidate.name == 'base'
+                                ? 'Fastest option; lower accuracy'
+                                : candidate.name == 'small'
+                                    ? 'Better accuracy; more CPU/RAM'
+                                    : 'Higher capacity; several GB RAM; slow on CPU'),
                         onTap: job.busy
                             ? null
                             : () => setState(() => model = candidate)),
+                  DropdownButtonFormField<String>(
+                      initialValue: language,
+                      key: ValueKey(language),
+                      decoration:
+                          const InputDecoration(labelText: 'Speech language'),
+                      items: speechLanguages.entries
+                          .map((e) => DropdownMenuItem(
+                              value: e.key, child: Text(e.value)))
+                          .toList(),
+                      onChanged: job.busy
+                          ? null
+                          : (v) => setState(() => language = v ?? 'auto')),
+                  SwitchListTile(
+                      title: const Text('Karaoke style'),
+                      subtitle: const Text(
+                          'Word-by-word flow subtitles, like Android'),
+                      value: karaokeStyle,
+                      onChanged: job.busy
+                          ? null
+                          : (v) => setState(() => karaokeStyle = v)),
                   SwitchListTile(
                       title: const Text('Translate speech to English'),
                       subtitle: const Text(

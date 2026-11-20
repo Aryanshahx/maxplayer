@@ -31,7 +31,8 @@ String labelFor(String source) {
 bool validStream(String value) {
   final uri = Uri.tryParse(value);
   return uri != null &&
-      (uri.scheme == 'http' || uri.scheme == 'https') &&
+      const {'http', 'https', 'rtsp', 'rtmp', 'rtmps', 'udp', 'rtp'}
+          .contains(uri.scheme) &&
       uri.host.isNotEmpty;
 }
 

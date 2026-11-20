@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'screens/local_ai_screen.dart';
 import 'screens/user_manual_android.dart';
 import 'screens/library_layouts.dart';
@@ -142,6 +143,9 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   final player = Player();
   final mediaSizes = <String, int>{};
   final mediaLengths = <String, int>{};
+  double? pendingVolume;
+  bool sendingVolume = false;
+  double appVolume = 100;
   late final VideoController controller = VideoController(player);
   final queue = <String>[];
   final collections = DesktopStore();
@@ -269,6 +273,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     await dailyWatch.load();
     scanFolders.addAll(prefs.getStringList('hyper.scan.folders.v1') ?? []);
     listMode = prefs.getBool('hyper.list.mode.v1') ?? false;
+    appVolume =
+        (prefs.getDouble('hyper.player.appVolume.v1') ?? 100).clamp(0, 200);
     queueAll = prefs.getBool('hyper.playback.queueAll.v1') ?? true;
     onlyFavourites = prefs.getBool('hyper.library.onlyFavourites.v1') ?? false;
     groupByFolder = prefs.getBool('hyper.library.groupFolder.v1') ?? false;
@@ -325,7 +331,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
 
   Future<void> save() async {
-    final snapshot = jsonEncode(queue);
+    final sources = queue.toList();
+    final snapshot = await Isolate.run(() => jsonEncode(sources));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('hyper.queue.v1', snapshot);
   }
@@ -381,6 +388,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
               .getDouble('hyper.player.rate.v1') ??
           1);
       await applyInputProfile();
+      await setPlayerVolume(appVolume);
       playStarts++;
       await saveStats();
       await collections.record(source);
@@ -400,6 +408,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     final start = queue.length;
     setState(() => queue.addAll(paths));
     await save();
+    unawaited(refreshMediaMetadata());
     if (selected == -1) {
       await play(start);
     }
@@ -451,8 +460,9 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         notify(
             'Scan partial: ${result.unavailable.length} folders unavailable; limit/cancellation: ${result.truncated}.');
       }
-      paths.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-      await add(paths);
+      final ordered = await Isolate.run(() =>
+          paths..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase())));
+      await add(ordered);
       if (paths.isEmpty) {
         notify(
             'No supported media found in this folder or its accessible subfolders.');
@@ -661,7 +671,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         if (value == null || !mounted) {
           return;
         }
-        if (!validStream(value)) {
+        if (!['http', 'https'].contains(Uri.tryParse(value)?.scheme)) {
           throw const FormatException('Enter an HTTP/HTTPS URL.');
         }
         base = Uri.parse(value);
@@ -882,21 +892,29 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
           onApply: changeAudioFilters));
 
   Future<void> setPlayerVolume(double requested) async {
-    final value =
+    pendingVolume =
         requested.clamp(0.0, inputSettings.volumeBoost ? 200.0 : 100.0);
+    if (sendingVolume) return;
+    sendingVolume = true;
     try {
-      final native = player.platform;
-      if (native is NativePlayer && value > 0) {
-        await setCheckedProperty(native, 'mute', 'no');
+      while (pendingVolume != null && mounted) {
+        final value = pendingVolume!;
+        pendingVolume = null;
+        final native = player.platform;
+        if (native is NativePlayer && value > 0) {
+          await setCheckedProperty(native, 'mute', 'no');
+        }
+        await player.setVolume(value);
+        appVolume = value;
+        await Future<void>.delayed(const Duration(milliseconds: 35));
       }
-      await player.setVolume(value);
-      if (native is NativePlayer &&
-          !propertyMatches(
-              'volume', '$value', await native.getProperty('volume'))) {
-        throw StateError('Volume readback failed');
-      }
+      await (await SharedPreferences.getInstance())
+          .setDouble('hyper.player.appVolume.v1', appVolume);
     } catch (_) {
-      notify('Could not change media volume. Check the Windows output device.');
+      notify(
+          'Could not change app media volume. Windows output/mixer can still limit it.');
+    } finally {
+      sendingVolume = false;
     }
   }
 
@@ -934,6 +952,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     final native = player.platform;
     if (native is! NativePlayer) return;
     try {
+      await native.setProperty('audio-exclusive', 'no');
       await native.setProperty(
           'volume-max', inputSettings.volumeBoost ? '200' : '100');
       if (!inputSettings.volumeBoost && player.state.volume > 100) {
@@ -1238,8 +1257,6 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
 
   void playerMenu(String action) {
     switch (action) {
-      case 'AI subtitles':
-        generateAiSubtitles();
       case 'Playback queue':
         showQueue();
       case 'Cast to TV':
@@ -1400,10 +1417,18 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                 onVolume: setPlayerVolume,
               ));
     final ratio = miniWindow.active ? null : fitMode.aspectRatio;
-    if (ratio != null) {
-      output = Center(child: AspectRatio(aspectRatio: ratio, child: output));
-    }
-    return ColoredBox(color: Colors.black, child: output);
+    final content = output;
+    return ColoredBox(
+        color: Colors.black,
+        child: LayoutBuilder(builder: (context, bounds) {
+          final frameRatio = ratio ?? bounds.maxWidth / bounds.maxHeight;
+          return Center(
+              child: AspectRatio(
+                  aspectRatio: frameRatio.isFinite && frameRatio > 0
+                      ? frameRatio
+                      : 16 / 9,
+                  child: content));
+        }));
   }
 
   Future<void> videoInfo() async {
@@ -1535,7 +1560,12 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     await dailyWatch.save();
   }
 
+  DateTime lastScanProgress = DateTime.fromMillisecondsSinceEpoch(0);
   void updateScanProgress(int files, int directories) {
+    if (DateTime.now().difference(lastScanProgress).inMilliseconds < 200) {
+      return;
+    }
+    lastScanProgress = DateTime.now();
     if (mounted) {
       setState(() {
         scanFilesSeen = files;
@@ -1620,7 +1650,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     if (!mounted) {
       return;
     }
-    final additions = found.where((path) => !queue.contains(path)).toList()
+    final known = queue.toSet();
+    final additions = found.where((path) => !known.contains(path)).toList()
       ..sort();
     setState(() {
       queue.addAll(additions);
@@ -1637,13 +1668,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
 
   Future<void> browseFolders() async {
-    final source = await Navigator.push<String>(
-        context,
-        MaterialPageRoute(
-            builder: (_) => DesktopFoldersScreen(onScanSystem: () async {
-                  Navigator.pop(context);
-                  await scanLibraryOptions();
-                })));
+    final source = await Navigator.push<String>(context,
+        MaterialPageRoute(builder: (_) => const DesktopFoldersScreen()));
     final prefs = await SharedPreferences.getInstance();
     scanFolders
       ..clear()
@@ -1964,7 +1990,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
             ),
           ),
           const LText(
-            'Proudly Developed in India 🇮🇳',
+            'Proudly Developed in India',
             style: TextStyle(
               fontSize: 9.5,
               color: Color(0xff9296a0),
@@ -1973,6 +1999,21 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
           ),
         ],
       );
+
+  String gridDetails(String source) {
+    if (validStream(source)) return 'Network stream';
+    final parts = <String>[];
+    if (source.contains('.')) parts.add(source.split('.').last.toUpperCase());
+    final bytes = mediaSizes[source];
+    if (bytes != null) {
+      parts.add(bytes >= 1073741824
+          ? '${(bytes / 1073741824).toStringAsFixed(1)} GB'
+          : '${(bytes / 1048576).toStringAsFixed(1)} MB');
+    }
+    final length = mediaLengths[source];
+    if (length != null) parts.add(mediaClock(Duration(milliseconds: length)));
+    return parts.join(' · ');
+  }
 
   Widget library() => LibraryLayouts(
         mode: AppDesign.instance.mode,
@@ -1989,6 +2030,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
             .map((i) => queue[i])
             .toList(),
         play: playSource,
+        details: gridDetails,
         destinations: [
           LibraryDestination(
               'Discover',
@@ -2006,12 +2048,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
           LibraryDestination('Network', Icons.dns_outlined, browseNetwork),
           LibraryDestination('Cloud', Icons.cloud_outlined, browseCloud),
           LibraryDestination(
-              'Display Settings', Icons.dashboard_customize, displaySettings),
-          LibraryDestination(
-              'Welcome guide',
-              Icons.help_outline,
-              () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const OnboardingFlow()))),
+              'Display Settings', Icons.tune_rounded, displaySettings),
         ],
       );
 
@@ -2180,7 +2217,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                         maxCrossAxisExtent: AppDesign.instance.mediaExtent,
                         mainAxisSpacing: 12,
                         crossAxisSpacing: 12,
-                        childAspectRatio: 1.55,
+                        childAspectRatio: 1.45,
                       ),
                       delegate: SliverChildBuilderDelegate(
                         (context, i) => Material(
@@ -2205,15 +2242,18 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                                           child: LocalThumbnail(
                                               queue[group.indices[i]]))),
                                   const SizedBox(height: 5),
-                                  Text(
-                                    validStream(queue[group.indices[i]])
-                                        ? 'Network stream'
-                                        : 'Local media',
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: Color(0xff9296a0),
-                                    ),
-                                  ),
+                                  Text(labelFor(queue[group.indices[i]]),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600)),
+                                  Text(gridDetails(queue[group.indices[i]]),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Color(0xff9296a0))),
                                 ],
                               ),
                             ),
@@ -2283,10 +2323,10 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                             trackPicker(subtitle: true);
                           } else if (value == 'Load subtitle file') {
                             externalSubtitles();
-                          } else if (value == 'AI subtitles') {
-                            generateAiSubtitles();
                           } else if (value == 'Playback speed') {
                             playbackOptions();
+                          } else if (value == 'Rescan library') {
+                            scanLibraryOptions();
                           } else if (value == 'Watch statistics') {
                             watchStatistics();
                           } else if (value == 'Sleep timer') {
@@ -2318,6 +2358,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                         itemBuilder: (context) => [
                           for (final entry in <String, IconData>{
                             'Language': Icons.language,
+                            'Rescan library': Icons.refresh,
                             'Display settings': Icons.tune_rounded,
                             'Watch statistics': Icons.bar_chart_rounded,
                             'User manual': Icons.menu_book_outlined,
@@ -2352,7 +2393,6 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                               'Subtitles',
                               'Load subtitle file',
                               'Playback speed',
-                              'AI subtitles',
                               'Open folder',
                               'Clear queue',
                             ])

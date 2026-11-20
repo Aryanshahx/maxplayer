@@ -214,7 +214,7 @@ class _AndroidFeaturedMoviesState extends State<AndroidFeaturedMovies> {
                                     fontSize: 30, fontWeight: FontWeight.w900)),
                             const SizedBox(height: 8),
                             Text(
-                                '${m.year ?? ""} · ★ ${tmdbRatingText(m.rating)} via TMDB',
+                                '${m.year ?? ""} · ★ ${tmdbRatingText(m.rating)}',
                                 style: const TextStyle(
                                     color: Colors.white70, fontSize: 12)),
                             const SizedBox(height: 10),

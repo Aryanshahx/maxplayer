@@ -1,3 +1,5 @@
+import 'ask_ai_sheet.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import '../utils/app_language.dart';
 import 'android_browse.dart';
@@ -153,15 +155,12 @@ class AndroidMovieDetails extends StatelessWidget {
                             'In My Library - Play "${labelFor(localSource!)}"',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis)))),
-          Tooltip(
-              message:
-                  'Online AI questions are not implemented in this Windows build',
-              child: SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                      onPressed: null,
-                      icon: const Icon(Icons.auto_awesome, size: 16),
-                      label: const Text('Ask AI · unavailable')))),
+          SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                  onPressed: () => AskAiSheet.show(context, movie: m),
+                  icon: const Icon(Icons.auto_awesome, size: 16),
+                  label: const Text('Ask AI'))),
           if (e.tagline.isNotEmpty)
             Padding(
                 padding: const EdgeInsets.only(top: 14, bottom: 8),
@@ -275,22 +274,30 @@ class AndroidMovieDetails extends StatelessWidget {
                                     fontSize: 12, color: Colors.white70)))
                       ])),
           heading('Where to watch'),
-          if (full.watch.isEmpty)
-            const Text('No India provider listings available.',
-                style: TextStyle(color: Colors.white54, fontSize: 12))
-          else
-            SelectableText(
+          if (!full.watch.isEmpty)
+            Text(
                 'Stream: ${full.watch.stream.join(", ")}\nRent: ${full.watch.rent.join(", ")}\nBuy: ${full.watch.buy.join(", ")}',
-                style: const TextStyle(
-                    color: Colors.white70, fontSize: 12, height: 1.5)),
-          TextButton.icon(
-              onPressed: onWatch,
-              icon: const Icon(Icons.open_in_new, size: 15),
-              label: const Text('Provider listings · India',
-                  style: TextStyle(fontSize: 12))),
-          const Text(
-              'Availability via TMDB / JustWatch. Provider subscriptions may be required. Discover supplies metadata and trailers, not full films or episodes.',
-              style: TextStyle(color: Colors.white38, fontSize: 11)),
+                style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          if ([...full.watch.stream, ...full.watch.rent, ...full.watch.buy].any(
+              (name) =>
+                  name.toLowerCase().contains('amazon') ||
+                  name.toLowerCase().contains('prime video'))) ...[
+            FilledButton.icon(
+                onPressed: () => launchUrl(
+                    Uri.https('www.amazon.in', '/s', {
+                      'k': '${m.title} ${m.year ?? ''} movie',
+                      'i': 'instant-video',
+                      'tag': 'maxplayer0a-21'
+                    }),
+                    mode: LaunchMode.externalApplication),
+                icon: const Icon(Icons.play_circle),
+                label: const Text('Watch on Prime Video')),
+            const Text(
+                'Partner link — As an Amazon Associate, Hyper Player earns from qualifying purchases.',
+                style: TextStyle(fontSize: 11, color: Colors.white54)),
+          ] else
+            const Text('No supported watch link is available for this title.',
+                style: TextStyle(color: Colors.white54)),
           if (full.reviews.isNotEmpty) heading('Reviews'),
           for (final review in full.reviews.take(5))
             ExpansionTile(

@@ -1,3 +1,4 @@
+import 'package:share_plus/share_plus.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:file_selector/file_selector.dart';
@@ -134,14 +135,35 @@ class _DesktopQuickShareScreenState extends State<DesktopQuickShareScreen> {
                           label: const Text('Direct send'))),
                   const SizedBox(width: 10),
                   Expanded(
-                      child: Tooltip(
-                          message:
-                              'Native Windows app-sharing integration is not implemented',
-                          child: OutlinedButton.icon(
-                              onPressed: null,
-                              icon:
-                                  const Icon(Icons.ios_share_rounded, size: 18),
-                              label: const Text('Via other apps'))))
+                      child: OutlinedButton.icon(
+                          onPressed: selected.isEmpty
+                              ? null
+                              : () async {
+                                  try {
+                                    final files = <XFile>[];
+                                    for (final source in selected) {
+                                      if (await File(source).exists()) {
+                                        files.add(XFile(source));
+                                      }
+                                    }
+                                    if (files.isEmpty) {
+                                      throw StateError(
+                                          'Selected files are unavailable');
+                                    }
+                                    await SharePlus.instance.share(ShareParams(
+                                        files: files,
+                                        title: 'Share with other apps'));
+                                  } catch (_) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(const SnackBar(
+                                              content: Text(
+                                                  'Windows sharing is unavailable. Check installed share targets or use Direct send.')));
+                                    }
+                                  }
+                                },
+                          icon: const Icon(Icons.ios_share_rounded, size: 18),
+                          label: const Text('Via other apps')))
                 ]))),
       ]));
 }

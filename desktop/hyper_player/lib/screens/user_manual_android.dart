@@ -95,7 +95,7 @@ class UserManualSheet extends StatelessWidget {
           ),
           GestureKind.swipeBrightness: (
             'Brightness / volume swipe',
-            'Left side controls video brightness; right side controls volume. B opens sliders; [ and ] adjust brightness; Up/Down changes volume.'
+            'Left side controls video brightness; right side controls volume. B opens sliders; Page Down and Page Up adjust brightness; Up/Down changes volume.'
           ),
           GestureKind.swipeSeek: (
             'Horizontal seek',
@@ -103,7 +103,7 @@ class UserManualSheet extends StatelessWidget {
           ),
           GestureKind.pinchZoom: (
             'Pinch / pan',
-            'Enable pinch zoom in Player Settings for focal zoom. I/O zoom; Shift+arrows pan. Z cycles screen fits.'
+            'Enable pinch zoom in Player Settings for focal zoom. + / − zoom; Shift+arrows pan. Z cycles screen fits.'
           ),
           GestureKind.holdSpeed: (
             'Hold to speed up',
@@ -296,7 +296,7 @@ const List<_GestureItem> _gestureItems = [
   _GestureItem(
       DesktopInputKind.keyboard,
       'Brightness, fit, zoom & hold shortcuts',
-      'H: show/hide controls. L: lock controls; Escape unlocks. B: brightness/volume sliders. [ / ]: video brightness. Z: next screen fit. I / O: zoom in/out. Shift+arrows: pan while zoomed. Hold R: temporary speed boost; release restores the previous rate. These apply with the player focused; OS display brightness is unchanged.'),
+      'H: show/hide controls. L: lock controls; Escape unlocks. B: brightness/volume sliders. Page Down / Page Up: video brightness. Z: next screen fit. + / −: zoom in/out. Shift+arrows: pan while zoomed. Hold R: temporary speed boost; release restores the previous rate. These apply with the player focused; OS display brightness is unchanged.'),
   _GestureItem(DesktopInputKind.click, 'Touchscreen gestures',
       'Configure side double-tap seek, centre double-tap play/pause, left brightness, right volume and horizontal seek in Player settings. Long-press temporarily speeds up and restores the prior rate on release. Pinch mode OFF cycles fits; ON enables 1–4x focal zoom and pan. A quick two-finger tap resets to the default fit. Brightness is video-only dimming, not system brightness.'),
   _GestureItem(DesktopInputKind.click, 'Single click — show / hide controls',
@@ -360,5 +360,5 @@ const List<_Item> _tipItems = [
   _Item(Icons.lock_outline, 'Private Space (experimental)',
       'Use a 12–128 character password. Encrypted copies require the original Windows account and vault key file; there is no password reset. Original files remain outside the vault. Export creates an unencrypted copy. In-app private playback is unavailable. Windows lifecycle and DPAPI validation are pending. Do not remove setup.lock or recovery files blindly after a failed setup.'),
   _Item(Icons.construction_outlined, 'Availability',
-      'Private Space encrypted-copy storage is experimental and has no in-app playback yet. FTP/FTPS and direct NAS credential login, Local Whisper subtitles are opt-in downloads (base/small/medium), processed on this PC; native execution needs Windows validation. Chromecast/DLNA casting is not implemented. Karaoke needs text subtitles; native Enhance/HDR integration and actual rendering require Windows validation. Windows wireless-display/mini-player and preview-frame decoding are source-integrated but need native validation. Their presence in Android does not make them working Windows features.'),
+      'Private Space encrypted-copy storage is experimental and has no in-app playback yet. FTP/FTPS uses a Windows transfer session and local downloads; credentials are not saved. Direct NAS passwords remain managed by Windows. Local Whisper supports fast/base/small/medium opt-in downloads; native execution needs Windows validation. Chromecast/DLNA casting is not implemented. Karaoke needs text subtitles; native Enhance/HDR integration and actual rendering require Windows validation. Windows wireless-display/mini-player and preview-frame decoding are source-integrated but need native validation. Their presence in Android does not make them working Windows features.'),
 ];

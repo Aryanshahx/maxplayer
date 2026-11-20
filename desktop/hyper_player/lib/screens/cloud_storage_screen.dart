@@ -1,3 +1,4 @@
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -189,6 +190,17 @@ class _DesktopCloudStorageScreenState extends State<DesktopCloudStorageScreen> {
           child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 900),
               child: ListView(padding: const EdgeInsets.all(24), children: [
+                Card(
+                    child: ListTile(
+                        leading: const Icon(Icons.cloud_circle, size: 40),
+                        title:
+                            const Text('pCloud · more space for your videos'),
+                        subtitle: const Text(
+                            'Partner link · Free plan and paid upgrades. We may earn a commission.'),
+                        trailing: const Icon(Icons.open_in_new),
+                        onTap: () => launchUrl(
+                            Uri.parse('https://partner.pcloud.com/r/157632'),
+                            mode: LaunchMode.externalApplication))),
                 const SizedBox(height: 16),
                 Center(
                     child: Container(

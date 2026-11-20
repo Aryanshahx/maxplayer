@@ -1,5 +1,5 @@
+import 'ai_suggest_sheet.dart';
 import 'windows_voice.dart';
-import 'ai_suggest.dart';
 import 'moving_poster_strip.dart';
 import 'dart:io';
 import 'dart:async';
@@ -15,7 +15,7 @@ import 'category_screen.dart';
 import 'local_movie_match.dart';
 
 const tmdbNotice =
-    'This product uses the TMDB API but is not endorsed or certified by TMDB. Ratings via TMDB. Provider availability via TMDB / JustWatch (India).';
+    'This product uses the TMDB API but is not endorsed or certified by TMDB. Includes TMDB data. Availability data: JustWatch.';
 Future<void> openDiscoverLink(BuildContext context, Uri uri) async {
   try {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
@@ -137,10 +137,31 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     if (listening) return;
     setState(() => listening = true);
     try {
-      final text = await recognizeWindowsSpeech();
+      final text = await recognizeWindowsSpeech(
+          hints: {
+        ...movies.map((m) => m.title),
+        ...shelves.values.expand((rows) => rows.map((m) => m.title))
+      }.toList());
       if (!mounted) return;
-      search.text = text;
-      await load();
+      final editor = TextEditingController(text: text);
+      final confirmed = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+                  title: const Text('Review voice search'),
+                  content: TextField(controller: editor, autofocus: true),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(ctx, editor.text),
+                        child: const Text('Search'))
+                  ]));
+      Future<void>.delayed(const Duration(seconds: 1), editor.dispose);
+      if (confirmed != null && mounted) {
+        search.text = confirmed.trim();
+        await load();
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -152,98 +173,29 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 
   Future<void> suggestions() async {
-    final input = TextEditingController(text: search.text);
-    final keyInput = TextEditingController();
-    final taste = await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-              title: const Text('Movie suggestions'),
-              content: Column(mainAxisSize: MainAxisSize.min, children: [
-                TextField(
-                    controller: input,
-                    autofocus: true,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                        hintText: 'Describe the films you enjoy…',
-                        helperText:
-                            'Online AI if configured; otherwise labelled catalogue matching')),
-                TextField(
-                    controller: keyInput,
-                    obscureText: true,
-                    enableSuggestions: false,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                        labelText: 'Optional OpenRouter key',
-                        helperText:
-                            'Free-model requests only. Key is not stored.'))
-              ]),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel')),
-                FilledButton(
-                    onPressed: () => Navigator.pop(ctx, input.text),
-                    child: const Text('Find movies'))
-              ],
-            ));
-    // Dispose after the dialog route finishes its reverse transition.
-    final suppliedKey = keyInput.text.trim();
-    Future<void>.delayed(const Duration(seconds: 1), () {
-      input.dispose();
-      keyInput.dispose();
-    });
-    if (taste == null || taste.trim().isEmpty || !mounted) return;
-    final suggestor = suppliedKey.isEmpty
-        ? AiSuggestor(client)
-        : AiSuggestor(client, apiKey: suppliedKey);
-    showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => const Center(child: CircularProgressIndicator()));
-    final result = await suggestor
-        .suggest(taste)
-        .timeout(const Duration(seconds: 65), onTimeout: () => null);
-    if (!mounted) return;
-    Navigator.pop(context);
-    await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        builder: (ctx) => SizedBox(
-            height: MediaQuery.sizeOf(ctx).height * .75,
-            child: Column(children: [
-              Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(suggestor.source)),
-              Expanded(
-                  child: result == null || result.isEmpty
-                      ? const Center(
-                          child: Text(
-                              'No matching titles. Check catalogue connectivity/configuration.'))
-                      : ListView(children: [
-                          for (final movie in result)
-                            ListTile(
-                                leading: SizedBox(
-                                    width: 44, child: poster(movie.posterPath)),
-                                title: Text(movie.title),
-                                subtitle:
-                                    Text('${movie.year ?? ''} · via TMDB'),
-                                onTap: () {
-                                  Navigator.pop(ctx);
-                                  openMovie(movie);
-                                })
-                        ])),
-            ])));
+    final movie = await AiSuggestSheet.show(context);
+    if (movie != null && mounted) openMovie(movie);
   }
 
   void openMovie(TmdbMovie movie) {
     Navigator.push<void>(
         context,
-        MaterialPageRoute(
-            builder: (_) => DiscoverDetail(
+        PageRouteBuilder<void>(
+            transitionDuration: const Duration(milliseconds: 320),
+            pageBuilder: (_, animation, secondary) => DiscoverDetail(
                 client: client,
                 movie: movie,
                 localSources: widget.localSources,
-                onPlayLocal: widget.onPlayLocal)));
+                onPlayLocal: widget.onPlayLocal),
+            transitionsBuilder: (_, animation, secondary, child) =>
+                FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                        position: Tween<Offset>(
+                                begin: const Offset(0, .04), end: Offset.zero)
+                            .animate(CurvedAnimation(
+                                parent: animation, curve: Curves.easeOutCubic)),
+                        child: child))));
   }
 
   Future<void> loadShelves({bool force = false}) async {
@@ -407,7 +359,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 TextButton.icon(
                     onPressed: suggestions,
                     icon: const Icon(Icons.auto_awesome),
-                    label: const Text('AI / Suggestions')),
+                    label: const Text('AI')),
                 IconButton(
                     tooltip: 'Refresh catalogue',
                     onPressed: loading
@@ -682,13 +634,6 @@ class _DiscoverDetailState extends State<DiscoverDetail> {
                                                               .onPlayLocal))));
                                         }),
                                   ),
-                                  const Padding(
-                                      padding:
-                                          EdgeInsets.fromLTRB(16, 0, 16, 24),
-                                      child: Text(tmdbNotice,
-                                          style: TextStyle(
-                                              color: Colors.white38,
-                                              fontSize: 10))),
                                 ]))));
                   })),
           Positioned(

@@ -72,8 +72,17 @@ class AppDesign extends ChangeNotifier {
 
   ThemeData theme(ThemeData base) {
     base = base.copyWith(
-        colorScheme:
-            base.colorScheme.copyWith(primary: accent, secondary: accent));
+      colorScheme:
+          base.colorScheme.copyWith(primary: accent, secondary: accent),
+      iconTheme: base.iconTheme.copyWith(color: accent),
+      appBarTheme: base.appBarTheme.copyWith(foregroundColor: accent),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: accent),
+      switchTheme: SwitchThemeData(
+          thumbColor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.selected) ? accent : null)),
+      sliderTheme: base.sliderTheme
+          .copyWith(activeTrackColor: accent, thumbColor: accent),
+    );
     if (mode == AppDesignMode.android) return base;
     final compact = mode == AppDesignMode.compact;
     final radius = compact ? 6.0 : 24.0;

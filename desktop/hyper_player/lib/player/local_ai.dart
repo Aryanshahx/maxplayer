@@ -15,6 +15,8 @@ class SpeechModel {
 }
 
 const speechModels = [
+  SpeechModel('base-q5_1', 59707625,
+      '422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898'),
   SpeechModel('base', 147951465,
       '60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe'),
   SpeechModel('small', 487601967,
@@ -55,6 +57,51 @@ void extractSpeechTool(String archivePath, String destination) {
   } finally {
     input.closeSync();
   }
+}
+
+List<String> windowsSecureDownloadArgs(String url, String destination) {
+  if (Uri.tryParse(url)?.scheme != 'https') {
+    throw const FormatException('Secure download requires HTTPS');
+  }
+  return [
+    '--fail',
+    '--location',
+    '--silent',
+    '--show-error',
+    '--proto',
+    '=https',
+    '--proto-redir',
+    '=https',
+    '--connect-timeout',
+    '30',
+    '--max-time',
+    '3600',
+    '--output',
+    destination,
+    url
+  ];
+}
+
+List<String> whisperArguments(String model, String audio, String output,
+    {String language = 'auto',
+    bool translate = false,
+    bool karaokeStyle = false}) {
+  if (!RegExp(r'^(auto|[a-z]{2,3})$').hasMatch(language)) {
+    throw const FormatException('Invalid speech language');
+  }
+  return [
+    '-m',
+    model,
+    '-f',
+    audio,
+    '-l',
+    language,
+    if (karaokeStyle) ...['-ml', '1', '-sow'],
+    '-osrt',
+    '-of',
+    output,
+    if (translate) '-tr'
+  ];
 }
 
 /// Entirely opt-in local processing. Models/tools are never shipped in installer.
@@ -129,11 +176,73 @@ class LocalSpeechJob extends ChangeNotifier {
         throw StateError('SHA-256 mismatch. File will not be used.');
       }
       return await temp.rename(target.path);
+    } on HandshakeException {
+      await sink?.close();
+      sink = null;
+      client.close(force: true);
+      check();
+      if (!Platform.isWindows || Uri.parse(url).scheme != 'https') rethrow;
+      report('Using Windows trusted certificate store for secure download');
+      return await downloadWithWindowsTrust(url, target, expected, size: size);
     } finally {
       await sink?.close();
       client.close(force: true);
       _http = null;
       if (await temp.exists()) await temp.delete();
+    }
+  }
+
+  Future<File> downloadWithWindowsTrust(
+      String url, File target, String expected,
+      {int? size}) async {
+    if (!Platform.isWindows || Uri.parse(url).scheme != 'https') {
+      throw UnsupportedError('Windows HTTPS required');
+    }
+    final partial = File('${target.path}.partial');
+    var showingProgress = true;
+    final progress =
+        Timer.periodic(const Duration(milliseconds: 750), (_) async {
+      try {
+        final bytes = await partial.length();
+        if (showingProgress && !cancelled) {
+          report(
+              'Downloading securely via Windows: ${(bytes / 1048576).toStringAsFixed(0)} MB');
+        }
+      } catch (_) {/* file may not have been created yet */}
+    });
+    try {
+      check();
+      final systemCurl = p.join(
+          Platform.environment['SystemRoot'] ?? r'C:\Windows',
+          'System32',
+          'curl.exe');
+      final process = _process = await Process.start(
+          systemCurl, windowsSecureDownloadArgs(url, partial.path));
+      if (cancelled) process.kill();
+      final stdout = process.stdout.drain<void>();
+      final stderr = process.stderr.transform(utf8.decoder).join();
+      final code = await process.exitCode;
+      await stdout;
+      await stderr;
+      check();
+      if (code != 0) {
+        throw StateError(
+            'Windows secure download failed ($code). Check Windows date/time, trusted root certificates, proxy or antivirus HTTPS inspection. Certificate verification was not disabled.');
+      }
+      if (size != null && await partial.length() != size) {
+        throw StateError('Incomplete download');
+      }
+      if ((await sha256.bind(partial.openRead()).first).toString() !=
+          expected) {
+        throw StateError('SHA-256 mismatch. File will not be used.');
+      }
+      check();
+      return await partial.rename(target.path);
+    } finally {
+      showingProgress = false;
+      progress.cancel();
+      _process = null;
+      if (await partial.exists()) await partial.delete();
     }
   }
 
@@ -194,7 +303,9 @@ class LocalSpeechJob extends ChangeNotifier {
   }
 
   Future<String> transcribe(String source, SpeechModel model,
-      {bool translate = false}) async {
+      {bool translate = false,
+      String language = 'auto',
+      bool karaokeStyle = false}) async {
     if (busy) throw StateError('An AI job is already running');
     if (!Platform.isWindows) {
       throw UnsupportedError('Windows x64 local AI tools required');
@@ -253,18 +364,12 @@ class LocalSpeechJob extends ChangeNotifier {
       report(
           'Transcribing with ${model.name}. Larger models can take much longer than playback on CPU.');
       final output = p.join(work.path, 'subtitles');
-      await _run(whisper, [
-        '-m',
-        weights.path,
-        '-f',
-        wav,
-        '-l',
-        'auto',
-        '-osrt',
-        '-of',
-        output,
-        if (translate) '-tr'
-      ]);
+      await _run(
+          whisper,
+          whisperArguments(weights.path, wav, output,
+              language: language,
+              translate: translate,
+              karaokeStyle: karaokeStyle));
       final generated = File('$output.srt');
       if (!await generated.exists() || await generated.length() == 0) {
         throw StateError('No subtitle output was generated');

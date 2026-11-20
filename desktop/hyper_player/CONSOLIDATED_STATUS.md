@@ -1,3 +1,7 @@
+# Current playback/network correction
+
+Read **PLAYBACK_NETWORK_CORRECTION.md** first: current shortcuts, secure AI download fallback, Android AI/settings restoration, import/gesture fixes, stream/channel detection, FTP/FTPS, sharing, branding and native verification limits. Windows push notifications remain unresolved. This supersedes conflicting older sections below.
+
 # Latest correction boundary
 
 See **STRUCTURAL_LAYOUT_AI_UPDATE.md**: three structural library compositions, optional downloadable local speech pipeline, Android onboarding, input/thumbnail/mini-player corrections. Windows notifications are NOT implemented; native execution/performance needs Windows validation. This section supersedes conflicting older claims below.

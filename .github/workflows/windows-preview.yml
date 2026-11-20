@@ -21,6 +21,7 @@ jobs:
       - name: Set Windows product branding
         shell: pwsh
         run: |
+          Copy-Item assets/app_icon.ico windows/runner/resources/app_icon.ico -Force
           $resource = 'windows/runner/Runner.rc'
           $text = Get-Content $resource -Raw
           $text = $text.Replace('"CompanyName", "com.hypertechlabs"', '"CompanyName", "Hyper Tech Labs"')
@@ -41,12 +42,13 @@ jobs:
       - name: Build Windows with Discover token
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         shell: pwsh
         run: |
           if ([string]::IsNullOrWhiteSpace($env:TMDB_API_KEY)) {
             throw "TMDB_API_KEY is missing. Add the TMDB read-access token to repository Actions secrets."
           }
-          @{ TMDB_API_KEY = $env:TMDB_API_KEY } | ConvertTo-Json -Compress | Set-Content -Encoding utf8 -NoNewline "$env:RUNNER_TEMP/hyper-discover.json"
+          @{ TMDB_API_KEY = $env:TMDB_API_KEY; OPENROUTER_API_KEY = $env:OPENROUTER_API_KEY } | ConvertTo-Json -Compress | Set-Content -Encoding utf8 -NoNewline "$env:RUNNER_TEMP/hyper-discover.json"
           try {
             flutter build windows --release "--dart-define-from-file=$env:RUNNER_TEMP/hyper-discover.json"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -64,6 +64,7 @@ void main() {
       ValueChanged<double>? volume,
       VoidCallback? fullscreen,
       VoidCallback? playPause,
+      VoidCallback? fitAction,
       void Function(double, Offset)? transform}) async {
     final playback = ValueNotifier(const PlaybackSnapshot(
         position: Duration(seconds: 30),
@@ -86,7 +87,7 @@ void main() {
       onNext: () {},
       onShuffle: () {},
       onRepeat: () {},
-      onFit: () {},
+      onFit: fitAction ?? () {},
       onSpeed: () {},
       onExtras: () {},
       onQueue: () {},
@@ -109,7 +110,7 @@ void main() {
     await controls(tester, volume: (value) => volume = value);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     expect(volume, 105);
-    await tester.sendKeyEvent(LogicalKeyboardKey.bracketLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
     await tester.pump();
     expect(find.text('Video brightness 95%'), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
@@ -152,6 +153,74 @@ void main() {
     await mouse.up();
     await tester.pump();
     expect(find.textContaining('Video brightness'), findsWidgets);
+  });
+  testWidgets(
+      'New brightness and zoom keys work; old bracket shortcut is removed',
+      (tester) async {
+    final zooms = <double>[];
+    await controls(tester, transform: (zoom, pan) => zooms.add(zoom));
+    await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
+    await tester.pump();
+    expect(find.text('Video brightness 95%'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.pageUp);
+    await tester.pump();
+    expect(find.text('Video brightness 100%'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.equal);
+    await tester.pump();
+    expect(zooms.last, 1.25);
+    await tester.sendKeyEvent(LogicalKeyboardKey.minus);
+    await tester.pump();
+    expect(zooms.last, 1);
+    await tester.sendKeyEvent(LogicalKeyboardKey.bracketLeft);
+    await tester.pump();
+    expect(find.text('Zoom 1.00x'), findsOneWidget);
+  });
+  testWidgets('Left/right gesture origin is locked to the actual surface half',
+      (tester) async {
+    final volumes = <double>[];
+    await controls(tester, volume: volumes.add);
+    final left = await tester.startGesture(const Offset(120, 250));
+    await left.moveBy(const Offset(10, 30));
+    await tester.pump();
+    await left.moveBy(const Offset(25, 100));
+    await tester.pump();
+    await left.up();
+    await tester.pump();
+    expect(volumes, isEmpty);
+    expect(find.textContaining('Video brightness'), findsOneWidget);
+    final right = await tester.startGesture(const Offset(670, 250));
+    await right.moveBy(const Offset(-10, 30));
+    await tester.pump();
+    await right.moveBy(const Offset(-25, 100));
+    await tester.pump();
+    await right.up();
+    await tester.pump();
+    expect(volumes, isNotEmpty);
+    expect(find.textContaining('Volume'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 500));
+  });
+  testWidgets('Fit shortcut continues through two complete six-mode loops',
+      (tester) async {
+    var current = FitMode.fit;
+    final seen = <FitMode>[];
+    await controls(tester, fitAction: () {
+      current = nextFitMode(current);
+      seen.add(current);
+    });
+    for (var i = 0; i < 12; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      await tester.pump();
+    }
+    expect(current, FitMode.fit);
+    expect(seen.take(6), [
+      FitMode.crop,
+      FitMode.stretch,
+      FitMode.sixteenNine,
+      FitMode.fourThree,
+      FitMode.original,
+      FitMode.fit
+    ]);
+    expect(seen.skip(6), seen.take(6));
   });
   testWidgets('Long-press restores the exact prior playback rate on release',
       (tester) async {

@@ -82,7 +82,8 @@ void main() {
   test(
       'Large local models are optional separate downloads, not installer assets',
       () {
-    expect(speechModels.map((m) => m.name), ['base', 'small', 'medium']);
+    expect(speechModels.map((m) => m.name),
+        ['base-q5_1', 'base', 'small', 'medium']);
     expect(speechModels.last.bytes, greaterThan(speechModels.first.bytes));
     for (final model in speechModels) {
       expect(model.digest, matches(RegExp(r'^[a-f0-9]{64}$')));

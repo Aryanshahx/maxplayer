@@ -106,6 +106,9 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
   double? dragging;
   double beforeMute = 100;
   bool touchInput = false, fitGestureDone = false;
+  bool startedOnLeft = true;
+  final surfaceKey = GlobalKey();
+  Size surfaceSize = const Size(800, 450);
   Offset gestureStart = Offset.zero;
   Duration gesturePosition = Duration.zero;
   double gestureVolume = 100, brightness = 1, startBrightness = 1;
@@ -155,7 +158,7 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                           style: TextStyle(
                               fontSize: 18, fontWeight: FontWeight.bold)),
                       Text(
-                          'Video brightness ${(brightness * 100).round()}% · [ / ]'),
+                          'Video brightness ${(brightness * 100).round()}% · Page Down / Page Up'),
                       Slider(
                           value: brightness,
                           min: .15,
@@ -183,7 +186,7 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
   }
 
   void emitTransform() {
-    final size = context.size ?? const Size(800, 450);
+    final size = surfaceSize;
     widget.onTransform?.call(zoom,
         Offset(pan.dx / (size.width * zoom), pan.dy / (size.height * zoom)));
   }
@@ -221,7 +224,7 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
       travel += details.focalPointDelta.distance;
       scaled = scaled || (details.scale - 1).abs() > .05;
       touchSeek = null;
-      final size = context.size ?? const Size(800, 450);
+      final size = surfaceSize;
       if (prefs.pinchZoom && widget.onTransform != null) {
         zoom = freeZoomFor(baseZoom: startZoom, scale: details.scale);
         pan = clampPanFor(
@@ -256,7 +259,7 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
     final delta = details.localFocalPoint - gestureStart;
     if (gestureAxis == null && delta.distance < 14) return;
     gestureAxis ??= delta.dx.abs() > delta.dy.abs() ? 'seek' : 'vertical';
-    final size = context.size ?? const Size(800, 450);
+    final size = surfaceSize;
     if (zoom > 1 && widget.onTransform != null) {
       pan = clampPanFor(pan: startPan + delta, zoom: zoom, size: size);
       emitTransform();
@@ -272,7 +275,7 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
               .round()
               .clamp(0, duration));
       setState(() => gestureMessage = 'Seek ${playbackClock(touchSeek!)}');
-    } else if (gestureStart.dx >= size.width / 2) {
+    } else if (!startedOnLeft) {
       if (!prefs.swipeVolume) return;
       final next = (gestureVolume - delta.dy / size.height * 100)
           .clamp(0.0, maximumVolume);
@@ -421,10 +424,8 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
           : k == LogicalKeyboardKey.arrowDown
               ? -40.0
               : 0.0;
-      pan = clampPanFor(
-          pan: pan + Offset(dx, dy),
-          zoom: zoom,
-          size: context.size ?? const Size(800, 450));
+      pan =
+          clampPanFor(pan: pan + Offset(dx, dy), zoom: zoom, size: surfaceSize);
       emitTransform();
       feedback('Pan');
     } else if (k == LogicalKeyboardKey.keyH) {
@@ -438,19 +439,25 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
       });
     } else if (k == LogicalKeyboardKey.keyB) {
       adjustments();
-    } else if (k == LogicalKeyboardKey.bracketLeft ||
-        k == LogicalKeyboardKey.bracketRight) {
+    } else if (k == LogicalKeyboardKey.pageDown ||
+        k == LogicalKeyboardKey.pageUp) {
       changeBrightness(
-          brightness + (k == LogicalKeyboardKey.bracketRight ? .05 : -.05));
+          brightness + (k == LogicalKeyboardKey.pageUp ? .05 : -.05));
     } else if (k == LogicalKeyboardKey.keyZ) {
       widget.onFit();
       feedback('Fit: ${nextFitMode(widget.fit).label}');
-    } else if ((k == LogicalKeyboardKey.keyI || k == LogicalKeyboardKey.keyO) &&
+    } else if ((k == LogicalKeyboardKey.equal ||
+            k == LogicalKeyboardKey.minus ||
+            k == LogicalKeyboardKey.numpadAdd ||
+            k == LogicalKeyboardKey.numpadSubtract) &&
         widget.onTransform != null) {
-      zoom =
-          (zoom + (k == LogicalKeyboardKey.keyI ? .25 : -.25)).clamp(1.0, 4.0);
-      pan = clampPanFor(
-          pan: pan, zoom: zoom, size: context.size ?? const Size(800, 450));
+      zoom = (zoom +
+              ((k == LogicalKeyboardKey.equal ||
+                      k == LogicalKeyboardKey.numpadAdd)
+                  ? .25
+                  : -.25))
+          .clamp(1.0, 4.0);
+      pan = clampPanFor(pan: pan, zoom: zoom, size: surfaceSize);
       emitTransform();
       feedback('Zoom ${zoom.toStringAsFixed(2)}x');
     } else if (k == LogicalKeyboardKey.keyR &&
@@ -522,6 +529,7 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
               builder: (context, state, _) =>
                   Stack(fit: StackFit.expand, children: [
                     GestureDetector(
+                        key: surfaceKey,
                         behavior: HitTestBehavior.translucent,
                         onTap: () {
                           focus.requestFocus();
@@ -579,8 +587,17 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                               wake();
                             }
                           },
-                          onPointerDown: (event) => touchInput =
-                              event.kind != PointerDeviceKind.trackpad,
+                          onPointerDown: (event) {
+                            touchInput =
+                                event.kind != PointerDeviceKind.trackpad;
+                            final render =
+                                surfaceKey.currentContext?.findRenderObject();
+                            if (render is RenderBox && render.hasSize) {
+                              surfaceSize = render.size;
+                            }
+                            startedOnLeft =
+                                event.localPosition.dx < surfaceSize.width / 2;
+                          },
                           child: const SizedBox.expand(),
                         )),
                     if (brightness < 1)
@@ -679,10 +696,6 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                                         },
                                         itemBuilder: (_) => [
                                               for (final row in const [
-                                                (
-                                                  'AI subtitles',
-                                                  Icons.auto_awesome
-                                                ),
                                                 (
                                                   'Playback queue',
                                                   Icons.queue_music

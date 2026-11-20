@@ -1,3 +1,7 @@
+# Current playback/network correction
+
+Read **PLAYBACK_NETWORK_CORRECTION.md** first: current shortcuts, secure AI download fallback, Android AI/settings restoration, import/gesture fixes, stream/channel detection, FTP/FTPS, sharing, branding and native verification limits. Windows push notifications remain unresolved. This supersedes conflicting older sections below.
+
 # Latest correction
 
 Read `STRUCTURAL_LAYOUT_AI_UPDATE.md` first for structural layouts, input/thumbnail corrections, onboarding, optional local AI and the unresolved Windows notification integration. Older docs describe earlier snapshots.

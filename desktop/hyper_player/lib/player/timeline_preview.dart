@@ -73,7 +73,7 @@ class _HoverTimelineState extends State<HoverTimeline> {
       loading = widget.loader != null;
     });
     if (widget.loader == null) return;
-    debounce = Timer(const Duration(milliseconds: 220), () async {
+    debounce = Timer(const Duration(milliseconds: 90), () async {
       Uint8List? result;
       try {
         result = await widget.loader!(next);

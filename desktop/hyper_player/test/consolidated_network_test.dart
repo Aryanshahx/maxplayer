@@ -129,9 +129,10 @@ void main() {
     expect(find.textContaining('existing Windows network session'),
         findsOneWidget);
     expect(find.widgetWithText(TextField, 'Password'), findsNothing);
-    final ftp = tester.widget<ChoiceChip>(
-        find.widgetWithText(ChoiceChip, 'FTP / FTPS · unavailable'));
-    expect(ftp.onSelected, isNull);
+    final ftp = tester
+        .widget<ActionChip>(find.widgetWithText(ActionChip, 'FTP / FTPS'));
+    expect(ftp.onPressed, isNotNull);
+    expect(find.byTooltip('How to use Network Storage'), findsOneWidget);
   });
   testWidgets(
       'Network form validates without inventing a successful connection',
