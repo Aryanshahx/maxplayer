@@ -11,6 +11,7 @@ enum GestureKind {
   doubleTapSides,
   doubleTapMiddle,
   swipeBrightness,
+  swipeVolume,
   swipeSeek,
   pinchZoom,
   holdSpeed,
@@ -28,12 +29,11 @@ class GestureIllustration extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Theme.of(context);
     return SizedBox(
       height: height,
       width: double.infinity,
       child: CustomPaint(
-        painter: _GesturePainter(kind, Colors.white),
+        painter: _GesturePainter(kind, Theme.of(context).colorScheme.primary),
       ),
     );
   }
@@ -226,6 +226,17 @@ class _GesturePainter extends CustomPainter {
     _arrow(canvas, Offset(ax, cy + 8), Offset(ax, cy + 28), _accentPaint);
     if (doodle == IconKindDoodle.sun) {
       _sunGlyph(canvas, Offset(ax, r.top + 15), 5.5);
+    } else {
+      final text = TextPainter(
+          text: TextSpan(
+              text: String.fromCharCode(Icons.volume_up.codePoint),
+              style: TextStyle(
+                  fontFamily: Icons.volume_up.fontFamily,
+                  fontSize: 16,
+                  color: tint)),
+          textDirection: TextDirection.ltr)
+        ..layout();
+      text.paint(canvas, Offset(ax - 8, r.top + 7));
     }
   }
 
@@ -266,6 +277,13 @@ class _GesturePainter extends CustomPainter {
             leftHalf: true,
             tint: const Color(0xFFFFC107),
             doodle: IconKindDoodle.sun);
+        break;
+
+      case GestureKind.swipeVolume:
+        _halfSwipe(canvas, size,
+            leftHalf: false,
+            tint: const Color(0xFF64B5F6),
+            doodle: IconKindDoodle.speaker);
         break;
 
       case GestureKind.swipeSeek:
@@ -327,4 +345,4 @@ class _GesturePainter extends CustomPainter {
       old.kind != kind || old.accent != accent;
 }
 
-enum IconKindDoodle { sun }
+enum IconKindDoodle { sun, speaker }

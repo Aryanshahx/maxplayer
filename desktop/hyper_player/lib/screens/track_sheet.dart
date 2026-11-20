@@ -106,17 +106,6 @@ class _DesktopTrackSheetState extends State<DesktopTrackSheet> {
                       'Choose an external subtitle from your PC',
                       style: TextStyle(fontSize: 12, color: Colors.white54)),
                   onTap: busy ? null : widget.onExternal),
-              const Tooltip(
-                  message:
-                      'On-device AI subtitle generation is not implemented in this Windows build',
-                  child: ListTile(
-                      enabled: false,
-                      leading: Icon(Icons.auto_awesome, size: 20),
-                      title: LText('Generate with AI ✨',
-                          style: TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w600)),
-                      subtitle: Text('Not available on Windows yet',
-                          style: TextStyle(fontSize: 12)))),
             ],
           ]));
 }

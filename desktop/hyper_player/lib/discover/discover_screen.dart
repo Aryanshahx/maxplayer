@@ -1,3 +1,4 @@
+import 'listening_indicator.dart';
 import 'ai_suggest_sheet.dart';
 import 'windows_voice.dart';
 import 'moving_poster_strip.dart';
@@ -354,8 +355,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                         ? 'Listening (up to ten seconds)…'
                         : 'Voice search · Windows speech',
                     onPressed: listening ? null : voiceSearch,
-                    icon: Icon(
-                        listening ? Icons.hearing : Icons.mic_none_rounded)),
+                    icon: listening
+                        ? const ListeningIndicator()
+                        : const Icon(Icons.mic_none_rounded)),
                 TextButton.icon(
                     onPressed: suggestions,
                     icon: const Icon(Icons.auto_awesome),
@@ -759,10 +761,9 @@ class _DiscoverHomeBannerState extends State<DiscoverHomeBanner> {
                 child: InkWell(
                     onTap: () => Navigator.push(
                         context,
-                        MaterialPageRoute<void>(
-                            builder: (_) => DiscoverScreen(
-                                localSources: widget.localSources,
-                                onPlayLocal: widget.onPlayLocal))),
+                        discoverOpeningRoute<void>(DiscoverScreen(
+                            localSources: widget.localSources,
+                            onPlayLocal: widget.onPlayLocal))),
                     child: const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 20),
                         child: Row(children: [

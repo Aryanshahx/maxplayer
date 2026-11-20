@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
-import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hyper_player/utils/player_settings.dart';
@@ -109,7 +109,7 @@ void main() {
     double? volume;
     await controls(tester, volume: (value) => volume = value);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    expect(volume, 105);
+    expect(volume, 100);
     await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
     await tester.pump();
     expect(find.text('Video brightness 95%'), findsOneWidget);
@@ -117,6 +117,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Brightness & volume'), findsOneWidget);
     expect(find.byType(Slider), findsWidgets);
+  });
+  test('Legacy default boost is migrated off once; explicit choice persists',
+      () async {
+    SharedPreferences.setMockInitialValues(
+        {'hyper.desktop.input.volumeBoost': true});
+    await settings.load();
+    expect(settings.volumeBoost, isFalse);
+    await settings.setVolumeBoost(true);
+    await settings.load();
+    expect(settings.volumeBoost, isTrue);
+  });
+  testWidgets('Wheel left dims without volume; wheel right changes only volume',
+      (tester) async {
+    final volumes = <double>[];
+    await controls(tester, volume: volumes.add);
+    await tester.sendEventToBinding(const PointerScrollEvent(
+        position: Offset(100, 220), scrollDelta: Offset(0, 20)));
+    await tester.pump();
+    expect(volumes, isEmpty);
+    expect(find.text('Video brightness 95%'), findsOneWidget);
+    await tester.sendEventToBinding(const PointerScrollEvent(
+        position: Offset(700, 220), scrollDelta: Offset(0, 20)));
+    await tester.pump();
+    expect(volumes, [95]);
+    expect(find.text('Volume 95%'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
   });
   testWidgets(
       'Windowed mouse double click seeks sides without entering fullscreen',

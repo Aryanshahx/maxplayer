@@ -94,8 +94,12 @@ class UserManualSheet extends StatelessWidget {
             'Play or pause. Keyboard: Space.'
           ),
           GestureKind.swipeBrightness: (
-            'Brightness / volume swipe',
+            'Left: brightness swipe',
             'Left side controls video brightness; right side controls volume. B opens sliders; Page Down and Page Up adjust brightness; Up/Down changes volume.'
+          ),
+          GestureKind.swipeVolume: (
+            'Right: volume swipe',
+            'Drag or scroll on the right half to adjust app volume. Boost is off by default; system volume is unchanged.'
           ),
           GestureKind.swipeSeek: (
             'Horizontal seek',

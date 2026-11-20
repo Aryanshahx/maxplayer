@@ -1,3 +1,4 @@
+import 'screens/android_video_tile.dart';
 import 'dart:isolate';
 import 'screens/local_ai_screen.dart';
 import 'screens/user_manual_android.dart';
@@ -143,6 +144,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   final player = Player();
   final mediaSizes = <String, int>{};
   final mediaLengths = <String, int>{};
+  final mediaQuality = <String, String>{};
   double? pendingVolume;
   bool sendingVolume = false;
   double appVolume = 100;
@@ -179,6 +181,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   Map<String, String>? beforeEnhance;
   int playRequest = 0;
   bool openingMedia = false;
+  Future<void> decoderOpen = Future<void>.value();
   Timer? sleep;
   Timer? ticker;
   DateTime? sleepDeadline;
@@ -197,6 +200,11 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     void updateView(dynamic _) {
       if (!mounted) return;
       final state = player.state;
+      if (selected >= 0 &&
+          selected < queue.length &&
+          state.videoParams.h != null) {
+        mediaQuality[queue[selected]] = '${state.videoParams.h}p';
+      }
       if (selected >= 0 &&
           selected < queue.length &&
           state.duration > Duration.zero) {
@@ -381,8 +389,14 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       // starts explicitly; stats/preference IO is not on the start path.
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted || request != playRequest) return;
-      await player.open(Media(source, start: Duration(milliseconds: start)),
-          play: true);
+      // Serialize native decoder opens when rapidly changing IPTV channels.
+      // Superseded requests must never open after a newer selection.
+      decoderOpen = decoderOpen.catchError((Object _) {}).then((_) async {
+        if (!mounted || request != playRequest) return;
+        await player.open(Media(source, start: Duration(milliseconds: start)),
+            play: true);
+      });
+      await decoderOpen;
       if (!mounted || request != playRequest) return;
       await player.setRate((await SharedPreferences.getInstance())
               .getDouble('hyper.player.rate.v1') ??
@@ -1445,6 +1459,31 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                 '${mediaClock(state.position)} / ${mediaClock(state.duration)}'),
             MapEntry('Remaining', mediaClock(state.duration - state.position)),
             MapEntry('Playback speed', '${state.rate}x'),
+            MapEntry('Volume', '${appVolume.round()}% (app only)'),
+            MapEntry('Buffer position', mediaClock(state.buffer)),
+            MapEntry('Buffering', '${state.buffering}'),
+            if (source != null && mediaSizes[source] != null)
+              MapEntry('File size', '${mediaSizes[source]} bytes'),
+            for (final entry in <String, Object?>{
+              'Pixel format': state.videoParams.pixelformat,
+              'Hardware pixel format': state.videoParams.hwPixelformat,
+              'Display width': state.videoParams.dw,
+              'Display height': state.videoParams.dh,
+              'Aspect ratio': state.videoParams.aspect,
+              'Pixel aspect': state.videoParams.par,
+              'Colour matrix': state.videoParams.colormatrix,
+              'Colour levels': state.videoParams.colorlevels,
+              'Colour primaries': state.videoParams.primaries,
+              'Gamma': state.videoParams.gamma,
+              'Rotation': state.videoParams.rotate,
+              'Chroma location': state.videoParams.chromaLocation,
+              'Audio sample format': state.audioParams.format,
+              'Audio sample rate (Hz)': state.audioParams.sampleRate,
+              'Audio channels':
+                  state.audioParams.hrChannels ?? state.audioParams.channels,
+              'Audio channel count': state.audioParams.channelCount,
+            }.entries)
+              if (entry.value != null) MapEntry(entry.key, '${entry.value}'),
             if (state.videoParams.w != null && state.videoParams.h != null)
               MapEntry('Resolution',
                   '${state.videoParams.w} × ${state.videoParams.h}'),
@@ -2000,6 +2039,174 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         ],
       );
 
+  Future<void> videoActions(String source) async {
+    final action = await showModalBottomSheet<String>(
+        context: context,
+        builder: (ctx) => SafeArea(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(labelFor(source),
+                      maxLines: 1, overflow: TextOverflow.ellipsis)),
+              for (final entry in const {
+                'Play': Icons.play_arrow,
+                'Add to playlist': Icons.playlist_add,
+                'Favourite': Icons.favorite_border,
+                'Rename': Icons.drive_file_rename_outline,
+                'Properties': Icons.info_outline,
+                'Open Private Space': Icons.lock_outline,
+                'Delete': Icons.delete_outline
+              }.entries)
+                ListTile(
+                    leading: Icon(entry.value),
+                    title: Text(entry.key),
+                    onTap: () => Navigator.pop(ctx, entry.key)),
+            ])));
+    if (!mounted || action == null) return;
+    try {
+      switch (action) {
+        case 'Play':
+          await playSource(source);
+        case 'Favourite':
+          if (!collections.favourites.remove(source)) {
+            collections.favourites.add(source);
+          }
+          await collections.save();
+          if (mounted) setState(() {});
+        case 'Add to playlist':
+          if (collections.playlists.isEmpty) {
+            notify('Create a named playlist from Playlists first.');
+            return;
+          }
+          final name = await showDialog<String>(
+              context: context,
+              builder: (ctx) =>
+                  SimpleDialog(title: const Text('Add to playlist'), children: [
+                    for (final name in collections.playlists.keys)
+                      SimpleDialogOption(
+                          onPressed: () => Navigator.pop(ctx, name),
+                          child: Text(name))
+                  ]));
+          if (name != null) {
+            final list = collections.playlists[name];
+            if (list != null && !list.contains(source)) list.add(source);
+            await collections.save();
+            notify('Added to playlist.');
+          }
+        case 'Open Private Space':
+          await browsePrivateSpace();
+        case 'Properties':
+          if (selected >= 0 &&
+              selected < queue.length &&
+              queue[selected] == source) {
+            await videoInfo();
+          } else {
+            final stat = await File(source).stat();
+            if (mounted) {
+              await MediaInfoSheet.show(
+                  context,
+                  MediaInfoSheet(title: labelFor(source), rows: [
+                    MapEntry('Path', source),
+                    MapEntry('File size', '${stat.size} bytes'),
+                    MapEntry('Modified', '${stat.modified}'),
+                    const MapEntry('Decoder details',
+                        'Play this video to load codec, frame-rate and track diagnostics.')
+                  ]));
+            }
+          }
+        case 'Rename':
+          if (validStream(source)) {
+            notify('Network URLs cannot be renamed here.');
+            return;
+          }
+          final name = await askText('New filename (include extension)',
+              hint: labelFor(source));
+          if (name == null) return;
+          if (name.trim().isEmpty ||
+              name.trim() != name ||
+              RegExp(r'[<>:"/\\|?*\x00-\x1f]').hasMatch(name) ||
+              ['.', '..'].contains(name)) {
+            throw const FormatException(
+                'Enter a valid filename without folders.');
+          }
+          if (selected >= 0 &&
+              selected < queue.length &&
+              queue[selected] == source) {
+            notify('Stop/close this file before renaming it.');
+            return;
+          }
+          final target =
+              '${File(source).parent.path}${Platform.pathSeparator}$name';
+          if (await File(target).exists()) {
+            throw const FileSystemException(
+                'A file with that name already exists');
+          }
+          await File(source).rename(target);
+          void replace(List<String> list) {
+            for (var i = 0; i < list.length; i++) {
+              if (list[i] == source) list[i] = target;
+            }
+          }
+          replace(queue);
+          replace(collections.history);
+          replace(collections.favourites);
+          for (final list in collections.playlists.values) {
+            replace(list);
+          }
+          if (resumePositions.containsKey(source)) {
+            resumePositions[target] = resumePositions.remove(source)!;
+          }
+          await save();
+          await collections.save();
+          await savePlayerPreferences();
+          if (mounted) setState(() {});
+        case 'Delete':
+          if (validStream(source)) {
+            notify('Only local files can be deleted.');
+            return;
+          }
+          final yes = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                      title: const Text('Permanently delete file?'),
+                      content: Text(
+                          'This deletes ${labelFor(source)} from disk, not just the library.'),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Cancel')),
+                        FilledButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('Delete'))
+                      ]));
+          if (yes != true) return;
+          if (selected >= 0 &&
+              selected < queue.length &&
+              queue[selected] == source) {
+            notify('Stop/close this file before deleting it.');
+            return;
+          }
+          await File(source).delete();
+          final active =
+              selected >= 0 && selected < queue.length ? queue[selected] : null;
+          queue.removeWhere((item) => item == source);
+          selected = active == null ? -1 : queue.indexOf(active);
+          collections.history.removeWhere((s) => s == source);
+          collections.favourites.removeWhere((s) => s == source);
+          for (final list in collections.playlists.values) {
+            list.removeWhere((s) => s == source);
+          }
+          resumePositions.remove(source);
+          await save();
+          await collections.save();
+          await savePlayerPreferences();
+          if (mounted) setState(() {});
+      }
+    } catch (e) {
+      notify('Video action failed: $e');
+    }
+  }
+
   String gridDetails(String source) {
     if (validStream(source)) return 'Network stream';
     final parts = <String>[];
@@ -2204,6 +2411,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                               ? 'Network stream'
                               : 'Local media',
                         ),
+                        onLongPress: () =>
+                            videoActions(queue[group.indices[i]]),
                         onTap: () => play(group.indices[i]),
                       ),
                       childCount: group.indices.length,
@@ -2220,45 +2429,32 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                         childAspectRatio: 1.45,
                       ),
                       delegate: SliverChildBuilderDelegate(
-                        (context, i) => Material(
-                          color: const Color(0xff101013),
-                          borderRadius: BorderRadius.circular(16),
-                          child: InkWell(
-                            onTap: () => play(group.indices[i]),
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                border:
-                                    Border.all(color: const Color(0xff26262c)),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              padding: const EdgeInsets.all(15),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                      child: SizedBox(
-                                          width: double.infinity,
-                                          child: LocalThumbnail(
-                                              queue[group.indices[i]]))),
-                                  const SizedBox(height: 5),
-                                  Text(labelFor(queue[group.indices[i]]),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600)),
-                                  Text(gridDetails(queue[group.indices[i]]),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                          fontSize: 10,
-                                          color: Color(0xff9296a0))),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
+                        (context, i) {
+                          final source = queue[group.indices[i]];
+                          final duration = mediaLengths[source];
+                          return AndroidVideoTile(
+                              source: source,
+                              details: gridDetails(source),
+                              quality: mediaQuality[source],
+                              duration: duration == null
+                                  ? null
+                                  : mediaClock(
+                                      Duration(milliseconds: duration)),
+                              progress: duration == null || duration == 0
+                                  ? 0
+                                  : (resumePositions[source] ?? 0) / duration,
+                              favourite:
+                                  collections.favourites.contains(source),
+                              play: () => play(group.indices[i]),
+                              actions: () => videoActions(source),
+                              toggleFavourite: () async {
+                                if (!collections.favourites.remove(source)) {
+                                  collections.favourites.add(source);
+                                }
+                                await collections.save();
+                                if (mounted) setState(() {});
+                              });
+                        },
                         childCount: group.indices.length,
                       ),
                     ),
@@ -2294,6 +2490,10 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                         onPressed: files,
                         icon: const Icon(Icons.video_file_outlined),
                       ),
+                      IconButton(
+                          tooltip: 'Rescan library',
+                          onPressed: busy ? null : scanLibraryOptions,
+                          icon: const Icon(Icons.refresh)),
                       if (viewingPlayer)
                         IconButton(
                           tooltip: 'Back to library (playback continues)',
@@ -2358,7 +2558,6 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                         itemBuilder: (context) => [
                           for (final entry in <String, IconData>{
                             'Language': Icons.language,
-                            'Rescan library': Icons.refresh,
                             'Display settings': Icons.tune_rounded,
                             'Watch statistics': Icons.bar_chart_rounded,
                             'User manual': Icons.menu_book_outlined,

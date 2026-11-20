@@ -11,7 +11,8 @@ void main() {
         'Main • HI • aac');
     expect(desktopTrackLabel(id: '3'), 'Track 3');
   });
-  testWidgets('Subtitle sheet offers Off and external file but disabled AI',
+  testWidgets(
+      'Subtitle sheet offers Off and external file without any AI entry',
       (tester) async {
     bool external = false;
     await tester.pumpWidget(host(DesktopTrackSheet(
@@ -25,12 +26,7 @@ void main() {
     expect(find.text('No embedded subtitle tracks available.'), findsOneWidget);
     await tester.tap(find.text('Load subtitle file'));
     expect(external, isTrue);
-    expect(
-        tester
-            .widget<ListTile>(
-                find.widgetWithText(ListTile, 'Generate with AI ✨'))
-            .enabled,
-        isFalse);
+    expect(find.text('Generate with AI ✨'), findsNothing);
   });
   testWidgets('Audio rows show selected track and handle selection failures',
       (tester) async {

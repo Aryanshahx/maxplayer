@@ -78,8 +78,18 @@ class AppDesign extends ChangeNotifier {
       appBarTheme: base.appBarTheme.copyWith(foregroundColor: accent),
       progressIndicatorTheme: ProgressIndicatorThemeData(color: accent),
       switchTheme: SwitchThemeData(
-          thumbColor: WidgetStateProperty.resolveWith((states) =>
-              states.contains(WidgetState.selected) ? accent : null)),
+        thumbColor: WidgetStateProperty.resolveWith((states) => states
+                .contains(WidgetState.selected)
+            ? (ThemeData.estimateBrightnessForColor(accent) == Brightness.light
+                ? Colors.black
+                : Colors.white)
+            : const Color(0xffb6b6bd)),
+        trackColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected)
+                ? accent
+                : const Color(0xff35353f)),
+        trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+      ),
       sliderTheme: base.sliderTheme
           .copyWith(activeTrackColor: accent, thumbColor: accent),
     );

@@ -58,9 +58,9 @@ class PlayerSettings extends ChangeNotifier {
   /// v1.0.10: right-half vertical swipe drives the in-app volume (0..200%).
   bool swipeVolume = true;
 
-  /// v1.0.11: allow over-amplification to 200% (default ON, VLC-style).
+  /// v1.0.11: allow over-amplification to 200% (default OFF; explicit opt-in).
   /// OFF caps the in-app volume at 100% everywhere (swipe, keys, HUD).
-  bool volumeBoost = true;
+  bool volumeBoost = false;
   bool horizontalSeek = true;
   bool pinchZoom = false;
 
@@ -92,7 +92,13 @@ class PlayerSettings extends ChangeNotifier {
     seekStep = seekSteps.contains(storedSeek) ? storedSeek! : 10;
     swipeBrightness = p.getBool(_kSwipeBrightness) ?? true;
     swipeVolume = p.getBool(_kSwipeVolume) ?? true;
-    volumeBoost = p.getBool(_kVolumeBoost) ?? true;
+    // Old builds defaulted boost ON, so their saved true cannot reliably
+    // represent consent. One-time safety migration; future choices persist.
+    if (!(p.getBool('hyper.desktop.input.safeVolume.v1') ?? false)) {
+      await p.setBool(_kVolumeBoost, false);
+      await p.setBool('hyper.desktop.input.safeVolume.v1', true);
+    }
+    volumeBoost = p.getBool(_kVolumeBoost) ?? false;
     horizontalSeek = p.getBool(_kHorizontalSeek) ?? true;
     pinchZoom = p.getBool(_kPinchZoom) ?? false;
     final storedFit = p.getInt(_kDefaultFit);

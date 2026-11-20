@@ -313,7 +313,6 @@ class _SwitchTile extends StatelessWidget {
           if (trailing != null) trailing!,
           Switch.adaptive(
             value: value,
-            activeThumbColor: Colors.white,
             onChanged: onChanged,
           ),
         ],
@@ -322,7 +321,7 @@ class _SwitchTile extends StatelessWidget {
   }
 }
 
-/// v1.0.11 boost toggle (default ON): lets the in-app volume scale run
+/// v1.0.11 boost toggle (default OFF): lets the in-app volume scale run
 /// past 100% up to 200% like VLC. OFF caps everything at 100%.
 class _BoostToggleTile extends StatelessWidget {
   final PlayerSettings s;

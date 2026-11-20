@@ -579,13 +579,47 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                         onScaleEnd: locked ? null : endTouch,
                         child: Listener(
                           behavior: HitTestBehavior.translucent,
-                          onPointerSignal: (event) {
-                            if (!locked && event is PointerScrollEvent) {
-                              changeVolume((widget.playback.value.volume +
-                                      (event.scrollDelta.dy < 0 ? 5 : -5))
-                                  .clamp(0, maximumVolume));
-                              wake();
+                          onPointerPanZoomStart: (event) {
+                            touchInput = true;
+                            final box =
+                                surfaceKey.currentContext?.findRenderObject();
+                            if (box is RenderBox && box.hasSize) {
+                              surfaceSize = box.size;
+                              startedOnLeft =
+                                  box.globalToLocal(event.position).dx <
+                                      box.size.width / 2;
                             }
+                          },
+                          onPointerSignal: (event) {
+                            if (locked || event is! PointerScrollEvent) return;
+                            final box =
+                                surfaceKey.currentContext?.findRenderObject();
+                            final local = box is RenderBox
+                                ? box.globalToLocal(event.position)
+                                : event.localPosition;
+                            final size = box is RenderBox && box.hasSize
+                                ? box.size
+                                : surfaceSize;
+                            final delta = event.scrollDelta;
+                            if (delta.dy.abs() >= delta.dx.abs() &&
+                                delta.dy != 0) {
+                              if (local.dx < size.width / 2) {
+                                if (prefs.swipeBrightness) {
+                                  changeBrightness(
+                                      brightness + (delta.dy < 0 ? .05 : -.05));
+                                }
+                              } else {
+                                if (prefs.swipeVolume) {
+                                  changeVolume(widget.playback.value.volume +
+                                      (delta.dy < 0 ? 5 : -5));
+                                }
+                              }
+                            } else if (delta.dx != 0 && prefs.horizontalSeek) {
+                              seekBy(delta.dx > 0
+                                  ? prefs.seekStep
+                                  : -prefs.seekStep);
+                            }
+                            wake();
                           },
                           onPointerDown: (event) {
                             touchInput =
@@ -696,10 +730,6 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                                         },
                                         itemBuilder: (_) => [
                                               for (final row in const [
-                                                (
-                                                  'Playback queue',
-                                                  Icons.queue_music
-                                                ),
                                                 (
                                                   'Video info',
                                                   Icons.info_outline

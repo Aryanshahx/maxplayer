@@ -38,13 +38,15 @@ const Map<String, String> speechLanguages = {
 
 class LocalAiScreen extends StatefulWidget {
   final String source;
-  const LocalAiScreen({super.key, required this.source});
+  final LocalSpeechJob? job;
+  const LocalAiScreen({super.key, required this.source, this.job});
   @override
   State<LocalAiScreen> createState() => _LocalAiScreenState();
 }
 
 class _LocalAiScreenState extends State<LocalAiScreen> {
-  final job = LocalSpeechJob();
+  late final job = widget.job ?? LocalSpeechJob();
+  bool ready = false, starting = false;
   SpeechModel model = speechModels.first;
   bool translate = false, karaokeStyle = false;
   String language = 'auto';
@@ -65,6 +67,7 @@ class _LocalAiScreenState extends State<LocalAiScreen> {
       language = speechLanguages.containsKey(saved) ? saved : 'auto';
       translate = prefs.getBool('hyper.ai.translate') ?? false;
       karaokeStyle = prefs.getBool('hyper.ai.karaokeStyle') ?? false;
+      ready = true;
     });
   }
 
@@ -76,21 +79,29 @@ class _LocalAiScreenState extends State<LocalAiScreen> {
   }
 
   Future<void> start() async {
+    if (!ready || starting || job.busy) return;
+    final selectedModel = model, selectedLanguage = language;
+    final selectedTranslate = translate, selectedKaraoke = karaokeStyle;
     setState(() {
+      starting = true;
       error = null;
       output = null;
     });
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('hyper.ai.model', model.name);
-      await prefs.setString('hyper.ai.language', language);
-      await prefs.setBool('hyper.ai.translate', translate);
-      await prefs.setBool('hyper.ai.karaokeStyle', karaokeStyle);
-      final path = await job.transcribe(widget.source, model,
-          translate: translate, language: language, karaokeStyle: karaokeStyle);
+      await prefs.setString('hyper.ai.model', selectedModel.name);
+      await prefs.setString('hyper.ai.language', selectedLanguage);
+      await prefs.setBool('hyper.ai.translate', selectedTranslate);
+      await prefs.setBool('hyper.ai.karaokeStyle', selectedKaraoke);
+      final path = await job.transcribe(widget.source, selectedModel,
+          translate: selectedTranslate,
+          language: selectedLanguage,
+          karaokeStyle: selectedKaraoke);
       if (mounted) setState(() => output = path);
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => starting = false);
     }
   }
 
@@ -120,7 +131,7 @@ class _LocalAiScreenState extends State<LocalAiScreen> {
                                 : candidate.name == 'small'
                                     ? 'Better accuracy; more CPU/RAM'
                                     : 'Higher capacity; several GB RAM; slow on CPU'),
-                        onTap: job.busy
+                        onTap: (job.busy || starting || !ready)
                             ? null
                             : () => setState(() => model = candidate)),
                   DropdownButtonFormField<String>(
@@ -132,7 +143,7 @@ class _LocalAiScreenState extends State<LocalAiScreen> {
                           .map((e) => DropdownMenuItem(
                               value: e.key, child: Text(e.value)))
                           .toList(),
-                      onChanged: job.busy
+                      onChanged: (job.busy || starting || !ready)
                           ? null
                           : (v) => setState(() => language = v ?? 'auto')),
                   SwitchListTile(
@@ -140,7 +151,7 @@ class _LocalAiScreenState extends State<LocalAiScreen> {
                       subtitle: const Text(
                           'Word-by-word flow subtitles, like Android'),
                       value: karaokeStyle,
-                      onChanged: job.busy
+                      onChanged: (job.busy || starting || !ready)
                           ? null
                           : (v) => setState(() => karaokeStyle = v)),
                   SwitchListTile(
@@ -148,15 +159,16 @@ class _LocalAiScreenState extends State<LocalAiScreen> {
                       subtitle: const Text(
                           'Off: transcribe in the detected source language'),
                       value: translate,
-                      onChanged: job.busy
+                      onChanged: (job.busy || starting || !ready)
                           ? null
                           : (v) => setState(() => translate = v)),
+                  Text('Selected model: ${model.name}'),
                   Text(job.status),
                   if (job.busy) const LinearProgressIndicator(),
                   if (error != null)
                     SelectableText(error!,
                         style: const TextStyle(color: Colors.orange)),
-                  if (!job.busy)
+                  if (!job.busy && !starting && ready)
                     FilledButton(
                         onPressed: start,
                         child: const Text(
