@@ -99,7 +99,11 @@ void main() {
     }
     final result = await browseNetworkDirectory(root.path);
     expect(result.files.length, 1);
-    expect(result.folders, [child.path]);
+    expect(result.folders, hasLength(1));
+    // Windows directory enumeration normalizes separators; compare filesystem
+    // identity rather than the spelling of an equivalent folder path.
+    expect(await FileSystemEntity.identical(result.folders.single, child.path),
+        isTrue);
     expect(result.truncated, isFalse);
   });
   test('Directory entry limit is explicit and missing share fails', () async {
