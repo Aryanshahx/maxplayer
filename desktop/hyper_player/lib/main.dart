@@ -1,3 +1,15 @@
+import 'library_projection.dart';
+import 'screens/private_space_screen.dart';
+import 'screens/quick_share_screen.dart';
+import 'screens/network_storage_screen.dart';
+import 'screens/cloud_storage_screen.dart';
+import 'local_media_index.dart' show isAudioPath;
+import 'player/audio_now_playing.dart';
+import 'player/android_controls.dart';
+import 'player/fit.dart';
+import 'player/queue_order.dart';
+import 'player/player_sheets.dart';
+import 'player/mpv_filters.dart';
 import 'screens/about_android.dart';
 import 'local_thumbnail.dart';
 import 'screens/video_adjustment_sheets.dart';
@@ -109,7 +121,22 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   bool busy = false;
   bool viewingPlayer = false;
   bool listMode = false;
-  BoxFit videoFit = BoxFit.contain;
+  bool queueAll = true;
+  bool onlyFavourites = false;
+  bool groupByFolder = false;
+  String librarySort = 'queue';
+  FitMode fitMode = FitMode.fit;
+  final order = QueueOrder();
+  final playbackView = ValueNotifier(const PlaybackSnapshot());
+  final List<StreamSubscription<dynamic>> playbackSubscriptions = [];
+  bool sleepUntilEnd = false;
+  bool autoHide = true;
+  bool resumeEnabled = true;
+  final resumePositions = <String, int>{};
+  List<double> equalizerBands = [0, 0, 0, 0, 0];
+  bool dialogueBoost = false;
+  int playRequest = 0;
+  bool openingMedia = false;
   Timer? sleep;
   Timer? ticker;
   DateTime? sleepDeadline;
@@ -125,10 +152,40 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     errors = player.stream.error.listen(
       (message) => notify('Playback error: $message'),
     );
+    void updateView(dynamic _) {
+      if (!mounted) return;
+      final state = player.state;
+      playbackView.value = PlaybackSnapshot(
+          position: state.position,
+          duration: state.duration,
+          playing: state.playing,
+          buffering: state.buffering,
+          volume: state.volume,
+          rate: state.rate);
+    }
+
+    playbackSubscriptions.addAll([
+      player.stream.position.listen(updateView),
+      player.stream.duration.listen(updateView),
+      player.stream.playing.listen(updateView),
+      player.stream.buffering.listen(updateView),
+      player.stream.volume.listen(updateView),
+      player.stream.rate.listen(updateView),
+    ]);
     completion = player.stream.completed.listen((done) {
-      if (done && selected + 1 < queue.length) {
-        play(selected + 1);
+      if (!done || openingMedia) return;
+      if (selected >= 0 && selected < queue.length) {
+        resumePositions.remove(queue[selected]);
       }
+      if (sleepUntilEnd) {
+        sleepUntilEnd = false;
+        player.pause();
+        notify('Sleep timer — playback paused at end.');
+        return;
+      }
+      if (!queueAll) return;
+      final next = order.next(selected, queue.length, completed: true);
+      if (next != null) play(next);
     });
     restore();
     ticker = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -139,6 +196,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         }
         if (watchSeconds % 15 == 0) {
           unawaited(saveStats());
+          rememberPosition();
+          unawaited(savePlayerPreferences());
         }
       }
       final a = repeatA;
@@ -160,6 +219,31 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     await dailyWatch.load();
     scanFolders.addAll(prefs.getStringList('hyper.scan.folders.v1') ?? []);
     listMode = prefs.getBool('hyper.list.mode.v1') ?? false;
+    queueAll = prefs.getBool('hyper.playback.queueAll.v1') ?? true;
+    onlyFavourites = prefs.getBool('hyper.library.onlyFavourites.v1') ?? false;
+    groupByFolder = prefs.getBool('hyper.library.groupFolder.v1') ?? false;
+    final savedSort = prefs.getString('hyper.library.sort.v1');
+    if (['queue', 'nameAsc', 'nameDesc'].contains(savedSort)) {
+      librarySort = savedSort!;
+    }
+    autoHide = prefs.getBool('hyper.player.autohide.v1') ?? true;
+    resumeEnabled = prefs.getBool('hyper.player.resume.v1') ?? true;
+    final fitIndex = prefs.getInt('hyper.player.fit.v1') ?? 0;
+    fitMode = FitMode.values[fitIndex.clamp(0, FitMode.values.length - 1)];
+    order.shuffle = prefs.getBool('hyper.player.shuffle.v1') ?? false;
+    order.repeat = QueueRepeat
+        .values[(prefs.getInt('hyper.player.repeat.v1') ?? 0).clamp(0, 2)];
+    try {
+      final decoded =
+          jsonDecode(prefs.getString('hyper.player.positions.v1') ?? '{}');
+      if (decoded is Map) {
+        for (final entry in decoded.entries.take(500)) {
+          if (entry.key is String && entry.value is int && entry.value > 0) {
+            resumePositions[entry.key] = entry.value;
+          }
+        }
+      }
+    } catch (_) {/* Corrupt position cache never blocks the library. */}
     watchSeconds += prefs.getInt('hyper.watch.seconds.v1') ?? 0;
     playStarts += prefs.getInt('hyper.play.starts.v1') ?? 0;
     if (!mounted) {
@@ -187,26 +271,44 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     if (index < 0 || index >= queue.length) {
       return;
     }
-    setState(() {
-      selected = index;
-      viewingPlayer = true;
-    });
+    final request = ++playRequest;
+    final source = queue[index];
     try {
-      final source = queue[index];
       if (!validStream(source) && !await File(source).exists()) {
         notify(
-          'File is no longer available. Open it again from its current location.',
-        );
+            'File is no longer available. Open it again from its current location.');
         return;
       }
+      if (!mounted ||
+          request != playRequest ||
+          index >= queue.length ||
+          queue[index] != source) {
+        return;
+      }
+      rememberPosition();
+      setState(() {
+        selected = index;
+        viewingPlayer = true;
+        openingMedia = true;
+      });
       repeatA = null;
       repeatB = null;
-      await player.open(Media(source));
+      order.select(index, queue.length);
+      final start = resumeEnabled && !validStream(source)
+          ? resumePositions[source] ?? 0
+          : 0;
+      await player.open(Media(source, start: Duration(milliseconds: start)));
+      if (!mounted || request != playRequest) return;
+      await player.setRate((await SharedPreferences.getInstance())
+              .getDouble('hyper.player.rate.v1') ??
+          1);
       playStarts++;
       await saveStats();
       await collections.record(source);
     } catch (e) {
       notify('Cannot open media: $e');
+    } finally {
+      if (request == playRequest) openingMedia = false;
     }
   }
 
@@ -292,8 +394,14 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
 
   @override
   void dispose() {
+    rememberPosition();
+    unawaited(savePlayerPreferences());
     sleep?.cancel();
     ticker?.cancel();
+    for (final sub in playbackSubscriptions) {
+      sub.cancel();
+    }
+    playbackView.dispose();
     unawaited(saveStats());
     errors?.cancel();
     completion?.cancel();
@@ -578,8 +686,15 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
 
   Future<void> playbackOptions() async {
-    await showPlaybackSheet<void>(context,
-        PlaybackSpeedSheet(rate: player.state.rate, onRate: player.setRate),
+    await showPlaybackSheet<void>(
+        context,
+        PlaybackSpeedSheet(
+            rate: player.state.rate,
+            onRate: (value) async {
+              await player.setRate(value);
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setDouble('hyper.player.rate.v1', value);
+            }),
         color: const Color(0xff1a1a24));
   }
 
@@ -589,13 +704,16 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         Builder(
             builder: (sheetContext) => SleepTimerSheet(
                 deadline: sleepDeadline,
+                onEnd: () => Navigator.pop(sheetContext, -1),
+                untilEnd: sleepUntilEnd,
                 onMinutes: (minutes) => Navigator.pop(sheetContext, minutes))));
     if (minutes == null || !mounted) {
       return;
     }
     sleep?.cancel();
+    sleepUntilEnd = minutes == -1;
     sleepDeadline =
-        minutes == 0 ? null : DateTime.now().add(Duration(minutes: minutes));
+        minutes <= 0 ? null : DateTime.now().add(Duration(minutes: minutes));
     if (minutes > 0) {
       sleep = Timer(Duration(minutes: minutes), () {
         player.pause();
@@ -604,10 +722,279 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       });
     }
     notify(
-      minutes == 0
-          ? 'Sleep timer cancelled.'
-          : 'Playback will pause in $minutes minutes.',
+      minutes == -1
+          ? 'Playback will pause at the end of this item.'
+          : minutes == 0
+              ? 'Sleep timer cancelled.'
+              : 'Playback will pause in $minutes minutes.',
     );
+  }
+
+  void rememberPosition() {
+    if (!resumeEnabled ||
+        selected < 0 ||
+        selected >= queue.length ||
+        validStream(queue[selected])) {
+      return;
+    }
+    final state = player.state;
+    final source = queue[selected];
+    if (state.position.inSeconds > 5 &&
+        state.duration - state.position > const Duration(seconds: 10)) {
+      resumePositions.remove(source);
+      resumePositions[source] = state.position.inMilliseconds;
+      while (resumePositions.length > 500) {
+        resumePositions.remove(resumePositions.keys.first);
+      }
+    } else if (state.duration > Duration.zero &&
+        state.duration - state.position <= const Duration(seconds: 10)) {
+      resumePositions.remove(source);
+    }
+  }
+
+  Future<void> savePlayerPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('hyper.player.autohide.v1', autoHide);
+    await prefs.setBool('hyper.player.resume.v1', resumeEnabled);
+    await prefs.setBool('hyper.player.shuffle.v1', order.shuffle);
+    await prefs.setInt('hyper.player.repeat.v1', order.repeat.index);
+    await prefs.setInt('hyper.player.fit.v1', fitMode.index);
+    await prefs.setString(
+        'hyper.player.positions.v1', jsonEncode(resumePositions));
+  }
+
+  Future<void> skipPlayer({bool previous = false}) async {
+    final next = previous
+        ? order.previous(selected, queue.length)
+        : order.next(selected, queue.length);
+    if (next != null) await play(next);
+  }
+
+  Future<void> changeAudioFilters(List<double> bands, bool boost) async {
+    await (player.platform as NativePlayer)
+        .setProperty('af', combineAudioFilters(bands, dialogueBoost: boost));
+    equalizerBands = [...bands];
+    dialogueBoost = boost;
+  }
+
+  Future<void> equalizer() => showPlaybackSheet<void>(
+      context,
+      EqualizerSheet(
+          initial: equalizerBands,
+          dialogue: dialogueBoost,
+          onApply: changeAudioFilters));
+
+  Future<void> screenshot() async {
+    try {
+      final bytes = await player.screenshot(format: 'image/png');
+      if (bytes == null || bytes.isEmpty) {
+        notify('No video frame available for screenshot.');
+        return;
+      }
+      final target = await getSaveLocation(
+          suggestedName:
+              'HyperPlayer-${DateTime.now().millisecondsSinceEpoch}.png',
+          acceptedTypeGroups: [
+            const XTypeGroup(label: 'PNG image', extensions: ['png'])
+          ]);
+      if (target == null) return;
+      await File(target.path).writeAsBytes(bytes, flush: true);
+      notify('Screenshot saved.');
+    } catch (_) {
+      notify('Could not save screenshot.');
+    }
+  }
+
+  Future<void> playerSettings() async {
+    await showPlaybackSheet<void>(
+        context,
+        StatefulBuilder(
+            builder: (sheetContext, update) => DesktopPlayerSettings(
+                  autoHide: autoHide,
+                  resume: resumeEnabled,
+                  onAutoHide: (value) {
+                    setState(() => autoHide = value);
+                    update(() {});
+                    unawaited(savePlayerPreferences());
+                  },
+                  onResume: (value) {
+                    setState(() => resumeEnabled = value);
+                    update(() {});
+                    unawaited(savePlayerPreferences());
+                  },
+                )));
+  }
+
+  Future<void> extras() async {
+    await showPlaybackSheet<void>(
+        context,
+        Builder(
+            builder: (sheetContext) =>
+                Column(mainAxisSize: MainAxisSize.min, children: [
+                  const PlaybackSheetHandle(),
+                  ListTile(
+                      leading: const Icon(Icons.subtitles_rounded),
+                      title: const Text('Subtitles'),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        trackPicker(subtitle: true);
+                      }),
+                  ListTile(
+                      leading: const Icon(Icons.music_note_rounded),
+                      title: const Text('Audio track'),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        trackPicker(subtitle: false);
+                      }),
+                  ListTile(
+                      leading: const Icon(Icons.repeat_one_rounded),
+                      title: const Text('A-B loop'),
+                      subtitle: Text(repeatA == null
+                          ? 'Off'
+                          : repeatB == null
+                              ? 'A set · set B after seeking'
+                              : 'Loop active'),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        repeatControls();
+                      }),
+                  ListTile(
+                      leading: const Icon(Icons.subtitles_outlined),
+                      title: const Text('Subtitle delay'),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        subtitleDelay();
+                      }),
+                  ListTile(
+                      leading: const Icon(Icons.graphic_eq),
+                      title: const Text('Equalizer & Audio FX'),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        equalizer();
+                      }),
+                  const ListTile(
+                      enabled: false,
+                      leading: Icon(Icons.closed_caption_outlined),
+                      title: Text('Karaoke subtitles'),
+                      subtitle: Text('Timed-text overlay integration pending')),
+                  const ListTile(
+                      enabled: false,
+                      leading: Icon(Icons.auto_fix_high),
+                      title: Text('Enhance video'),
+                      subtitle: Text('Windows renderer verification pending')),
+                  const ListTile(
+                      enabled: false,
+                      leading: Icon(Icons.hdr_on),
+                      title: Text('HDR tone-mapping'),
+                      subtitle: Text('Windows renderer verification pending')),
+                  const SizedBox(height: 18),
+                ])));
+  }
+
+  void playerMenu(String action) {
+    switch (action) {
+      case 'Video info':
+        videoInfo();
+      case 'Equalizer & Audio FX':
+        equalizer();
+      case 'Screenshot':
+        screenshot();
+      case 'Sleep timer':
+        sleepTimer();
+    }
+  }
+
+  Widget buildVideoPlayer() {
+    if (selected >= 0 &&
+        selected < queue.length &&
+        isAudioPath(queue[selected])) {
+      return AudioNowPlaying(
+          playback: playbackView,
+          title: labelFor(queue[selected]),
+          index: selected,
+          count: queue.length,
+          shuffle: order.shuffle,
+          repeat: order.repeat,
+          canPrevious: order.hasPrevious(selected, queue.length),
+          canNext: order.hasNext(selected, queue.length),
+          onBack: () {
+            player.pause();
+            setState(() => viewingPlayer = false);
+          },
+          onQueue: showQueue,
+          onSettings: playerSettings,
+          onPlayPause: () => player.playOrPause(),
+          onPrevious: () => skipPlayer(previous: true),
+          onNext: () => skipPlayer(),
+          onShuffle: () {
+            setState(() => order.setShuffle(!order.shuffle,
+                current: selected, length: queue.length));
+            unawaited(savePlayerPreferences());
+          },
+          onRepeat: () {
+            setState(() => order.repeat =
+                QueueRepeat.values[(order.repeat.index + 1) % 3]);
+            unawaited(savePlayerPreferences());
+          },
+          onSpeed: playbackOptions,
+          onSeek: (value) => player.seek(value),
+          onVolume: (value) => player.setVolume(value));
+    }
+
+    Widget output = Video(
+        controller: controller,
+        fit: fitMode.boxFit,
+        controls: (videoState) => AndroidPlayerControls(
+              playback: playbackView,
+              title: selected >= 0 && selected < queue.length
+                  ? labelFor(queue[selected])
+                  : 'Hyper Player',
+              shuffle: order.shuffle,
+              repeat: order.repeat,
+              fit: fitMode,
+              autoHide: autoHide,
+              canPrevious: order.hasPrevious(selected, queue.length),
+              canNext: order.hasNext(selected, queue.length),
+              onBack: () {
+                if (videoState.isFullscreen()) {
+                  videoState.exitFullscreen();
+                } else {
+                  setState(() => viewingPlayer = false);
+                }
+              },
+              onPlayPause: () => player.playOrPause(),
+              onPrevious: () => skipPlayer(previous: true),
+              onNext: () => skipPlayer(),
+              onShuffle: () {
+                setState(() => order.setShuffle(!order.shuffle,
+                    current: selected, length: queue.length));
+                unawaited(savePlayerPreferences());
+              },
+              onRepeat: () {
+                setState(() => order.repeat =
+                    QueueRepeat.values[(order.repeat.index + 1) % 3]);
+                unawaited(savePlayerPreferences());
+              },
+              onFit: () {
+                setState(() => fitMode = nextFitMode(fitMode));
+                unawaited(savePlayerPreferences());
+              },
+              onSpeed: playbackOptions,
+              onExtras: extras,
+              onQueue: showQueue,
+              onSettings: playerSettings,
+              onFullscreen: () => videoState.isFullscreen()
+                  ? videoState.exitFullscreen()
+                  : videoState.enterFullscreen(),
+              onMenu: playerMenu,
+              onSeek: (value) => player.seek(value),
+              onVolume: (value) => player.setVolume(value),
+            ));
+    final ratio = fitMode.aspectRatio;
+    if (ratio != null) {
+      output = Center(child: AspectRatio(aspectRatio: ratio, child: output));
+    }
+    return ColoredBox(color: Colors.black, child: output);
   }
 
   Future<void> videoInfo() async {
@@ -699,14 +1086,15 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
 
   Future<void> fitOptions() async {
-    final choice = await showPlaybackSheet<BoxFit>(
+    final choice = await showPlaybackSheet<FitMode>(
         context,
         Builder(
-            builder: (sheetContext) => VideoFitSheet(
-                selected: videoFit,
-                onSelect: (fit) => Navigator.pop(sheetContext, fit))));
+            builder: (sheetContext) => SixModeFitSheet(
+                selected: fitMode,
+                onSelect: (value) => Navigator.pop(sheetContext, value))));
     if (choice != null && mounted) {
-      setState(() => videoFit = choice);
+      setState(() => fitMode = choice);
+      await savePlayerPreferences();
     }
   }
 
@@ -791,6 +1179,39 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     }
   }
 
+  Future<void> browsePrivateSpace() async {
+    await player.pause();
+    if (!mounted) return;
+    await Navigator.push<void>(context,
+        MaterialPageRoute(builder: (_) => const DesktopPrivateSpaceScreen()));
+  }
+
+  Future<void> browseQuickShare() async {
+    final received = await Navigator.push<List<String>>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => DesktopQuickShareScreen(
+                    knownSources: {
+                  ...queue,
+                  ...collections.history,
+                  ...collections.favourites,
+                  ...collections.playlists.values.expand((items) => items)
+                }.toList())));
+    if (mounted && received != null) await add(received);
+  }
+
+  Future<void> browseNetwork() async {
+    final source = await Navigator.push<String>(context,
+        MaterialPageRoute(builder: (_) => const DesktopNetworkStorageScreen()));
+    if (mounted && source != null) await playSource(source);
+  }
+
+  Future<void> browseCloud() async {
+    final path = await Navigator.push<String>(context,
+        MaterialPageRoute(builder: (_) => const DesktopCloudStorageScreen()));
+    if (mounted && path != null) await playSource(path);
+  }
+
   Future<void> browseAudio() async {
     final source = await Navigator.push<String>(
         context,
@@ -802,35 +1223,69 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     }
   }
 
+  Future<void> toggleLibraryLayout() async {
+    final next = !listMode;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!await prefs.setBool('hyper.list.mode.v1', next)) {
+        throw StateError('Display preference was not saved.');
+      }
+      if (mounted) setState(() => listMode = next);
+    } catch (_) {
+      notify('Could not save display settings.');
+    }
+  }
+
   Future<void> displaySettings() async {
     await Navigator.push<void>(
         context,
         MaterialPageRoute(
             builder: (_) => DesktopDisplayScreen(
                 listMode: listMode,
+                groupByFolder: groupByFolder,
+                onGroupByFolder: (value) async {
+                  final prefs = await SharedPreferences.getInstance();
+                  if (!await prefs.setBool(
+                      'hyper.library.groupFolder.v1', value)) {
+                    throw StateError('Folder grouping was not saved.');
+                  }
+                  if (mounted) setState(() => groupByFolder = value);
+                },
+                initialSort: librarySort,
+                onlyFavourites: onlyFavourites,
+                onOnlyFavourites: (value) async {
+                  final prefs = await SharedPreferences.getInstance();
+                  if (!await prefs.setBool(
+                      'hyper.library.onlyFavourites.v1', value)) {
+                    throw StateError('Favourite filter was not saved.');
+                  }
+                  if (mounted) setState(() => onlyFavourites = value);
+                },
+                queueAll: queueAll,
+                onQueueAll: (value) async {
+                  final prefs = await SharedPreferences.getInstance();
+                  if (!await prefs.setBool(
+                      'hyper.playback.queueAll.v1', value)) {
+                    throw StateError('Playback action was not saved.');
+                  }
+                  if (mounted) setState(() => queueAll = value);
+                },
                 onChange: (value, order) async {
                   if (!mounted) {
                     return;
                   }
+                  final prefs = await SharedPreferences.getInstance();
+                  final saved = order == null
+                      ? await prefs.setBool('hyper.list.mode.v1', value)
+                      : await prefs.setString('hyper.library.sort.v1', order);
+                  if (!saved) {
+                    throw StateError('Display preference was not saved.');
+                  }
+                  if (!mounted) return;
                   setState(() {
                     listMode = value;
-                    if (order != null) {
-                      final playing = selected >= 0 && selected < queue.length
-                          ? queue[selected]
-                          : null;
-                      queue.sort((a, b) => order == 'nameDesc'
-                          ? labelFor(b)
-                              .toLowerCase()
-                              .compareTo(labelFor(a).toLowerCase())
-                          : labelFor(a)
-                              .toLowerCase()
-                              .compareTo(labelFor(b).toLowerCase()));
-                      selected = playing == null ? -1 : queue.indexOf(playing);
-                    }
+                    if (order != null) librarySort = order;
                   });
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.setBool('hyper.list.mode.v1', listMode);
-                  await save();
                 })));
   }
 
@@ -891,35 +1346,51 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
 
   Future<void> showQueue() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Playlists · Current queue (${queue.length})'),
-        content: SizedBox(
-          width: 550,
-          height: 360,
-          child: queue.isEmpty
-              ? const Center(child: LText('Open files to create a queue.'))
-              : ListView.builder(
-                  itemCount: queue.length,
-                  itemBuilder: (context, i) => ListTile(
-                    leading: const Icon(Icons.play_arrow),
-                    title: Text(labelFor(queue[i])),
-                    onTap: () {
-                      Navigator.pop(context);
-                      play(i);
-                    },
-                  ),
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const LText('Close'),
-          ),
-        ],
-      ),
-    );
+    final choice = await showPlaybackSheet<int>(
+        context,
+        Builder(
+            builder: (sheetContext) => SizedBox(
+                height: MediaQuery.sizeOf(sheetContext).height * .7,
+                child: Column(children: [
+                  const PlaybackSheetHandle(),
+                  Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(children: [
+                        Expanded(
+                            child: Text(
+                                'Playlists · Current queue (${queue.length})',
+                                style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700))),
+                        TextButton(
+                            onPressed: () {
+                              Navigator.pop(sheetContext);
+                              namedPlaylists();
+                            },
+                            child: const Text('All playlists'))
+                      ])),
+                  Expanded(
+                      child: queue.isEmpty
+                          ? const Center(
+                              child: Text('Open files to create a queue.'))
+                          : ListView.builder(
+                              itemCount: queue.length,
+                              itemBuilder: (context, i) => ListTile(
+                                  selected: i == selected,
+                                  leading: SizedBox(
+                                      width: 80,
+                                      height: 45,
+                                      child: LocalThumbnail(queue[i])),
+                                  title: Text(labelFor(queue[i]),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis),
+                                  trailing: i == selected
+                                      ? const Icon(Icons.equalizer_rounded)
+                                      : null,
+                                  onTap: () =>
+                                      Navigator.pop(sheetContext, i)))),
+                ]))));
+    if (choice != null && mounted) await play(choice);
   }
 
   Widget quickTile(
@@ -1005,6 +1476,13 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
 
   Widget library() => LayoutBuilder(
         builder: (context, size) {
+          final visible = visibleLibraryIndices(queue,
+              onlyFavourites: onlyFavourites,
+              favourites: collections.favourites,
+              sort: librarySort,
+              labelOf: labelFor);
+          final groups =
+              groupLibraryIndices(queue, visible, byFolder: groupByFolder);
           final columns = size.maxWidth >= 1300
               ? 8
               : size.maxWidth >= 700
@@ -1014,8 +1492,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
             quickTile(
               Icons.lock_outline_rounded,
               'Private Space',
-              () => unavailable('Private Space'),
-              planned: true,
+              browsePrivateSpace,
             ),
             quickTile(Icons.queue_music_outlined, 'Playlists', namedPlaylists),
             quickTile(Icons.folder_outlined, 'Folders', browseFolders),
@@ -1023,21 +1500,18 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
             quickTile(
               Icons.dns_outlined,
               'Network Storage',
-              () => unavailable('Network Storage'),
-              planned: true,
+              browseNetwork,
             ),
             quickTile(
               Icons.cloud_queue_outlined,
               'Cloud Storage',
-              () => unavailable('Cloud Storage'),
-              planned: true,
+              browseCloud,
             ),
             quickTile(Icons.link, 'Open Stream(iptv)', stream),
             quickTile(
               Icons.ios_share,
               'Quick Share',
-              () => unavailable('Quick Share'),
-              planned: true,
+              browseQuickShare,
             ),
           ];
           return CustomScrollView(
@@ -1046,7 +1520,19 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                 padding: const EdgeInsets.all(16),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
-                    const DiscoverHomeBanner(),
+                    DiscoverHomeBanner(
+                        localSources: {
+                          ...queue,
+                          ...collections.history,
+                          ...collections.favourites,
+                          ...collections.playlists.values
+                              .expand((items) => items)
+                        }.toList(),
+                        onPlayLocal: (source) {
+                          Navigator.of(context)
+                              .popUntil((route) => route.isFirst);
+                          playSource(source);
+                        }),
                     const SizedBox(height: 12),
                     for (var start = 0;
                         start < tiles.length;
@@ -1065,27 +1551,22 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                     Row(
                       children: [
                         Text(
-                          'Media · ${queue.length}',
+                          '${onlyFavourites ? 'Favourites' : 'Media'} · ${visible.length}',
                           style: const TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         const Spacer(),
-                        TextButton.icon(
-                          onPressed: files,
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const LText('Open files'),
-                        ),
                         IconButton(
                           tooltip: 'Switch grid/list',
-                          onPressed: () => setState(() => listMode = !listMode),
+                          onPressed: toggleLibraryLayout,
                           icon: Icon(
                               listMode ? Icons.grid_view : Icons.view_list),
                         ),
                       ],
                     ),
-                    if (queue.isEmpty)
+                    if (visible.isEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 90),
                         child: Center(
@@ -1097,8 +1578,10 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                                 size: 46,
                               ),
                               const SizedBox(height: 15),
-                              const LText(
-                                'No media yet. Open files or a folder to begin.',
+                              LText(
+                                onlyFavourites
+                                    ? 'No favourites in this library. Change the filter in Display Settings.'
+                                    : 'No media yet. Open files or a folder to begin.',
                                 style: TextStyle(color: Color(0xff9296a0)),
                               ),
                               const SizedBox(height: 16),
@@ -1113,76 +1596,86 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                   ]),
                 ),
               ),
-              if (listMode)
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) => ListTile(
-                      leading: SizedBox(
-                          width: 96,
-                          height: 54,
-                          child: LocalThumbnail(queue[i])),
-                      title: Text(labelFor(queue[i])),
-                      subtitle: Text(
-                        validStream(queue[i])
-                            ? 'Network stream'
-                            : 'Local media',
-                      ),
-                      onTap: () => play(i),
-                    ),
-                    childCount: queue.length,
-                  ),
-                )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  sliver: SliverGrid(
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 300,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 1.55,
-                    ),
+              for (final group in groups) ...[
+                if (groupByFolder)
+                  SliverToBoxAdapter(
+                      child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+                    child: Text('${group.label} · ${group.indices.length}',
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                  )),
+                if (listMode)
+                  SliverList(
                     delegate: SliverChildBuilderDelegate(
-                      (context, i) => Material(
-                        color: const Color(0xff101013),
-                        borderRadius: BorderRadius.circular(16),
-                        child: InkWell(
-                          onTap: () => play(i),
+                      (context, i) => ListTile(
+                        leading: SizedBox(
+                            width: 96,
+                            height: 54,
+                            child: LocalThumbnail(queue[group.indices[i]])),
+                        title: Text(labelFor(queue[group.indices[i]])),
+                        subtitle: Text(
+                          validStream(queue[group.indices[i]])
+                              ? 'Network stream'
+                              : 'Local media',
+                        ),
+                        onTap: () => play(group.indices[i]),
+                      ),
+                      childCount: group.indices.length,
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    sliver: SliverGrid(
+                      gridDelegate:
+                          const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 300,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 1.55,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, i) => Material(
+                          color: const Color(0xff101013),
                           borderRadius: BorderRadius.circular(16),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              border:
-                                  Border.all(color: const Color(0xff26262c)),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            padding: const EdgeInsets.all(15),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                    child: SizedBox(
-                                        width: double.infinity,
-                                        child: LocalThumbnail(queue[i]))),
-                                const SizedBox(height: 5),
-                                Text(
-                                  validStream(queue[i])
-                                      ? 'Network stream'
-                                      : 'Local media',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Color(0xff9296a0),
+                          child: InkWell(
+                            onTap: () => play(group.indices[i]),
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border:
+                                    Border.all(color: const Color(0xff26262c)),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              padding: const EdgeInsets.all(15),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                      child: SizedBox(
+                                          width: double.infinity,
+                                          child: LocalThumbnail(
+                                              queue[group.indices[i]]))),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                    validStream(queue[group.indices[i]])
+                                        ? 'Network stream'
+                                        : 'Local media',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Color(0xff9296a0),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
+                        childCount: group.indices.length,
                       ),
-                      childCount: queue.length,
                     ),
                   ),
-                ),
+              ],
             ],
           );
         },
@@ -1197,249 +1690,142 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         child: Focus(
           autofocus: true,
           child: Scaffold(
-            appBar: AppBar(
-              toolbarHeight: 76,
-              title: brandTitle(),
-              actions: [
-                IconButton(
-                  tooltip: 'Search media',
-                  onPressed: searchMedia,
-                  icon: const Icon(Icons.search),
-                ),
-                IconButton(
-                  tooltip: 'Rescan saved folders',
-                  onPressed: busy ? null : rescan,
-                  icon: const Icon(Icons.sync),
-                ),
-                if (viewingPlayer)
-                  IconButton(
-                    tooltip: 'Back to library (playback continues)',
-                    onPressed: () => setState(() => viewingPlayer = false),
-                    icon: const Icon(Icons.home_outlined),
-                  ),
-                PopupMenuButton<String>(
-                  onSelected: (value) {
-                    if (value == 'Clear queue') {
-                      clearQueue();
-                    } else if (value == 'Open folder') {
-                      folder();
-                    } else if (value == 'History') {
-                      sourceList('History', collections.history);
-                    } else if (value == 'Favourites') {
-                      sourceList('Favourites', collections.favourites);
-                    } else if (value == 'Toggle favourite') {
-                      toggleFavourite();
-                    } else if (value == 'Named playlists') {
-                      namedPlaylists();
-                    } else if (value == 'Import IPTV playlist') {
-                      importIptv();
-                    } else if (value == 'Audio track') {
-                      trackPicker(subtitle: false);
-                    } else if (value == 'Subtitles') {
-                      trackPicker(subtitle: true);
-                    } else if (value == 'Load subtitle file') {
-                      externalSubtitles();
-                    } else if (value == 'Playback speed') {
-                      playbackOptions();
-                    } else if (value == 'Watch statistics') {
-                      watchStatistics();
-                    } else if (value == 'Sleep timer') {
-                      sleepTimer();
-                    } else if (value == 'Video info') {
-                      videoInfo();
-                    } else if (value == 'A–B repeat') {
-                      repeatControls();
-                    } else if (value == 'Video fit') {
-                      fitOptions();
-                    } else if (value == 'Subtitle delay') {
-                      subtitleDelay();
-                    } else if ([
-                      'Language',
-                      'Display settings',
-                      'User manual',
-                      'About Hyper Player',
-                      'Privacy policy',
-                      'Report a problem',
-                      'Follow on Instagram',
-                    ].contains(value)) {
-                      homeMenu(value);
-                    } else {
-                      unavailable(value);
-                    }
-                  },
-                  icon: const Icon(Icons.more_vert),
-                  color: const Color(0xff1a1a24),
-                  itemBuilder: (context) => [
-                    for (final entry in <String, IconData>{
-                      'Language': Icons.language,
-                      'Display settings': Icons.tune_rounded,
-                      'Watch statistics': Icons.bar_chart_rounded,
-                      'User manual': Icons.menu_book_outlined,
-                      'About Hyper Player': Icons.info_outline_rounded,
-                      'Privacy policy': Icons.privacy_tip_outlined,
-                      'Report a problem': Icons.flag_outlined,
-                      'Follow on Instagram': Icons.camera_alt_outlined,
-                    }.entries)
-                      PopupMenuItem(
-                        value: entry.key,
-                        child: Row(
-                          children: [
-                            Icon(entry.value, size: 20),
-                            const SizedBox(width: 12),
-                            LText(entry.key),
-                          ],
+            appBar: viewingPlayer
+                ? null
+                : AppBar(
+                    toolbarHeight: 76,
+                    title: brandTitle(),
+                    actions: [
+                      IconButton(
+                        tooltip: 'Search media',
+                        onPressed: searchMedia,
+                        icon: const Icon(Icons.search),
+                      ),
+                      IconButton(
+                        tooltip: 'Rescan saved folders',
+                        onPressed: busy ? null : rescan,
+                        icon: const Icon(Icons.sync),
+                      ),
+                      if (viewingPlayer)
+                        IconButton(
+                          tooltip: 'Back to library (playback continues)',
+                          onPressed: () =>
+                              setState(() => viewingPlayer = false),
+                          icon: const Icon(Icons.home_outlined),
                         ),
+                      PopupMenuButton<String>(
+                        onSelected: (value) {
+                          if (value == 'Clear queue') {
+                            clearQueue();
+                          } else if (value == 'Open folder') {
+                            folder();
+                          } else if (value == 'History') {
+                            sourceList('History', collections.history);
+                          } else if (value == 'Favourites') {
+                            sourceList('Favourites', collections.favourites);
+                          } else if (value == 'Toggle favourite') {
+                            toggleFavourite();
+                          } else if (value == 'Named playlists') {
+                            namedPlaylists();
+                          } else if (value == 'Import IPTV playlist') {
+                            importIptv();
+                          } else if (value == 'Audio track') {
+                            trackPicker(subtitle: false);
+                          } else if (value == 'Subtitles') {
+                            trackPicker(subtitle: true);
+                          } else if (value == 'Load subtitle file') {
+                            externalSubtitles();
+                          } else if (value == 'Playback speed') {
+                            playbackOptions();
+                          } else if (value == 'Watch statistics') {
+                            watchStatistics();
+                          } else if (value == 'Sleep timer') {
+                            sleepTimer();
+                          } else if (value == 'Video info') {
+                            videoInfo();
+                          } else if (value == 'A–B repeat') {
+                            repeatControls();
+                          } else if (value == 'Video fit') {
+                            fitOptions();
+                          } else if (value == 'Subtitle delay') {
+                            subtitleDelay();
+                          } else if ([
+                            'Language',
+                            'Display settings',
+                            'User manual',
+                            'About Hyper Player',
+                            'Privacy policy',
+                            'Report a problem',
+                            'Follow on Instagram',
+                          ].contains(value)) {
+                            homeMenu(value);
+                          } else {
+                            unavailable(value);
+                          }
+                        },
+                        icon: const Icon(Icons.more_vert),
+                        color: const Color(0xff1a1a24),
+                        itemBuilder: (context) => [
+                          for (final entry in <String, IconData>{
+                            'Language': Icons.language,
+                            'Display settings': Icons.tune_rounded,
+                            'Watch statistics': Icons.bar_chart_rounded,
+                            'User manual': Icons.menu_book_outlined,
+                            'About Hyper Player': Icons.info_outline_rounded,
+                            'Privacy policy': Icons.privacy_tip_outlined,
+                            'Report a problem': Icons.flag_outlined,
+                            'Follow on Instagram': Icons.camera_alt_outlined,
+                          }.entries)
+                            PopupMenuItem(
+                              value: entry.key,
+                              child: Row(
+                                children: [
+                                  Icon(entry.value, size: 20),
+                                  const SizedBox(width: 12),
+                                  LText(entry.key),
+                                ],
+                              ),
+                            ),
+                          if (viewingPlayer) const PopupMenuDivider(),
+                          if (viewingPlayer)
+                            for (final name in [
+                              'Sleep timer',
+                              'Video info',
+                              'A–B repeat',
+                              'Video fit',
+                              'Subtitle delay',
+                              'Favourites',
+                              'Toggle favourite',
+                              'Named playlists',
+                              'Import IPTV playlist',
+                              'Audio track',
+                              'Subtitles',
+                              'Load subtitle file',
+                              'Playback speed',
+                              'AI subtitles',
+                              'Open folder',
+                              'Clear queue',
+                            ])
+                              PopupMenuItem(value: name, child: LText(name)),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem<String>(
+                            enabled: false,
+                            child: LText(
+                              'Windows preview 0.2.0',
+                              style:
+                                  TextStyle(fontSize: 11, color: Colors.grey),
+                            ),
+                          ),
+                        ],
                       ),
-                    if (viewingPlayer) const PopupMenuDivider(),
-                    if (viewingPlayer)
-                      for (final name in [
-                        'Sleep timer',
-                        'Video info',
-                        'A–B repeat',
-                        'Video fit',
-                        'Subtitle delay',
-                        'Favourites',
-                        'Toggle favourite',
-                        'Named playlists',
-                        'Import IPTV playlist',
-                        'Audio track',
-                        'Subtitles',
-                        'Load subtitle file',
-                        'Playback speed',
-                        'AI subtitles',
-                        'Open folder',
-                        'Clear queue',
-                      ])
-                        PopupMenuItem(value: name, child: LText(name)),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem<String>(
-                      enabled: false,
-                      child: LText(
-                        'Windows preview 0.2.0',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 12),
-              ],
-            ),
+                      const SizedBox(width: 12),
+                    ],
+                  ),
             body: Column(
               children: [
                 if (busy) const LinearProgressIndicator(),
                 Expanded(
-                  child: viewingPlayer
-                      ? Row(
-                          children: [
-                            Expanded(
-                                child: Column(children: [
-                              Expanded(
-                                  child: Video(
-                                      controller: controller,
-                                      fit: videoFit,
-                                      controls: AdaptiveVideoControls)),
-                              Material(
-                                  color: const Color(0xff101013),
-                                  child: SizedBox(
-                                      height: 52,
-                                      child: ListView(
-                                          scrollDirection: Axis.horizontal,
-                                          children: [
-                                            IconButton(
-                                                tooltip: 'Previous',
-                                                onPressed: selected > 0
-                                                    ? () => play(selected - 1)
-                                                    : null,
-                                                icon: const Icon(Icons
-                                                    .skip_previous_rounded)),
-                                            IconButton(
-                                                tooltip: 'Play/pause',
-                                                onPressed: () =>
-                                                    player.playOrPause(),
-                                                icon: const Icon(
-                                                    Icons.play_arrow_rounded)),
-                                            IconButton(
-                                                tooltip: 'Next',
-                                                onPressed: selected + 1 <
-                                                        queue.length
-                                                    ? () => play(selected + 1)
-                                                    : null,
-                                                icon: const Icon(
-                                                    Icons.skip_next_rounded)),
-                                            IconButton(
-                                                tooltip: 'Audio track',
-                                                onPressed: () => trackPicker(
-                                                    subtitle: false),
-                                                icon: const Icon(
-                                                    Icons.music_note_rounded)),
-                                            IconButton(
-                                                tooltip: 'Subtitles',
-                                                onPressed: () =>
-                                                    trackPicker(subtitle: true),
-                                                icon: const Icon(
-                                                    Icons.subtitles_rounded)),
-                                            IconButton(
-                                                tooltip: 'Playback speed',
-                                                onPressed: playbackOptions,
-                                                icon: const Icon(
-                                                    Icons.speed_rounded)),
-                                            IconButton(
-                                                tooltip: 'Video fit',
-                                                onPressed: fitOptions,
-                                                icon: const Icon(
-                                                    Icons.fit_screen_rounded)),
-                                            IconButton(
-                                                tooltip: 'A–B repeat',
-                                                onPressed: repeatControls,
-                                                icon: const Icon(
-                                                    Icons.repeat_rounded)),
-                                            IconButton(
-                                                tooltip: 'Sleep timer',
-                                                onPressed: sleepTimer,
-                                                icon: const Icon(
-                                                    Icons.bedtime_outlined)),
-                                            IconButton(
-                                                tooltip: 'Video info',
-                                                onPressed: videoInfo,
-                                                icon: const Icon(Icons
-                                                    .info_outline_rounded)),
-                                            IconButton(
-                                                tooltip: 'Subtitle delay',
-                                                onPressed: subtitleDelay,
-                                                icon: const Icon(
-                                                    Icons.subtitles_outlined)),
-                                            IconButton(
-                                                tooltip: 'Toggle favourite',
-                                                onPressed: toggleFavourite,
-                                                icon: const Icon(Icons
-                                                    .favorite_border_rounded)),
-                                          ]))),
-                            ])),
-                            SizedBox(
-                              width: MediaQuery.sizeOf(context).width < 800
-                                  ? 210
-                                  : 280,
-                              child: ListView.builder(
-                                itemCount: queue.length,
-                                itemBuilder: (context, i) => ListTile(
-                                  selected: i == selected,
-                                  leading: Icon(
-                                    i == selected
-                                        ? Icons.play_arrow
-                                        : Icons.music_video,
-                                  ),
-                                  title: Text(
-                                    labelFor(queue[i]),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  onTap: () => play(i),
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                      : library(),
+                  child: viewingPlayer ? buildVideoPlayer() : library(),
                 ),
                 if (!viewingPlayer && selected >= 0 && selected < queue.length)
                   Material(
@@ -1461,13 +1847,14 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                       ),
                     ),
                   ),
-                const Padding(
-                  padding: EdgeInsets.all(6),
-                  child: LText(
-                    'Windows preview · Construction icon = integration pending · Folder import scans direct children only',
-                    style: TextStyle(fontSize: 10, color: Color(0xff9296a0)),
+                if (!viewingPlayer)
+                  const Padding(
+                    padding: EdgeInsets.all(6),
+                    child: LText(
+                      'Windows preview · Construction icon = integration pending · Folder import scans direct children only',
+                      style: TextStyle(fontSize: 10, color: Color(0xff9296a0)),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

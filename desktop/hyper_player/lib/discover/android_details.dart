@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../utils/app_language.dart';
 import 'android_browse.dart';
 import 'tmdb.dart';
+import '../playlist.dart';
 
 class AndroidMovieDetails extends StatelessWidget {
   final TmdbFull full;
@@ -9,13 +10,17 @@ class AndroidMovieDetails extends StatelessWidget {
   final VoidCallback onWatch;
   final Widget? seasons;
   final Widget? related;
+  final String? localSource;
+  final ValueChanged<String>? onPlayLocal;
   const AndroidMovieDetails(
       {super.key,
       required this.full,
       required this.onTrailer,
       required this.onWatch,
       this.seasons,
-      this.related});
+      this.related,
+      this.localSource,
+      this.onPlayLocal});
   Widget heading(String text) => Padding(
       padding: const EdgeInsets.only(top: 18, bottom: 8),
       child: LText(text,
@@ -136,6 +141,18 @@ class AndroidMovieDetails extends StatelessWidget {
                 ])),
           ]),
           const SizedBox(height: 14),
+          if (localSource != null && onPlayLocal != null)
+            Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                        onPressed: () => onPlayLocal!(localSource!),
+                        icon: const Icon(Icons.video_library),
+                        label: Text(
+                            'In My Library - Play "${labelFor(localSource!)}"',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis)))),
           Tooltip(
               message:
                   'Online AI questions are not implemented in this Windows build',

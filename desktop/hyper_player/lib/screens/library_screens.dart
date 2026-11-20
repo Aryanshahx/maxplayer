@@ -1,3 +1,4 @@
+import '../local_thumbnail.dart';
 import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -176,13 +177,9 @@ class FolderMediaScreen extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
-                                      child: Center(
-                                          child: Icon(
-                                              isAudioPath(entry.path)
-                                                  ? Icons.music_note
-                                                  : Icons.play_circle_outline,
-                                              size: 42,
-                                              color: Colors.white24))),
+                                      child: SizedBox(
+                                          width: double.infinity,
+                                          child: LocalThumbnail(entry.path))),
                                   Text(labelFor(entry.path),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis),

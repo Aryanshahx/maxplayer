@@ -31,6 +31,7 @@ class _LocalThumbnailState extends State<LocalThumbnail> {
   Widget build(BuildContext context) => ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: FutureBuilder<String?>(
+          key: ValueKey(widget.source),
           future: image,
           builder: (context, snapshot) {
             final path = snapshot.data;

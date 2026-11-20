@@ -18,6 +18,19 @@ jobs:
           cache: true
       - name: Generate Windows runner
         run: flutter create --platforms=windows --project-name hyper_player --org com.hypertechlabs .
+      - name: Set Windows product branding
+        shell: pwsh
+        run: |
+          $resource = 'windows/runner/Runner.rc'
+          $text = Get-Content $resource -Raw
+          $text = $text.Replace('"CompanyName", "com.hypertechlabs"', '"CompanyName", "Hyper Tech Labs"')
+          $text = $text.Replace('"FileDescription", "hyper_player"', '"FileDescription", "Hyper Player - All Formats"')
+          $text = $text.Replace('"ProductName", "hyper_player"', '"ProductName", "Hyper Player - All Formats"')
+          [IO.File]::WriteAllText((Join-Path $PWD $resource), $text)
+          $runner = 'windows/runner/main.cpp'
+          $main = Get-Content $runner -Raw
+          $main = $main.Replace('L"hyper_player"', 'L"Hyper Player - All Formats"')
+          [IO.File]::WriteAllText((Join-Path $PWD $runner), $main)
       - name: Remove generated demo test
         shell: pwsh
         run: Remove-Item test/widget_test.dart -ErrorAction SilentlyContinue

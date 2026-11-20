@@ -5,6 +5,7 @@ version: 0.2.0+2
 environment:
   sdk: '>=3.4.0 <4.0.0'
 dependencies:
+  cryptography: ^2.7.0
   flutter:
     sdk: flutter
   flutter_localizations:
@@ -24,3 +25,12 @@ flutter:
   uses-material-design: true
   assets:
     - assets/i18n/
+    - assets/fonts/anton-OFL.txt
+    - assets/fonts/spacemono-OFL.txt
+  fonts:
+    - family: Anton
+      fonts:
+        - asset: assets/fonts/Anton-Regular.ttf
+    - family: SpaceMono
+      fonts:
+        - asset: assets/fonts/SpaceMono-Regular.ttf

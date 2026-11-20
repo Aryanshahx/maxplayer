@@ -125,8 +125,15 @@ class _PlaybackSpeedSheetState extends State<PlaybackSpeedSheet> {
 
 class SleepTimerSheet extends StatelessWidget {
   final DateTime? deadline;
+  final VoidCallback? onEnd;
+  final bool untilEnd;
   final ValueChanged<int> onMinutes;
-  const SleepTimerSheet({super.key, required this.onMinutes, this.deadline});
+  const SleepTimerSheet(
+      {super.key,
+      required this.onMinutes,
+      this.deadline,
+      this.onEnd,
+      this.untilEnd = false});
   @override
   Widget build(BuildContext context) => Column(
           mainAxisSize: MainAxisSize.min,
@@ -138,12 +145,14 @@ class SleepTimerSheet extends StatelessWidget {
                 child: LText('Sleep timer',
                     style:
                         TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
-            if (deadline != null) ...[
+            if (deadline != null || untilEnd) ...[
               Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                   child: Text(
-                      'Pauses at ${TimeOfDay.fromDateTime(deadline!).format(context)}',
+                      untilEnd
+                          ? 'Pauses at the end of this item'
+                          : 'Pauses at ${TimeOfDay.fromDateTime(deadline!).format(context)}',
                       style: const TextStyle(
                           color: Colors.white54, fontSize: 12))),
               ListTile(
@@ -155,14 +164,20 @@ class SleepTimerSheet extends StatelessWidget {
                   title: Text('$minutes minutes',
                       style: const TextStyle(fontSize: 16)),
                   onTap: () => onMinutes(minutes)),
-            const Tooltip(
-                message:
-                    'Pause-at-end timer is not implemented in this Windows build',
-                child: ListTile(
-                    enabled: false,
-                    title: LText('Until end'),
-                    subtitle: Text('Not available on Windows yet',
-                        style: TextStyle(fontSize: 12)))),
+            if (onEnd != null)
+              ListTile(
+                  title: const Text('Until end'),
+                  subtitle: const Text('Pause when this video reaches the end'),
+                  onTap: onEnd)
+            else
+              const Tooltip(
+                  message:
+                      'Pause-at-end timer is not implemented in this Windows build',
+                  child: ListTile(
+                      enabled: false,
+                      title: LText('Until end'),
+                      subtitle: Text('Not available on Windows yet',
+                          style: TextStyle(fontSize: 12)))),
             const SizedBox(height: 18),
           ]);
 }

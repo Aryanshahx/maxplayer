@@ -1,3 +1,4 @@
+import '../local_thumbnail.dart';
 import 'package:flutter/material.dart';
 
 import '../desktop_store.dart';
@@ -112,18 +113,8 @@ class _SourceCollectionScreenState extends State<SourceCollectionScreen> {
                       horizontal: 16,
                       vertical: 6,
                     ),
-                    leading: Container(
-                      width: 96,
-                      height: 54,
-                      decoration: BoxDecoration(
-                        color: const Color(0xff18181c),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.play_circle_outline,
-                        color: Colors.white24,
-                      ),
-                    ),
+                    leading: SizedBox(
+                        width: 96, height: 54, child: LocalThumbnail(source)),
                     title: Text(
                       labelFor(source),
                       maxLines: 1,
@@ -365,15 +356,10 @@ class PlaylistItemsScreen extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Expanded(
-                                child: Center(
-                                  child: Icon(
-                                    Icons.play_circle_outline,
-                                    size: 40,
-                                    color: Colors.white24,
-                                  ),
-                                ),
-                              ),
+                              Expanded(
+                                  child: SizedBox(
+                                      width: double.infinity,
+                                      child: LocalThumbnail(source))),
                               Row(
                                 children: [
                                   Expanded(

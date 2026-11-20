@@ -7,6 +7,9 @@ import 'config.dart';
 import 'tmdb.dart';
 import 'android_browse.dart';
 import 'android_details.dart';
+import 'cine_ui.dart';
+import 'category_screen.dart';
+import 'local_movie_match.dart';
 
 const tmdbNotice =
     'This product uses the TMDB API but is not endorsed or certified by TMDB. Ratings via TMDB. Provider availability via TMDB / JustWatch (India).';
@@ -38,7 +41,10 @@ Widget poster(String? path, {double? width, double? height}) => path == null
             child: const Center(child: Icon(Icons.broken_image_outlined))));
 
 class DiscoverScreen extends StatefulWidget {
-  const DiscoverScreen({super.key});
+  final List<String> localSources;
+  final ValueChanged<String>? onPlayLocal;
+  const DiscoverScreen(
+      {super.key, this.localSources = const [], this.onPlayLocal});
   @override
   State<DiscoverScreen> createState() => _DiscoverScreenState();
 }
@@ -127,7 +133,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     Navigator.push<void>(
         context,
         MaterialPageRoute(
-            builder: (_) => DiscoverDetail(client: client, movie: movie)));
+            builder: (_) => DiscoverDetail(
+                client: client,
+                movie: movie,
+                localSources: widget.localSources,
+                onPlayLocal: widget.onPlayLocal)));
   }
 
   Future<void> loadShelves({bool force = false}) async {
@@ -135,23 +145,40 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       return;
     }
     setState(() => shelvesLoading = true);
-    final chosen = kDiscoverFilters.where((f) =>
-        ['bollywood', 'hollywood', 'animation', 'action'].contains(f.key));
-    await Future.wait(chosen.map((f) async {
-      try {
-        final result = await client.browse(f, force: force);
-        if (mounted) {
-          setState(() => shelves[f.key] = result.items);
+    final chosen = kAllFilters.toList();
+    // Bounded request fan-out: Android includes every movie/series rail, not
+    // only four substituted categories. Keep source order independent of IO.
+    for (var start = 0; start < chosen.length && mounted; start += 3) {
+      await Future.wait(chosen.skip(start).take(3).map((f) async {
+        try {
+          final result = await client.browse(f, force: force);
+          if (mounted) setState(() => shelves[f.key] = result.items);
+        } catch (_) {
+          if (mounted) setState(() => shelves[f.key] = []);
         }
-      } catch (_) {
-        if (mounted) {
-          setState(() => shelves[f.key] = []);
-        }
-      }
-    }));
+      }));
+    }
     if (mounted) {
       setState(() => shelvesLoading = false);
     }
+  }
+
+  void openCategory(DiscoverFilter value) {
+    Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => DiscoverCategoryScreen(
+                filter: value, client: client, onOpen: openMovie)));
+  }
+
+  List<TmdbMovie> topTen() {
+    final seen = <String>{};
+    return [...?shelves['trending'], ...movies]
+        .where((m) =>
+            (m.posterPath?.isNotEmpty ?? false) &&
+            seen.add('${m.kind}:${m.id}'))
+        .take(10)
+        .toList();
   }
 
   void selectFilter(DiscoverFilter value) {
@@ -159,6 +186,35 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     searchFocus.unfocus();
     setState(() => filter = value);
     load();
+  }
+
+  List<Widget> buildAllRails() {
+    final seen = <String>{};
+    final rows = <Widget>[];
+    for (final f in kAllFilters) {
+      if (!shelves.containsKey(f.key)) continue;
+      final raw = shelves[f.key]!;
+      final items = raw
+          .where((m) =>
+              (m.posterPath?.isNotEmpty ?? false) &&
+              seen.add('${m.kind}:${m.id}'))
+          .toList();
+      final title = f.tv ? '${f.label} • Series' : f.label;
+      if (raw.isEmpty) {
+        rows.add(Padding(
+            padding: const EdgeInsets.all(14),
+            child: OutlinedButton(
+                onPressed: () => openCategory(f),
+                child: Text('$title · Open category / Retry'))));
+      } else if (items.isNotEmpty) {
+        rows.add(DiscoverShelf(
+            title: title,
+            movies: items,
+            onOpen: openMovie,
+            onSeeAll: () => openCategory(f)));
+      }
+    }
+    return rows;
   }
 
   Widget socialButton(String label, IconData icon, String url) => Expanded(
@@ -346,42 +402,27 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     : home
                         ? ListView(children: [
                             if (movies.isNotEmpty)
-                              AndroidFeaturedMovies(
-                                  movies: movies, onOpen: openMovie),
-                            Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(12, 10, 12, 0),
-                                child: Row(children: [
-                                  socialButton(
-                                      'Instagram',
-                                      Icons.camera_alt_outlined,
-                                      'https://www.instagram.com/maxplayer_official/'),
-                                  const SizedBox(width: 8),
-                                  socialButton('Telegram', Icons.send_outlined,
-                                      'https://t.me/maxofficial_channel')
-                                ])),
+                              CineFeaturedHero(
+                                  items: movies.take(8).toList(),
+                                  onTap: openMovie,
+                                  onOpen: openMovie),
                             if (movies.isNotEmpty)
-                              DiscoverShelf(
-                                  title: 'TOP 10 THIS WEEK',
-                                  movies: movies.take(10).toList(),
-                                  onOpen: openMovie,
-                                  ranked: true),
-                            for (final f in kDiscoverFilters
-                                .where((f) => shelves.containsKey(f.key)))
-                              if (shelves[f.key]!.isNotEmpty)
-                                DiscoverShelf(
-                                    title: f.label,
-                                    movies: shelves[f.key]!,
-                                    onOpen: openMovie,
-                                    onSeeAll: () => selectFilter(f))
-                              else
-                                Padding(
-                                    padding: const EdgeInsets.all(14),
-                                    child: OutlinedButton(
-                                        onPressed: () =>
-                                            loadShelves(force: true),
-                                        child: Text(
-                                            '${f.label} · Could not load — tap to retry'))),
+                              const Padding(
+                                  padding: EdgeInsets.only(top: 2),
+                                  child: CineTicker()),
+                            const Padding(
+                                padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
+                                child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(child: CineInstagramCard()),
+                                      SizedBox(width: 8),
+                                      Expanded(child: CineTelegramCard())
+                                    ])),
+                            if (topTen().isNotEmpty)
+                              CineTopTen(items: topTen(), onTap: openMovie),
+                            ...buildAllRails(),
                             if (shelvesLoading)
                               const Padding(
                                   padding: EdgeInsets.all(20),
@@ -437,12 +478,23 @@ Widget movieCard(BuildContext context, TmdbClient client, TmdbMovie movie) =>
         onTap: () => Navigator.push<void>(
             context,
             MaterialPageRoute(
-                builder: (_) => DiscoverDetail(client: client, movie: movie))));
+                builder: (_) => DiscoverDetail(
+                    client: client,
+                    movie: movie,
+                    localSources: const [],
+                    onPlayLocal: null))));
 
 class DiscoverDetail extends StatefulWidget {
   final TmdbClient client;
   final TmdbMovie movie;
-  const DiscoverDetail({super.key, required this.client, required this.movie});
+  final List<String> localSources;
+  final ValueChanged<String>? onPlayLocal;
+  const DiscoverDetail(
+      {super.key,
+      required this.client,
+      required this.movie,
+      this.localSources = const [],
+      this.onPlayLocal});
   @override
   State<DiscoverDetail> createState() => _DiscoverDetailState();
 }
@@ -489,6 +541,9 @@ class _DiscoverDetailState extends State<DiscoverDetail> {
                                 child: Column(children: [
                                   AndroidMovieDetails(
                                     full: full,
+                                    localSource: findLocalMovieSource(
+                                        m.title, m.year, widget.localSources),
+                                    onPlayLocal: widget.onPlayLocal,
                                     onTrailer: (key) => openDiscoverLink(
                                         context,
                                         Uri.https('www.youtube.com', '/watch',
@@ -523,16 +578,17 @@ class _DiscoverDetailState extends State<DiscoverDetail> {
                                           return DiscoverShelf(
                                               title: 'Related titles',
                                               movies: results.data!,
-                                              onOpen: (movie) =>
-                                                  Navigator.push<void>(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                          builder: (_) =>
-                                                              DiscoverDetail(
-                                                                  client: widget
-                                                                      .client,
-                                                                  movie:
-                                                                      movie))));
+                                              onOpen: (movie) => Navigator.push<
+                                                      void>(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                      builder: (_) => DiscoverDetail(
+                                                          client: widget.client,
+                                                          movie: movie,
+                                                          localSources: widget
+                                                              .localSources,
+                                                          onPlayLocal: widget
+                                                              .onPlayLocal))));
                                         }),
                                   ),
                                   const Padding(
@@ -610,7 +666,10 @@ class _SeasonScreenState extends State<SeasonScreen> {
 }
 
 class DiscoverHomeBanner extends StatefulWidget {
-  const DiscoverHomeBanner({super.key});
+  final List<String> localSources;
+  final ValueChanged<String>? onPlayLocal;
+  const DiscoverHomeBanner(
+      {super.key, this.localSources = const [], this.onPlayLocal});
   @override
   State<DiscoverHomeBanner> createState() => _DiscoverHomeBannerState();
 }
@@ -665,7 +724,9 @@ class _DiscoverHomeBannerState extends State<DiscoverHomeBanner> {
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute<void>(
-                            builder: (_) => const DiscoverScreen())),
+                            builder: (_) => DiscoverScreen(
+                                localSources: widget.localSources,
+                                onPlayLocal: widget.onPlayLocal))),
                     child: const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 20),
                         child: Row(children: [

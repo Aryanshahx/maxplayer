@@ -4,21 +4,42 @@ import 'collection_screens.dart';
 
 class DesktopDisplayScreen extends StatefulWidget {
   final bool listMode;
+  final String initialSort;
+  final bool queueAll;
+  final bool groupByFolder;
+  final Future<void> Function(bool)? onGroupByFolder;
+  final bool onlyFavourites;
+  final Future<void> Function(bool)? onOnlyFavourites;
+  final Future<void> Function(bool)? onQueueAll;
   final Future<void> Function(bool listMode, String? sort) onChange;
   const DesktopDisplayScreen(
-      {super.key, required this.listMode, required this.onChange});
+      {super.key,
+      required this.listMode,
+      required this.onChange,
+      this.initialSort = 'queue',
+      this.groupByFolder = false,
+      this.onGroupByFolder,
+      this.onlyFavourites = false,
+      this.onOnlyFavourites,
+      this.queueAll = true,
+      this.onQueueAll});
   @override
   State<DesktopDisplayScreen> createState() => _DesktopDisplayScreenState();
 }
 
 class _DesktopDisplayScreenState extends State<DesktopDisplayScreen> {
   late bool listMode = widget.listMode;
-  String? sort;
+  late bool queueAll = widget.queueAll;
+  late bool groupByFolder = widget.groupByFolder;
+  late bool onlyFavourites = widget.onlyFavourites;
+  late String? sort = widget.initialSort;
   bool saving = false;
   Future<void> change(bool value, String? order) async {
     if (saving) {
       return;
     }
+    final previousMode = listMode;
+    final previousSort = sort;
     setState(() {
       listMode = value;
       sort = order;
@@ -28,6 +49,10 @@ class _DesktopDisplayScreenState extends State<DesktopDisplayScreen> {
       await widget.onChange(value, order);
     } catch (_) {
       if (mounted) {
+        setState(() {
+          listMode = previousMode;
+          sort = previousSort;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Could not save display settings.')));
       }
@@ -108,6 +133,7 @@ class _DesktopDisplayScreenState extends State<DesktopDisplayScreen> {
                       Card(
                           child: Column(children: [
                         for (final entry in {
+                          'queue': 'Queue order',
                           'nameAsc': 'Name · A–Z',
                           'nameDesc': 'Name · Z–A'
                         }.entries) ...[
@@ -127,27 +153,95 @@ class _DesktopDisplayScreenState extends State<DesktopDisplayScreen> {
                         ]
                       ])),
                       section('GROUPING & ACTIONS'),
-                      const Card(
+                      Card(
+                          child: SwitchListTile(
+                        secondary: const Icon(Icons.favorite_border_rounded),
+                        title: const Text('Show only favourites'),
+                        value: onlyFavourites,
+                        onChanged: saving || widget.onOnlyFavourites == null
+                            ? null
+                            : (value) async {
+                                setState(() => saving = true);
+                                try {
+                                  await widget.onOnlyFavourites!(value);
+                                  if (mounted) {
+                                    setState(() => onlyFavourites = value);
+                                  }
+                                } catch (_) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(this.context)
+                                        .showSnackBar(const SnackBar(
+                                            content: Text(
+                                                'Could not save favourites filter.')));
+                                  }
+                                } finally {
+                                  if (mounted) setState(() => saving = false);
+                                }
+                              },
+                      )),
+                      Card(
                           child: Column(children: [
-                        ListTile(
-                            leading: Icon(Icons.photo_library_outlined),
-                            title: Text('Group videos by'),
-                            subtitle: Text(
-                                'Use the Folders screen. In-library grouping is not implemented on Windows.',
-                                style:
-                                    TextStyle(color: secondary, fontSize: 12))),
+                        SwitchListTile(
+                          secondary: const Icon(Icons.photo_library_outlined),
+                          title: const Text('Group videos by folder'),
+                          subtitle: Text(groupByFolder ? 'Folder' : 'None'),
+                          value: groupByFolder,
+                          onChanged: saving || widget.onGroupByFolder == null
+                              ? null
+                              : (value) async {
+                                  setState(() => saving = true);
+                                  try {
+                                    await widget.onGroupByFolder!(value);
+                                    if (mounted) {
+                                      setState(() => groupByFolder = value);
+                                    }
+                                  } catch (_) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(this.context)
+                                          .showSnackBar(const SnackBar(
+                                              content: Text(
+                                                  'Could not save folder grouping.')));
+                                    }
+                                  } finally {
+                                    if (mounted) setState(() => saving = false);
+                                  }
+                                },
+                        ),
                         Divider(height: 1, indent: 16, endIndent: 16),
-                        ListTile(
-                            leading: Icon(Icons.play_circle_outline_rounded),
-                            title: Text('Playback action'),
-                            subtitle: Text(
-                                'Current queue advances automatically. Play Single setting is not implemented.',
-                                style:
-                                    TextStyle(color: secondary, fontSize: 12))),
+                        SwitchListTile(
+                            secondary:
+                                const Icon(Icons.play_circle_outline_rounded),
+                            title: const Text('Queue All'),
+                            subtitle: Text(queueAll
+                                ? 'Continue to the next queued file at the end.'
+                                : 'Play Single: stop at the end. Manual next/previous still work.'),
+                            value: queueAll,
+                            onChanged: saving || widget.onQueueAll == null
+                                ? null
+                                : (value) async {
+                                    setState(() => saving = true);
+                                    try {
+                                      await widget.onQueueAll!(value);
+                                      if (mounted) {
+                                        setState(() => queueAll = value);
+                                      }
+                                    } catch (_) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(this.context)
+                                            .showSnackBar(const SnackBar(
+                                                content: Text(
+                                                    'Could not save playback action.')));
+                                      }
+                                    } finally {
+                                      if (mounted) {
+                                        setState(() => saving = false);
+                                      }
+                                    }
+                                  }),
                       ])),
                       const SizedBox(height: 20),
                       const Text(
-                          'Layout selection is saved on this laptop. Sorting reorders the current queue without changing the active media. Other Android display options are not yet implemented.',
+                          'Layout selection is saved on this laptop. Sorting changes the library view only; playback queue order and active media stay unchanged. Play Single stops automatic queue advance (including repeat); manual navigation remains available. Other Android display options are not yet implemented.',
                           style: TextStyle(color: secondary, fontSize: 12)),
                     ]))),
       );

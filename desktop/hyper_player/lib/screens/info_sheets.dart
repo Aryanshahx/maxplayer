@@ -1,3 +1,4 @@
+import 'user_manual_android.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,21 +6,23 @@ import '../utils/app_language.dart';
 
 Future<void> showAndroidInfoSheet(
         BuildContext context, String title, String body) =>
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xff14141c),
-      constraints: const BoxConstraints(maxWidth: 1000),
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: .85,
-          minChildSize: .4,
-          maxChildSize: .95,
-          builder: (context, controller) => AndroidInfoContent(
-              title: title, body: body, controller: controller)),
-    );
+    title == 'User manual'
+        ? UserManualSheet.show(context)
+        : showModalBottomSheet<void>(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: const Color(0xff14141c),
+            constraints: const BoxConstraints(maxWidth: 1000),
+            shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+            builder: (context) => DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: .85,
+                minChildSize: .4,
+                maxChildSize: .95,
+                builder: (context, controller) => AndroidInfoContent(
+                    title: title, body: body, controller: controller)),
+          );
 
 class AndroidInfoContent extends StatelessWidget {
   final String title, body;
@@ -117,7 +120,7 @@ class AndroidInfoContent extends StatelessWidget {
                 'Import your own M3U file or URL. It is not the complete Android Live TV/channel-browser implementation.'),
             heading('Availability'),
             const Text(
-                'Construction-marked screens are not implemented. Vault security, Windows Whisper, cloud integration, casting and Quick Share are not available simply because their tiles appear.',
+                'Construction-marked screens are not implemented. Vault security, Windows Whisper, direct cloud-account integration, casting and native app-sharing integration are not available simply because their tiles appear.',
                 style: TextStyle(
                     color: Colors.white54, fontSize: 12, height: 1.5)),
           ] else if (about) ...[
@@ -174,7 +177,7 @@ void showWindowsPrivacy(BuildContext context) {
                 style: TextStyle(color: Colors.white, fontSize: 17)),
             scrollable: true,
             content: const Text(
-                'HYPER PLAYER — WINDOWS PREVIEW\nDeveloper: Hyper Tech Labs\n\nLocal media and settings\nLocal media is not uploaded. Queue, folder paths, history, favourites, playlists, language and playback counters are stored locally without encryption. URLs may contain credentials; do not share application data. Windows Shell is used locally for cached video thumbnails.\n\nOnline features\nDiscover sends queries/title IDs to TMDB; API and image hosts receive network connections including IP addresses. Metadata is cached locally. Network streams contact their source hosts. Trailers and external links open their respective apps and follow provider policies.\n\nAndroid services\nThis Windows preview does not integrate Android Firebase analytics, AdMob or FCM notifications. Android policy statements must not be assumed to describe this build.\n\nContact\ntechlabs.hyper@gmail.com',
+                'HYPER PLAYER — WINDOWS PREVIEW\nDeveloper: Hyper Tech Labs\n\nLocal media and settings\nLocal media is not uploaded. Queue, folder paths, history, favourites, playlists, language and playback counters are stored locally without encryption. URLs may contain credentials; do not share application data. Windows Shell is used locally for cached video thumbnails. Cloud imports copy selected provider files into the local application support folder. Provider sign-in/downloads stay in Windows or the provider. Saved network-location names, hosts and paths are also stored locally without encryption. Windows handles share-session authentication; no NAS passwords are collected by this screen. Imported files are not encrypted; save a copy before uninstalling or clearing data.\n\nPrivate Space (experimental)\nSelected files are copied into encrypted local storage using password-derived protection and Windows CurrentUser DPAPI. Original files remain untouched and may still appear in the library. Export writes an unencrypted copy to your chosen destination. Vault filenames and file keys are encrypted; no private playback, thumbnails or history are generated. There is no password-reset bypass: losing the password, key file or Windows account protection may make copies unrecoverable. This is not independently audited or validated on native Windows yet.\n\nOnline features\nDiscover sends queries/title IDs to TMDB; API and image hosts receive network connections including IP addresses. Metadata is cached locally. Network streams contact their source hosts. Quick Share starts a temporary local HTTP server only after explicit user selection and consent, with access controlled by a random session link. Anyone with the link on a reachable network can access the selected files until stopped or expired; HTTP is not encrypted. Receive sends requests to the sender address you enter and writes selected files to your chosen folder. Session links are not saved by the app. Trailers and external links open their respective apps and follow provider policies.\n\nAndroid services\nThis Windows preview does not integrate Android Firebase analytics, AdMob or FCM notifications. Android policy statements must not be assumed to describe this build.\n\nContact\ntechlabs.hyper@gmail.com',
                 style: TextStyle(
                     color: Colors.white70, fontSize: 13, height: 1.45)),
             actions: [
