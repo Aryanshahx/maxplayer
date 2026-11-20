@@ -1,3 +1,4 @@
+import '../app_design.dart';
 import 'package:flutter/material.dart';
 import '../utils/app_language.dart';
 import 'collection_screens.dart';
@@ -116,11 +117,50 @@ class _DesktopDisplayScreenState extends State<DesktopDisplayScreen> {
         body: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1100),
+                constraints:
+                    BoxConstraints(maxWidth: AppDesign.instance.contentWidth),
                 child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                     children: [
                       if (saving) const LinearProgressIndicator(),
+                      section('APP DESIGN · ALL SCREENS'),
+                      Card(
+                          child: Column(children: [
+                        for (final mode in AppDesignMode.values)
+                          ListTile(
+                              title: Text(AppDesign.instance.label(mode)),
+                              subtitle: Text(switch (mode) {
+                                AppDesignMode.android =>
+                                  'Android-style default',
+                                AppDesignMode.compact =>
+                                  'Dense controls, compact typography and squared surfaces',
+                                AppDesignMode.cinema =>
+                                  'Large typography, spacious controls and rounded surfaces'
+                              }),
+                              trailing: Icon(mode == AppDesign.instance.mode
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_off),
+                              onTap: saving
+                                  ? null
+                                  : () async {
+                                      final value = mode;
+                                      setState(() => saving = true);
+                                      try {
+                                        await AppDesign.instance.select(value);
+                                      } catch (_) {
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(this.context)
+                                              .showSnackBar(const SnackBar(
+                                                  content: Text(
+                                                      'Could not save app design.')));
+                                        }
+                                      } finally {
+                                        if (mounted) {
+                                          setState(() => saving = false);
+                                        }
+                                      }
+                                    })
+                      ])),
                       section('LAYOUT & VIEW MODE'),
                       Row(children: [
                         mode(false, Icons.grid_view_rounded, 'Grid View',

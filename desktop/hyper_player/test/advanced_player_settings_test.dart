@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hyper_player/utils/player_settings.dart';
@@ -59,6 +60,7 @@ void main() {
   Future<void> controls(WidgetTester tester,
       {ValueChanged<Duration>? seek,
       ValueChanged<double>? rate,
+      ValueChanged<double>? volume,
       void Function(double, Offset)? transform}) async {
     final playback = ValueNotifier(const PlaybackSnapshot(
         position: Duration(seconds: 30),
@@ -89,12 +91,27 @@ void main() {
       onFullscreen: () async {},
       onMenu: (_) {},
       onSeek: seek ?? (_) {},
-      onVolume: (_) {},
+      onVolume: volume ?? (_) {},
       onTemporaryRate: rate,
       onTransform: transform,
     ))));
   }
 
+  testWidgets(
+      'Brightness shortcut and slider controls are visible and volume emits real callback',
+      (tester) async {
+    double? volume;
+    await controls(tester, volume: (value) => volume = value);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    expect(volume, 105);
+    await tester.sendKeyEvent(LogicalKeyboardKey.bracketLeft);
+    await tester.pump();
+    expect(find.text('Video brightness 95%'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+    await tester.pumpAndSettle();
+    expect(find.text('Brightness & volume'), findsOneWidget);
+    expect(find.byType(Slider), findsWidgets);
+  });
   testWidgets('Long-press restores the exact prior playback rate on release',
       (tester) async {
     final rates = <double>[];

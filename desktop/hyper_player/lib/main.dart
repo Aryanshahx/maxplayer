@@ -1,3 +1,8 @@
+import 'player/native_properties.dart';
+import 'windows_drives.dart';
+import 'player/karaoke_overlay.dart';
+import 'player/srt.dart';
+import 'app_design.dart';
 import 'utils/player_settings.dart';
 import 'screens/player_settings_android.dart';
 import 'dart:math' as math;
@@ -55,6 +60,7 @@ Future<void> main() async {
   MediaKit.ensureInitialized();
   if (Platform.isWindows) await windowManager.ensureInitialized();
   await AppLanguage.instance.load();
+  await AppDesign.instance.load();
   runApp(const HyperPlayer());
 }
 
@@ -62,7 +68,7 @@ class HyperPlayer extends StatelessWidget {
   const HyperPlayer({super.key});
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: AppLanguage.instance,
+        animation: Listenable.merge([AppLanguage.instance, AppDesign.instance]),
         builder: (context, child) => MaterialApp(
           locale: AppLanguage.instance.locale,
           supportedLocales:
@@ -74,7 +80,8 @@ class HyperPlayer extends StatelessWidget {
           ],
           title: 'Hyper Player - All Formats',
           debugShowCheckedModeBanner: false,
-          theme: ThemeData.dark(useMaterial3: true).copyWith(
+          theme: AppDesign.instance
+              .theme(ThemeData.dark(useMaterial3: true).copyWith(
             cardTheme: CardThemeData(
               color: const Color(0xff101013),
               elevation: 0,
@@ -105,7 +112,12 @@ class HyperPlayer extends StatelessWidget {
               surface: Color(0xff101013),
               onSurface: Color(0xfff5f6f8),
             ),
-          ),
+          )),
+          builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                  textScaler: TextScaler.linear(MediaQuery.textScalerOf(context)
+                      .scale(AppDesign.instance.textScale))),
+              child: child!),
           home: const DesktopPlayer(),
         ),
       );
@@ -149,6 +161,11 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   final resumePositions = <String, int>{};
   List<double> equalizerBands = [0, 0, 0, 0, 0];
   bool dialogueBoost = false;
+  bool karaokeEnabled = false, enhanceEnabled = false, effectsBusy = false;
+  String toneMapping = 'auto';
+  int karaokeEpoch = 0;
+  final karaokeCue = ValueNotifier<SrtCue?>(null);
+  Map<String, String>? beforeEnhance;
   int playRequest = 0;
   bool openingMedia = false;
   Timer? sleep;
@@ -185,6 +202,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
       player.stream.buffering.listen(updateView),
       player.stream.volume.listen(updateView),
       player.stream.rate.listen(updateView),
+      player.stream.subtitle.listen(updateKaraoke),
     ]);
     completion = player.stream.completed.listen((done) {
       if (!done || openingMedia) return;
@@ -272,6 +290,12 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     setState(
       () => queue.addAll(decodeQueue(prefs.getString('hyper.queue.v1'))),
     );
+    if (Platform.isWindows &&
+        queue.isEmpty &&
+        !(prefs.getBool('hyper.scan.intro.v1') ?? false)) {
+      await prefs.setBool('hyper.scan.intro.v1', true);
+      if (mounted) await scanLibraryOptions();
+    }
   }
 
   Future<void> save() async {
@@ -306,6 +330,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         return;
       }
       rememberPosition();
+      karaokeEpoch++;
+      karaokeCue.value = null;
       setState(() {
         selected = index;
         fitMode = FitMode.values[inputSettings.defaultFit];
@@ -435,6 +461,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     for (final sub in playbackSubscriptions) {
       sub.cancel();
     }
+    karaokeEpoch++;
+    karaokeCue.dispose();
     playbackView.dispose();
     unawaited(saveStats());
     errors?.cancel();
@@ -820,6 +848,25 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
           dialogue: dialogueBoost,
           onApply: changeAudioFilters));
 
+  Future<void> setPlayerVolume(double requested) async {
+    final value =
+        requested.clamp(0.0, inputSettings.volumeBoost ? 200.0 : 100.0);
+    try {
+      final native = player.platform;
+      if (native is NativePlayer && value > 0) {
+        await setCheckedProperty(native, 'mute', 'no');
+      }
+      await player.setVolume(value);
+      if (native is NativePlayer &&
+          !propertyMatches(
+              'volume', '$value', await native.getProperty('volume'))) {
+        throw StateError('Volume readback failed');
+      }
+    } catch (_) {
+      notify('Could not change media volume. Check the Windows output device.');
+    }
+  }
+
   Future<void> screenshot() async {
     try {
       final bytes = await player.screenshot(format: 'image/png');
@@ -870,11 +917,129 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
     await showPlaybackSheet<void>(context, const PlayerSettingsSheet());
   }
 
+  Future<void> updateKaraoke(List<String> parts) async {
+    if (!karaokeEnabled) return;
+    final epoch = ++karaokeEpoch;
+    final text = parts.isEmpty ? '' : parts.first.trim();
+    if (text.isEmpty) {
+      karaokeCue.value = null;
+      return;
+    }
+    if (text.length > 8192 || isMusicOnlyText(text)) {
+      karaokeCue.value = null;
+      return;
+    }
+    final native = player.platform;
+    if (native is! NativePlayer) return;
+    try {
+      final start = double.tryParse(await native.getProperty('sub-start'));
+      final end = double.tryParse(await native.getProperty('sub-end'));
+      if (!mounted || epoch != karaokeEpoch || !karaokeEnabled) return;
+      if (start == null ||
+          end == null ||
+          !start.isFinite ||
+          !end.isFinite ||
+          end <= start) {
+        karaokeCue.value = null;
+        return;
+      }
+      karaokeCue.value = SrtCue((start * 1000).round(), (end * 1000).round(),
+          text.replaceAll(RegExp(r'<[^>]*>|\{[^}]*\}'), ''));
+    } catch (_) {
+      if (mounted && epoch == karaokeEpoch) karaokeCue.value = null;
+    }
+  }
+
+  Future<void> setKaraoke(bool value) async {
+    if (value && ['no', 'auto', ''].contains(player.state.track.subtitle.id)) {
+      final tracks = player.state.tracks.subtitle
+          .where((track) => track.id != 'no' && track.id != 'auto')
+          .toList();
+      if (tracks.isEmpty) {
+        notify(
+            'Select or load text subtitles first; karaoke does not generate captions.');
+        return;
+      }
+      try {
+        await player.setSubtitleTrack(tracks.first);
+      } catch (_) {
+        notify('Could not select a subtitle track.');
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() => karaokeEnabled = value);
+    karaokeEpoch++;
+    karaokeCue.value = null;
+    if (value) {
+      await updateKaraoke(player.state.subtitle);
+      notify(
+          'Karaoke on: word timing is estimated inside each timed text cue. Bitmap subtitles may not supply text.');
+    }
+  }
+
+  Future<void> setEnhance(bool value) async {
+    final native = player.platform;
+    if (native is! NativePlayer) {
+      notify('Native video filtering is unavailable.');
+      return;
+    }
+    final current = <String, String>{};
+    try {
+      for (final key in ['vf', 'contrast', 'saturation', 'gamma']) {
+        current[key] = await native.getProperty(key);
+      }
+      final desired = value
+          ? {
+              'vf': buildEnhanceFilter(),
+              'contrast': '14',
+              'saturation': '12',
+              'gamma': '2'
+            }
+          : (beforeEnhance ??
+              {'vf': '', 'contrast': '0', 'saturation': '0', 'gamma': '0'});
+      for (final entry in desired.entries) {
+        await setCheckedProperty(native, entry.key, entry.value);
+      }
+      if (value) beforeEnhance = current;
+      if (mounted) setState(() => enhanceEnabled = value);
+    } catch (_) {
+      for (final entry in current.entries) {
+        try {
+          await native.setProperty(entry.key, entry.value);
+        } catch (_) {}
+      }
+      notify(
+          'Video enhancement could not be applied; previous filter values restored where possible.');
+    }
+  }
+
+  Future<void> setToneMapping(String value) async {
+    if (!['auto', 'clip', 'mobius', 'reinhard', 'hable', 'bt.2390']
+        .contains(value)) {
+      return;
+    }
+    final native = player.platform;
+    if (native is! NativePlayer) return;
+    final previous = toneMapping;
+    try {
+      await setCheckedProperty(native, 'tone-mapping', value);
+      if (mounted) setState(() => toneMapping = value);
+      notify(
+          'Tone-mapping mode set. It affects HDR sources on supported renderers, not ordinary SDR video.');
+    } catch (_) {
+      try {
+        await native.setProperty('tone-mapping', previous);
+      } catch (_) {}
+      notify('This renderer did not accept the tone-mapping mode.');
+    }
+  }
+
   Future<void> extras() async {
     await showPlaybackSheet<void>(
         context,
-        Builder(
-            builder: (sheetContext) =>
+        StatefulBuilder(
+            builder: (sheetContext, update) =>
                 Column(mainAxisSize: MainAxisSize.min, children: [
                   const PlaybackSheetHandle(),
                   ListTile(
@@ -917,21 +1082,64 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                         Navigator.pop(sheetContext);
                         equalizer();
                       }),
-                  const ListTile(
-                      enabled: false,
-                      leading: Icon(Icons.closed_caption_outlined),
-                      title: Text('Karaoke subtitles'),
-                      subtitle: Text('Timed-text overlay integration pending')),
-                  const ListTile(
-                      enabled: false,
-                      leading: Icon(Icons.auto_fix_high),
-                      title: Text('Enhance video'),
-                      subtitle: Text('Windows renderer verification pending')),
-                  const ListTile(
-                      enabled: false,
-                      leading: Icon(Icons.hdr_on),
-                      title: Text('HDR tone-mapping'),
-                      subtitle: Text('Windows renderer verification pending')),
+                  SwitchListTile(
+                      secondary: const Icon(Icons.closed_caption_outlined),
+                      title: const Text('Karaoke subtitles'),
+                      subtitle: const Text(
+                          'Timed text required; word timing is estimated like Android.'),
+                      value: karaokeEnabled,
+                      onChanged: effectsBusy
+                          ? null
+                          : (value) async {
+                              update(() => effectsBusy = true);
+                              await setKaraoke(value);
+                              if (sheetContext.mounted) {
+                                update(() => effectsBusy = false);
+                              }
+                            }),
+                  SwitchListTile(
+                      secondary: const Icon(Icons.auto_fix_high),
+                      title: const Text('Enhance video'),
+                      subtitle: const Text(
+                          'Native sharpen/contrast filter; codec/renderer support required.'),
+                      value: enhanceEnabled,
+                      onChanged: effectsBusy
+                          ? null
+                          : (value) async {
+                              update(() => effectsBusy = true);
+                              await setEnhance(value);
+                              if (sheetContext.mounted) {
+                                update(() => effectsBusy = false);
+                              }
+                            }),
+                  ListTile(
+                      leading: const Icon(Icons.hdr_on),
+                      title: const Text('HDR tone-mapping'),
+                      subtitle: const Text(
+                          'Only affects HDR video on supported renderers.'),
+                      trailing: DropdownButton<String>(
+                          value: toneMapping,
+                          items: [
+                            for (final mode in [
+                              'auto',
+                              'clip',
+                              'mobius',
+                              'reinhard',
+                              'hable',
+                              'bt.2390'
+                            ])
+                              DropdownMenuItem(value: mode, child: Text(mode))
+                          ],
+                          onChanged: effectsBusy
+                              ? null
+                              : (value) async {
+                                  if (value == null) return;
+                                  update(() => effectsBusy = true);
+                                  await setToneMapping(value);
+                                  if (sheetContext.mounted) {
+                                    update(() => effectsBusy = false);
+                                  }
+                                })),
                   const SizedBox(height: 18),
                 ])));
   }
@@ -988,6 +1196,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
 
   void playerMenu(String action) {
     switch (action) {
+      case 'Playback queue':
+        showQueue();
       case 'Cast to TV':
         castToTv();
       case 'Picture-in-Picture':
@@ -1023,7 +1233,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
             player.pause();
             setState(() => viewingPlayer = false);
           },
-          onQueue: showQueue,
+          onQueue: namedPlaylists,
           onSettings: playerSettings,
           onPlayPause: () => player.playOrPause(),
           onPrevious: () => skipPlayer(previous: true),
@@ -1040,12 +1250,14 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
           },
           onSpeed: playbackOptions,
           onSeek: (value) => player.seek(value),
-          onVolume: (value) => player.setVolume(value));
+          onVolume: setPlayerVolume);
     }
 
     Widget output = Video(
         controller: controller,
         fit: miniWindow.active ? BoxFit.contain : fitMode.boxFit,
+        subtitleViewConfiguration:
+            SubtitleViewConfiguration(visible: !karaokeEnabled),
         controls: (videoState) => miniWindow.active
             ? ValueListenableBuilder<PlaybackSnapshot>(
                 valueListenable: playbackView,
@@ -1058,6 +1270,9 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                     onRestore: toggleMiniPlayer))
             : AndroidPlayerControls(
                 playback: playbackView,
+                karaokeOverlay: karaokeEnabled
+                    ? KaraokeOverlay(playback: playbackView, cue: karaokeCue)
+                    : null,
                 onTransform: (zoom, pan) async {
                   final native = player.platform;
                   if (native is NativePlayer) {
@@ -1124,7 +1339,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                 },
                 onSpeed: playbackOptions,
                 onExtras: extras,
-                onQueue: showQueue,
+                onQueue: namedPlaylists,
                 onSettings: playerSettings,
                 onFullscreen: () => videoState.isFullscreen()
                     ? videoState.exitFullscreen()
@@ -1138,7 +1353,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                   playerMenu(action);
                 },
                 onSeek: (value) => player.seek(value),
-                onVolume: (value) => player.setVolume(value),
+                onVolume: setPlayerVolume,
               ));
     final ratio = miniWindow.active ? null : fitMode.aspectRatio;
     if (ratio != null) {
@@ -1292,8 +1507,13 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
         builder: (dialogContext) => AlertDialog(
               title: const Text('Scan videos and audio'),
               content: const Text(
-                  'Scanning includes subfolders, not just files directly inside a folder. To cover a device, choose a drive root such as C:\u005c or D:\u005c, then add other drives the same way. Only accessible locations are read; protected folders and links are skipped. Each scan is bounded to 20,000 media files and 100,000 directories and reports partial results. You can cancel without deleting existing library entries.'),
+                  'Scan all local fixed drives to discover media across this PC, or choose specific folders/drives. Scanning includes subfolders. For manual scanning, choose a root such as C:\u005c or D:\u005c, then add other drives the same way. Only accessible locations are read; protected folders and links are skipped. Each scan is bounded to 20,000 media files and 100,000 directories and reports partial results. You can cancel without deleting existing library entries.'),
               actions: [
+                if (Platform.isWindows)
+                  FilledButton.icon(
+                      icon: const Icon(Icons.computer),
+                      onPressed: () => Navigator.pop(dialogContext, 'all'),
+                      label: const Text('Scan all local drives')),
                 TextButton(
                     onPressed: () => Navigator.pop(dialogContext),
                     child: const Text('Cancel')),
@@ -1307,6 +1527,26 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
               ],
             ));
     if (!mounted) return;
+    if (choice == 'all') {
+      try {
+        final roots = windowsFixedDriveRoots();
+        if (roots.isEmpty) {
+          notify(
+              'No local fixed drives found. Choose a folder or drive manually.');
+          return;
+        }
+        scanFolders.addAll(roots);
+        final prefs = await SharedPreferences.getInstance();
+        if (!await prefs.setStringList(
+            'hyper.scan.folders.v1', scanFolders.toList())) {
+          throw StateError('Could not save scan roots.');
+        }
+        if (mounted) await rescan();
+      } catch (_) {
+        notify(
+            'Could not enumerate or save local drives. Choose a folder manually.');
+      }
+    }
     if (choice == 'choose') await folder();
     if (choice == 'saved') await rescan();
   }
@@ -1353,8 +1593,13 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   }
 
   Future<void> browseFolders() async {
-    final source = await Navigator.push<String>(context,
-        MaterialPageRoute(builder: (_) => const DesktopFoldersScreen()));
+    final source = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => DesktopFoldersScreen(onScanSystem: () async {
+                  Navigator.pop(context);
+                  await scanLibraryOptions();
+                })));
     final prefs = await SharedPreferences.getInstance();
     scanFolders
       ..clear()
@@ -1542,8 +1787,7 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Row(children: [
                         Expanded(
-                            child: Text(
-                                'Playlists · Current queue (${queue.length})',
+                            child: Text('Playback queue (${queue.length})',
                                 style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w700))),
@@ -1662,10 +1906,12 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
   Widget library() => LayoutBuilder(
         builder: (context, size) {
           final visible = visibleLibraryIndices(queue,
-              onlyFavourites: onlyFavourites,
-              favourites: collections.favourites,
-              sort: librarySort,
-              labelOf: labelFor);
+                  onlyFavourites: onlyFavourites,
+                  favourites: collections.favourites,
+                  sort: librarySort,
+                  labelOf: labelFor)
+              .where((index) => !isAudioPath(queue[index]))
+              .toList();
           final groups =
               groupLibraryIndices(queue, visible, byFolder: groupByFolder);
           final columns = size.maxWidth >= 1300
@@ -1701,23 +1947,26 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
           ];
           return CustomScrollView(
             slivers: [
+              SliverToBoxAdapter(
+                  child: Padding(
+                      padding: const EdgeInsets.fromLTRB(6, 12, 6, 0),
+                      child: DiscoverHomeBanner(
+                          localSources: {
+                            ...queue,
+                            ...collections.history,
+                            ...collections.favourites,
+                            ...collections.playlists.values
+                                .expand((items) => items)
+                          }.toList(),
+                          onPlayLocal: (source) {
+                            Navigator.of(context)
+                                .popUntil((route) => route.isFirst);
+                            playSource(source);
+                          }))),
               SliverPadding(
                 padding: const EdgeInsets.all(16),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
-                    DiscoverHomeBanner(
-                        localSources: {
-                          ...queue,
-                          ...collections.history,
-                          ...collections.favourites,
-                          ...collections.playlists.values
-                              .expand((items) => items)
-                        }.toList(),
-                        onPlayLocal: (source) {
-                          Navigator.of(context)
-                              .popUntil((route) => route.isFirst);
-                          playSource(source);
-                        }),
                     const SizedBox(height: 12),
                     for (var start = 0;
                         start < tiles.length;
@@ -1812,9 +2061,8 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                     sliver: SliverGrid(
-                      gridDelegate:
-                          const SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: 300,
+                      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: AppDesign.instance.mediaExtent,
                         mainAxisSpacing: 12,
                         crossAxisSpacing: 12,
                         childAspectRatio: 1.55,
@@ -1887,9 +2135,9 @@ class _DesktopPlayerState extends State<DesktopPlayer> {
                         icon: const Icon(Icons.search),
                       ),
                       IconButton(
-                        tooltip: 'Scan folders / drives',
-                        onPressed: busy ? null : scanLibraryOptions,
-                        icon: const Icon(Icons.sync),
+                        tooltip: 'Open File (Ctrl+O)',
+                        onPressed: files,
+                        icon: const Icon(Icons.video_file_outlined),
                       ),
                       if (viewingPlayer)
                         IconButton(

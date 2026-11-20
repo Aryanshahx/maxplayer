@@ -1,3 +1,4 @@
+import 'gesture_illustrations.dart';
 import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 
@@ -81,6 +82,43 @@ class UserManualSheet extends StatelessWidget {
           ),
         ),
         for (final g in _gestureItems) _GestureCard(item: g),
+        _SectionTitle('Touchscreen gestures', accent),
+        for (final entry in const <GestureKind, (String, String)>{
+          GestureKind.singleTap: ('Tap', 'Show or hide player controls.'),
+          GestureKind.doubleTapSides: (
+            'Side double-tap',
+            'Seek by the configured 5/10/15/30-second step. Keyboard: Left/Right.'
+          ),
+          GestureKind.doubleTapMiddle: (
+            'Middle double-tap',
+            'Play or pause. Keyboard: Space.'
+          ),
+          GestureKind.swipeBrightness: (
+            'Brightness / volume swipe',
+            'Left side controls video brightness; right side controls volume. B opens sliders; [ and ] adjust brightness; Up/Down changes volume.'
+          ),
+          GestureKind.swipeSeek: (
+            'Horizontal seek',
+            'Drag to scrub. Keyboard: Left/Right.'
+          ),
+          GestureKind.pinchZoom: (
+            'Pinch / pan',
+            'Enable pinch zoom in Player Settings for focal zoom. I/O zoom; Shift+arrows pan. Z cycles screen fits.'
+          ),
+          GestureKind.holdSpeed: (
+            'Hold to speed up',
+            'Temporarily accelerate, then restore the previous rate on release. Keyboard: hold R.'
+          ),
+        }.entries)
+          Card(
+              child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(children: [
+                    GestureIllustration(kind: entry.key),
+                    Text(entry.value.$1,
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text(entry.value.$2, textAlign: TextAlign.center)
+                  ]))),
 
         // --- Player buttons ---------------------------------------------
         _SectionTitle('Player buttons', accent),
@@ -239,8 +277,8 @@ class _GestureItem {
 // ---------------------------------------------------------------------------
 
 const List<_Item> _homeItems = [
-  _Item(Icons.sync, 'Rescan button (⟳ top bar)',
-      'Choose folder/drive roots or rescan saved roots, including accessible subfolders. Add each drive root to cover a device. Progress/Cancel and partial results are shown; 20,000 media and 100,000 directory bounds apply. Protected folders/links are skipped; missing entries are not deleted.'),
+  _Item(Icons.video_file_outlined, 'Open File & system scanning',
+      'Open File in the top bar opens the picker. In Folders choose Scan system / folders, then Scan all local drives or specific roots, including accessible subfolders. Add each drive root to cover a device. Progress/Cancel and partial results are shown; 20,000 media and 100,000 directory bounds apply. Protected folders/links are skipped; missing entries are not deleted.'),
   _Item(Icons.search, 'Search',
       'Search filenames in the queue, history, favourites and saved playlists. Media names remain in their original language.'),
   _Item(Icons.tune, 'Display settings',
@@ -255,6 +293,10 @@ const List<_Item> _homeItems = [
       'Watch statistics shows recorded daily playback, a seven-day chart and most-watched filenames. No historical viewing time is invented.'),
 ];
 const List<_GestureItem> _gestureItems = [
+  _GestureItem(
+      DesktopInputKind.keyboard,
+      'Brightness, fit, zoom & hold shortcuts',
+      'H: show/hide controls. L: lock controls; Escape unlocks. B: brightness/volume sliders. [ / ]: video brightness. Z: next screen fit. I / O: zoom in/out. Shift+arrows: pan while zoomed. Hold R: temporary speed boost; release restores the previous rate. These apply with the player focused; OS display brightness is unchanged.'),
   _GestureItem(DesktopInputKind.click, 'Touchscreen gestures',
       'Configure side double-tap seek, centre double-tap play/pause, left brightness, right volume and horizontal seek in Player settings. Long-press temporarily speeds up and restores the prior rate on release. Pinch mode OFF cycles fits; ON enables 1–4x focal zoom and pan. A quick two-finger tap resets to the default fit. Brightness is video-only dimming, not system brightness.'),
   _GestureItem(DesktopInputKind.click, 'Single click — show / hide controls',
@@ -267,6 +309,8 @@ const List<_GestureItem> _gestureItems = [
       'The lock button hides player controls. Click the video to reveal the unlock button, or press Escape to unlock. This is an input lock, not a secure vault.'),
 ];
 const List<_Item> _playerItems = [
+  _Item(Icons.auto_fix_high, 'Karaoke, Enhance & HDR',
+      'Extras includes timed-text karaoke (estimated word timing, not generated captions), native sharpen/contrast enhancement and HDR tone-mapping algorithms. HDR mapping only affects HDR sources on supported renderers. Readback/error checks do not replace native Windows visual validation.'),
   _Item(Icons.image_search_outlined, 'Timeline frame preview',
       'Hover the progress bar to request a local-file frame with a separate muted decoder. It does not seek main playback, fetch network streams, save frames to disk or use private-vault files. Loading and Preview unavailable are explicit. Codec/native renderer support must be checked on Windows.'),
   _Item(Icons.play_circle_outline, 'Playback & queue',
@@ -316,5 +360,5 @@ const List<_Item> _tipItems = [
   _Item(Icons.lock_outline, 'Private Space (experimental)',
       'Use a 12–128 character password. Encrypted copies require the original Windows account and vault key file; there is no password reset. Original files remain outside the vault. Export creates an unencrypted copy. In-app private playback is unavailable. Windows lifecycle and DPAPI validation are pending. Do not remove setup.lock or recovery files blindly after a failed setup.'),
   _Item(Icons.construction_outlined, 'Availability',
-      'Private Space encrypted-copy storage is experimental and has no in-app playback yet. FTP/FTPS and direct NAS credential login, Whisper, Chromecast/DLNA casting, karaoke and video-enhancement integrations are not complete. Windows wireless-display/mini-player and preview-frame decoding are source-integrated but need native validation. Their presence in Android does not make them working Windows features.'),
+      'Private Space encrypted-copy storage is experimental and has no in-app playback yet. FTP/FTPS and direct NAS credential login, Whisper and Chromecast/DLNA casting are not implemented. Karaoke needs text subtitles; native Enhance/HDR integration and actual rendering require Windows validation. Windows wireless-display/mini-player and preview-frame decoding are source-integrated but need native validation. Their presence in Android does not make them working Windows features.'),
 ];

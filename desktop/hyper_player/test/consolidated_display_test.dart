@@ -15,6 +15,7 @@ void main() {
             })));
     final grouping =
         find.widgetWithText(SwitchListTile, 'Group videos by folder');
+    await tester.scrollUntilVisible(grouping, 250);
     await tester.ensureVisible(grouping);
     await tester.pumpAndSettle();
     await tester.tap(grouping);
@@ -48,6 +49,7 @@ void main() {
               saved = value;
             })));
     final filter = find.widgetWithText(SwitchListTile, 'Show only favourites');
+    await tester.scrollUntilVisible(filter, 250);
     await tester.ensureVisible(filter);
     await tester.pumpAndSettle();
     await tester.tap(filter);
@@ -65,6 +67,7 @@ void main() {
               throw StateError('disk');
             })));
     final filter = find.widgetWithText(SwitchListTile, 'Show only favourites');
+    await tester.scrollUntilVisible(filter, 250);
     await tester.ensureVisible(filter);
     await tester.pumpAndSettle();
     await tester.tap(filter);

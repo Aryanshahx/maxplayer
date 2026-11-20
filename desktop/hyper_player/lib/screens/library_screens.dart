@@ -1,3 +1,4 @@
+import '../app_design.dart';
 import '../local_thumbnail.dart';
 import 'dart:io';
 import 'package:file_selector/file_selector.dart';
@@ -9,7 +10,8 @@ import '../utils/app_language.dart';
 import 'collection_screens.dart';
 
 class DesktopFoldersScreen extends StatefulWidget {
-  const DesktopFoldersScreen({super.key});
+  final Future<void> Function()? onScanSystem;
+  const DesktopFoldersScreen({super.key, this.onScanSystem});
   @override
   State<DesktopFoldersScreen> createState() => _DesktopFoldersScreenState();
 }
@@ -91,6 +93,11 @@ class _DesktopFoldersScreenState extends State<DesktopFoldersScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const LText('Folders'), actions: [
+          if (widget.onScanSystem != null)
+            IconButton(
+                tooltip: 'Scan system / folders',
+                onPressed: widget.onScanSystem,
+                icon: const Icon(Icons.computer)),
           IconButton(
               tooltip: 'Rescan',
               onPressed: loading ? null : reload,
@@ -164,8 +171,8 @@ class FolderMediaScreen extends StatelessWidget {
             : GridView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: entries.length,
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 300,
+                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: AppDesign.instance.mediaExtent,
                     childAspectRatio: 1.55,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12),

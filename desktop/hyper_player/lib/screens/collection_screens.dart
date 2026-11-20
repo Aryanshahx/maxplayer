@@ -160,7 +160,7 @@ class DesktopPlaylistsScreen extends StatefulWidget {
 class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
   Future<void> create() async {
     String name = '';
-    bool includeQueue = true;
+    bool includeQueue = false;
     final value = await showDialog<String>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -184,7 +184,7 @@ class _DesktopPlaylistsScreenState extends State<DesktopPlaylistsScreen> {
                   ),
                   value: includeQueue,
                   onChanged: (value) =>
-                      update(() => includeQueue = value ?? true),
+                      update(() => includeQueue = value ?? false),
                 ),
               ],
             ),

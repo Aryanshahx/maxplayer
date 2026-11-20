@@ -94,7 +94,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                           title: Text('Player keyboard & mouse'),
                           content: SingleChildScrollView(
                               child: Text(
-                                  'Space: play/pause\nLeft / Right: seek configured step\nUp / Down or mouse wheel: volume\nM: mute\nF: fullscreen\nEscape: unlock\nDouble-click video: fullscreen\nCtrl+O: open files\nCtrl+L: open streams\n\nShortcuts require player focus; not active while typing in a dialog.'))))),
+                                  'Space: play/pause\nLeft / Right: seek configured step\nUp / Down or mouse wheel: volume\nM: mute\nB: brightness and volume sliders\n[ / ]: video brightness\nZ: cycle video fit\nI / O: zoom\nShift+arrows: pan while zoomed\nHold R: temporary speed boost\nH: show/hide controls\nL: lock controls\nF: fullscreen\nEscape: unlock\nDouble-click video: fullscreen\nCtrl+O: open files\nCtrl+L: open streams\n\nShortcuts require player focus; not active while typing in a dialog.'))))),
               if (!_loaded)
                 Padding(
                   padding: const EdgeInsets.all(32),

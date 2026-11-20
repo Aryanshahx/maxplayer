@@ -3,6 +3,13 @@
 Prepared 2026-09-05. Starting desktop baseline:
 `ec10d8eb96993f03c9d327f87324f3d86f0feb54`.
 
+## Latest media/design correction
+**DESIGN_MEDIA_UPDATE.md** supersedes older rows for the new Home Open File button,
+video/audio separation, saved-playlist vs playback-queue behaviour,3design presets,
+all-local-drive scanning choice, illustrated manual, moving Discover background,
+brightness/volume shortcuts, karaoke and native Enhance/HDR property integration.
+These implementations are NOT a native Windows validation/whole-app parity claim.
+
 ## New player/input/scanning follow-up
 Read **PLAYER_FOLLOWUP.md** for the latest changes. Its more specific status
 supersedes the original rows below for gesture settings, recursive selected-root

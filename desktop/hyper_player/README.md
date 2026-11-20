@@ -4,7 +4,7 @@ Separate Flutter desktop project by Hyper Tech Labs. Android package, source,
 signing configuration and version are not changed by this update.
 
 **This is an unsigned Windows preview, NOT full Android feature parity or a
-security-audited release.** Read `PLAYER_FOLLOWUP.md` and `CONSOLIDATED_STATUS.md` before building or using
+security-audited release.** Read `DESIGN_MEDIA_UPDATE.md`, `PLAYER_FOLLOWUP.md` and `CONSOLIDATED_STATUS.md` before building or using
 Private Space. The application name is not a guarantee of every codec/format.
 
 ## Build and launch
@@ -26,13 +26,13 @@ on a particular laptop. A Windows-only DPAPI fixture smoke test is included for 
 next Windows run; it has not been executed in the Linux preparation environment.
 
 ## Usage
-- Home retains Search, Rescan and the three-dot menu. Its eight tiles open Private
+- Home now has Search, Open File and the three-dot menu. System scanning is in Folders -> Scan system / folders. Its eight tiles open Private
   Space, Playlists, Folders, Audio, Network Storage, Cloud Storage, Open Stream and
   Quick Share. No Open files/Current playlist buttons in the Home header.
 - **Ctrl+O:** open files. The empty-library action also opens the picker.
 - **Ctrl+L:** open a direct HTTP(S) stream. A web page is not necessarily playable.
 - Folders/rescan include accessible subfolders of chosen folder/drive roots. Add every drive root you want scanned; progress/cancel and partial-result bounds apply.
-- Display Settings saves grid/list, name sort, folder grouping, favourites filter
+- Display Settings saves three app-wide design presets, grid/list, name sort, folder grouping, favourites filter
   and Queue All/Play Single. View sort/filter/group never remove/reorder the actual
   playback queue. Play Single stops automatic advance including queue repeat;
   manual next/previous still work.

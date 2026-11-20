@@ -36,6 +36,7 @@ String playbackClock(Duration time) {
 class AndroidPlayerControls extends StatefulWidget {
   final ValueListenable<PlaybackSnapshot> playback;
   final String title;
+  final Widget? karaokeOverlay;
   final String previewSourceKey;
   final void Function(double zoom, Offset pan)? onTransform;
   final ValueChanged<double>? onTemporaryRate;
@@ -68,6 +69,7 @@ class AndroidPlayerControls extends StatefulWidget {
       required this.playback,
       required this.title,
       this.previewSourceKey = '',
+      this.karaokeOverlay,
       this.onTransform,
       this.onTemporaryRate,
       this.onSelectFit,
@@ -119,6 +121,67 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
   int baseFit = 0;
   DateTime? touchStart;
   double? heldRate;
+  Timer? feedbackTimer;
+  void feedback(String text) {
+    feedbackTimer?.cancel();
+    if (mounted) setState(() => gestureMessage = text);
+    feedbackTimer = Timer(const Duration(milliseconds: 1100), () {
+      if (mounted) setState(() => gestureMessage = null);
+    });
+  }
+
+  void changeVolume(double value) {
+    final next = value.clamp(0.0, maximumVolume);
+    widget.onVolume(next);
+    feedback('Volume ${next.round()}%');
+  }
+
+  void changeBrightness(double value) {
+    setState(() => brightness = value.clamp(.15, 1.0));
+    feedback('Video brightness ${(brightness * 100).round()}%');
+  }
+
+  Future<void> adjustments() async {
+    hide?.cancel();
+    var volume = widget.playback.value.volume.clamp(0.0, maximumVolume);
+    await showModalBottomSheet<void>(
+        context: context,
+        builder: (sheetContext) => StatefulBuilder(
+            builder: (_, update) => SafeArea(
+                child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      const Text('Brightness & volume',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text(
+                          'Video brightness ${(brightness * 100).round()}% · [ / ]'),
+                      Slider(
+                          value: brightness,
+                          min: .15,
+                          max: 1,
+                          onChanged: (value) {
+                            changeBrightness(value);
+                            update(() {});
+                          }),
+                      Text(
+                          'Media volume ${volume.round()}% · Up/Down or mouse wheel'),
+                      Slider(
+                          value: volume,
+                          min: 0,
+                          max: maximumVolume,
+                          onChanged: (value) {
+                            volume = value;
+                            changeVolume(value);
+                            update(() {});
+                          }),
+                      const Text(
+                          'Brightness dims this video, not the Windows display. Check system output/mixer if media remains silent.',
+                          style: TextStyle(fontSize: 12)),
+                    ])))));
+    armHide();
+  }
+
   void emitTransform() {
     final size = context.size ?? const Size(800, 450);
     widget.onTransform?.call(zoom,
@@ -134,6 +197,7 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
   void startTouch(ScaleStartDetails details) {
     if (!touchInput || locked) return;
     hide?.cancel();
+    feedbackTimer?.cancel();
     gestureStart = details.localFocalPoint;
     gesturePosition = widget.playback.value.position;
     gestureVolume = widget.playback.value.volume;
@@ -240,8 +304,8 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
     if (touchSeek != null) widget.onSeek(touchSeek!);
     setState(() {
       touchSeek = null;
-      gestureMessage = null;
     });
+    if (gestureMessage != null) feedback(gestureMessage!);
     armHide();
   }
 
@@ -301,19 +365,26 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
     final ms = (state.position.inMilliseconds + seconds * 1000)
         .clamp(0, state.duration.inMilliseconds.clamp(0, 1 << 53));
     widget.onSeek(Duration(milliseconds: ms));
+    feedback('Seek ${playbackClock(Duration(milliseconds: ms))}');
   }
 
   void mute() {
     final volume = widget.playback.value.volume;
     if (volume > 0) {
       beforeMute = volume;
-      widget.onVolume(0);
+      changeVolume(0);
     } else {
-      widget.onVolume(beforeMute);
+      changeVolume(beforeMute);
     }
   }
 
   KeyEventResult key(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent &&
+        event.logicalKey == LogicalKeyboardKey.keyR &&
+        heldRate != null) {
+      restoreHeldRate();
+      return KeyEventResult.handled;
+    }
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
@@ -332,7 +403,65 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
         HardwareKeyboard.instance.isMetaPressed) {
       return KeyEventResult.ignored;
     }
-    if (k == LogicalKeyboardKey.space) {
+    if (HardwareKeyboard.instance.isShiftPressed &&
+        zoom > 1 &&
+        [
+          LogicalKeyboardKey.arrowLeft,
+          LogicalKeyboardKey.arrowRight,
+          LogicalKeyboardKey.arrowUp,
+          LogicalKeyboardKey.arrowDown
+        ].contains(k)) {
+      final dx = k == LogicalKeyboardKey.arrowLeft
+          ? 40.0
+          : k == LogicalKeyboardKey.arrowRight
+              ? -40.0
+              : 0.0;
+      final dy = k == LogicalKeyboardKey.arrowUp
+          ? 40.0
+          : k == LogicalKeyboardKey.arrowDown
+              ? -40.0
+              : 0.0;
+      pan = clampPanFor(
+          pan: pan + Offset(dx, dy),
+          zoom: zoom,
+          size: context.size ?? const Size(800, 450));
+      emitTransform();
+      feedback('Pan');
+    } else if (k == LogicalKeyboardKey.keyH) {
+      setState(() => visible = !visible);
+      armHide();
+      return KeyEventResult.handled;
+    } else if (k == LogicalKeyboardKey.keyL && prefs.screenLock) {
+      setState(() {
+        locked = true;
+        visible = true;
+      });
+    } else if (k == LogicalKeyboardKey.keyB) {
+      adjustments();
+    } else if (k == LogicalKeyboardKey.bracketLeft ||
+        k == LogicalKeyboardKey.bracketRight) {
+      changeBrightness(
+          brightness + (k == LogicalKeyboardKey.bracketRight ? .05 : -.05));
+    } else if (k == LogicalKeyboardKey.keyZ) {
+      widget.onFit();
+      feedback('Fit: ${nextFitMode(widget.fit).label}');
+    } else if ((k == LogicalKeyboardKey.keyI || k == LogicalKeyboardKey.keyO) &&
+        widget.onTransform != null) {
+      zoom =
+          (zoom + (k == LogicalKeyboardKey.keyI ? .25 : -.25)).clamp(1.0, 4.0);
+      pan = clampPanFor(
+          pan: pan, zoom: zoom, size: context.size ?? const Size(800, 450));
+      emitTransform();
+      feedback('Zoom ${zoom.toStringAsFixed(2)}x');
+    } else if (k == LogicalKeyboardKey.keyR &&
+        prefs.longPressSpeed &&
+        widget.onTemporaryRate != null) {
+      if (heldRate == null) {
+        heldRate = widget.playback.value.rate;
+        widget.onTemporaryRate!(prefs.longPressRate);
+        feedback('Speed ${prefs.longPressRate}x');
+      }
+    } else if (k == LogicalKeyboardKey.space) {
       widget.onPlayPause();
     } else if (k == LogicalKeyboardKey.arrowLeft) {
       seekBy(-prefs.seekStep);
@@ -344,7 +473,7 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
       widget.onFullscreen();
     } else if (k == LogicalKeyboardKey.arrowUp ||
         k == LogicalKeyboardKey.arrowDown) {
-      widget.onVolume((widget.playback.value.volume +
+      changeVolume((widget.playback.value.volume +
               (k == LogicalKeyboardKey.arrowUp ? 5 : -5))
           .clamp(0, maximumVolume));
     } else {
@@ -356,6 +485,7 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
 
   @override
   void dispose() {
+    feedbackTimer?.cancel();
     restoreHeldRate();
     hide?.cancel();
     widget.playback.removeListener(playbackChanged);
@@ -434,6 +564,7 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                               widget.onTemporaryRate != null) {
                             heldRate = widget.playback.value.rate;
                             widget.onTemporaryRate!(prefs.longPressRate);
+                            feedback('Speed ${prefs.longPressRate}x');
                           }
                         },
                         onLongPressEnd: (_) => restoreHeldRate(),
@@ -445,7 +576,7 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                           behavior: HitTestBehavior.translucent,
                           onPointerSignal: (event) {
                             if (!locked && event is PointerScrollEvent) {
-                              widget.onVolume((widget.playback.value.volume +
+                              changeVolume((widget.playback.value.volume +
                                       (event.scrollDelta.dy < 0 ? 5 : -5))
                                   .clamp(0, maximumVolume));
                               wake();
@@ -470,8 +601,29 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                             borderRadius: BorderRadius.circular(12)),
                         child: Padding(
                             padding: const EdgeInsets.all(16),
-                            child: Text(gestureMessage!,
-                                style: const TextStyle(color: Colors.white))),
+                            child:
+                                Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(
+                                  gestureMessage!.startsWith('Volume')
+                                      ? Icons.volume_up
+                                      : gestureMessage!.contains('brightness')
+                                          ? Icons.brightness_6
+                                          : gestureMessage!.startsWith('Fit') ||
+                                                  gestureMessage!
+                                                      .startsWith('Video fit')
+                                              ? Icons.aspect_ratio
+                                              : gestureMessage!
+                                                      .startsWith('Speed')
+                                                  ? Icons.speed
+                                                  : gestureMessage!
+                                                          .startsWith('Zoom')
+                                                      ? Icons.zoom_in
+                                                      : Icons.swap_horiz,
+                                  color: Colors.white),
+                              const SizedBox(width: 10),
+                              Text(gestureMessage!,
+                                  style: const TextStyle(color: Colors.white)),
+                            ])),
                       ))),
                     if (state.buffering)
                       const Center(
@@ -530,6 +682,10 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                                         },
                                         itemBuilder: (_) => [
                                               for (final row in const [
+                                                (
+                                                  'Playback queue',
+                                                  Icons.queue_music
+                                                ),
                                                 (
                                                   'Video info',
                                                   Icons.info_outline
@@ -731,10 +887,12 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                                                   'Playlists',
                                                   Icons.playlist_play,
                                                   widget.onQueue),
-                                              button(
-                                                  'Fit: ${widget.fit.label}',
-                                                  Icons.aspect_ratio,
-                                                  widget.onFit),
+                                              button('Fit: ${widget.fit.label}',
+                                                  Icons.aspect_ratio, () {
+                                                widget.onFit();
+                                                feedback(
+                                                    'Fit: ${nextFitMode(widget.fit).label}');
+                                              }),
                                               button(
                                                   'Fullscreen (F)',
                                                   Icons.fullscreen,
@@ -742,6 +900,18 @@ class _AndroidPlayerControlsState extends State<AndroidPlayerControls> {
                                             ])),
                                       ])))),
                     ],
+                    if (!locked && widget.karaokeOverlay != null)
+                      Positioned(
+                          left: 24,
+                          right: 24,
+                          bottom: visible ? 180 : 48,
+                          child: widget.karaokeOverlay!),
+                    if (!locked && visible)
+                      Positioned(
+                          left: 12,
+                          top: 60,
+                          child: button('Brightness & volume (B)',
+                              Icons.brightness_6_outlined, adjustments)),
                     if (!locked && visible && prefs.screenLock)
                       Positioned(
                           right: 12,

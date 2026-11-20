@@ -44,4 +44,4 @@ String combineAudioFilters(List<double> gainsDb, {bool dialogueBoost = false}) {
 /// "Enhance video" — GPU sharpen + slight contrast/saturation push.
 /// Returns the video-filter chain; the param equalizer (contrast/gamma/
 /// saturation) is applied by the player via MPV properties.
-String buildEnhanceFilter() => 'unsharp=5:5:0.55:5:5:0.0';
+String buildEnhanceFilter() => 'lavfi=[unsharp=5:5:0.55:5:5:0.0]';

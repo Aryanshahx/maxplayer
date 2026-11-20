@@ -30,7 +30,8 @@ void main() {
     await restored.load();
     expect(restored.history, isEmpty);
   });
-  testWidgets('New playlist screen creates named persistent queue',
+  testWidgets(
+      'New playlist stays empty unless queue inclusion is explicitly chosen',
       (tester) async {
     final store = DesktopStore();
     await tester.pumpWidget(MaterialApp(
@@ -41,7 +42,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'Evening');
     await tester.tap(find.text('Create'));
     await tester.pumpAndSettle();
-    expect(store.playlists['Evening'], ['movie.mp4']);
+    expect(store.playlists['Evening'], isEmpty);
     expect(find.text('Evening'), findsOneWidget);
   });
   testWidgets('Stream screen rejects unsupported protocols', (tester) async {

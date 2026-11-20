@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:io';
 import 'playlist.dart';
 
@@ -32,7 +33,7 @@ Future<LocalScan> scanLocalMedia(Iterable<String> paths,
   }
   final folders = <String, List<LocalMediaEntry>>{};
   final unavailable = <String>[];
-  final pending = paths.toSet().toList().reversed.toList();
+  final pending = Queue<String>.of(paths.toSet());
   final visited = <String>{};
   int count = 0;
   bool truncated = false;
@@ -41,7 +42,7 @@ Future<LocalScan> scanLocalMedia(Iterable<String> paths,
       truncated = true;
       break;
     }
-    final path = pending.removeLast();
+    final path = pending.removeFirst();
     final canonical = Directory(path).absolute.uri.normalizePath().toString();
     if (!visited
         .add(Platform.isWindows ? canonical.toLowerCase() : canonical)) {

@@ -1,3 +1,4 @@
+import 'moving_poster_strip.dart';
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -702,17 +703,17 @@ class _DiscoverHomeBannerState extends State<DiscoverHomeBanner> {
   Widget build(BuildContext context) => ClipRRect(
       borderRadius: BorderRadius.circular(14),
       child: SizedBox(
-          height: 118,
+          width: double.infinity,
+          height: 156,
           child: Stack(fit: StackFit.expand, children: [
             const DecoratedBox(
                 decoration: BoxDecoration(
                     gradient: LinearGradient(
                         colors: [Color(0xff241d3d), Color(0xff16222e)]))),
             if (movies.isNotEmpty)
-              ListView(scrollDirection: Axis.horizontal, children: [
-                for (final m in movies)
-                  SizedBox(width: 78, child: poster(m.posterPath))
-              ]),
+              IgnorePointer(
+                  child: MovingPosterStrip(
+                      posters: [for (final m in movies) poster(m.posterPath)])),
             const IgnorePointer(
                 child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -737,7 +738,7 @@ class _DiscoverHomeBannerState extends State<DiscoverHomeBanner> {
                                   children: [
                                 Text('Discover movies',
                                     style: TextStyle(
-                                        fontSize: 22,
+                                        fontSize: 26,
                                         fontWeight: FontWeight.bold)),
                                 SizedBox(height: 6),
                                 Text('Latest posters, ratings & trailers',
