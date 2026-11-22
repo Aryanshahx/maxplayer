@@ -242,6 +242,7 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
           navigatorKey: rootNavigatorKey,
           debugShowCheckedModeBanner: false,
           themeMode: mode,
+          themeAnimationDuration: Duration.zero,
           theme: buildAppTheme(
             accent: AppSettings.instance.accentColor,
             brightness: Brightness.light,

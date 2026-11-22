@@ -2906,7 +2906,11 @@ class _TopBar extends StatelessWidget {
         children: [
           IconButton(
             tooltip: 'Back',
-            icon: Icon(Icons.arrow_back, size: 22, color: AppColors.accent),
+            icon: Icon(
+              Icons.arrow_back,
+              size: 22,
+              color: AppColors.mediaAccent,
+            ),
             onPressed: () => Navigator.of(context).maybePop(),
           ),
           Expanded(
@@ -2924,7 +2928,7 @@ class _TopBar extends StatelessWidget {
                         Icon(
                           Icons.bedtime_outlined,
                           size: 11,
-                          color: AppColors.accent,
+                          color: AppColors.mediaAccent,
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -2932,7 +2936,7 @@ class _TopBar extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.accent,
+                            color: AppColors.mediaAccent,
                           ),
                         ),
                       ],
@@ -2960,14 +2964,14 @@ class _TopBar extends StatelessWidget {
                     icon: Icon(
                       Icons.translate_rounded,
                       size: 21,
-                      color: AppColors.accent,
+                      color: AppColors.mediaAccent,
                     ),
                     onPressed: onTrailerLang,
                   ),
           PopupMenuButton<_PlayerMenuAction>(
             tooltip: 'More actions',
-            icon: Icon(Icons.more_vert, size: 22, color: AppColors.accent),
-            color: const Color(0xFF1a1a24),
+            icon: Icon(Icons.more_vert, size: 22, color: AppColors.mediaAccent),
+            color: AppColors.surface,
             elevation: 8,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
@@ -3011,7 +3015,7 @@ class _TopBar extends StatelessWidget {
             icon: Icon(
               Icons.settings_outlined,
               size: 22,
-              color: AppColors.accent,
+              color: AppColors.mediaAccent,
             ),
             onPressed: onSettings,
           ),
@@ -3034,8 +3038,8 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: 12),
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.textPrimary,
               fontSize: 13.5,
               fontWeight: FontWeight.w500,
             ),
@@ -3354,7 +3358,7 @@ class _BottomBarState extends State<_BottomBar> {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
             child: Text(
               '${rate}x',
-              style: TextStyle(color: AppColors.accent, fontSize: 11),
+              style: TextStyle(color: AppColors.mediaAccent, fontSize: 11),
             ),
           ),
         );
@@ -3372,7 +3376,7 @@ class _BottomBarState extends State<_BottomBar> {
     var current = nearestPlaybackRate(widget.player.state.rate);
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF1a1a24),
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -3413,7 +3417,7 @@ class _BottomBarState extends State<_BottomBar> {
                     max: 4.0,
                     divisions: 14, // 0.25× steps
                     activeColor: AppColors.accent,
-                    inactiveColor: Colors.white10,
+                    inactiveColor: AppColors.border,
                     onChanged: (v) {
                       final snapped = nearestPlaybackRate(v);
                       setSheetState(() => current = snapped);
@@ -3790,7 +3794,7 @@ class _IndicatorPill extends StatelessWidget {
         color: const Color(0xFF161622).withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: AppColors.accent.withValues(alpha: 0.35),
+          color: AppColors.mediaAccent.withValues(alpha: 0.35),
           width: 1.2,
         ),
         boxShadow: [
@@ -3805,7 +3809,7 @@ class _IndicatorPill extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, color: AppColors.accent, size: 20),
+            Icon(icon, color: AppColors.mediaAccent, size: 20),
             const SizedBox(width: 8),
           ],
           Text(
@@ -3835,18 +3839,18 @@ class _BoostBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
       decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.9),
+        color: AppColors.mediaAccent.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.fast_forward, color: AppColors.onAccent, size: 19),
+          Icon(Icons.fast_forward, color: AppColors.mediaOnAccent, size: 19),
           const SizedBox(width: 5),
           Text(
             label,
             style: TextStyle(
-              color: AppColors.onAccent,
+              color: AppColors.mediaOnAccent,
               fontSize: 15,
               fontWeight: FontWeight.bold,
             ),
@@ -4091,7 +4095,7 @@ class _KaraokeOverlay extends StatelessWidget {
             TextSpan(
               text: i == 0 ? words[i] : ' ${words[i]}',
               style: TextStyle(
-                color: i <= activeIdx ? AppColors.accent : baseColor,
+                color: i <= activeIdx ? AppColors.mediaAccent : baseColor,
                 fontSize: 17,
                 fontWeight: i == activeIdx ? FontWeight.w800 : FontWeight.w500,
                 shadows: shadow,

@@ -7,6 +7,8 @@
 /// Pure helpers (`cineBootEase`, `cineBootWord`, …) are pinned by tests.
 library;
 
+import '../theme.dart';
+
 import '../utils/app_language.dart';
 
 import 'dart:async';
@@ -185,6 +187,7 @@ class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final exitCurve = CurvedAnimation(
       parent: _exit,
       curve: const Cubic(0.76, 0.0, 0.24, 1.0),
@@ -402,6 +405,7 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final items = widget.items;
     final mq = MediaQuery.of(context);
     // v1.0.1+42/+45: ~60% viewport hero (the +43 split layout and the
@@ -874,6 +878,7 @@ class _CineTickerState extends State<CineTicker>
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final strip = Container(
       height: 54,
       decoration: const BoxDecoration(
@@ -945,6 +950,7 @@ class _CineTopTenState extends State<CineTopTen>
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final items = widget.items.take(10).toList();
     if (items.length < 6) return const SizedBox.shrink();
     return Column(
@@ -973,11 +979,7 @@ class _CineTopTenState extends State<CineTopTen>
               const SizedBox(width: 8),
               LText(
                 'TRENDING NOW',
-                style: cineMono(
-                  10,
-                  kCineAmber.withValues(alpha: 0.8),
-                  letterSpacing: 2.0,
-                ),
+                style: cineMono(10, AppColors.rating, letterSpacing: 2.0),
               ),
             ],
           ),
@@ -986,7 +988,7 @@ class _CineTopTenState extends State<CineTopTen>
           padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
           child: LText(
             'TOP 10 THIS WEEK',
-            style: cineDisplay(28, Colors.white),
+            style: cineDisplay(28, AppColors.textPrimary),
           ),
         ),
         SizedBox(
@@ -1056,6 +1058,7 @@ class _TopTenCardState extends State<_TopTenCard> {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final posterW = widget.posterW;
     final ghostSize = _CineTopTenState._ghostSize(
       MediaQuery.of(context).size.width,
@@ -1341,6 +1344,7 @@ class _SocialCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(16),
@@ -1350,7 +1354,7 @@ class _SocialCard extends StatelessWidget {
           launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
         ),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
@@ -1378,13 +1382,10 @@ class _SocialCard extends StatelessWidget {
                   ),
                 ),
                 child: Center(
-                  child: CustomPaint(
-                    size: const Size(17, 17),
-                    painter: badgePainter,
-                  ),
+                  child: CustomPaint(size: Size(17, 17), painter: badgePainter),
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1393,8 +1394,8 @@ class _SocialCard extends StatelessWidget {
                       handle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
                         fontSize: 11.5,
                         fontWeight: FontWeight.w800,
                       ),
@@ -1405,14 +1406,14 @@ class _SocialCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: cineMono(
                         8,
-                        Colors.white.withValues(alpha: 0.5),
+                        AppColors.textSecondary,
                         letterSpacing: 1.4,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.open_in_new_rounded, color: kCineCyan, size: 15),
+              Icon(Icons.open_in_new_rounded, color: kCineCyan, size: 15),
             ],
           ),
         ),
@@ -1428,7 +1429,7 @@ class CineInstagramCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const _SocialCard(
     url: kMaxInstagramUrl,
-    handle: '@maxplayer_official',
+    handle: '@maxplayer_official2026',
     kicker: 'FOLLOW ON INSTAGRAM',
     badgeColors: [Color(0xFF405DE6), Color(0xFFC13584), Color(0xFFF77737)],
     badgePainter: _InstagramLogoPainter(),

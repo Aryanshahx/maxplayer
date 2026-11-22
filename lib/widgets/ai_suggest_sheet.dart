@@ -21,20 +21,23 @@ class AiSuggestSheet extends StatefulWidget {
     return showModalBottomSheet<TmdbMovie>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1a1a24),
-      shape: const RoundedRectangleBorder(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetContext) => Padding(
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(sheetContext).bottom),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+        ),
         child: DraggableScrollableSheet(
           expand: false,
           initialChildSize: 0.75,
           minChildSize: 0.5,
           maxChildSize: 0.95,
-          builder: (_, controller) =>
-              SingleChildScrollView(controller: controller, child: const AiSuggestSheet()),
+          builder: (_, controller) => SingleChildScrollView(
+            controller: controller,
+            child: const AiSuggestSheet(),
+          ),
         ),
       ),
     );
@@ -50,11 +53,11 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
 
   bool _busy = false;
   String? _error;
-  List<TmdbMovie> _picks = const [];
+  List<TmdbMovie> _picks = [];
   int _token = 0;
 
-  static const String _kSavedPromptKey = 'ai_suggest.saved_prompt';
-  static const String _kSavedPicksKey = 'ai_suggest.saved_picks_json';
+  static final String _kSavedPromptKey = 'ai_suggest.saved_prompt';
+  static final String _kSavedPicksKey = 'ai_suggest.saved_picks_json';
 
   @override
   void initState() {
@@ -74,14 +77,16 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
         final list = jsonDecode(jsonStr) as List;
         setState(() {
           _picks = list
-              .map((e) => TmdbMovie(
-                    id: e['id'] as int,
-                    title: '${e['title']}',
-                    rating: (e['rating'] as num).toDouble(),
-                    year: e['year'] as int?,
-                    posterPath: e['posterPath']?.toString(),
-                    kind: '${e['kind'] ?? 'movie'}',
-                  ))
+              .map(
+                (e) => TmdbMovie(
+                  id: e['id'] as int,
+                  title: '${e['title']}',
+                  rating: (e['rating'] as num).toDouble(),
+                  year: e['year'] as int?,
+                  posterPath: e['posterPath']?.toString(),
+                  kind: '${e['kind'] ?? 'movie'}',
+                ),
+              )
               .toList();
         });
       } catch (_) {}
@@ -89,7 +94,7 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
   }
 
   /// One-tap moods — nobody likes typing on a TV remote-style keyboard.
-  static const List<String> _moods = [
+  static final List<String> _moods = [
     'Funny action like Dhoom',
     'Mind-bending thriller',
     'Bollywood romance',
@@ -114,7 +119,7 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
     setState(() {
       _busy = true;
       _error = null;
-      _picks = const [];
+      _picks = [];
     });
     final picks = await _suggestor.suggest(q);
     if (!mounted || token != _token) return;
@@ -129,17 +134,22 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
         prefs.then((p) {
           p.setString(_kSavedPromptKey, q);
           p.setString(
-              _kSavedPicksKey,
-              jsonEncode(_picks
-                  .map((m) => {
-                        'id': m.id,
-                        'title': m.title,
-                        'rating': m.rating,
-                        'year': m.year,
-                        'posterPath': m.posterPath,
-                        'kind': m.kind,
-                      })
-                  .toList()));
+            _kSavedPicksKey,
+            jsonEncode(
+              _picks
+                  .map(
+                    (m) => {
+                      'id': m.id,
+                      'title': m.title,
+                      'rating': m.rating,
+                      'year': m.year,
+                      'posterPath': m.posterPath,
+                      'kind': m.kind,
+                    },
+                  )
+                  .toList(),
+            ),
+          );
         });
       }
     });
@@ -150,7 +160,7 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
     Theme.of(context);
     final accent = AppColors.accent;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -160,45 +170,46 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: AppColors.border,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           Row(
             children: [
               Icon(Icons.auto_awesome, color: accent, size: 22),
-              const SizedBox(width: 8),
-              const Expanded(
+              SizedBox(width: 8),
+              Expanded(
                 child: LText(
                   'AI Suggestor',
                   style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700),
+                    color: AppColors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          const LText(
+          SizedBox(height: 4),
+          LText(
             'Describe your movie type - AI suggests the best ones for you.',
-            style: TextStyle(color: Colors.white54, fontSize: 12.5),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           TextField(
             controller: _tasteCtrl,
             minLines: 1,
             maxLines: 3,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
             onSubmitted: (_) => _suggest(),
             decoration: LInputDecoration(
               isDense: true,
               hintText: 'e.g. funny action like Dhoom',
-              hintStyle: const TextStyle(color: Colors.white38),
+              hintStyle: TextStyle(color: AppColors.textSecondary),
               filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.06),
+              fillColor: AppColors.textPrimary.withValues(alpha: 0.06),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
@@ -209,7 +220,7 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
               ),
             ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -218,49 +229,52 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
                 GestureDetector(
                   onTap: _busy ? null : () => _suggest(m),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
+                      color: AppColors.textPrimary.withValues(alpha: 0.06),
                       borderRadius: BorderRadius.circular(18),
-                      border:
-                          Border.all(color: accent.withValues(alpha: 0.35)),
+                      border: Border.all(color: accent.withValues(alpha: 0.35)),
                     ),
                     child: Text(
                       m,
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 12),
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           if (_busy)
             const _ThinkingAnimation()
           else if (_error != null)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
+              padding: EdgeInsets.symmetric(vertical: 20),
               child: Center(
                 child: Text(
                   _error!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white54, fontSize: 13),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
                 ),
               ),
             )
           else if (_picks.isNotEmpty) ...[
             Text(
               '${_picks.length} picks for you',
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             SizedBox(
               height: 225,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: _picks.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                separatorBuilder: (_, _) => SizedBox(width: 10),
                 itemBuilder: (_, i) => _PickCard(
                   movie: _picks[i],
                   onTap: () => Navigator.of(context).pop(_picks[i]),
@@ -268,12 +282,15 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
               ),
             ),
           ] else
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(vertical: 18),
               child: Center(
                 child: LText(
                   'Tap a mood above or describe your own.',
-                  style: TextStyle(color: Colors.white30, fontSize: 12.5),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12.5,
+                  ),
                 ),
               ),
             ),
@@ -307,17 +324,17 @@ class _PickCard extends StatelessWidget {
                 child: TmdbImage(url: tmdbPosterUrl(movie.posterPath)),
               ),
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: 6),
             Text(
               movie.title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
             ),
             if (movie.year != null)
               Text(
                 '${movie.year}',
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
               ),
           ],
         ),
@@ -342,7 +359,7 @@ class _ThinkingAnimationState extends State<_ThinkingAnimation>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: Duration(milliseconds: 1200),
     )..repeat();
   }
 
@@ -358,7 +375,7 @@ class _ThinkingAnimationState extends State<_ThinkingAnimation>
     final accent = AppColors.accent;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
+        padding: EdgeInsets.symmetric(vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -366,18 +383,18 @@ class _ThinkingAnimationState extends State<_ThinkingAnimation>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.auto_awesome, color: accent, size: 20),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 LText(
                   'AI is thinking…',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.85),
+                    color: AppColors.textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             AnimatedBuilder(
               animation: _ctrl,
               builder: (context, _) {
@@ -389,7 +406,7 @@ class _ThinkingAnimationState extends State<_ThinkingAnimation>
                     final scale =
                         0.5 + 0.5 * (val < 0.5 ? val * 2 : (1 - val) * 2);
                     return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      margin: EdgeInsets.symmetric(horizontal: 4),
                       width: 9,
                       height: 9,
                       transform: Matrix4.diagonal3Values(scale, scale, 1.0),

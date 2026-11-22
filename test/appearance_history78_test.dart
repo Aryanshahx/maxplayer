@@ -128,7 +128,7 @@ void main() {
     },
   );
   testWidgets(
-    'Recent dropdown recalls a query, shows at most three and clears persistently',
+    'Inline recent history recalls a query, shows at most three and clears persistently',
     (tester) async {
       await RecentSearches.save('test', ['Alpha', 'Beta', 'Gamma', 'Delta']);
       final ctrl = TextEditingController();
@@ -235,7 +235,7 @@ void main() {
     () {
       final home = File('lib/screens/library_screen.dart').readAsStringSync();
       expect(home, isNot(contains('PopupMenuButton')));
-      expect(home, contains('Settings and more'));
+      expect(home, contains('HomeMenuScreen'));
       expect(home, contains('AppearanceScreen'));
       expect(home, contains('color: AppColors.surfaceAlt'));
       for (final file in [

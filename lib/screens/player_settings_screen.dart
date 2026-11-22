@@ -17,7 +17,7 @@ class PlayerSettingsSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => const PlayerSettingsSheet(),
@@ -61,17 +61,17 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
             children: [
               Center(
                 child: Container(
-                  margin: const EdgeInsets.only(top: 10),
+                  margin: EdgeInsets.only(top: 10),
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.white24,
+                    color: AppColors.border,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+                padding: EdgeInsets.fromLTRB(20, 14, 20, 4),
                 child: LText(
                   'Player settings',
                   style: TextStyle(
@@ -83,7 +83,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               ),
               if (!_loaded)
                 Padding(
-                  padding: const EdgeInsets.all(32),
+                  padding: EdgeInsets.all(32),
                   child: Center(
                     child: CircularProgressIndicator(color: AppColors.accent),
                   ),
@@ -99,12 +99,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   trailing: s.doubleTapSides
                       ? _MiniDropdown<int>(
                           value: s.seekStep,
-                          entries: const {
-                            5: '5s',
-                            10: '10s',
-                            15: '15s',
-                            30: '30s',
-                          },
+                          entries: {5: '5s', 10: '10s', 15: '15s', 30: '30s'},
                           onChanged: (v) => s.setSeekStep(v ?? 10),
                         )
                       : null,
@@ -176,7 +171,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   trailing: s.autoHide
                       ? _MiniDropdown<int>(
                           value: s.autoHideDelay,
-                          entries: const {3: '3s', 4: '4s', 5: '5s', 6: '6s'},
+                          entries: {3: '3s', 4: '4s', 5: '5s', 6: '6s'},
                           onChanged: (v) => s.setAutoHideDelay(v ?? 4),
                         )
                       : null,
@@ -207,7 +202,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   onChanged: (v) => s.setPerformanceMode(v ? 'on' : 'off'),
                 ),
               ],
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
             ],
           ),
         ),
@@ -224,7 +219,7 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
       child: Text(
         title,
         style: TextStyle(
@@ -258,23 +253,26 @@ class _SwitchTile extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       child: Row(
         children: [
-          Icon(icon, color: Colors.white70, size: 22),
-          const SizedBox(width: 16),
+          Icon(icon, color: AppColors.textSecondary, size: 22),
+          SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   label,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
                 ),
                 if (subtitle != null)
                   Text(
                     subtitle!,
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
                   ),
               ],
             ),
@@ -305,25 +303,28 @@ class _BoostToggleTile extends StatelessWidget {
       builder: (context, _) {
         final av = AppVolume.instance;
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 2),
           child: Row(
             children: [
-              const Icon(Icons.volume_up, color: Colors.white70, size: 22),
-              const SizedBox(width: 16),
+              Icon(Icons.volume_up, color: AppColors.textSecondary, size: 22),
+              SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const LText(
+                    LText(
                       'Volume boost (up to 200%)',
-                      style: TextStyle(color: Colors.white, fontSize: 15),
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                      ),
                     ),
                     Text(
                       s.volumeBoost
                           ? 'On — current level ${av.level.round()}%'
                           : 'Off — capped at 100%, current level ${av.level.round()}%',
-                      style: const TextStyle(
-                        color: Colors.white38,
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
                         fontSize: 12,
                       ),
                     ),
@@ -362,10 +363,10 @@ class _MiniDropdown<T> extends StatelessWidget {
     Theme.of(context);
     return DropdownButton<T>(
       value: value,
-      dropdownColor: const Color(0xFF26262f),
-      underline: const SizedBox.shrink(),
+      dropdownColor: Color(0xFF26262f),
+      underline: SizedBox.shrink(),
       isDense: true,
-      style: const TextStyle(color: Colors.white70, fontSize: 13),
+      style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
       items: [
         for (final e in entries.entries)
           DropdownMenuItem(value: e.key, child: Text(e.value)),

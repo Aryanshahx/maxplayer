@@ -1,3 +1,4 @@
+import 'home_menu_screen.dart';
 import 'appearance_screen.dart';
 import 'language_screen.dart';
 import '../utils/app_language.dart';
@@ -13,7 +14,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../utils/config.dart';
 
-import '../app_info.dart';
 import '../theme.dart';
 import '../utils/collections.dart';
 import '../utils/crash_log.dart';
@@ -324,113 +324,69 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return list;
   }
 
+  bool _menuOpening = false;
   Future<void> _showHomeMenu() async {
-    final action = await Navigator.of(context).push<_MenuAction>(
-      MaterialPageRoute(
-        builder: (ctx) => Scaffold(
-          appBar: AppBar(title: Text('Settings and more')),
-          body: ListView(
-            children: [
-              for (final entry in <(_MenuAction, IconData, String)>[
-                (
-                  _MenuAction.appearance,
-                  Icons.brightness_6_outlined,
-                  'Appearance',
-                ),
-                (_MenuAction.language, Icons.language, 'Language'),
-                (_MenuAction.display, Icons.tune_rounded, 'Display settings'),
-                (
-                  _MenuAction.stats,
-                  Icons.bar_chart_rounded,
-                  'Watch statistics',
-                ),
-                (_MenuAction.manual, Icons.menu_book_outlined, 'User manual'),
-                (
-                  _MenuAction.about,
-                  Icons.info_outline_rounded,
-                  'About Max Player',
-                ),
-                (
-                  _MenuAction.privacy,
-                  Icons.privacy_tip_outlined,
-                  'Privacy policy',
-                ),
-                (_MenuAction.report, Icons.flag_outlined, 'Report a problem'),
-                (
-                  _MenuAction.instagram,
-                  Icons.camera_alt_outlined,
-                  'Follow on Instagram',
-                ),
-              ])
-                ListTile(
-                  leading: Icon(entry.$2),
-                  title: LText(entry.$3),
-                  trailing: Icon(Icons.chevron_right),
-                  onTap: () => Navigator.pop(ctx, entry.$1),
-                ),
-              Padding(
-                padding: EdgeInsets.all(20),
-                child: Text(
-                  'Version $kAppVersion',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
+    if (_menuOpening) return;
+    _menuOpening = true;
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => HomeMenuScreen(
+            onSelected: (menuContext, action) =>
+                _openMenu(_MenuAction.values.byName(action), from: menuContext),
           ),
         ),
-      ),
-    );
-    if (mounted && action != null) _openMenu(action);
+      );
+    } finally {
+      _menuOpening = false;
+    }
   }
 
-  void _openMenu(_MenuAction a) {
+  Future<void> _openMenu(_MenuAction a, {required BuildContext from}) async {
+    final context = from;
     switch (a) {
       case _MenuAction.appearance:
-        Navigator.of(
+        await Navigator.of(
           context,
         ).push(MaterialPageRoute(builder: (_) => AppearanceScreen()));
         break;
       case _MenuAction.language:
-        Navigator.of(
+        await Navigator.of(
           context,
         ).push(MaterialPageRoute(builder: (_) => LanguageScreen()));
         break;
       case _MenuAction.display:
-        Navigator.of(context)
+        await Navigator.of(context)
             .push(MaterialPageRoute(builder: (_) => DisplaySettingsScreen()))
             .then((_) => _refresh());
         break;
       case _MenuAction.stats:
-        Navigator.of(context)
+        await Navigator.of(context)
             .push(MaterialPageRoute(builder: (_) => StatisticsScreen()))
             .then((_) => _refresh());
         break;
       case _MenuAction.manual:
-        UserManualSheet.show(context);
+        await UserManualSheet.show(context);
         break;
       case _MenuAction.about:
-        AboutSheet.show(context);
+        await AboutSheet.show(context);
         break;
       case _MenuAction.privacy:
-        showPrivacyPolicyDialog(context);
+        await showPrivacyPolicyDialog(context);
         break;
       case _MenuAction.report:
-        unawaited(
-          launchUrl(
-            Uri.parse(
-              'mailto:$kMaxReportEmail'
-              '?subject=${Uri.encodeComponent('Max Player — report & feedback')}',
-            ),
-            mode: LaunchMode.externalApplication,
+        await launchUrl(
+          Uri.parse(
+            'mailto:$kMaxReportEmail'
+            '?subject=${Uri.encodeComponent('Max Player — report & feedback')}',
           ),
+          mode: LaunchMode.externalApplication,
         );
         break;
       case _MenuAction.instagram:
-        unawaited(
-          launchUrl(
-            Uri.parse(kMaxInstagramUrl),
-            mode: LaunchMode.externalApplication,
-          ),
+        await launchUrl(
+          Uri.parse(kMaxInstagramUrl),
+          mode: LaunchMode.externalApplication,
         );
         break;
     }

@@ -112,6 +112,7 @@ class _SearchScreenState extends State<SearchScreen> {
         titleSpacing: 0,
         title: RecentSearchField(
           scope: 'library',
+          showHistory: false,
           controller: _ctrl,
           autofocus: true,
           onChanged: _onChanged,
@@ -135,68 +136,85 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
       ),
-      body: _query.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.search_rounded,
-                    size: 46,
-                    color: AppColors.textSecondary,
-                  ),
-                  SizedBox(height: 12),
-                  LText(
-                    'Type to search every video on this device',
-                    style: TextStyle(color: AppColors.textSecondary),
-                  ),
-                  if (_loadingMore) ...[
-                    SizedBox(height: 10),
-                    Text(
-                      'Indexing… ${_all.length} scanned',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            )
-          : results.isEmpty
-          ? Center(
-              child: Text(
-                _loadingMore ? 'Searching…' : 'Nothing matches "$_query"',
-                style: TextStyle(color: AppColors.textSecondary),
-              ),
-            )
-          : Column(
-              children: [
-                Padding(
-                  padding: EdgeInsets.fromLTRB(16, 8, 16, 2),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '${results.length} result(s)',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: VideoGrid(
-                    videos: results,
-                    listMode: s.viewMode == ViewMode.list,
-                    onChanged: () async {
-                      _priv = await LocalStore().privateIds();
-                      if (mounted) setState(() {});
-                    },
-                  ),
-                ),
-              ],
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: RecentSearchHistory(
+              scope: 'library',
+              controller: _ctrl,
+              onSelected: (value) {
+                _ctrl.text = value;
+                _onChanged(value);
+              },
             ),
+          ),
+          Expanded(
+            child: _query.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.search_rounded,
+                          size: 46,
+                          color: AppColors.textSecondary,
+                        ),
+                        SizedBox(height: 12),
+                        LText(
+                          'Type to search every video on this device',
+                          style: TextStyle(color: AppColors.textSecondary),
+                        ),
+                        if (_loadingMore) ...[
+                          SizedBox(height: 10),
+                          Text(
+                            'Indexing… ${_all.length} scanned',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  )
+                : results.isEmpty
+                ? Center(
+                    child: Text(
+                      _loadingMore ? 'Searching…' : 'Nothing matches "$_query"',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  )
+                : Column(
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(16, 8, 16, 2),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '${results.length} result(s)',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: VideoGrid(
+                          videos: results,
+                          listMode: s.viewMode == ViewMode.list,
+                          onChanged: () async {
+                            _priv = await LocalStore().privateIds();
+                            if (mounted) setState(() {});
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }

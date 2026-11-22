@@ -75,7 +75,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
       result = await _client.browse(widget.filter, page: page);
     } catch (e) {
       CrashLog.error('category.load_failed', e, {'page': page});
-      result = const TmdbPage();
+      result = TmdbPage();
     }
     _loading = false;
     if (!mounted) return;
@@ -112,24 +112,24 @@ class _CategoryScreenState extends State<CategoryScreen> {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF0a0a10),
+      backgroundColor: AppColors.surface,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // header
             Padding(
-              padding: const EdgeInsets.fromLTRB(4, 6, 14, 10),
+              padding: EdgeInsets.fromLTRB(4, 6, 14, 10),
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.arrow_back_rounded,
-                      color: Colors.white,
+                      color: AppColors.textPrimary,
                     ),
                     onPressed: () => Navigator.of(context).maybePop(),
                   ),
-                  const SizedBox(width: 2),
+                  SizedBox(width: 2),
                   Container(
                     width: 11,
                     height: 11,
@@ -138,14 +138,14 @@ class _CategoryScreenState extends State<CategoryScreen> {
                       borderRadius: BorderRadius.circular(2.5),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       widget.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
                         fontSize: 17,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 0.3,
@@ -158,7 +158,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
             if (_loading && _items.isNotEmpty)
               LinearProgressIndicator(
                 color: AppColors.accent,
-                backgroundColor: Colors.white10,
+                backgroundColor: AppColors.border,
                 minHeight: 2,
               ),
             Expanded(
@@ -167,38 +167,37 @@ class _CategoryScreenState extends State<CategoryScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.wifi_off_rounded,
-                            color: Colors.white38,
+                            color: AppColors.textSecondary,
                             size: 30,
                           ),
-                          const SizedBox(height: 10),
-                          const LText(
+                          SizedBox(height: 10),
+                          LText(
                             'Could not load this category',
-                            style: TextStyle(color: Colors.white54),
+                            style: TextStyle(color: AppColors.textSecondary),
                           ),
-                          const SizedBox(height: 12),
+                          SizedBox(height: 12),
                           FilledButton(
                             onPressed: () => unawaited(_load(1)),
-                            child: const LText('Retry'),
+                            child: LText('Retry'),
                           ),
                         ],
                       ),
                     )
                   : _items.isEmpty
-                  ? const Center(
-                      child: CircularProgressIndicator(color: Colors.white24),
+                  ? Center(
+                      child: CircularProgressIndicator(color: AppColors.border),
                     )
                   : GridView.builder(
                       controller: _scroll,
-                      padding: const EdgeInsets.fromLTRB(14, 4, 14, 18),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            childAspectRatio: 0.56,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 12,
-                          ),
+                      padding: EdgeInsets.fromLTRB(14, 4, 14, 18),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        childAspectRatio: 0.56,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 12,
+                      ),
                       itemCount: _items.length,
                       itemBuilder: (context, i) =>
                           _CategoryCard(movie: _items[i], onTap: _open),
@@ -236,30 +235,27 @@ class _CategoryCard extends StatelessWidget {
                 child: SizedBox(
                   width: double.infinity,
                   child: poster.isEmpty
-                      ? const ColoredBox(color: Color(0xFF17171d))
+                      ? ColoredBox(color: AppColors.surface)
                       : TmdbImage(url: poster, fit: BoxFit.cover),
                 ),
               ),
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: 6),
             Text(
               movie.title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AppColors.textPrimary,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
                 height: 1.2,
               ),
             ),
-            const SizedBox(height: 2),
+            SizedBox(height: 2),
             Text(
               '${movie.year ?? '—'}',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
-                fontSize: 10,
-              ),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
             ),
           ],
         ),

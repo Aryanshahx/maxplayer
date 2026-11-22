@@ -24,14 +24,23 @@ class AppColors {
   static set accent(Color value) => _accent = value;
   // The default white accent becomes charcoal in light mode for contrast.
   static Color get accent => adaptiveAccent(_accent, brightness);
-  static Color get danger => const Color(0xFFE5484D);
+  static Color get mediaAccent => _accent;
+  static Color get mediaOnAccent => contrastForeground(_accent);
+  static Color get danger =>
+      isDark ? const Color(0xFFFF7A80) : const Color(0xFFB4232B);
+  static Color get rating =>
+      isDark ? const Color(0xFFFFD66B) : const Color(0xFF805000);
 
   /// Text/icon colour that stays readable ON TOP of [accent]
   /// (black for the white accent, white for colours).
-  static Color get onAccent =>
-      ThemeData.estimateBrightnessForColor(accent) == Brightness.light
-      ? const Color(0xFF0B0B0E)
-      : Colors.white;
+  static Color get onAccent => contrastForeground(accent);
+}
+
+Color contrastForeground(Color background) {
+  final luminance = background.computeLuminance();
+  return (1.05 / (luminance + .05)) >= ((luminance + .05) / .05)
+      ? Colors.white
+      : Colors.black;
 }
 
 Color adaptiveAccent(Color raw, Brightness brightness) {
@@ -52,17 +61,36 @@ ThemeData buildAppTheme({
   final dark = brightness == Brightness.dark;
   final raw = accent ?? AppColors.accent;
   final ac = adaptiveAccent(raw, brightness);
-  final onAc = ThemeData.estimateBrightnessForColor(ac) == Brightness.light
-      ? const Color(0xFF0B0B0E)
-      : Colors.white;
+  final onAc = contrastForeground(ac);
   final background = dark ? const Color(0xFF060608) : const Color(0xFFF7F8FA);
   final surface = dark ? const Color(0xFF101013) : Colors.white;
   final text = dark ? const Color(0xFFF5F6F8) : const Color(0xFF181A20);
   final border = dark ? const Color(0xFF26262C) : const Color(0xFFD3D7DE);
-  final scheme = ColorScheme.fromSeed(
-    seedColor: ac,
-    brightness: brightness,
-  ).copyWith(primary: ac, onPrimary: onAc, surface: surface, onSurface: text);
+  final scheme = ColorScheme.fromSeed(seedColor: ac, brightness: brightness)
+      .copyWith(
+        primary: ac,
+        onPrimary: onAc,
+        surface: surface,
+        onSurface: text,
+        surfaceTint: Colors.transparent,
+        surfaceContainerLowest: background,
+        surfaceContainerLow: surface,
+        surfaceContainer: dark
+            ? const Color(0xFF18181C)
+            : const Color(0xFFF0F1F4),
+        surfaceContainerHigh: dark
+            ? const Color(0xFF202024)
+            : const Color(0xFFE8EAEE),
+        surfaceContainerHighest: dark
+            ? const Color(0xFF29292F)
+            : const Color(0xFFE0E3E8),
+        onSurfaceVariant: dark
+            ? const Color(0xFFACAFB8)
+            : const Color(0xFF535965),
+        outline: dark ? const Color(0xFF777B85) : const Color(0xFF737986),
+        outlineVariant: border,
+        error: dark ? const Color(0xFFFF7A80) : const Color(0xFFB4232B),
+      );
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
@@ -82,10 +110,19 @@ ThemeData buildAppTheme({
         side: BorderSide(color: border),
       ),
     ),
+    iconTheme: IconThemeData(color: text),
+    listTileTheme: ListTileThemeData(textColor: text, iconColor: text),
+    chipTheme: ChipThemeData(
+      backgroundColor: scheme.surfaceContainerLow,
+      selectedColor: scheme.surfaceContainerHighest,
+      labelStyle: TextStyle(color: text),
+      side: BorderSide(color: border),
+    ),
     dividerTheme: DividerThemeData(color: border),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: surface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       hintStyle: TextStyle(
         color: dark ? Colors.white54 : const Color(0xFF535965),
       ),

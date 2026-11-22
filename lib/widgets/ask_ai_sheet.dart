@@ -7,7 +7,7 @@ import '../utils/ai.dart';
 import '../utils/tmdb.dart';
 
 /// One-tap question templates for the Ask AI sheet.
-const List<String> kMovieAiTemplates = [
+final List<String> kMovieAiTemplates = [
   'Is this movie worth watching?',
   'Explain the story in 3 lines.',
   'Best movies like this one',
@@ -27,13 +27,14 @@ class AskAiSheet extends StatefulWidget {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1a1a24),
-      shape: const RoundedRectangleBorder(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetContext) => Padding(
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(sheetContext).bottom),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+        ),
         child: DraggableScrollableSheet(
           expand: false,
           initialChildSize: 0.7,
@@ -88,11 +89,11 @@ class _AskAiSheetState extends State<AskAiSheet> {
   }
 
   String _systemPrompt() => buildMovieSystemPrompt(
-        title: widget.movie.title,
-        year: '${widget.movie.year ?? ''}',
-        rating: widget.movie.rating,
-        overview: widget.movie.overview,
-      );
+    title: widget.movie.title,
+    year: '${widget.movie.year ?? ''}',
+    rating: widget.movie.rating,
+    overview: widget.movie.overview,
+  );
 
   Future<void> _ask(String question) async {
     final q = question.trim();
@@ -118,7 +119,7 @@ class _AskAiSheetState extends State<AskAiSheet> {
       if (!result.ok) {
         _error = result.error.startsWith('config')
             ? 'Ask AI needs an OpenRouter key. Add OPENROUTER_API_KEY as a '
-                'GitHub secret and rebuild — no code change needed.'
+                  'GitHub secret and rebuild — no code change needed.'
             : result.error;
       } else {
         _answer = result.text;
@@ -128,7 +129,9 @@ class _AskAiSheetState extends State<AskAiSheet> {
           p.setString('movie_ai_${widget.movie.id}_last_q', q);
           p.setString('movie_ai_${widget.movie.id}_last_a', result.text);
           p.setString(
-              'movie_ai_${widget.movie.id}_last_m', _answerModel ?? aiModel);
+            'movie_ai_${widget.movie.id}_last_m',
+            _answerModel ?? aiModel,
+          );
         });
       }
     });
@@ -139,7 +142,7 @@ class _AskAiSheetState extends State<AskAiSheet> {
     Theme.of(context);
     final accent = AppColors.accent;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+      padding: EdgeInsets.fromLTRB(16, 10, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -149,23 +152,23 @@ class _AskAiSheetState extends State<AskAiSheet> {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: AppColors.border,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Row(
             children: [
               Icon(Icons.auto_awesome, color: accent, size: 20),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Ask AI about "${widget.movie.title}"',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                   ),
@@ -173,15 +176,15 @@ class _AskAiSheetState extends State<AskAiSheet> {
               ),
             ],
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           LText(
             'Ask about the plot, characters, ending, recommendations or trivia.',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.45),
+              color: AppColors.textPrimary.withValues(alpha: 0.45),
               fontSize: 11,
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -190,19 +193,16 @@ class _AskAiSheetState extends State<AskAiSheet> {
                 GestureDetector(
                   onTap: _asking ? null : () => _ask(t),
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: accent.withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: accent.withValues(alpha: 0.35),
-                      ),
+                      border: Border.all(color: accent.withValues(alpha: 0.35)),
                     ),
                     child: Text(
                       t,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85),
+                        color: AppColors.textPrimary,
                         fontSize: 12,
                       ),
                     ),
@@ -210,7 +210,7 @@ class _AskAiSheetState extends State<AskAiSheet> {
                 ),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -221,13 +221,13 @@ class _AskAiSheetState extends State<AskAiSheet> {
                   maxLines: 3,
                   textInputAction: TextInputAction.send,
                   onSubmitted: _ask,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
                   decoration: LInputDecoration(
                     isDense: true,
                     hintText: 'Your own movie question...',
-                    hintStyle: const TextStyle(color: Colors.white38),
+                    hintStyle: TextStyle(color: AppColors.textSecondary),
                     filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.06),
+                    fillColor: AppColors.textPrimary.withValues(alpha: 0.06),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
@@ -235,58 +235,57 @@ class _AskAiSheetState extends State<AskAiSheet> {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               FilledButton(
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: AppColors.onAccent,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 12),
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
                 onPressed: _asking ? null : () => _ask(_questionCtrl.text),
                 child: _asking
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 16,
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const LText('Ask'),
+                    : LText('Ask'),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           if (_asking) const _ThinkingAnimation(),
           if (_error != null)
             Text(
               _error!,
-              style: const TextStyle(
-                  color: Colors.orangeAccent, fontSize: 12, height: 1.4),
+              style: TextStyle(
+                color: Colors.orangeAccent,
+                fontSize: 12,
+                height: 1.4,
+              ),
             ),
           if (_answer != null) ...[
             ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 240),
+              constraints: BoxConstraints(maxHeight: 240),
               child: SingleChildScrollView(
                 child: SelectableText(
                   _answer!,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
                     fontSize: 14,
                     height: 1.55,
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Text(
               _answerModel == 'saved'
                   ? 'Saved answer - instant, works offline'
                   : _answerModel == 'Max AI'
-                      ? _localLabel()
-                      : 'Answer by AI (${_answerModel!.split('/').last.split(':').first})',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.35),
-                fontSize: 10,
-              ),
+                  ? _localLabel()
+                  : 'Answer by AI (${_answerModel!.split('/').last.split(':').first})',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
             ),
           ],
         ],
@@ -316,7 +315,7 @@ class _ThinkingAnimationState extends State<_ThinkingAnimation>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: Duration(milliseconds: 1200),
     )..repeat();
   }
 
@@ -332,7 +331,7 @@ class _ThinkingAnimationState extends State<_ThinkingAnimation>
     final accent = AppColors.accent;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        padding: EdgeInsets.symmetric(vertical: 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -340,18 +339,18 @@ class _ThinkingAnimationState extends State<_ThinkingAnimation>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.auto_awesome, color: accent, size: 18),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 LText(
                   'AI is thinking…',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.85),
+                    color: AppColors.textPrimary,
                     fontSize: 13.5,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            SizedBox(height: 10),
             AnimatedBuilder(
               animation: _ctrl,
               builder: (context, _) {
@@ -363,7 +362,7 @@ class _ThinkingAnimationState extends State<_ThinkingAnimation>
                     final scale =
                         0.5 + 0.5 * (val < 0.5 ? val * 2 : (1 - val) * 2);
                     return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      margin: EdgeInsets.symmetric(horizontal: 4),
                       width: 8,
                       height: 8,
                       transform: Matrix4.diagonal3Values(scale, scale, 1.0),

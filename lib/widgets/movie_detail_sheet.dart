@@ -50,8 +50,8 @@ class MovieDetailSheet extends StatefulWidget {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF14141c),
-      shape: const RoundedRectangleBorder(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetContext) => DraggableScrollableSheet(
@@ -353,13 +353,13 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
         ),
         if (variants.length > 1)
           Padding(
-            padding: const EdgeInsets.only(bottom: 6),
+            padding: EdgeInsets.only(bottom: 6),
             child: SizedBox(
               height: 30,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: variants.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 6),
+                separatorBuilder: (_, _) => SizedBox(width: 6),
                 itemBuilder: (context, i) {
                   final v = variants[i];
                   final selected = v.key == selectedKey;
@@ -367,7 +367,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                     selected: selected,
                     onSelected: (_) => _selectVariant(v),
                     visualDensity: VisualDensity.compact,
-                    labelPadding: const EdgeInsets.symmetric(
+                    labelPadding: EdgeInsets.symmetric(
                       horizontal: 8,
                       vertical: -2,
                     ),
@@ -376,17 +376,21 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: selected ? AppColors.onAccent : Colors.white70,
+                        color: selected
+                            ? AppColors.onAccent
+                            : AppColors.textSecondary,
                       ),
                     ),
                     selectedColor: AppColors.accent,
-                    backgroundColor: Colors.white.withValues(alpha: 0.06),
+                    backgroundColor: AppColors.textPrimary.withValues(
+                      alpha: 0.06,
+                    ),
                   );
                 },
               ),
             ),
           ),
-        const SizedBox(height: 6),
+        SizedBox(height: 6),
       ],
     );
   }
@@ -405,7 +409,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
     final isTv = movie.kind == 'tv';
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -416,12 +420,12 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: AppColors.border,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
-            const SizedBox(height: 14),
+            SizedBox(height: 14),
           ],
 
           // v1.0.1+32: TRAILER CARD AT THE TOP of the details — tapping
@@ -431,7 +435,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
             future: _detailFuture,
             builder: (context, snap) {
               final detailMovie = snap.data?.movie;
-              if (detailMovie == null) return const SizedBox.shrink();
+              if (detailMovie == null) return SizedBox.shrink();
               return _inlineTrailerCard(detailMovie);
             },
           ),
@@ -450,25 +454,25 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                   ),
                 ),
               ),
-              const SizedBox(width: 14),
+              SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       movie.title,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                         height: 1.25,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    SizedBox(height: 6),
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(
+                          padding: EdgeInsets.symmetric(
                             horizontal: 6,
                             vertical: 2,
                           ),
@@ -488,20 +492,20 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        SizedBox(width: 8),
                         if (movie.year != null)
                           Text(
                             '${movie.year}',
-                            style: const TextStyle(
-                              color: Colors.white70,
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
                               fontSize: 13,
                             ),
                           ),
-                        const SizedBox(width: 8),
+                        SizedBox(width: 8),
                         Text(
                           '⭐ ${tmdbRatingText(movie.rating)} / 10',
-                          style: const TextStyle(
-                            color: Colors.amberAccent,
+                          style: TextStyle(
+                            color: AppColors.rating,
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                           ),
@@ -514,7 +518,7 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
             ],
           ),
 
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
 
           // Action Buttons: Ask AI (the trailer lives in the top card).
           Row(
@@ -532,8 +536,8 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
                     ),
                   ),
                   onPressed: () => AskAiSheet.show(context, movie: movie),
-                  icon: const Icon(Icons.auto_awesome, size: 16),
-                  label: const LText(
+                  icon: Icon(Icons.auto_awesome, size: 16),
+                  label: LText(
                     'Ask AI',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
@@ -543,13 +547,15 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
           ),
 
           if (widget.localMatch != null) ...[
-            const SizedBox(height: 10),
+            SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
               child: FilledButton.tonalIcon(
                 style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white.withValues(alpha: 0.08),
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppColors.textPrimary.withValues(
+                    alpha: 0.08,
+                  ),
+                  foregroundColor: AppColors.textPrimary,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -565,14 +571,14 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
             ),
           ],
 
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
 
           // Main Details Content
           FutureBuilder<TmdbFull?>(
             future: _detailFuture,
             builder: (context, snap) {
               if (snap.connectionState != ConnectionState.done) {
-                return const Padding(
+                return Padding(
                   padding: EdgeInsets.symmetric(vertical: 20),
                   child: Center(child: CircularProgressIndicator()),
                 );
@@ -580,18 +586,21 @@ class _MovieDetailSheetState extends State<MovieDetailSheet> {
               final full = snap.data;
               if (full == null) {
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: EdgeInsets.symmetric(vertical: 8),
                   child: Row(
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: LText(
                           'Details could not load. Check network connection.',
-                          style: TextStyle(color: Colors.white38, fontSize: 12),
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                       TextButton(
                         onPressed: _retryDetail,
-                        child: const LText('Retry'),
+                        child: LText('Retry'),
                       ),
                     ],
                   ),
@@ -636,13 +645,13 @@ class _ScreenshotsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 8),
+      padding: EdgeInsets.only(top: 10, bottom: 8),
       child: SizedBox(
         height: 106,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           itemCount: paths.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          separatorBuilder: (_, _) => SizedBox(width: 8),
           itemBuilder: (context, i) => ClipRRect(
             borderRadius: BorderRadius.circular(10),
             child: SizedBox(
@@ -674,17 +683,17 @@ class _DetailedStoryBlock extends StatelessWidget {
     ];
 
     return Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 8),
+      padding: EdgeInsets.only(top: 12, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (extras.tagline.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: EdgeInsets.only(bottom: 8),
               child: Text(
                 '"${extras.tagline}"',
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: AppColors.textSecondary,
                   fontSize: 13.5,
                   fontStyle: FontStyle.italic,
                   height: 1.4,
@@ -693,34 +702,37 @@ class _DetailedStoryBlock extends StatelessWidget {
             ),
           if (meta.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: EdgeInsets.only(bottom: 8),
               child: Text(
                 meta.join('  ·  '),
-                style: const TextStyle(color: Colors.white60, fontSize: 12.5),
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12.5,
+                ),
               ),
             ),
           if (extras.genres.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(bottom: 10),
+              padding: EdgeInsets.only(bottom: 10),
               child: Wrap(
                 spacing: 6,
                 runSpacing: 6,
                 children: [
                   for (final g in extras.genres)
                     Container(
-                      padding: const EdgeInsets.symmetric(
+                      padding: EdgeInsets.symmetric(
                         horizontal: 10,
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
+                        color: AppColors.textPrimary.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.white12),
+                        border: Border.all(color: AppColors.border),
                       ),
                       child: Text(
                         g,
-                        style: const TextStyle(
-                          color: Colors.white70,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
                           fontSize: 11.5,
                         ),
                       ),
@@ -728,32 +740,32 @@ class _DetailedStoryBlock extends StatelessWidget {
                 ],
               ),
             ),
-          const LText(
+          LText(
             'Storyline',
             style: TextStyle(
-              color: Colors.white,
+              color: AppColors.textPrimary,
               fontSize: 15,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: 6),
           Text(
             movie.overview.isNotEmpty
                 ? movie.overview
                 : 'No full synopsis available for this title.',
-            style: const TextStyle(
-              color: Colors.white70,
+            style: TextStyle(
+              color: AppColors.textSecondary,
               fontSize: 13,
               height: 1.5,
             ),
           ),
           if (extras.director.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 8),
+              padding: EdgeInsets.only(top: 8),
               child: Text(
                 'Director: ${extras.director}',
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: AppColors.textSecondary,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
                 ),
@@ -773,27 +785,27 @@ class _TopCastSlider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
-    if (cast.isEmpty) return const SizedBox.shrink();
+    if (cast.isEmpty) return SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: EdgeInsets.symmetric(vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const LText(
+          LText(
             'Top Cast',
             style: TextStyle(
-              color: Colors.white,
+              color: AppColors.textPrimary,
               fontSize: 15,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           SizedBox(
             height: 124,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: cast.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              separatorBuilder: (_, _) => SizedBox(width: 12),
               itemBuilder: (context, i) {
                 final c = cast[i];
                 return SizedBox(
@@ -818,23 +830,23 @@ class _TopCastSlider extends StatelessWidget {
                                       'https://image.tmdb.org/t/p/w185${c.profilePath}',
                                 )
                               : Container(
-                                  color: Colors.white12,
-                                  child: const Icon(
+                                  color: AppColors.border,
+                                  child: Icon(
                                     Icons.person,
-                                    color: Colors.white38,
+                                    color: AppColors.textSecondary,
                                     size: 32,
                                   ),
                                 ),
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      SizedBox(height: 6),
                       Text(
                         c.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                         ),
@@ -845,8 +857,8 @@ class _TopCastSlider extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white38,
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
                             fontSize: 10,
                           ),
                         ),
@@ -914,25 +926,25 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
     );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: EdgeInsets.symmetric(vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Seasons & Episodes (${seasons.length} Seasons, $totalEps Episodes)',
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.textPrimary,
               fontSize: 15,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           SizedBox(
             height: 38,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: seasons.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              separatorBuilder: (_, _) => SizedBox(width: 8),
               itemBuilder: (context, i) {
                 final s = seasons[i];
                 final isSelected = s.number == _selectedSeason;
@@ -944,31 +956,35 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                   selected: isSelected,
                   selectedColor: AppColors.accent,
                   labelStyle: TextStyle(
-                    color: isSelected ? AppColors.onAccent : Colors.white70,
+                    color: isSelected
+                        ? AppColors.onAccent
+                        : AppColors.textSecondary,
                     fontSize: 12,
                     fontWeight: isSelected
                         ? FontWeight.bold
                         : FontWeight.normal,
                   ),
-                  backgroundColor: Colors.white.withValues(alpha: 0.06),
+                  backgroundColor: AppColors.textPrimary.withValues(
+                    alpha: 0.06,
+                  ),
                   side: BorderSide(
-                    color: isSelected ? AppColors.accent : Colors.white12,
+                    color: isSelected ? AppColors.accent : AppColors.border,
                   ),
                   onSelected: (_) => _loadSeasonDetail(s.number),
                 );
               },
             ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           if (!_loadingSeason && _seasonDetail != null)
             Container(
               width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(11),
+              margin: EdgeInsets.only(bottom: 10),
+              padding: EdgeInsets.all(11),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: AppColors.textPrimary.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(11),
-                border: Border.all(color: Colors.white10),
+                border: Border.all(color: AppColors.border),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -980,8 +996,8 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                           _seasonDetail!.name.isNotEmpty
                               ? _seasonDetail!.name
                               : 'Season $_selectedSeason',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
                           ),
@@ -990,8 +1006,8 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                       if (_seasonDetail!.rating > 0)
                         Text(
                           '⭐ ${_seasonDetail!.rating.toStringAsFixed(1)} / 10',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
@@ -999,11 +1015,11 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                     ],
                   ),
                   if (_seasonDetail!.overview.isNotEmpty) ...[
-                    const SizedBox(height: 5),
+                    SizedBox(height: 5),
                     Text(
                       _seasonDetail!.overview,
-                      style: const TextStyle(
-                        color: Colors.white60,
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
                         fontSize: 11.5,
                         height: 1.4,
                       ),
@@ -1013,7 +1029,7 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
               ),
             ),
           if (_loadingSeason)
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(16),
               child: Center(
                 child: SizedBox(
@@ -1026,10 +1042,10 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
           else if (_seasonDetail != null && _seasonDetail!.episodes.isNotEmpty)
             ListView.separated(
               shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
+              physics: NeverScrollableScrollPhysics(),
               itemCount: _seasonDetail!.episodes.length,
               separatorBuilder: (_, _) =>
-                  const Divider(height: 1, color: Colors.white10),
+                  Divider(height: 1, color: AppColors.border),
               itemBuilder: (context, i) {
                 final ep = _seasonDetail!.episodes[i];
                 final ratingText = ep.rating > 0
@@ -1044,7 +1060,7 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                 ].join('  ·  ');
 
                 return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: EdgeInsets.symmetric(vertical: 8),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1065,20 +1081,22 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                           width: 84,
                           height: 52,
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.05),
+                            color: AppColors.textPrimary.withValues(
+                              alpha: 0.05,
+                            ),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Center(
                             child: Text(
                               'E${ep.episodeNumber}',
-                              style: const TextStyle(
-                                color: Colors.white38,
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                           ),
                         ),
-                      const SizedBox(width: 10),
+                      SizedBox(width: 10),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1087,30 +1105,30 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
                               '${ep.episodeNumber}. ${ep.name}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             if (metaLine.isNotEmpty)
                               Padding(
-                                padding: const EdgeInsets.only(top: 2),
+                                padding: EdgeInsets.only(top: 2),
                                 child: Text(
                                   metaLine,
-                                  style: const TextStyle(
-                                    color: Colors.amberAccent,
+                                  style: TextStyle(
+                                    color: AppColors.rating,
                                     fontSize: 11,
                                   ),
                                 ),
                               ),
                             if (ep.overview.isNotEmpty)
                               Padding(
-                                padding: const EdgeInsets.only(top: 3),
+                                padding: EdgeInsets.only(top: 3),
                                 child: Text(
                                   ep.overview,
-                                  style: const TextStyle(
-                                    color: Colors.white54,
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
                                     fontSize: 11.5,
                                     height: 1.3,
                                   ),
@@ -1126,10 +1144,10 @@ class _SeasonsBlockState extends State<_SeasonsBlock> {
             )
           else
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 '${currentSeasonInfo.episodes} episodes in ${currentSeasonInfo.name}',
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
               ),
             ),
         ],
@@ -1152,15 +1170,15 @@ class _WatchBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     Widget row(String label, List<String> names, Color color) {
-      if (names.isEmpty) return const SizedBox.shrink();
+      if (names.isEmpty) return SizedBox.shrink();
       return Padding(
-        padding: const EdgeInsets.only(bottom: 4),
+        padding: EdgeInsets.only(bottom: 4),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               width: 56,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.18),
                 borderRadius: BorderRadius.circular(6),
@@ -1175,12 +1193,12 @@ class _WatchBlock extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
             Expanded(
               child: Text(
                 names.join(' · '),
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: AppColors.textSecondary,
                   fontSize: 12,
                   height: 1.4,
                 ),
@@ -1192,22 +1210,34 @@ class _WatchBlock extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: EdgeInsets.symmetric(vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           LText(
             'Where to watch (India)',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.75),
+              color: AppColors.textSecondary,
               fontSize: 13,
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 6),
-          row('Stream', info.stream, const Color(0xFF4ade80)),
-          row('Rent', info.rent, const Color(0xFFfacc15)),
-          row('Buy', info.buy, const Color(0xFF60a5fa)),
+          SizedBox(height: 6),
+          row(
+            'Stream',
+            info.stream,
+            AppColors.isDark
+                ? const Color(0xFF4ade80)
+                : const Color(0xFF166534),
+          ),
+          row('Rent', info.rent, AppColors.rating),
+          row(
+            'Buy',
+            info.buy,
+            AppColors.isDark
+                ? const Color(0xFF60a5fa)
+                : const Color(0xFF1D4ED8),
+          ),
         ],
       ),
     );
@@ -1223,37 +1253,37 @@ class _ReviewsBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: EdgeInsets.symmetric(vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const LText(
+              LText(
                 'User Reviews',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Text(
                 '(${reviews.length})',
-                style: const TextStyle(color: Colors.white38, fontSize: 13),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           for (final r in reviews)
             Container(
               width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
+              margin: EdgeInsets.only(bottom: 8),
+              padding: EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: AppColors.textPrimary.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white10),
+                border: Border.all(color: AppColors.border),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1274,12 +1304,12 @@ class _ReviewsBlock extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           r.author.isNotEmpty ? r.author : 'TMDB User',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600,
                           ),
@@ -1287,7 +1317,7 @@ class _ReviewsBlock extends StatelessWidget {
                       ),
                       if (r.rating != null)
                         Container(
-                          padding: const EdgeInsets.symmetric(
+                          padding: EdgeInsets.symmetric(
                             horizontal: 6,
                             vertical: 2,
                           ),
@@ -1297,8 +1327,8 @@ class _ReviewsBlock extends StatelessWidget {
                           ),
                           child: Text(
                             '⭐ ${tmdbRatingText(r.rating!)}',
-                            style: const TextStyle(
-                              color: Colors.amberAccent,
+                            style: TextStyle(
+                              color: AppColors.rating,
                               fontSize: 10.5,
                               fontWeight: FontWeight.bold,
                             ),
@@ -1306,11 +1336,11 @@ class _ReviewsBlock extends StatelessWidget {
                         ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  SizedBox(height: 6),
                   Text(
                     r.text,
-                    style: const TextStyle(
-                      color: Colors.white70,
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
                       fontSize: 12,
                       height: 1.45,
                     ),
@@ -1333,7 +1363,7 @@ class _AllDataBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     Widget row(String l, String v) => Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: EdgeInsets.only(bottom: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1341,16 +1371,13 @@ class _AllDataBlock extends StatelessWidget {
             width: 85,
             child: Text(
               l,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
-                fontSize: 11.5,
-              ),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 11.5),
             ),
           ),
           Expanded(
             child: Text(
               v,
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
           ),
         ],
@@ -1358,7 +1385,7 @@ class _AllDataBlock extends StatelessWidget {
     );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: EdgeInsets.symmetric(vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1391,7 +1418,7 @@ Widget _trailerThumbImage(String key) {
     errorBuilder: (ctx, err, stack) => Image.network(
       'https://i.ytimg.com/vi/$key/hqdefault.jpg',
       fit: BoxFit.cover,
-      errorBuilder: (a, b, c) => const SizedBox.shrink(),
+      errorBuilder: (a, b, c) => SizedBox.shrink(),
     ),
   );
 }

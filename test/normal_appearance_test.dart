@@ -15,7 +15,7 @@ void main() {
     expect(AppColors.background.toARGB32(), 0xFF060608);
     expect(AppColors.surface.toARGB32(), 0xFF101013);
     expect(AppColors.textPrimary.toARGB32(), 0xFFF5F6F8);
-    expect(AppColors.danger.toARGB32(), 0xFFE5484D);
+    expect(AppColors.danger.toARGB32(), 0xFFFF7A80);
   });
   test('local accent remains supported with ordinary card shape', () {
     const accent = Color(0xFF55CCAA);

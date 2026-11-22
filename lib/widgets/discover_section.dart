@@ -1,3 +1,4 @@
+import '../theme.dart';
 import 'recent_search_field.dart';
 import '../utils/app_language.dart';
 
@@ -36,7 +37,7 @@ class DiscoverSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (AppConfig.tmdbToken.isEmpty) {
-      return const SizedBox.shrink();
+      return SizedBox.shrink();
     }
     return DiscoverBanner(onTap: () => DiscoverPage.open(context));
   }
@@ -114,7 +115,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
     // Instant first paint from the 24h disk cache, then network refresh.
     try {
       final cached = await _client.cachedBrowseFirstPage(_filter);
-      final items = cached?.items ?? const <TmdbMovie>[];
+      final items = cached?.items ?? <TmdbMovie>[];
       if (items.isNotEmpty && _browse.isEmpty && mounted) {
         setState(() {
           for (final m in items) {
@@ -154,9 +155,9 @@ class _DiscoverPageState extends State<DiscoverPage> {
     try {
       result = await _client
           .browse(_filter, page: page)
-          .timeout(const Duration(seconds: 15));
+          .timeout(Duration(seconds: 15));
     } catch (_) {
-      result = const TmdbPage();
+      result = TmdbPage();
     }
     _browseLoading = false;
     if (!mounted || epoch != _browseEpoch) return;
@@ -174,7 +175,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
 
   void _onSearchChanged(String v) {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () {
+    _debounce = Timer(Duration(milliseconds: 350), () {
       final q = v.trim();
       if (q != _query) _startSearch(q);
     });
@@ -216,9 +217,9 @@ class _DiscoverPageState extends State<DiscoverPage> {
     try {
       result = await _client
           .searchMulti(_query, page: page)
-          .timeout(const Duration(seconds: 15));
+          .timeout(Duration(seconds: 15));
     } catch (_) {
-      result = const TmdbPage();
+      result = TmdbPage();
     }
     _queryLoading = false;
     if (!mounted) return;
@@ -253,7 +254,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
         ..showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: LText('Microphone needed for voice search'),
             duration: Duration(milliseconds: 1800),
           ),
@@ -304,12 +305,23 @@ class _DiscoverPageState extends State<DiscoverPage> {
         ? (_queryTotalPages < 1 ? 1 : _queryTotalPages)
         : (_browseTotalPages < 1 ? 1 : _browseTotalPages);
     return Scaffold(
-      backgroundColor: const Color(0xFF0b0b12),
+      backgroundColor: AppColors.surface,
       body: SafeArea(
         child: Column(
           children: [
             _buildHeader(totalPages),
             _buildSearchBar(),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14),
+              child: RecentSearchHistory(
+                scope: 'discover',
+                controller: _searchCtrl,
+                onSelected: (value) {
+                  _searchCtrl.text = value;
+                  _onSearchChanged(value);
+                },
+              ),
+            ),
             _buildChips(),
             Expanded(
               child: NotificationListener<ScrollNotification>(
@@ -325,44 +337,47 @@ class _DiscoverPageState extends State<DiscoverPage> {
 
   Widget _buildHeader(int totalPages) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 10, 8, 6),
+      padding: EdgeInsets.fromLTRB(4, 10, 8, 6),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(
+            icon: Icon(
               Icons.arrow_back_rounded,
-              color: Colors.white,
+              color: AppColors.textPrimary,
               size: 24,
             ),
             onPressed: () => Navigator.of(context).maybePop(),
           ),
-          const SizedBox(width: 2),
+          SizedBox(width: 2),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const LText(
+                LText(
                   'Discover',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppColors.textPrimary,
                     fontSize: 25,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.2,
                   ),
                 ),
-                const SizedBox(height: 1),
+                SizedBox(height: 1),
                 Text(
                   catalogTitleCount(totalPages),
-                  style: const TextStyle(color: Colors.white38, fontSize: 11.5),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11.5,
+                  ),
                 ),
               ],
             ),
           ),
           IconButton(
             tooltip: 'AI Suggestor',
-            icon: const Icon(
+            icon: Icon(
               Icons.auto_awesome_rounded,
-              color: Colors.white,
+              color: AppColors.textPrimary,
               size: 21,
             ),
             onPressed: _aiSuggest,
@@ -374,26 +389,34 @@ class _DiscoverPageState extends State<DiscoverPage> {
 
   Widget _buildSearchBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 2, 14, 8),
+      padding: EdgeInsets.fromLTRB(14, 2, 14, 8),
       child: Container(
         height: 46,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFF1b1b26),
+          color: AppColors.surface,
           borderRadius: BorderRadius.circular(25),
         ),
         child: Row(
           children: [
-            const Icon(Icons.search_rounded, color: Colors.white54, size: 21),
-            const SizedBox(width: 9),
+            Icon(
+              Icons.search_rounded,
+              color: AppColors.textSecondary,
+              size: 21,
+            ),
+            SizedBox(width: 9),
             Expanded(
               child: RecentSearchField(
                 scope: 'discover',
+                showHistory: false,
                 controller: _searchCtrl,
-                style: const TextStyle(color: Colors.white, fontSize: 14.5),
-                decoration: const LInputDecoration(
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 14.5),
+                decoration: LInputDecoration(
                   hintText: 'Search movies & series…',
-                  hintStyle: TextStyle(color: Colors.white30, fontSize: 14),
+                  hintStyle: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 14,
+                  ),
                   border: InputBorder.none,
                   isDense: true,
                 ),
@@ -404,11 +427,11 @@ class _DiscoverPageState extends State<DiscoverPage> {
               InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: _clearSearch,
-                child: const Padding(
+                child: Padding(
                   padding: EdgeInsets.all(3),
                   child: Icon(
                     Icons.close_rounded,
-                    color: Colors.white54,
+                    color: AppColors.textSecondary,
                     size: 18,
                   ),
                 ),
@@ -418,19 +441,19 @@ class _DiscoverPageState extends State<DiscoverPage> {
                 borderRadius: BorderRadius.circular(12),
                 onTap: _startVoiceSearch,
                 child: Padding(
-                  padding: const EdgeInsets.all(3),
+                  padding: EdgeInsets.all(3),
                   child: _voiceSearching
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(
-                            color: Colors.white54,
+                            color: AppColors.textSecondary,
                             strokeWidth: 2,
                           ),
                         )
-                      : const Icon(
+                      : Icon(
                           Icons.mic_none_rounded,
-                          color: Colors.white70,
+                          color: AppColors.textSecondary,
                           size: 20,
                         ),
                 ),
@@ -446,29 +469,28 @@ class _DiscoverPageState extends State<DiscoverPage> {
       height: 42,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
+        padding: EdgeInsets.fromLTRB(14, 2, 14, 4),
         itemCount: kDiscoverFilters.length,
         itemBuilder: (context, i) {
           final f = kDiscoverFilters[i];
           final selected = f.key == _filter.key && !_searching;
           return Padding(
-            padding: const EdgeInsets.only(right: 8),
+            padding: EdgeInsets.only(right: 8),
             child: GestureDetector(
               onTap: () => _selectFilter(f),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
-                ),
+                duration: Duration(milliseconds: 160),
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 decoration: BoxDecoration(
-                  color: selected ? Colors.white : const Color(0xFF1b1b26),
+                  color: selected ? AppColors.accent : AppColors.surfaceAlt,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   f.label,
                   style: TextStyle(
-                    color: selected ? Colors.black : Colors.white70,
+                    color: selected
+                        ? AppColors.onAccent
+                        : AppColors.textSecondary,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -484,13 +506,13 @@ class _DiscoverPageState extends State<DiscoverPage> {
   Widget _buildBrowseGrid() {
     if (_browse.isEmpty && _browseLoading) return _buildSkeleton();
     if (_browse.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.all(28),
           child: LText(
             'Nothing to show yet — check the connection and pull to retry.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white38, fontSize: 13),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
         ),
       );
@@ -501,12 +523,12 @@ class _DiscoverPageState extends State<DiscoverPage> {
   Widget _buildSearchResults() {
     if (_results.isEmpty && _queryLoading) return _buildSkeleton();
     if (_results.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.all(28),
           child: LText(
             'No movies or series match that title.',
-            style: TextStyle(color: Colors.white38, fontSize: 13),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
         ),
       );
@@ -517,8 +539,8 @@ class _DiscoverPageState extends State<DiscoverPage> {
   Widget _buildGrid(List<TmdbMovie> movies, {required bool loadingMore}) {
     return GridView.builder(
       controller: _gridScroll,
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      padding: EdgeInsets.fromLTRB(14, 8, 14, 24),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         childAspectRatio: 0.56,
         mainAxisSpacing: 14,
@@ -527,12 +549,12 @@ class _DiscoverPageState extends State<DiscoverPage> {
       itemCount: movies.length + (loadingMore ? 1 : 0),
       itemBuilder: (context, i) {
         if (i >= movies.length) {
-          return const Center(
+          return Center(
             child: SizedBox(
               width: 22,
               height: 22,
               child: CircularProgressIndicator(
-                color: Colors.white24,
+                color: AppColors.border,
                 strokeWidth: 2.2,
               ),
             ),
@@ -552,9 +574,9 @@ class _DiscoverPageState extends State<DiscoverPage> {
   /// slots", never white cards (v1.0.1+20).
   Widget _buildSkeleton() {
     return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      padding: EdgeInsets.fromLTRB(14, 8, 14, 24),
+      physics: NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         childAspectRatio: 0.56,
         mainAxisSpacing: 14,
@@ -590,7 +612,7 @@ class DiscoverMovieCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF14141e),
+          color: AppColors.surface,
           borderRadius: BorderRadius.circular(14),
         ),
         clipBehavior: Clip.antiAlias,
@@ -601,14 +623,14 @@ class DiscoverMovieCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Container(color: const Color(0xFF1e1e2a)),
+                  Container(color: AppColors.surface),
                   if (posterUrl.isNotEmpty)
                     TmdbImage(url: posterUrl, fit: BoxFit.cover)
                   else
                     Center(
                       child: Icon(
                         Icons.movie_outlined,
-                        color: Colors.white.withValues(alpha: 0.15),
+                        color: AppColors.textPrimary.withValues(alpha: 0.15),
                         size: 34,
                       ),
                     ),
@@ -617,7 +639,7 @@ class DiscoverMovieCard extends StatelessWidget {
                       top: 7,
                       left: 7,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
+                        padding: EdgeInsets.symmetric(
                           horizontal: 6,
                           vertical: 3,
                         ),
@@ -628,16 +650,16 @@ class DiscoverMovieCard extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.star_rounded,
                               color: Color(0xFFFFC948),
                               size: 13,
                             ),
-                            const SizedBox(width: 2),
+                            SizedBox(width: 2),
                             Text(
                               tmdbRatingText(movie.rating),
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -650,7 +672,7 @@ class DiscoverMovieCard extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
+              padding: EdgeInsets.fromLTRB(8, 7, 8, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -659,20 +681,20 @@ class DiscoverMovieCard extends StatelessWidget {
                     movie.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  SizedBox(height: 2),
                   Text(
                     movie.year != null
                         ? '${movie.year}'
                         : (movie.kind == 'tv' ? 'Series' : ' '),
                     maxLines: 1,
-                    style: const TextStyle(
-                      color: Colors.white38,
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
                       fontSize: 10.5,
                     ),
                   ),
@@ -693,16 +715,16 @@ class _SkeletonCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF14141e),
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(14),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: Container(color: const Color(0xFF1e1e2a))),
+          Expanded(child: Container(color: AppColors.surface)),
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 7, 8, 8),
+            padding: EdgeInsets.fromLTRB(8, 7, 8, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -711,16 +733,16 @@ class _SkeletonCard extends StatelessWidget {
                   height: 11,
                   width: 110,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
+                    color: AppColors.textPrimary.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(5),
                   ),
                 ),
-                const SizedBox(height: 5),
+                SizedBox(height: 5),
                 Container(
                   height: 9,
                   width: 60,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                    color: AppColors.textPrimary.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),

@@ -6,7 +6,7 @@
 /// Public support + social endpoints (v1.0.1+46).
 const kMaxReportEmail = 'techlabs.hyper@gmail.com';
 const kMaxInstagramUrl =
-    'https://www.instagram.com/maxplayer_official?stkn=MWZpbjQxNWNqbWU0eQ==';
+    'https://www.instagram.com/maxplayer_official2026?evlk=MTR6NjljZGZtZ2NvdA==';
 const kMaxTelegramUrl = 'https://t.me/maxofficial_channel';
 
 class AppConfig {

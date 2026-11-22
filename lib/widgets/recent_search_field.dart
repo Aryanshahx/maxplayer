@@ -1,11 +1,10 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
-
 import '../utils/recent_searches.dart';
 
-/// A normal search TextField plus a maximum-three local history dropdown.
-/// Supports existing controllers/callbacks. No queries are sent to analytics.
+/// Search field with compact, in-layout history. No overlay, popup or follower.
+/// Fixed-height headers pass showHistory:false and place RecentSearchHistory
+/// in their scrollable body, so suggestions never cover nearby content.
 class RecentSearchField extends StatefulWidget {
   const RecentSearchField({
     super.key,
@@ -17,6 +16,7 @@ class RecentSearchField extends StatefulWidget {
     this.onChanged,
     this.onSubmitted,
     this.autofocus = false,
+    this.showHistory = true,
   });
   final String scope;
   final TextEditingController? controller;
@@ -24,56 +24,26 @@ class RecentSearchField extends StatefulWidget {
   final TextStyle? style;
   final InputDecoration decoration;
   final ValueChanged<String>? onChanged, onSubmitted;
-  final bool autofocus;
+  final bool autofocus, showHistory;
   @override
   State<RecentSearchField> createState() => _RecentSearchFieldState();
 }
 
 class _RecentSearchFieldState extends State<RecentSearchField> {
-  late final ownController = TextEditingController();
-  late final ownFocus = FocusNode();
+  final ownController = TextEditingController();
+  final ownFocus = FocusNode();
   TextEditingController get text => widget.controller ?? ownController;
   FocusNode get focus => widget.focusNode ?? ownFocus;
-  final portal = OverlayPortalController();
-  final link = LayerLink();
-  final fieldKey = GlobalKey();
-  List<String> recent = [];
   Timer? timer;
-  bool ready = false, pending = false;
   String lastQuery = '';
-  void _controllerChanged() {
-    if (lastQuery == text.text) return; // Caret changes are not new searches.
-    lastQuery = text.text;
-    pending = true;
-    if (mounted) {
-      setState(() {});
-      _visibility();
-    }
-  }
-
-  Future<void> writes = Future<void>.value();
+  bool pending = false;
+  int generation = 0;
   @override
   void initState() {
     super.initState();
     lastQuery = text.text;
     text.addListener(_controllerChanged);
     focus.addListener(_focusChanged);
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
-    try {
-      final values = await RecentSearches.load(widget.scope);
-      if (mounted) {
-        setState(() {
-          recent = values;
-          ready = true;
-        });
-        _visibility();
-      }
-    } catch (_) {
-      if (mounted) ready = true;
-    }
   }
 
   @override
@@ -81,8 +51,8 @@ class _RecentSearchFieldState extends State<RecentSearchField> {
     super.didUpdateWidget(old);
     if (old.controller != widget.controller) {
       (old.controller ?? ownController).removeListener(_controllerChanged);
-      text.addListener(_controllerChanged);
       lastQuery = text.text;
+      text.addListener(_controllerChanged);
     }
     if (old.focusNode != widget.focusNode) {
       (old.focusNode ?? ownFocus).removeListener(_focusChanged);
@@ -90,21 +60,13 @@ class _RecentSearchFieldState extends State<RecentSearchField> {
     }
   }
 
-  List<String> get suggestions => recent
-      .where(
-        (v) =>
-            text.text.trim().isEmpty ||
-            (v.toLowerCase().contains(text.text.trim().toLowerCase()) &&
-                v.toLowerCase() != text.text.trim().toLowerCase()),
-      )
-      .toList();
-  void _visibility() {
-    if (!mounted) return;
-    if (focus.hasFocus && suggestions.isNotEmpty) {
-      portal.show();
-    } else {
-      portal.hide();
-    }
+  void _controllerChanged() {
+    if (lastQuery == text.text) return;
+    lastQuery = text.text;
+    pending = true;
+    generation = RecentSearches.generation(widget.scope);
+    timer?.cancel();
+    timer = Timer(const Duration(seconds: 1), _remember);
   }
 
   void _focusChanged() {
@@ -112,48 +74,28 @@ class _RecentSearchFieldState extends State<RecentSearchField> {
       timer?.cancel();
       _remember();
     }
-    _visibility();
-  }
-
-  void _persist() {
-    final snapshot = List<String>.of(recent), scope = widget.scope;
-    writes = writes
-        .catchError((Object _) {})
-        .then((_) => RecentSearches.save(scope, snapshot))
-        .catchError((Object _) {});
   }
 
   void _remember() {
-    if (!ready || !pending) return;
+    if (!pending) return;
     pending = false;
-    recent = RecentSearches.prepend(recent, lastQuery);
-    _persist();
-  }
-
-  void _change(String value) {
-    widget.onChanged?.call(value);
-    timer?.cancel();
-    timer = Timer(const Duration(seconds: 1), () {
-      _remember();
-      if (mounted) {
-        setState(() {});
-        _visibility();
-      }
-    });
-    setState(() {});
-    _visibility();
+    unawaited(
+      RecentSearches.record(
+        widget.scope,
+        lastQuery,
+        generation,
+      ).catchError((Object _) {}),
+    );
   }
 
   void _choose(String value) {
-    timer?.cancel();
     text.value = TextEditingValue(
       text: value,
       selection: TextSelection.collapsed(offset: value.length),
     );
     widget.onChanged?.call(value);
+    timer?.cancel();
     _remember();
-    portal.hide();
-    setState(() {});
   }
 
   @override
@@ -161,97 +103,166 @@ class _RecentSearchFieldState extends State<RecentSearchField> {
     timer?.cancel();
     text.removeListener(_controllerChanged);
     focus.removeListener(_focusChanged);
-    // Capture the final query if the screen is popped before its debounce.
     _remember();
-    ownFocus.dispose();
     ownController.dispose();
+    ownFocus.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => CompositedTransformTarget(
-    link: link,
-    child: OverlayPortal(
-      controller: portal,
-      overlayChildBuilder: (context) {
-        final box = fieldKey.currentContext?.findRenderObject() as RenderBox?;
-        final width = box?.size.width ?? 280;
-        return Positioned(
-          left: 0,
-          top: 0,
-          width: width,
-          child: CompositedTransformFollower(
-            link: link,
-            targetAnchor: Alignment.bottomLeft,
-            followerAnchor: Alignment.topLeft,
-            showWhenUnlinked: false,
-            child: TextFieldTapRegion(
-              child: Material(
-                elevation: 8,
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(12),
-                clipBehavior: Clip.antiAlias,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 240),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          children: [
-                            const SizedBox(width: 12),
-                            const Expanded(child: Text('Recent searches')),
-                            IconButton(
-                              tooltip: 'Clear recent searches',
-                              icon: const Icon(Icons.delete_sweep_outlined),
-                              onPressed: () {
-                                timer?.cancel();
-                                setState(() {
-                                  recent = [];
-                                  pending = false;
-                                });
-                                _persist();
-                                portal.hide();
-                              },
-                            ),
-                          ],
-                        ),
-                        for (final value in suggestions)
-                          ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.history, size: 18),
-                            title: Text(
-                              value,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            onTap: () => _choose(value),
-                          ),
-                      ],
-                    ),
+  Widget build(BuildContext context) {
+    final field = TextField(
+      controller: text,
+      focusNode: focus,
+      autofocus: widget.autofocus,
+      style: widget.style,
+      decoration: widget.decoration,
+      onChanged: widget.onChanged,
+      onSubmitted: (value) {
+        timer?.cancel();
+        _remember();
+        widget.onSubmitted?.call(value);
+      },
+    );
+    if (!widget.showHistory) return field;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        field,
+        RecentSearchHistory(
+          scope: widget.scope,
+          controller: text,
+          onSelected: _choose,
+        ),
+      ],
+    );
+  }
+}
+
+class RecentSearchHistory extends StatefulWidget {
+  const RecentSearchHistory({
+    super.key,
+    required this.scope,
+    required this.controller,
+    required this.onSelected,
+  });
+  final String scope;
+  final TextEditingController controller;
+  final ValueChanged<String> onSelected;
+  @override
+  State<RecentSearchHistory> createState() => _RecentSearchHistoryState();
+}
+
+class _RecentSearchHistoryState extends State<RecentSearchHistory> {
+  List<String> recent = [];
+  int request = 0;
+  @override
+  void initState() {
+    super.initState();
+    RecentSearches.revision.addListener(_reload);
+    widget.controller.addListener(_queryChanged);
+    unawaited(_reload());
+  }
+
+  Future<void> _reload() async {
+    final id = ++request;
+    try {
+      final values = await RecentSearches.load(widget.scope);
+      if (mounted && id == request) setState(() => recent = values);
+    } catch (_) {
+      /* history is optional */
+    }
+  }
+
+  void _queryChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(RecentSearchHistory old) {
+    super.didUpdateWidget(old);
+    if (old.controller != widget.controller) {
+      old.controller.removeListener(_queryChanged);
+      widget.controller.addListener(_queryChanged);
+    }
+    if (old.scope != widget.scope) unawaited(_reload());
+  }
+
+  @override
+  void dispose() {
+    request++;
+    RecentSearches.revision.removeListener(_reload);
+    widget.controller.removeListener(_queryChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (recent.isEmpty || widget.controller.text.trim().isNotEmpty) {
+      return const SizedBox.shrink();
+    }
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.history, size: 16, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Recent searches',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
               ),
+              IconButton(
+                tooltip: 'Clear recent searches',
+                visualDensity: VisualDensity.compact,
+                iconSize: 19,
+                icon: const Icon(Icons.close),
+                onPressed: () async {
+                  setState(() => recent = []);
+                  await RecentSearches.clear(widget.scope);
+                },
+              ),
+            ],
+          ),
+          LayoutBuilder(
+            builder: (context, bounds) => SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final value in recent.take(3))
+                    Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 8),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: bounds.maxWidth.clamp(120, 280),
+                        ),
+                        child: ActionChip(
+                          avatar: const Icon(Icons.north_west, size: 15),
+                          label: Text(
+                            value,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          backgroundColor: scheme.surfaceContainerLow,
+                          side: BorderSide(color: scheme.outlineVariant),
+                          onPressed: () => widget.onSelected(value),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-        );
-      },
-      child: TextField(
-        key: fieldKey,
-        controller: text,
-        focusNode: focus,
-        autofocus: widget.autofocus,
-        style: widget.style,
-        decoration: widget.decoration,
-        onChanged: _change,
-        onTapOutside: (_) => focus.unfocus(),
-        onSubmitted: (value) {
-          timer?.cancel();
-          _remember();
-          portal.hide();
-          widget.onSubmitted?.call(value);
-        },
+        ],
       ),
-    ),
-  );
+    );
+  }
 }

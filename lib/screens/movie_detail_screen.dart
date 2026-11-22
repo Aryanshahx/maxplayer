@@ -1,3 +1,4 @@
+import '../theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -42,15 +43,18 @@ class MovieDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final topPad = MediaQuery.of(context).padding.top;
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(
+      value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light,
-        systemNavigationBarColor: Color(0xFF14141c),
+        statusBarIconBrightness: AppColors.isDark
+            ? Brightness.light
+            : Brightness.dark,
+        systemNavigationBarColor: AppColors.background,
       ),
       child: Scaffold(
-        backgroundColor: const Color(0xFF14141c),
+        backgroundColor: AppColors.background,
         body: Stack(
           children: [
             // Edge-to-edge scrollable content; top padding clears the
@@ -97,6 +101,7 @@ class _CircleIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Tooltip(
       message: tooltip,
       child: Material(
@@ -114,4 +119,3 @@ class _CircleIconButton extends StatelessWidget {
     );
   }
 }
-

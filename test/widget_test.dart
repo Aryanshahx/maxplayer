@@ -937,7 +937,7 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
             (AppColors.background.b * 255).round(),
         isTrue,
       );
-      expect(AppColors.onAccent, const Color(0xFF0B0B0E));
+      expect(AppColors.onAccent, Colors.black);
     });
   });
 
@@ -1872,7 +1872,10 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
   group('socials (v1.0.1+47)', () {
     test('report + instagram endpoints pinned', () {
       expect(kMaxReportEmail, 'techlabs.hyper@gmail.com');
-      expect(kMaxInstagramUrl, contains('instagram.com/maxplayer_official'));
+      expect(
+        kMaxInstagramUrl,
+        'https://www.instagram.com/maxplayer_official2026?evlk=MTR6NjljZGZtZ2NvdA==',
+      );
       expect(kMaxTelegramUrl, 'https://t.me/maxofficial_channel');
     });
   });
@@ -1954,7 +1957,7 @@ https://example.com/orphan.m3u8''';
     });
 
     test('kAppVersionTag tracks the shipped build (v1.0.1+68)', () {
-      expect(AppAnalytics.kAppVersionTag, '1.0.1+78');
+      expect(AppAnalytics.kAppVersionTag, '1.0.1+79');
     });
 
     test('hostOf returns http(s) host only — local paths stay private', () {

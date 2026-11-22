@@ -23,9 +23,9 @@ class StatisticsScreen extends StatelessWidget {
     Theme.of(context);
     final accent = AppColors.accent;
     return Scaffold(
-      backgroundColor: Color(0xFF0a0a0f),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: Colors.black.withValues(alpha: 0.3),
+        backgroundColor: AppColors.background,
         elevation: 0,
         title: LText('Statistics'),
       ),

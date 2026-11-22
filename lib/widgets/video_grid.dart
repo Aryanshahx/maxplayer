@@ -190,17 +190,17 @@ class _VideoGridState extends State<VideoGrid> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a24),
-        title: const LText(
+        backgroundColor: AppColors.surface,
+        title: LText(
           'Move to Private folder?',
-          style: TextStyle(color: Colors.white, fontSize: 17),
+          style: TextStyle(color: AppColors.textPrimary, fontSize: 17),
         ),
         content: Text(
           '"${a.title ?? 'This video'}" moves into the app\'s private folder '
           '- invisible to Gallery and file managers, visible here only after '
           'your PIN.\n\nWarning: uninstalling the app deletes hidden videos.',
-          style: const TextStyle(
-            color: Colors.white70,
+          style: TextStyle(
+            color: AppColors.textSecondary,
             fontSize: 13,
             height: 1.45,
           ),
@@ -208,11 +208,11 @@ class _VideoGridState extends State<VideoGrid> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const LText('Cancel'),
+            child: LText('Cancel'),
           ),
           FilledButton.icon(
-            icon: const Icon(Icons.lock_outline, size: 16),
-            label: const LText('Hide'),
+            icon: Icon(Icons.lock_outline, size: 16),
+            label: LText('Hide'),
             onPressed: () => Navigator.of(dialogContext).pop(true),
           ),
         ],
@@ -905,9 +905,9 @@ class _VideoCard extends StatelessWidget {
       onLongPress: onLongPress,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.04),
+          color: AppColors.surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+          border: Border.all(color: AppColors.border),
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -1038,13 +1038,13 @@ class _VideoCard extends StatelessWidget {
                     renamedTitleFor(asset),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: AppColors.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  SizedBox(height: 2),
                   FutureBuilder<int>(
                     future: videoSize(asset),
                     builder: (context, snap) => Text(
@@ -1053,7 +1053,7 @@ class _VideoCard extends StatelessWidget {
                           : ' ',
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: AppColors.textSecondary,
                       ),
                     ),
                   ),

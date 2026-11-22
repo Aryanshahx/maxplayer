@@ -436,15 +436,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                               _searching ||
                               _searchFocus.hasFocus)
                           ? Container(
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0xF20a0a10),
-                                    Color(0x000a0a10),
-                                  ],
-                                ),
+                              decoration: BoxDecoration(
+                                color: AppColors.background,
                               ),
                               child: _buildSearchBar(),
                             )
@@ -498,6 +491,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   Expanded(
                     child: RecentSearchField(
                       scope: 'discover',
+                      showHistory: false,
                       controller: _searchCtrl,
                       focusNode: _searchFocus,
                       style: TextStyle(
@@ -588,16 +582,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.auto_awesome,
-                      color: AppColors.textPrimary,
-                      size: 16,
-                    ),
+                    Icon(Icons.auto_awesome, color: Colors.white, size: 16),
                     SizedBox(width: 6),
                     LText(
                       'AI',
                       style: TextStyle(
-                        color: AppColors.textPrimary,
+                        color: Colors.white,
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.4,
@@ -659,7 +649,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     return RefreshIndicator(
       onRefresh: _refreshAll,
       color: AppColors.accent,
-      backgroundColor: const Color(0xFF1a1a22),
+      backgroundColor: AppColors.surface,
       child: MediaQuery.removePadding(
         context: context,
         removeTop: true,
@@ -763,15 +753,24 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   Widget _buildHotSearches() {
     final source = _hero.isNotEmpty
         ? _hero
-        : (_rails.isNotEmpty ? _rails.first.items : const <TmdbMovie>[]);
-    if (source.isEmpty) return _buildOttHome();
+        : (_rails.isNotEmpty ? _rails.first.items : <TmdbMovie>[]);
     final items = source.take(12).toList();
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(14, 6, 14, 24),
-      itemCount: items.length + 1,
+      padding: EdgeInsets.fromLTRB(14, 6, 14, 24),
+      itemCount: items.length + 2,
       itemBuilder: (context, i) {
         if (i == 0) {
-          return const Padding(
+          return RecentSearchHistory(
+            scope: 'discover',
+            controller: _searchCtrl,
+            onSelected: (value) {
+              _searchCtrl.text = value;
+              _onSearchChanged(value);
+            },
+          );
+        }
+        if (i == 1) {
+          return Padding(
             padding: EdgeInsets.fromLTRB(4, 4, 4, 10),
             child: Row(
               children: [
@@ -784,7 +783,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 LText(
                   'Hot searches',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppColors.textPrimary,
                     fontSize: 15.5,
                     fontWeight: FontWeight.w800,
                   ),
@@ -793,8 +792,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             ),
           );
         }
-        final m = items[i - 1];
-        final hot = i <= 3;
+        final m = items[i - 2];
+        final hot = i <= 4;
         return InkWell(
           borderRadius: BorderRadius.circular(10),
           onTap: () {
@@ -802,46 +801,48 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             _onSearchChanged(m.title);
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
+            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 9),
             child: Row(
               children: [
                 SizedBox(
                   width: 30,
                   child: hot
-                      ? const Icon(
+                      ? Icon(
                           Icons.local_fire_department_rounded,
                           color: Colors.deepOrangeAccent,
                           size: 17,
                         )
                       : Text(
-                          '$i',
+                          '${i - 1}',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.35),
+                            color: AppColors.textPrimary.withValues(
+                              alpha: 0.35,
+                            ),
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     m.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.9),
+                      color: AppColors.textPrimary,
                       fontSize: 13.5,
                       fontWeight: hot ? FontWeight.w700 : FontWeight.w500,
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 Text(
                   '${m.kind == 'tv' ? 'Series' : 'Movie'}'
                   '${m.year != null ? ' • ${m.year}' : ''}',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.35),
+                    color: AppColors.textSecondary,
                     fontSize: 11,
                   ),
                 ),
@@ -857,16 +858,16 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   /// code left a big blank container with a spinner at the bottom.
   Widget _buildSearchSkeleton() {
     return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      padding: EdgeInsets.fromLTRB(14, 8, 14, 20),
+      physics: NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
         childAspectRatio: 0.56,
         mainAxisSpacing: 10,
         crossAxisSpacing: 10,
       ),
       itemCount: 9,
-      itemBuilder: (_, i) => const _SearchSkeletonTile(),
+      itemBuilder: (_, i) => _SearchSkeletonTile(),
     );
   }
 
@@ -875,12 +876,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       return _buildSearchSkeleton();
     }
     if (_results.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.all(28),
           child: LText(
             'No movies or series match that title.',
-            style: TextStyle(color: Colors.white38, fontSize: 13),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
         ),
       );
@@ -889,9 +890,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       controller: _gridScroll,
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(14, 4, 14, 20),
+          padding: EdgeInsets.fromLTRB(14, 4, 14, 20),
           sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
               childAspectRatio: 0.56,
               mainAxisSpacing: 10,
@@ -903,11 +904,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           ),
         ),
         if (_queryLoading)
-          const SliverToBoxAdapter(
+          SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(18),
               child: Center(
-                child: CircularProgressIndicator(color: Colors.white24),
+                child: CircularProgressIndicator(color: AppColors.border),
               ),
             ),
           ),
@@ -1105,7 +1106,7 @@ class _RailHeader extends StatelessWidget {
                     LText(
                       'SEE ALL',
                       style: TextStyle(
-                        color: AppColors.textPrimary.withValues(alpha: 0.55),
+                        color: AppColors.textSecondary,
                         fontSize: 10,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1.4,
@@ -1225,7 +1226,7 @@ class _PosterCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 6),
+              SizedBox(height: 6),
               SizedBox(
                 // exactly two full lines at 11.5/1.15 — never clipped
                 height: 30,
@@ -1234,20 +1235,23 @@ class _PosterCard extends StatelessWidget {
                   maxLines: 2,
                   softWrap: true,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
                     fontSize: 11.5,
                     height: 1.15,
                   ),
                 ),
               ),
-              const SizedBox(height: 2),
+              SizedBox(height: 2),
               SizedBox(
                 height: 11,
                 child: Text(
                   movie.year != null ? '${movie.year}' : ' ',
                   maxLines: 1,
-                  style: const TextStyle(color: Colors.white38, fontSize: 10),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 10,
+                  ),
                 ),
               ),
             ],
