@@ -249,15 +249,15 @@ final List<_Item> _homeItems = [
     'Sort, group, grid & accent colour',
     '⋮ → Display settings lets you: switch between list and grid view, '
         'sort by name / length / date added / size (tap again to flip the '
-        'direction), group by first letter or by folder, and change the '
-        'app\'s accent colour from six swatches.',
+        'direction), group by folder, and change the '
+        'app\'s accent colour with presets or the Red, Green and Blue sliders.',
   ),
   _Item(
     Icons.grid_view_rounded,
     'Quick tiles under the Discover banner',
     'Two slideable 2x2 shortcut grids sit under the Discover banner: '
-        'Private Space, Playlists, Folders and Cloud Storage on the first '
-        'page; Network Storage, File Manager, Open Stream (IPTV) and '
+        'Private Space, Playlists, Folders and Audio on the first '
+        'page; Network Storage, VPN, Open Stream (IPTV) and '
         'Quick Share on the second. The grid slides away when you scroll '
         'down through your videos and returns when you scroll back up.',
   ),
@@ -274,7 +274,7 @@ final List<_Item> _homeItems = [
     Icons.history,
     'History & resume',
     'The 🕘 button in the top bar lists your recently watched videos. '
-        'Every video reopens exactly where you stopped watching. Turn '
+        'Resume restores saved progress when available. Turn '
         'this off in the player\'s ⚙ settings → Resume playback.',
   ),
   _Item(
@@ -413,9 +413,9 @@ final List<_Item> _playerItems = [
   _Item(
     Icons.camera_alt_outlined,
     'Screenshot (⋮ menu)',
-    'Saves the current frame - with any subtitles burned in, exactly as '
-        'you see it - as a PNG into Pictures/Max Player, visible in your '
-        'gallery at once. Not available for online streams.',
+    'Saves a current-frame PNG into Pictures/Max Player for your gallery. '
+        'Capture and subtitle inclusion depend on the playback backend; '
+        'check the saved image. Not available for online streams.',
   ),
   _Item(
     Icons.lock_outline,
@@ -440,7 +440,7 @@ final List<_Item> _smartItems = [
   _Item(
     Icons.folder_special_outlined,
     'Whole-device scanning',
-    'Full automatic scan of every video on the device - WhatsApp Video, '
+    'Scan media exposed to the app by Android permissions and MediaStore - WhatsApp Video, '
         'Telegram, Android/media folders, internal storage and external '
         'SD cards - via Android\'s MediaStore. Access your folders '
         'cleanly from the "Folders" quick tile.',
@@ -466,15 +466,65 @@ final List<_Item> _smartItems = [
     Icons.live_tv_outlined,
     'Open Stream (IPTV)',
     'Paste a direct video link (http/https) or a live stream '
-        '(rtsp/rtmp/mms) and it plays immediately. M3U playlists open as '
+        '(rtsp/rtmp/mms) and try playback. Availability and codec support vary. M3U playlists open as '
         'a channel list.',
   ),
   _Item(
-    Icons.cloud_download_outlined,
-    'Import from cloud storage',
-    'Library → Cloud Storage → Choose a video to import: Android\'s own '
-        'file picker opens with Google Drive, Dropbox, OneDrive or any '
-        'storage app - no sign-in at all.',
+    Icons.vpn_lock_outlined,
+    'VPN — optional connection',
+    'Open the VPN tile, read and accept the disclosure, choose WARP, '
+        'Riseup, VPN Gate or a trusted custom profile, then Connect and '
+        'approve Android VPN permission. Max Player only is the default; '
+        'full-device routing is optional. Disconnect here when finished. '
+        'Only one Android VPN can be active. Providers and volunteer '
+        'servers may be unavailable; no speed, country or anonymity is '
+        'guaranteed. There is no in-app kill switch. Use Android always-on '
+        'and block-without-VPN settings only if supported. Custom profile '
+        'secrets use Android Keystore-backed local storage; deleting a '
+        'profile removes it locally. Check the status and exit information '
+        'rather than assuming the connection succeeded.',
+  ),
+  _Item(
+    Icons.dns_outlined,
+    'Network Storage',
+    'Choose SMB, FTP/FTPS or WebDAV, enter the host and direct media path, '
+        'and supply credentials if required. Save then select the location '
+        'to play. This is a saved direct connection, not a full NAS browser. '
+        'Credentials are saved in local preferences, not the VPN encrypted '
+        'store; use limited-access accounts and trusted networks. Support '
+        'depends on your server, URL and playback backend.',
+  ),
+  _Item(
+    Icons.share_outlined,
+    'Quick Share',
+    'Select files and share on the local network. Keep devices reachable '
+        'on the same trusted network, open the displayed link or QR code '
+        'on the receiving device, and stop sharing when done. Anyone with '
+        'access to the active link may download selected files; local '
+        'sharing is not end-to-end encrypted. VPN routing or Wi-Fi client '
+        'isolation may prevent access.',
+  ),
+  _Item(
+    Icons.palette_outlined,
+    'Appearance, accent and Android TV',
+    'Use Appearance for System default, Light or Dark. Display Settings '
+        'contains preset accents and three sliders for any opaque RGB '
+        'colour, including greys. Choices are saved locally; choosing a '
+        'preset replaces the custom colour. Text contrast adapts, so very '
+        'pale accents may look darker on light surfaces and dark accents lighter on dark surfaces. On Android TV '
+        'use D-pad to move focus, OK to activate and Back to return. Touch '
+        'gestures require a touch device; codec and platform feature '
+        'availability varies by device.',
+  ),
+  _Item(
+    Icons.translate_outlined,
+    'Language and subtitles',
+    'Choose the interface language in the menu. Bundled translations, '
+        'including Pashto and Uzbek, work offline and do not translate '
+        'videos or caption tracks. AI subtitle generation requires a '
+        'supported local model download first and can be slow. Online '
+        'Ask AI recommendations instead send your submitted prompt to '
+        'OpenRouter and its selected model provider.',
   ),
   _Item(
     Icons.movie_filter_outlined,
@@ -500,6 +550,26 @@ final List<_Item> _smartItems = [
 
 final List<_Item> _tipItems = [
   _Item(
+    Icons.privacy_tip_outlined,
+    'Privacy, permissions and notifications',
+    'Open Privacy policy in the menu/About for details. The app has no '
+        'advertising SDK but uses analytics, diagnostics, installation IDs, '
+        'approximate country lookup and push services. There is no in-app '
+        'analytics opt-out. Manage media, microphone and notifications in '
+        'Android app settings. Blocking notifications does not disable '
+        'analytics or erase existing provider records. Support and privacy '
+        'requests: techlabs.hyper@gmail.com; never send passwords or keys.',
+  ),
+  _Item(
+    Icons.rate_review_outlined,
+    'Reviews and local data',
+    'After meaningful use the app may request a Google Play review. Play '
+        'decides whether its native dialog appears; reviews are optional '
+        'and do not unlock features. Back up valuable media before moving '
+        'it or clearing app data. Uninstalling can remove local settings '
+        'and app-private files, not provider-side records.',
+  ),
+  _Item(
     Icons.info_outline,
     'A new video does not appear in the library?',
     'Press the ⟳ rescan button in the top bar or pull the list down. If '
@@ -517,10 +587,9 @@ final List<_Item> _tipItems = [
   _Item(
     Icons.info_outline,
     'Can it play 8K video?',
-    'Yes - 8K files (HEVC, VP9 or AV1) open and play. Smooth playback '
+    '8K playback (HEVC, VP9 or AV1) depends on decoder support. Smooth playback '
         'depends on your phone: recent flagships decode 8K in hardware, '
-        'while mid-range chips may stutter at 8K. 1080p and 4K play '
-        'smoothly on almost every device.',
+        'while mid-range chips may stutter at 8K. Even 1080p or 4K can stutter with unsupported codecs or slow storage.',
   ),
   _Item(
     Icons.info_outline,

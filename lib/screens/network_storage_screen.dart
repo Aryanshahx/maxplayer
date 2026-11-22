@@ -334,14 +334,13 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
   Widget _protoChip(String proto, String label, Color accent) {
     final selected = _protocol == proto;
     final chipTextColor = selected
-        ? (accent.computeLuminance() > 0.55
-              ? AppColors.surface
-              : AppColors.textPrimary)
+        ? contrastForeground(accent)
         : AppColors.textSecondary;
     return ChoiceChip(
       label: Text(label),
       selected: selected,
       selectedColor: accent,
+      checkmarkColor: contrastForeground(accent),
       labelStyle: TextStyle(
         color: chipTextColor,
         fontSize: 12,

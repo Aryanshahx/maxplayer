@@ -459,7 +459,8 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                           _selectedGroup = null;
                           _applyFilter();
                         },
-                        selectedColor: accent.withValues(alpha: 0.25),
+                        selectedColor: accent,
+                        checkmarkColor: AppColors.onAccent,
                       ),
                     ),
                     for (final g in _groups)
@@ -472,7 +473,8 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                             _selectedGroup = v ? g : null;
                             _applyFilter();
                           },
-                          selectedColor: accent.withValues(alpha: 0.25),
+                          selectedColor: accent,
+                          checkmarkColor: AppColors.onAccent,
                         ),
                       ),
                   ],

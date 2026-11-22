@@ -28,6 +28,7 @@ import '../utils/tmdb_image.dart';
 const kCineInk = Color(0xFF050506);
 const kCineBg = Color(0xFF060607);
 Color get cineInk => AppColors.isDark ? kCineInk : AppColors.background;
+Color get cineVeil => AppColors.isDark ? kCineInk : Colors.transparent;
 Color get cineBg => AppColors.isDark ? kCineBg : AppColors.background;
 const kCineCyan = Color(0xFF22D3EE);
 const kCinePurple = Color(0xFFA855F7);
@@ -170,7 +171,6 @@ class _CineBootState extends State<CineBoot>
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final background = Theme.of(context).scaffoldBackgroundColor;
     return RepaintBoundary(
       child: AnimatedBuilder(
@@ -192,17 +192,35 @@ class _CineBootState extends State<CineBoot>
                       '${(progress * 100).round()}%',
                       style: cineDisplay(
                         (MediaQuery.sizeOf(context).width * .22).clamp(72, 180),
-                        scheme.onSurface,
+                        kCinePurple,
                       ),
                     ),
                   ),
                   Align(
                     alignment: Alignment.bottomCenter,
-                    child: LinearProgressIndicator(
-                      value: progress,
-                      minHeight: 3,
-                      color: scheme.primary,
-                      backgroundColor: scheme.surfaceContainerHighest,
+                    child: SizedBox(
+                      height: 3,
+                      width: double.infinity,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: progress,
+                          child: const DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [kCineCyan, kCinePurple, kCinePink],
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Color(0x80A855F7),
+                                  blurRadius: 15,
+                                ),
+                              ],
+                            ),
+                            child: SizedBox.expand(),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -415,7 +433,9 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
                           begin: Alignment.topCenter,
                           end: Alignment.center,
                           colors: [
-                            AppColors.background.withValues(alpha: .7),
+                            AppColors.isDark
+                                ? AppColors.background.withValues(alpha: .7)
+                                : Colors.transparent,
                             Colors.transparent,
                           ],
                         ),
@@ -431,7 +451,7 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
                             gradient: LinearGradient(
                               begin: Alignment.centerRight,
                               end: Alignment.centerLeft,
-                              colors: [cineInk, Colors.transparent],
+                              colors: [cineVeil, Colors.transparent],
                             ),
                           ),
                         ),
@@ -545,7 +565,7 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [cineInk, Colors.transparent],
+                  colors: [cineVeil, Colors.transparent],
                   stops: [0.0, 1.0],
                 ),
               ),
@@ -556,7 +576,9 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
                   begin: Alignment.topCenter,
                   end: Alignment.center,
                   colors: [
-                    AppColors.background.withValues(alpha: .7),
+                    AppColors.isDark
+                        ? AppColors.background.withValues(alpha: .7)
+                        : Colors.transparent,
                     Colors.transparent,
                   ],
                 ),
@@ -571,7 +593,7 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
                     gradient: LinearGradient(
                       begin: Alignment.bottomCenter,
                       end: Alignment.topCenter,
-                      colors: [cineInk, Colors.transparent],
+                      colors: [cineVeil, Colors.transparent],
                     ),
                   ),
                 ),

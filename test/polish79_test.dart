@@ -127,7 +127,10 @@ void main() {
           );
           expect(
             contrast(
-              theme.chipTheme.labelStyle!.color!,
+              WidgetStateProperty.resolveAs<TextStyle?>(
+                theme.chipTheme.labelStyle,
+                {WidgetState.selected},
+              )!.color!,
               theme.chipTheme.selectedColor!,
             ),
             greaterThanOrEqualTo(4.5),

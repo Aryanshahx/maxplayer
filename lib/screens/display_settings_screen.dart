@@ -112,6 +112,7 @@ class DisplaySettingsScreen extends StatelessWidget {
               ),
             ),
             const _SectionTitle('THEME ACCENT COLOR'),
+            const _CustomAccentSliders(),
             Wrap(
               spacing: 14,
               runSpacing: 12,
@@ -119,7 +120,7 @@ class DisplaySettingsScreen extends StatelessWidget {
                 for (var i = 0; i < accentPalette.length; i++)
                   _AccentDot(
                     color: accentPalette[i],
-                    selected: s.accentIndex == i,
+                    selected: s.customAccent == null && s.accentIndex == i,
                     onTap: () => s.setAccentIndex(i),
                   ),
               ],
@@ -418,6 +419,73 @@ class _AccentDot extends StatelessWidget {
               )
             : null,
       ),
+    );
+  }
+}
+
+/// RGB channels cover the full opaque sRGB colour range, including greys.
+class _CustomAccentSliders extends StatelessWidget {
+  const _CustomAccentSliders();
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final c = s.accentColor;
+    final channels = [c.r, c.g, c.b];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        LText('Custom colour — slide Red, Green and Blue'),
+        const SizedBox(height: 8),
+        Container(
+          height: 30,
+          color: c,
+          alignment: Alignment.center,
+          child: Text(
+            '#${c.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+            style: TextStyle(color: contrastForeground(c)),
+          ),
+        ),
+        for (var i = 0; i < 3; i++)
+          Row(
+            children: [
+              SizedBox(width: 52, child: LText(['Red', 'Green', 'Blue'][i])),
+              Expanded(
+                child: Slider(
+                  key: ValueKey('accent-channel-$i'),
+                  value: channels[i] * 255,
+                  max: 255,
+                  divisions: 255,
+                  label: (channels[i] * 255).round().toString(),
+                  semanticFormatterCallback: (v) =>
+                      '${['Red', 'Green', 'Blue'][i]} ${v.round()}',
+                  onChanged: (v) async {
+                    final rgb = channels.map((v) => (v * 255).round()).toList();
+                    rgb[i] = v.round();
+                    try {
+                      await s.setCustomAccent(
+                        Color.fromARGB(255, rgb[0], rgb[1], rgb[2]),
+                      );
+                    } catch (_) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Could not save accent colour. Please try again.',
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        LText(
+          'Text contrast adapts automatically. Very dark or pale accents adjust for readability. Presets reset the custom colour.',
+        ),
+        const SizedBox(height: 16),
+      ],
     );
   }
 }

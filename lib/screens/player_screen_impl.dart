@@ -2938,8 +2938,10 @@ class _TopBar extends StatelessWidget {
           end: Alignment.bottomCenter,
           colors: [
             AppColors.playerChrome,
-            AppColors.playerChrome.withValues(alpha: .92),
+            AppColors.playerChrome,
+            AppColors.playerChrome.withValues(alpha: 0),
           ],
+          stops: const [0, .72, 1],
         ),
       ),
       child: Row(
@@ -3262,9 +3264,11 @@ class _BottomBarState extends State<_BottomBar> {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            AppColors.playerChrome.withValues(alpha: .92),
+            AppColors.playerChrome.withValues(alpha: 0),
+            AppColors.playerChrome,
             AppColors.playerChrome,
           ],
+          stops: const [0, .12, 1],
         ),
       ),
       child: Column(

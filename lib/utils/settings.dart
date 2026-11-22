@@ -34,6 +34,8 @@ class AppSettings extends ChangeNotifier {
   static const _kQueueAll = 'disp.queueAll';
   static const _kOnlyFavs = 'disp.onlyFavs';
   static const _kAccent = 'disp.accent';
+  static const _kCustomAccent = 'disp.customAccent.v1';
+  Color? customAccent;
   static const _kThemeMode = 'disp.themeMode.v1';
   ThemeMode themeMode = ThemeMode.system;
 
@@ -50,10 +52,12 @@ class AppSettings extends ChangeNotifier {
   bool onlyFavs = false;
   int accentIndex = defaultAccentIndex;
 
-  Color get accentColor => accentPalette[accentIndex];
+  Color get accentColor => customAccent ?? accentPalette[accentIndex];
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
+    final savedColor = p.getInt(_kCustomAccent);
+    customAccent = savedColor == null ? null : Color(savedColor | 0xFF000000);
     final savedTheme = p.getString(_kThemeMode);
     themeMode =
         ThemeMode.values.where((v) => v.name == savedTheme).firstOrNull ??
@@ -115,8 +119,19 @@ class AppSettings extends ChangeNotifier {
     _set((p) => p.setBool(_kOnlyFavs, o));
   }
 
+  Future<void> setCustomAccent(Color color) async {
+    final opaque = color.withValues(alpha: 1);
+    customAccent = opaque;
+    notifyListeners();
+    await _set((p) => p.setInt(_kCustomAccent, opaque.toARGB32()));
+  }
+
   void setAccentIndex(int i) {
-    accentIndex = i;
-    _set((p) => p.setInt(_kAccent, i));
+    accentIndex = i.clamp(0, accentPalette.length - 1);
+    customAccent = null;
+    _set((p) async {
+      await p.remove(_kCustomAccent);
+      return p.setInt(_kAccent, accentIndex);
+    });
   }
 }

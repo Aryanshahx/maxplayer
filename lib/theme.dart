@@ -28,7 +28,7 @@ class AppColors {
       isDark ? Colors.white : const Color(0xFF181A20);
   static Color get playerMuted => playerForeground.withValues(alpha: .65);
   static Color get playerChrome =>
-      isDark ? const Color(0xF0060608) : const Color(0xF5FFFFFF);
+      isDark ? const Color(0x99060608) : const Color(0x99FFFFFF);
   static Color get mediaAccent => _accent;
   static Color get mediaOnAccent => contrastForeground(_accent);
   static Color get danger =>
@@ -49,7 +49,15 @@ Color contrastForeground(Color background) {
 }
 
 Color adaptiveAccent(Color raw, Brightness brightness) {
-  if (brightness == Brightness.dark) return raw;
+  if (brightness == Brightness.dark) {
+    var hsl = HSLColor.fromColor(raw);
+    final base = const Color(0xFF101013).computeLuminance();
+    while ((hsl.toColor().computeLuminance() + .05) / (base + .05) < 4.5 &&
+        hsl.lightness < .95) {
+      hsl = hsl.withLightness((hsl.lightness + .025).clamp(0, 1));
+    }
+    return hsl.toColor();
+  }
   if (raw == const Color(0xFFFFFFFF)) return const Color(0xFF252830);
   var hsl = HSLColor.fromColor(raw);
   while ((1.05 / (hsl.toColor().computeLuminance() + .05)) < 4.5 &&
@@ -120,10 +128,15 @@ ThemeData buildAppTheme({
     iconTheme: IconThemeData(color: text),
     listTileTheme: ListTileThemeData(textColor: text, iconColor: text),
     chipTheme: ChipThemeData(
-      backgroundColor: scheme.surfaceContainerLow,
-      selectedColor: scheme.surfaceContainerHighest,
-      labelStyle: TextStyle(color: text),
+      selectedColor: ac,
+      backgroundColor: surface,
+      checkmarkColor: onAc,
       side: BorderSide(color: border),
+      labelStyle: WidgetStateTextStyle.resolveWith(
+        (states) => TextStyle(
+          color: states.contains(WidgetState.selected) ? onAc : text,
+        ),
+      ),
     ),
     dividerTheme: DividerThemeData(color: border),
     inputDecorationTheme: InputDecorationTheme(
