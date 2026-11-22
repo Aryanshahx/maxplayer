@@ -38,6 +38,7 @@ jobs:
   build:
     name: Build signed AAB
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -57,6 +58,16 @@ jobs:
 
       - run: python3 -m unittest discover -s scripts/release -p '*_test.py'
       - run: python3 scripts/release/verify_ad_id.py android/app/src/main/AndroidManifest.xml
+      - name: Cache Gradle dependency downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-maxplayer-gradle-flutter347-v1-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock', 'scripts/release/plugin-repositories.init.gradle') }}
+          restore-keys: |
+            ${{ runner.os }}-maxplayer-gradle-flutter347-v1-
+
       - run: flutter --version
       - run: flutter pub get
       # v1.0.1+64: --no-fatal-infos — newer Flutter stables flag
@@ -110,9 +121,7 @@ jobs:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
-          flutter build appbundle --release \
-            "--dart-define=TMDB_API_KEY=$TMDB_API_KEY" \
-            "--dart-define=OPENROUTER_API_KEY=$OPENROUTER_API_KEY"
+          python3 scripts/release/build_android_ci.py appbundle
 
       - name: Verify signed bundle
         run: |

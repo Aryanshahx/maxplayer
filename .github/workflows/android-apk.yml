@@ -13,6 +13,7 @@ jobs:
   build:
     name: Build release APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +31,17 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Cache Gradle dependency downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-maxplayer-gradle-flutter347-v1-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock', 'scripts/release/plugin-repositories.init.gradle') }}
+          restore-keys: |
+            ${{ runner.os }}-maxplayer-gradle-flutter347-v1-
+
+      - run: python3 -m unittest discover -s scripts/release -p '*_test.py'
       - run: flutter --version
       - run: flutter pub get
       # v1.0.1+64: --no-fatal-infos — newer Flutter stables flag
@@ -57,14 +69,20 @@ jobs:
       # phone for testing). The values are passed through env variables so
       # shell quoting and GitHub masking cannot turn a configured secret into
       # an empty dart-define.
+      - name: Configure plugin repositories for Flutter included builds
+        shell: bash
+        run: |
+          GRADLE_HOME_DIR="${GRADLE_USER_HOME:-$HOME/.gradle}"
+          mkdir -p "$GRADLE_HOME_DIR/init.d"
+          install -m 644 scripts/release/plugin-repositories.init.gradle \
+            "$GRADLE_HOME_DIR/init.d/maxplayer-plugin-repositories.init.gradle"
+
       - name: Build release APK
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
-          flutter build apk --release \
-            "--dart-define=TMDB_API_KEY=$TMDB_API_KEY" \
-            "--dart-define=OPENROUTER_API_KEY=$OPENROUTER_API_KEY"
+          python3 scripts/release/build_android_ci.py apk
 
       - uses: actions/upload-artifact@v4
         with:

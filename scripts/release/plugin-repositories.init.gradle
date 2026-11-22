@@ -2,9 +2,14 @@
 // included :gradle build. android/settings.gradle.kts alone cannot configure
 // the included build's kotlin-dsl plugin-classpath repositories.
 // Keep the Plugin Portal for plugin markers, but resolve Kotlin libraries
-// and their BOMs from Maven Central first. No versions/TLS checks are changed.
+// and their BOMs from the Google-hosted Maven Central mirror first.
+// Direct Maven Central remains a fallback. No versions/TLS checks are changed.
 gradle.beforeSettings { settings ->
     settings.pluginManagement.repositories {
+        maven {
+            name = 'MavenCentralGoogleMirror'
+            url = uri('https://maven-central.storage-download.googleapis.com/maven2')
+        }
         mavenCentral()
         google()
         gradlePluginPortal()
