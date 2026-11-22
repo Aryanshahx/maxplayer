@@ -1,4 +1,3 @@
-import '../widgets/remote_tap.dart';
 import '../utils/app_language.dart';
 
 import 'package:flutter/material.dart';
@@ -113,18 +112,6 @@ class DisplaySettingsScreen extends StatelessWidget {
             ),
             const _SectionTitle('THEME ACCENT COLOR'),
             const _CustomAccentSliders(),
-            Wrap(
-              spacing: 14,
-              runSpacing: 12,
-              children: [
-                for (var i = 0; i < accentPalette.length; i++)
-                  _AccentDot(
-                    color: accentPalette[i],
-                    selected: s.customAccent == null && s.accentIndex == i,
-                    onTap: () => s.setAccentIndex(i),
-                  ),
-              ],
-            ),
           ],
         ),
       ),
@@ -367,62 +354,6 @@ class _DropdownRow<T> extends StatelessWidget {
   }
 }
 
-class _AccentDot extends StatelessWidget {
-  const _AccentDot({
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    Theme.of(context);
-    return RemoteTap(
-      onTap: onTap,
-      child: Container(
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: selected
-              ? Border.all(
-                  color:
-                      ThemeData.estimateBrightnessForColor(color) ==
-                          Brightness.light
-                      ? Colors.black
-                      : Colors.white,
-                  width: 3,
-                )
-              : Border.all(color: Colors.transparent, width: 3),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black45,
-              blurRadius: 6,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: selected
-            ? Icon(
-                Icons.check_rounded,
-                color:
-                    ThemeData.estimateBrightnessForColor(color) ==
-                        Brightness.light
-                    ? Colors.black
-                    : Colors.white,
-                size: 22,
-              )
-            : null,
-      ),
-    );
-  }
-}
-
 /// RGB channels cover the full opaque sRGB colour range, including greys.
 class _CustomAccentSliders extends StatelessWidget {
   const _CustomAccentSliders();
@@ -482,7 +413,7 @@ class _CustomAccentSliders extends StatelessWidget {
             ],
           ),
         LText(
-          'Text contrast adapts automatically. Very dark or pale accents adjust for readability. Presets reset the custom colour.',
+          'Text contrast adapts automatically. Very dark or pale accents adjust for readability.',
         ),
         const SizedBox(height: 16),
       ],

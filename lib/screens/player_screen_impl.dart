@@ -2932,18 +2932,6 @@ class _TopBar extends StatelessWidget {
         right: 2,
         bottom: 14,
       ),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            AppColors.playerChrome,
-            AppColors.playerChrome,
-            AppColors.playerChrome.withValues(alpha: 0),
-          ],
-          stops: const [0, .72, 1],
-        ),
-      ),
       child: Row(
         children: [
           IconButton(
@@ -3259,18 +3247,6 @@ class _BottomBarState extends State<_BottomBar> {
     Theme.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            AppColors.playerChrome.withValues(alpha: 0),
-            AppColors.playerChrome,
-            AppColors.playerChrome,
-          ],
-          stops: const [0, .12, 1],
-        ),
-      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

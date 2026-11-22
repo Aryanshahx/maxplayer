@@ -250,7 +250,7 @@ final List<_Item> _homeItems = [
     '⋮ → Display settings lets you: switch between list and grid view, '
         'sort by name / length / date added / size (tap again to flip the '
         'direction), group by folder, and change the '
-        'app\'s accent colour with presets or the Red, Green and Blue sliders.',
+        'app\'s accent colour with the Red, Green and Blue sliders.',
   ),
   _Item(
     Icons.grid_view_rounded,
@@ -508,9 +508,8 @@ final List<_Item> _smartItems = [
     Icons.palette_outlined,
     'Appearance, accent and Android TV',
     'Use Appearance for System default, Light or Dark. Display Settings '
-        'contains preset accents and three sliders for any opaque RGB '
-        'colour, including greys. Choices are saved locally; choosing a '
-        'preset replaces the custom colour. Text contrast adapts, so very '
+        'contains one custom-colour section with three sliders for any opaque RGB '
+        'colour, including greys. Choices are saved locally. Text contrast adapts, so very '
         'pale accents may look darker on light surfaces and dark accents lighter on dark surfaces. On Android TV '
         'use D-pad to move focus, OK to activate and Back to return. Touch '
         'gestures require a touch device; codec and platform feature '

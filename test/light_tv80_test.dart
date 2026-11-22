@@ -64,7 +64,7 @@ void main() {
         'lib/screens/player_screen_impl.dart',
       ).readAsStringSync();
       expect(source, contains('backgroundColor: Colors.black'));
-      expect(source, contains('AppColors.playerChrome'));
+      expect(source, isNot(contains('AppColors.playerChrome')));
       expect(
         source,
         contains('if (navigatingControl && (directional || activate))'),

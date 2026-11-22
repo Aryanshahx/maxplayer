@@ -77,17 +77,12 @@ void main() {
         );
       }
     });
-    test('player chrome is translucent in $brightness and fades to clear', () {
+    test('player has no covering chrome in $brightness', () {
       AppColors.brightness = brightness;
-      expect(AppColors.playerChrome.a, lessThan(.65));
-      expect(AppColors.playerChrome.a, greaterThan(0));
       final source = File(
         'lib/screens/player_screen_impl.dart',
       ).readAsStringSync();
-      expect(
-        'AppColors.playerChrome.withValues(alpha: 0)'.allMatches(source).length,
-        2,
-      );
+      expect(source, isNot(contains('AppColors.playerChrome')));
     });
   }
   testWidgets('Discover boot retains neon gradient progress in either theme', (
@@ -143,6 +138,11 @@ void main() {
       250,
     );
     expect(find.byType(Slider), findsNWidgets(3));
+    final source = File(
+      'lib/screens/display_settings_screen.dart',
+    ).readAsStringSync();
+    expect(source, isNot(contains('_AccentDot')));
+    expect(source, isNot(contains('accentPalette')));
     final slider = tester.widget<Slider>(find.byType(Slider).first);
     slider.onChanged!(37);
     await tester.pump();
