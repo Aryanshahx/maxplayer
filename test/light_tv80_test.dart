@@ -55,11 +55,11 @@ void main() {
     });
   }
   test(
-    'player light chrome is white with readable dark glyphs; canvas is black',
+    'player overlay controls stay white in light theme; canvas is black',
     () {
       AppColors.brightness = Brightness.light;
       expect(AppColors.playerChrome.r, 1);
-      expect(AppColors.playerForeground.computeLuminance(), lessThan(.05));
+      expect(AppColors.playerForeground, Colors.white);
       final source = File(
         'lib/screens/player_screen_impl.dart',
       ).readAsStringSync();

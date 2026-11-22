@@ -2936,7 +2936,11 @@ class _TopBar extends StatelessWidget {
         children: [
           IconButton(
             tooltip: 'Back',
-            icon: Icon(Icons.arrow_back, size: 22, color: AppColors.accent),
+            icon: Icon(
+              Icons.arrow_back,
+              size: 22,
+              color: AppColors.playerForeground,
+            ),
             onPressed: () => Navigator.of(context).maybePop(),
           ),
           Expanded(
@@ -2954,7 +2958,7 @@ class _TopBar extends StatelessWidget {
                         Icon(
                           Icons.bedtime_outlined,
                           size: 11,
-                          color: AppColors.accent,
+                          color: AppColors.playerForeground,
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -2962,7 +2966,7 @@ class _TopBar extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.accent,
+                            color: AppColors.playerForeground,
                           ),
                         ),
                       ],
@@ -2990,13 +2994,17 @@ class _TopBar extends StatelessWidget {
                     icon: Icon(
                       Icons.translate_rounded,
                       size: 21,
-                      color: AppColors.accent,
+                      color: AppColors.playerForeground,
                     ),
                     onPressed: onTrailerLang,
                   ),
           PopupMenuButton<_PlayerMenuAction>(
             tooltip: 'More actions',
-            icon: Icon(Icons.more_vert, size: 22, color: AppColors.accent),
+            icon: Icon(
+              Icons.more_vert,
+              size: 22,
+              color: AppColors.playerForeground,
+            ),
             color: AppColors.surface,
             elevation: 8,
             shape: RoundedRectangleBorder(
@@ -3041,7 +3049,7 @@ class _TopBar extends StatelessWidget {
             icon: Icon(
               Icons.settings_outlined,
               size: 22,
-              color: AppColors.accent,
+              color: AppColors.playerForeground,
             ),
             onPressed: onSettings,
           ),
@@ -3095,6 +3103,7 @@ class _LoopingTitleState extends State<_LoopingTitle>
     color: AppColors.playerForeground,
     fontSize: 15.5,
     fontWeight: FontWeight.w600,
+    shadows: const [Shadow(color: Colors.black87, blurRadius: 3)],
   );
   static const _gap = 42.0;
 
@@ -3377,7 +3386,7 @@ class _BottomBarState extends State<_BottomBar> {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
             child: Text(
               '${rate}x',
-              style: TextStyle(color: AppColors.accent, fontSize: 11),
+              style: TextStyle(color: AppColors.playerForeground, fontSize: 11),
             ),
           ),
         );
@@ -3601,10 +3610,10 @@ class _BottomBarState extends State<_BottomBar> {
                               overlayShape: const RoundSliderOverlayShape(
                                 overlayRadius: 14,
                               ),
-                              activeTrackColor: AppColors.accent,
+                              activeTrackColor: AppColors.playerForeground,
                               inactiveTrackColor: AppColors.playerForeground
                                   .withValues(alpha: 0.15),
-                              thumbColor: AppColors.accent,
+                              thumbColor: AppColors.playerForeground,
                             ),
                             child: Slider(
                               value: value,
@@ -3650,10 +3659,8 @@ class _BottomBarState extends State<_BottomBar> {
     );
   }
 
-  /// One control button. Every button follows the picked theme accent,
-  /// EXCEPT the transport trio (accentPress), which stays white and only
-  /// flashes the accent while pressed. An "on" state (muted, tracks in use,
-  /// rotation locked) sits on a translucent accent chip.
+  /// Enabled overlay glyphs stay fully white in both themes. Actual disabled
+  /// actions remain distinguishable. Accent is only interaction/state feedback.
   Widget _iconBtn({
     required IconData icon,
     VoidCallback? onTap,
@@ -3666,12 +3673,15 @@ class _BottomBarState extends State<_BottomBar> {
     final accent = AppColors.accent;
     final enabled = onTap != null;
     final IconData shownIcon = icon;
-    final Color color = accentPress
-        ? (enabled ? AppColors.playerForeground : AppColors.playerMuted)
-        : accent;
+    final Color color = enabled ? AppColors.playerForeground : Colors.white38;
     return IconButton(
       tooltip: tooltip,
-      icon: Icon(shownIcon, size: compact ? 20 : size, color: color),
+      icon: Icon(
+        shownIcon,
+        size: compact ? 20 : size,
+        color: color,
+        shadows: const [Shadow(color: Colors.black87, blurRadius: 3)],
+      ),
       splashColor: accentPress ? accent.withValues(alpha: 0.45) : null,
       highlightColor: accentPress ? accent.withValues(alpha: 0.28) : null,
       style: active

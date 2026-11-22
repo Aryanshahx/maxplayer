@@ -21,7 +21,7 @@ Open the menu → Appearance to choose System default, Light or Dark. Open Displ
 The selected-colour swatch and selectable #RRGGBB text update live. “Theme accent” shows the contrast-adjusted colour actually used in the current theme; this may differ from the selected hex to keep text readable. The saved choice is restored after restart. Existing custom RGB/preset colours remain until you move the new slider; the single slider chooses hues, not independent saturation/brightness or every possible RGB combination. No hex typing is required: this is a live preview, not an editor.
 
 ## Player
-Tap the picture to show or hide controls; auto-hide timing is configurable. There are no top/bottom covering panels or gradient bars in either theme; only controls are drawn over the picture. Video and letterbox areas remain media content, not theme surfaces.
+Tap the picture to show or hide controls; auto-hide timing is configurable. There are no top/bottom covering panels or gradient bars in either theme; only controls are drawn over the picture. Enabled overlay buttons, title, time labels and seek thumb use opaque white in both themes. Unavailable actions remain dimmed; menus and settings still follow the app theme. Video and letterbox areas remain media content, not theme surfaces.
 
 - Use play/pause, previous/next and the seek slider where the media supports seeking.
 - Tap the speed control for presets or a slider; the selected speed can be remembered.
