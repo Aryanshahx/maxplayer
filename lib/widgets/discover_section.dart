@@ -1,4 +1,5 @@
 import '../theme.dart';
+import 'remote_tap.dart';
 import 'recent_search_field.dart';
 import '../utils/app_language.dart';
 
@@ -476,7 +477,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
           final selected = f.key == _filter.key && !_searching;
           return Padding(
             padding: EdgeInsets.only(right: 8),
-            child: GestureDetector(
+            child: RemoteTap(
               onTap: () => _selectFilter(f),
               child: AnimatedContainer(
                 duration: Duration(milliseconds: 160),
@@ -608,7 +609,7 @@ class DiscoverMovieCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final posterUrl = tmdbPosterUrl(movie.posterPath);
-    return GestureDetector(
+    return RemoteTap(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(

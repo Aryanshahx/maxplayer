@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import 'remote_tap.dart';
 import '../utils/config.dart';
 import '../utils/tmdb.dart';
 import '../utils/tmdb_image.dart';
@@ -45,8 +46,7 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
   void initState() {
     super.initState();
     _boot();
-    _timer =
-        Timer.periodic(const Duration(milliseconds: 2200), (_) => _tick());
+    _timer = Timer.periodic(const Duration(milliseconds: 2200), (_) => _tick());
   }
 
   Future<void> _boot() async {
@@ -83,12 +83,18 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
   }
 
   void _tick() {
-    if (_userHolding || !_ctrl.hasClients || _posters.length < 2) return;
+    if (MediaQuery.disableAnimationsOf(context) ||
+        _userHolding ||
+        !_ctrl.hasClients ||
+        _posters.length < 2) {
+      return;
+    }
     final double loopWidth = _step * _posters.length;
     final pos = _ctrl.position;
     var from = pos.pixels;
-    final wrapAt =
-        loopWidth <= pos.maxScrollExtent ? loopWidth : pos.maxScrollExtent;
+    final wrapAt = loopWidth <= pos.maxScrollExtent
+        ? loopWidth
+        : pos.maxScrollExtent;
     if (wrapAt > 0 && from >= wrapAt) {
       from -= loopWidth;
       if (from < 0) from = 0;
@@ -108,15 +114,18 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(14),
-      child: InkWell(
+      child: RemoteTap(
         onTap: widget.onTap,
+        onFocusChange: (focused) => _userHolding = focused,
         borderRadius: BorderRadius.circular(14),
         child: Ink(
           height: 118,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            gradient: const LinearGradient(
-              colors: [Color(0xFF241d3d), Color(0xFF16222e)],
+            gradient: LinearGradient(
+              colors: AppColors.isDark
+                  ? [const Color(0xFF241d3d), const Color(0xFF16222e)]
+                  : [const Color(0xFFEDE5FF), const Color(0xFFDDF5FA)],
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
             ),
@@ -156,12 +165,14 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
                         Expanded(child: TmdbImage(url: url)),
                     ],
                   ),
-                const DecoratedBox(
+                DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
-                      colors: [Color(0xE6000000), Color(0x59000000)],
+                      colors: AppColors.isDark
+                          ? [const Color(0xE6000000), const Color(0x59000000)]
+                          : [const Color(0xF2FFFFFF), const Color(0xCCFFFFFF)],
                     ),
                   ),
                 ),
@@ -174,10 +185,10 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const LText(
+                            LText(
                               'Discover movies',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: AppColors.textPrimary,
                                 fontSize: 17,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -186,7 +197,7 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
                             LText(
                               'Latest posters, ratings & trailers',
                               style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.7),
+                                color: AppColors.textSecondary,
                                 fontSize: 12,
                               ),
                             ),
@@ -200,8 +211,11 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
                           color: AppColors.accent,
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.arrow_forward,
-                            color: AppColors.onAccent, size: 18),
+                        child: Icon(
+                          Icons.arrow_forward,
+                          color: AppColors.onAccent,
+                          size: 18,
+                        ),
                       ),
                     ],
                   ),

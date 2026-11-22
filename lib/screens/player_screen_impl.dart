@@ -873,6 +873,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     _hideTimer?.cancel();
     if (!_settings.autoHide) return;
     _hideTimer = Timer(Duration(seconds: _settings.autoHideDelay), () {
+      final focusedContext = FocusManager.instance.primaryFocus?.context;
+      final remoteControlFocused =
+          focusedContext != null &&
+          (focusedContext.findAncestorWidgetOfExactType<IconButton>() != null ||
+              focusedContext.findAncestorWidgetOfExactType<Slider>() != null ||
+              focusedContext.findAncestorWidgetOfExactType<InkWell>() != null);
+      if (remoteControlFocused) {
+        _scheduleHide();
+        return;
+      }
       if (mounted && _player.state.playing && !_boost && !_locked) {
         setState(() => _controlsVisible = false);
       }
@@ -2546,6 +2556,33 @@ class _PlayerScreenState extends State<PlayerScreen>
   KeyEventResult _handleRemoteKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final k = event.logicalKey;
+    final navigatingControl = FocusManager.instance.primaryFocus != node;
+    final directional =
+        k == LogicalKeyboardKey.arrowLeft ||
+        k == LogicalKeyboardKey.arrowRight ||
+        k == LogicalKeyboardKey.arrowUp ||
+        k == LogicalKeyboardKey.arrowDown;
+    final activate =
+        k == LogicalKeyboardKey.select ||
+        k == LogicalKeyboardKey.enter ||
+        k == LogicalKeyboardKey.numpadEnter ||
+        k == LogicalKeyboardKey.space;
+    if (navigatingControl && (directional || activate)) {
+      return KeyEventResult.ignored;
+    }
+    if (directional && _controlsVisible) {
+      if (FocusScope.of(context).focusInDirection(
+        k == LogicalKeyboardKey.arrowLeft
+            ? TraversalDirection.left
+            : k == LogicalKeyboardKey.arrowRight
+            ? TraversalDirection.right
+            : k == LogicalKeyboardKey.arrowUp
+            ? TraversalDirection.up
+            : TraversalDirection.down,
+      )) {
+        return KeyEventResult.handled;
+      }
+    }
     if (k == LogicalKeyboardKey.select ||
         k == LogicalKeyboardKey.enter ||
         k == LogicalKeyboardKey.numpadEnter ||
@@ -2899,18 +2936,17 @@ class _TopBar extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Colors.black.withValues(alpha: 0.75), Colors.transparent],
+          colors: [
+            AppColors.playerChrome,
+            AppColors.playerChrome.withValues(alpha: .92),
+          ],
         ),
       ),
       child: Row(
         children: [
           IconButton(
             tooltip: 'Back',
-            icon: Icon(
-              Icons.arrow_back,
-              size: 22,
-              color: AppColors.mediaAccent,
-            ),
+            icon: Icon(Icons.arrow_back, size: 22, color: AppColors.accent),
             onPressed: () => Navigator.of(context).maybePop(),
           ),
           Expanded(
@@ -2928,7 +2964,7 @@ class _TopBar extends StatelessWidget {
                         Icon(
                           Icons.bedtime_outlined,
                           size: 11,
-                          color: AppColors.mediaAccent,
+                          color: AppColors.accent,
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -2936,7 +2972,7 @@ class _TopBar extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.mediaAccent,
+                            color: AppColors.accent,
                           ),
                         ),
                       ],
@@ -2947,14 +2983,14 @@ class _TopBar extends StatelessWidget {
           ),
           if (onTrailerLang != null)
             trailerSwitching
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 10),
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: SizedBox(
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.white70,
+                        color: AppColors.playerMuted,
                       ),
                     ),
                   )
@@ -2964,13 +3000,13 @@ class _TopBar extends StatelessWidget {
                     icon: Icon(
                       Icons.translate_rounded,
                       size: 21,
-                      color: AppColors.mediaAccent,
+                      color: AppColors.accent,
                     ),
                     onPressed: onTrailerLang,
                   ),
           PopupMenuButton<_PlayerMenuAction>(
             tooltip: 'More actions',
-            icon: Icon(Icons.more_vert, size: 22, color: AppColors.mediaAccent),
+            icon: Icon(Icons.more_vert, size: 22, color: AppColors.accent),
             color: AppColors.surface,
             elevation: 8,
             shape: RoundedRectangleBorder(
@@ -3015,7 +3051,7 @@ class _TopBar extends StatelessWidget {
             icon: Icon(
               Icons.settings_outlined,
               size: 22,
-              color: AppColors.mediaAccent,
+              color: AppColors.accent,
             ),
             onPressed: onSettings,
           ),
@@ -3065,8 +3101,8 @@ class _LoopingTitleState extends State<_LoopingTitle>
   double _textWidth = 0;
   bool _scrolling = false;
 
-  static const _style = TextStyle(
-    color: Colors.white,
+  static TextStyle get _style => TextStyle(
+    color: AppColors.playerForeground,
     fontSize: 15.5,
     fontWeight: FontWeight.w600,
   );
@@ -3225,7 +3261,10 @@ class _BottomBarState extends State<_BottomBar> {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)],
+          colors: [
+            AppColors.playerChrome.withValues(alpha: .92),
+            AppColors.playerChrome,
+          ],
         ),
       ),
       child: Column(
@@ -3358,7 +3397,7 @@ class _BottomBarState extends State<_BottomBar> {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
             child: Text(
               '${rate}x',
-              style: TextStyle(color: AppColors.mediaAccent, fontSize: 11),
+              style: TextStyle(color: AppColors.accent, fontSize: 11),
             ),
           ),
         );
@@ -3583,9 +3622,8 @@ class _BottomBarState extends State<_BottomBar> {
                                 overlayRadius: 14,
                               ),
                               activeTrackColor: AppColors.accent,
-                              inactiveTrackColor: Colors.white.withValues(
-                                alpha: 0.15,
-                              ),
+                              inactiveTrackColor: AppColors.playerForeground
+                                  .withValues(alpha: 0.15),
                               thumbColor: AppColors.accent,
                             ),
                             child: Slider(
@@ -3649,7 +3687,7 @@ class _BottomBarState extends State<_BottomBar> {
     final enabled = onTap != null;
     final IconData shownIcon = icon;
     final Color color = accentPress
-        ? (enabled ? Colors.white : Colors.white38)
+        ? (enabled ? AppColors.playerForeground : AppColors.playerMuted)
         : accent;
     return IconButton(
       tooltip: tooltip,
@@ -3672,7 +3710,8 @@ class _BottomBarState extends State<_BottomBar> {
     );
   }
 
-  static const _timeStyle = TextStyle(fontSize: 12, color: Colors.white70);
+  static TextStyle get _timeStyle =>
+      TextStyle(fontSize: 12, color: AppColors.playerMuted);
 }
 
 class _LockChip extends StatelessWidget {

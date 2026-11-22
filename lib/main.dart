@@ -65,6 +65,7 @@ Future<void> _flushCapturedCrash() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await NativeBridge.loadDeviceMode();
   // v0.6: the whole app rotates — library included (tablet landscape).
   SystemChrome.setPreferredOrientations(DeviceOrientation.values);
   MediaKit.ensureInitialized(); // MPV core
@@ -229,6 +230,25 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
         AppColors.accent = AppSettings.instance.accentColor;
         return MaterialApp(
           title: 'Max Player',
+          shortcuts: const <ShortcutActivator, Intent>{
+            SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
+          },
+          builder: (context, child) => FocusTraversalGroup(
+            policy: ReadingOrderTraversalPolicy(),
+            child: Padding(
+              padding: NativeBridge.isTelevision
+                  ? const EdgeInsets.all(24)
+                  : EdgeInsets.zero,
+              child: LayoutBuilder(
+                builder: (context, constraints) => MediaQuery(
+                  data: MediaQuery.of(
+                    context,
+                  ).copyWith(size: constraints.biggest),
+                  child: child ?? const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ),
           locale: AppLanguage.instance.locale,
           supportedLocales: uiLanguages.map((l) => Locale(l.code)).toList(),
           // Pinned CI Flutter 3.47 uses flutter_localizations.

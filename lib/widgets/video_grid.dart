@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'remote_tap.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../screens/player_screen.dart';
@@ -689,8 +690,8 @@ class _VideoGridState extends State<VideoGrid> {
         return GridView.builder(
           controller: widget.controller,
           padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 200,
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: constraints.maxWidth >= 900 ? 300 : 200,
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
             childAspectRatio: 1.18,
@@ -899,7 +900,7 @@ class _VideoCard extends StatelessWidget {
     // Old-player tile: 16:9 thumbnail with quality badge (top-left),
     // favourite toggle (top-right) and duration pill (bottom-right), then
     // title + file size.
-    return InkWell(
+    return RemoteTap(
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
       onLongPress: onLongPress,

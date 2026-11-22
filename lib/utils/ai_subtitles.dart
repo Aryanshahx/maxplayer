@@ -594,7 +594,6 @@ class _AiOptionsDialogState extends State<_AiOptionsDialog> {
             child: SwitchListTile(
               dense: true,
               contentPadding: const EdgeInsets.only(left: 12, right: 4),
-              activeThumbColor: AppColors.accent,
               title: const LText(
                 'Karaoke style',
                 style: TextStyle(

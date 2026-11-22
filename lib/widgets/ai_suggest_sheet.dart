@@ -1,3 +1,4 @@
+import 'remote_tap.dart';
 import '../utils/app_language.dart';
 import 'dart:convert';
 
@@ -226,7 +227,7 @@ class _AiSuggestSheetState extends State<AiSuggestSheet> {
             runSpacing: 8,
             children: [
               for (final m in _moods)
-                GestureDetector(
+                RemoteTap(
                   onTap: _busy ? null : () => _suggest(m),
                   child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -309,7 +310,7 @@ class _PickCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
-    return GestureDetector(
+    return RemoteTap(
       onTap: onTap,
       child: SizedBox(
         width: 110,

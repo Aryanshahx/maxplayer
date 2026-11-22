@@ -6,7 +6,6 @@ import '../services/app_analytics.dart';
 import '../services/push_service.dart';
 
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -26,6 +25,7 @@ import '../utils/settings.dart';
 import '../utils/sort.dart';
 import '../widgets/about_sheet.dart';
 import '../widgets/discover_banner.dart';
+import '../widgets/remote_tap.dart';
 import '../widgets/user_manual_sheet.dart';
 import '../widgets/video_grid.dart';
 import '../services/native_bridge.dart';
@@ -403,7 +403,32 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return Scaffold(
       body: SafeArea(
         child: _denied && _videos.isEmpty
-            ? _PermissionHint(onRetry: _load)
+            ? Column(
+                children: [
+                  _buildHeader(),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          _PermissionHint(onRetry: _load),
+                          _buildTiles(),
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: DiscoverBanner(
+                              onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      DiscoverScreen(videos: _videos),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              )
             : _loading && _videos.isEmpty
             ? Center(child: CircularProgressIndicator(color: AppColors.accent))
             : _buildHome(),
@@ -457,7 +482,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
           child: AnimatedAlign(
             duration: Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
-            heightFactor: _tilesVisible ? 1.0 : 0.0,
+            heightFactor: NativeBridge.isTelevision || _tilesVisible
+                ? 1.0
+                : 0.0,
             alignment: Alignment.topCenter,
             child: _buildTiles(),
           ),
@@ -515,6 +542,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ShaderMask(
+                  blendMode: BlendMode.srcIn,
                   shaderCallback: (bounds) => LinearGradient(
                     // Exact old-app brand gradient from the supplied old app.
                     colors: [
@@ -530,8 +558,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     style: TextStyle(
                       fontSize: 19,
                       fontWeight: FontWeight.bold,
-                      color:
-                          AppColors.textPrimary, // ShaderMask paints over this
+                      color: Colors
+                          .white, // Opaque mask: retain the brand gradient in both themes
                     ),
                   ),
                 ),
@@ -633,6 +661,31 @@ class _LibraryScreenState extends State<LibraryScreen> {
       ],
     );
 
+    if (NativeBridge.isTelevision || MediaQuery.sizeOf(context).width >= 900) {
+      final tiles = [...kQuickTilesPage1, ...kQuickTilesPage2];
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+        child: Column(
+          children: [
+            for (var row = 0; row < 2; row++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    for (var col = 0; col < 4; col++)
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: tileAt(tiles[row * 4 + col]),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+    }
     return Padding(
       padding: EdgeInsets.fromLTRB(12, 0, 12, 6),
       child: Column(
@@ -687,48 +740,42 @@ class _Tile extends StatelessWidget {
     return Material(
       color: AppColors.surfaceAlt,
       borderRadius: BorderRadius.circular(12),
-      child: InkWell(
+      child: RemoteTap(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        splashColor: accent.withValues(alpha: 0.25),
-        // v1.0.1+61 (TV): visible focus ring when the D-pad lands here.
-        focusColor: accent.withValues(alpha: 0.30),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppColors.surfaceAlt, AppColors.surface],
-                ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppColors.textPrimary.withValues(alpha: 0.14),
-                  width: 1,
-                ),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [AppColors.surfaceAlt, AppColors.surface],
               ),
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-              child: Row(
-                children: [
-                  Icon(icon, color: accent, size: 18),
-                  SizedBox(width: 8),
-                  Flexible(
-                    child: LText(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.textPrimary.withValues(alpha: 0.14),
+                width: 1,
+              ),
+            ),
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: Row(
+              children: [
+                Icon(icon, color: accent, size: 18),
+                SizedBox(width: 8),
+                Flexible(
+                  child: LText(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -802,7 +849,9 @@ class _GroupedView extends StatelessWidget {
                 final vPad = 16.0; // 4 + 12
                 final spacing = 8.0;
                 final gridW = c.maxWidth - hPad;
-                final cols = (gridW / 200).ceil().clamp(2, 6);
+                final cols = (gridW / (c.maxWidth >= 900 ? 300 : 200))
+                    .ceil()
+                    .clamp(1, 100);
                 final cellW = (gridW - (cols - 1) * spacing) / cols;
                 final cellH = cellW / 1.18;
                 final height = listMode

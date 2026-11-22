@@ -24,6 +24,11 @@ class AppColors {
   static set accent(Color value) => _accent = value;
   // The default white accent becomes charcoal in light mode for contrast.
   static Color get accent => adaptiveAccent(_accent, brightness);
+  static Color get playerForeground =>
+      isDark ? Colors.white : const Color(0xFF181A20);
+  static Color get playerMuted => playerForeground.withValues(alpha: .65);
+  static Color get playerChrome =>
+      isDark ? const Color(0xF0060608) : const Color(0xF5FFFFFF);
   static Color get mediaAccent => _accent;
   static Color get mediaOnAccent => contrastForeground(_accent);
   static Color get danger =>
@@ -94,6 +99,8 @@ ThemeData buildAppTheme({
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
+    focusColor: ac.withValues(alpha: .25),
+    hoverColor: ac.withValues(alpha: .10),
     colorScheme: scheme,
     scaffoldBackgroundColor: background,
     appBarTheme: AppBarTheme(
@@ -138,12 +145,29 @@ ThemeData buildAppTheme({
     bottomSheetTheme: BottomSheetThemeData(backgroundColor: surface),
     dialogTheme: DialogThemeData(backgroundColor: surface),
     switchTheme: SwitchThemeData(
+      // Explicit thumb/track/border states avoid Material seed tint leaking
+      // through the transition, including disabled and keyboard-focus states.
+      trackOutlineColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? Colors.transparent
+            : scheme.outline,
+      ),
+      overlayColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.focused)
+            ? ac.withValues(alpha: .2)
+            : Colors.transparent,
+      ),
       thumbColor: WidgetStateProperty.resolveWith(
-        (states) =>
-            states.contains(WidgetState.selected) ? onAc : scheme.outline,
+        (states) => states.contains(WidgetState.disabled)
+            ? text.withValues(alpha: .38)
+            : states.contains(WidgetState.selected)
+            ? onAc
+            : scheme.outline,
       ),
       trackColor: WidgetStateProperty.resolveWith(
-        (states) => states.contains(WidgetState.selected)
+        (states) => states.contains(WidgetState.disabled)
+            ? scheme.surfaceContainerHighest
+            : states.contains(WidgetState.selected)
             ? ac
             : scheme.surfaceContainerHighest,
       ),

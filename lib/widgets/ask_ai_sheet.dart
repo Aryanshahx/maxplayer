@@ -1,3 +1,4 @@
+import 'remote_tap.dart';
 import '../utils/app_language.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -190,7 +191,7 @@ class _AskAiSheetState extends State<AskAiSheet> {
             runSpacing: 8,
             children: [
               for (final t in kMovieAiTemplates)
-                GestureDetector(
+                RemoteTap(
                   onTap: _asking ? null : () => _ask(t),
                   child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),

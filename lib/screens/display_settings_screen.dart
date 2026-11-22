@@ -1,3 +1,4 @@
+import '../widgets/remote_tap.dart';
 import '../utils/app_language.dart';
 
 import 'package:flutter/material.dart';
@@ -103,11 +104,7 @@ class DisplaySettingsScreen extends StatelessWidget {
                             ),
                           ),
                         ),
-                        Switch(
-                          value: s.onlyFavs,
-                          activeThumbColor: AppColors.accent,
-                          onChanged: s.setOnlyFavs,
-                        ),
+                        Switch(value: s.onlyFavs, onChanged: s.setOnlyFavs),
                       ],
                     ),
                   ),
@@ -383,7 +380,7 @@ class _AccentDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
-    return GestureDetector(
+    return RemoteTap(
       onTap: onTap,
       child: Container(
         width: 46,

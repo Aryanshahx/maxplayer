@@ -8,6 +8,7 @@
 library;
 
 import '../theme.dart';
+import 'remote_tap.dart';
 
 import '../utils/app_language.dart';
 
@@ -26,6 +27,8 @@ import '../utils/tmdb_image.dart';
 
 const kCineInk = Color(0xFF050506);
 const kCineBg = Color(0xFF060607);
+Color get cineInk => AppColors.isDark ? kCineInk : AppColors.background;
+Color get cineBg => AppColors.isDark ? kCineBg : AppColors.background;
 const kCineCyan = Color(0xFF22D3EE);
 const kCinePurple = Color(0xFFA855F7);
 const kCinePink = Color(0xFFEC4899);
@@ -310,6 +313,7 @@ class CineFeaturedHero extends StatefulWidget {
 class _CineFeaturedHeroState extends State<CineFeaturedHero>
     with TickerProviderStateMixin {
   int _index = 0;
+  bool _remoteFocused = false;
   Timer? _timer;
   late final AnimationController _slide = AnimationController(
     vsync: this,
@@ -360,10 +364,9 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
       ..forward();
     _timer?.cancel();
     if (widget.items.length > 1) {
-      _timer = Timer(
-        kCineHeroDuration,
-        () => _goTo(cineHeroNext(_index, widget.items.length)),
-      );
+      _timer = Timer(kCineHeroDuration, () {
+        if (!_remoteFocused) _goTo(cineHeroNext(_index, widget.items.length));
+      });
     }
   }
 
@@ -432,264 +435,298 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
     // sit centered in the RIGHT 45% on the plain background — nothing
     // can escape into the search bar (which floats over art only) or
     // the ticker strip below.
+    Widget focusAware(Widget child) => Focus(
+      canRequestFocus: false,
+      onFocusChange: (focused) {
+        _remoteFocused = focused;
+        if (focused) {
+          _timer?.cancel();
+          _slide.stop();
+        } else if (mounted) {
+          _arm();
+        }
+      },
+      child: child,
+    );
     if (landscape) {
-      return SizedBox(
-        height: h,
-        width: double.infinity,
-        child: Stack(
-          children: [
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: mq.size.width * 0.55,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => widget.onOpen(m),
-                    child: AnimatedSwitcher(
-                      duration: kCineHeroCrossfade,
-                      child: KeyedSubtree(
-                        key: ValueKey('hero_${m.id}'),
-                        child: AnimatedBuilder(
-                          animation: _slide,
-                          builder: (context, _) {
-                            final scale = 1.15 - 0.15 * _slide.value;
-                            return Transform.scale(
-                              scale: scale,
-                              child: backdrop.isEmpty
-                                  ? const ColoredBox(color: kCineInk)
-                                  : TmdbImage(url: backdrop, fit: BoxFit.cover),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                  const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.center,
-                        colors: [Color(0x80050506), Colors.transparent],
-                      ),
-                    ),
-                  ),
-                  const Align(
-                    alignment: Alignment.centerRight,
-                    child: SizedBox(
-                      width: 90,
-                      height: double.infinity,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.centerRight,
-                            end: Alignment.centerLeft,
-                            colors: [kCineInk, Colors.transparent],
+      return focusAware(
+        SizedBox(
+          height: h,
+          width: double.infinity,
+          child: Stack(
+            children: [
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: mq.size.width * 0.55,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => widget.onOpen(m),
+                      child: AnimatedSwitcher(
+                        duration: kCineHeroCrossfade,
+                        child: KeyedSubtree(
+                          key: ValueKey('hero_${m.id}'),
+                          child: AnimatedBuilder(
+                            animation: _slide,
+                            builder: (context, _) {
+                              final scale = 1.15 - 0.15 * _slide.value;
+                              return Transform.scale(
+                                scale: scale,
+                                child: backdrop.isEmpty
+                                    ? ColoredBox(color: cineInk)
+                                    : TmdbImage(
+                                        url: backdrop,
+                                        fit: BoxFit.cover,
+                                      ),
+                              );
+                            },
                           ),
                         ),
                       ),
                     ),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.center,
+                          colors: [
+                            AppColors.background.withValues(alpha: .7),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: SizedBox(
+                        width: 90,
+                        height: double.infinity,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.centerRight,
+                              end: Alignment.centerLeft,
+                              colors: [cineInk, Colors.transparent],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // tap-to-detail anywhere (kept above art/veils, below copy)
+              Positioned.fill(
+                child: RemoteTap(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () => widget.onOpen(m),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+              Positioned(
+                left: mq.size.width * 0.55,
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 16, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Spacer(),
+                      _staggered(
+                        1,
+                        Text(
+                          m.title.toUpperCase(),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: _landscapeTitleStyle(context),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _staggered(2, _metaRow(m)),
+                      if (m.overview.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        _staggered(
+                          3,
+                          Text(
+                            m.overview,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              height: 1.4,
+                              color: AppColors.textPrimary.withValues(
+                                alpha: 0.6,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      _staggered(4, _buttonRow(m)),
+                      if (items.length > 1) ...[
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (var i = 0; i < items.length; i++) _pill(i),
+                          ],
+                        ),
+                      ],
+                      const Spacer(),
+                    ],
                   ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return focusAware(
+      SizedBox(
+        height: h,
+        width: double.infinity,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // backdrop: crossfade + Ken Burns — the whole art is tappable
+            // (v1.0.1+39: "make each slider clickable").
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => widget.onOpen(m),
+              child: AnimatedSwitcher(
+                duration: kCineHeroCrossfade,
+                child: KeyedSubtree(
+                  key: ValueKey('hero_${m.id}'),
+                  child: AnimatedBuilder(
+                    animation: _slide,
+                    builder: (context, _) {
+                      final scale = 1.15 - 0.15 * _slide.value;
+                      return Transform.scale(
+                        scale: scale,
+                        child: backdrop.isEmpty
+                            ? ColoredBox(color: cineInk)
+                            : TmdbImage(url: backdrop, fit: BoxFit.cover),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+            // three gradient veils
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [cineInk, Colors.transparent],
+                  stops: [0.0, 1.0],
+                ),
+              ),
+            ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.center,
+                  colors: [
+                    AppColors.background.withValues(alpha: .7),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: SizedBox(
+                height: 160,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [cineInk, Colors.transparent],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // content texts — NON-INTERACTIVE: taps fall through to the
+            // tap layer below (moved up by the button row's height).
+            Positioned(
+              left: 20,
+              right: 96,
+              bottom: 152,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _staggered(
+                    1,
+                    Text(
+                      m.title.toUpperCase(),
+                      style: _titleStyle(context, compact),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _staggered(2, _metaRow(m)),
+                  if (!compact && m.overview.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _staggered(
+                      3,
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 390),
+                        child: Text(
+                          m.overview,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            height: 1.45,
+                            color: AppColors.textPrimary.withValues(
+                              alpha: 0.65,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
-            // tap-to-detail anywhere (kept above art/veils, below copy)
+            // v1.0.1+41: full-bleed tap layer ABOVE the texts/veils and
+            // BELOW the buttons + pills — a tap anywhere on the artwork or
+            // copy opens the detail page, guaranteed.
             Positioned.fill(
-              child: GestureDetector(
+              child: RemoteTap(
                 behavior: HitTestBehavior.translucent,
                 onTap: () => widget.onOpen(m),
                 child: const SizedBox.expand(),
               ),
             ),
             Positioned(
-              left: mq.size.width * 0.55,
-              right: 0,
-              top: 0,
-              bottom: 0,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 16, 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Spacer(),
-                    _staggered(
-                      1,
-                      Text(
-                        m.title.toUpperCase(),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: _landscapeTitleStyle(context),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _staggered(2, _metaRow(m)),
-                    if (m.overview.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      _staggered(
-                        3,
-                        Text(
-                          m.overview,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            height: 1.4,
-                            color: Colors.white.withValues(alpha: 0.6),
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 14),
-                    _staggered(4, _buttonRow(m)),
-                    if (items.length > 1) ...[
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (var i = 0; i < items.length; i++) _pill(i),
-                        ],
-                      ),
-                    ],
-                    const Spacer(),
-                  ],
+              left: 20,
+              bottom: 80,
+              child: _staggered(4, _buttonRow(m)),
+            ),
+            // bottom countdown pills
+            if (items.length > 1)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 30,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [for (var i = 0; i < items.length; i++) _pill(i)],
                 ),
               ),
-            ),
           ],
         ),
-      );
-    }
-
-    return SizedBox(
-      height: h,
-      width: double.infinity,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // backdrop: crossfade + Ken Burns — the whole art is tappable
-          // (v1.0.1+39: "make each slider clickable").
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => widget.onOpen(m),
-            child: AnimatedSwitcher(
-              duration: kCineHeroCrossfade,
-              child: KeyedSubtree(
-                key: ValueKey('hero_${m.id}'),
-                child: AnimatedBuilder(
-                  animation: _slide,
-                  builder: (context, _) {
-                    final scale = 1.15 - 0.15 * _slide.value;
-                    return Transform.scale(
-                      scale: scale,
-                      child: backdrop.isEmpty
-                          ? const ColoredBox(color: kCineInk)
-                          : TmdbImage(url: backdrop, fit: BoxFit.cover),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
-          // three gradient veils
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [kCineInk, Colors.transparent],
-                stops: [0.0, 1.0],
-              ),
-            ),
-          ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.center,
-                colors: [Color(0x80050506), Colors.transparent],
-              ),
-            ),
-          ),
-          const Align(
-            alignment: Alignment.bottomCenter,
-            child: SizedBox(
-              height: 160,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [kCineInk, Colors.transparent],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // content texts — NON-INTERACTIVE: taps fall through to the
-          // tap layer below (moved up by the button row's height).
-          Positioned(
-            left: 20,
-            right: 96,
-            bottom: 152,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _staggered(
-                  1,
-                  Text(
-                    m.title.toUpperCase(),
-                    style: _titleStyle(context, compact),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _staggered(2, _metaRow(m)),
-                if (!compact && m.overview.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _staggered(
-                    3,
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 390),
-                      child: Text(
-                        m.overview,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 15,
-                          height: 1.45,
-                          color: Colors.white.withValues(alpha: 0.65),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          // v1.0.1+41: full-bleed tap layer ABOVE the texts/veils and
-          // BELOW the buttons + pills — a tap anywhere on the artwork or
-          // copy opens the detail page, guaranteed.
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: () => widget.onOpen(m),
-              child: const SizedBox.expand(),
-            ),
-          ),
-          Positioned(left: 20, bottom: 80, child: _staggered(4, _buttonRow(m))),
-          // bottom countdown pills
-          if (items.length > 1)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 30,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [for (var i = 0; i < items.length; i++) _pill(i)],
-              ),
-            ),
-        ],
       ),
     );
   }
@@ -697,8 +734,10 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
   TextStyle _landscapeTitleStyle(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
     final size = (w * 0.04).clamp(28.0, 52.0);
-    return cineDisplay(size, Colors.white).copyWith(
-      shadows: const [Shadow(color: Color(0xB3000000), blurRadius: 40)],
+    return cineDisplay(size, AppColors.textPrimary).copyWith(
+      shadows: AppColors.isDark
+          ? [const Shadow(color: Color(0xB3000000), blurRadius: 40)]
+          : [],
     );
   }
 
@@ -707,14 +746,19 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
     // v1.0.1+45: capped at 92 (was 128 — the giant tablet titles that
     // overlapped the strip + search bar), 64 in compact/landscape hero.
     final size = (w * 0.09).clamp(44.0, compact ? 64.0 : 92.0);
-    return cineDisplay(size, Colors.white).copyWith(
-      shadows: const [Shadow(color: Color(0xB3000000), blurRadius: 60)],
+    return cineDisplay(size, AppColors.textPrimary).copyWith(
+      shadows: AppColors.isDark
+          ? [const Shadow(color: Color(0xB3000000), blurRadius: 60)]
+          : [],
     );
   }
 
   Widget _metaRow(TmdbMovie m) {
-    TextStyle st() =>
-        cineMono(10, Colors.white.withValues(alpha: 0.5), letterSpacing: 1.5);
+    TextStyle st() => cineMono(
+      10,
+      AppColors.textPrimary.withValues(alpha: 0.5),
+      letterSpacing: 1.5,
+    );
     Widget sep() => Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: LText('|', style: st()),
@@ -729,7 +773,7 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
         Icon(
           Icons.calendar_today_outlined,
           size: 11,
-          color: Colors.white.withValues(alpha: 0.5),
+          color: AppColors.textPrimary.withValues(alpha: 0.5),
         ),
         const SizedBox(width: 4),
         Text('${m.year ?? '—'}', style: st()),
@@ -737,7 +781,7 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
         Icon(
           Icons.movie_outlined,
           size: 11,
-          color: Colors.white.withValues(alpha: 0.5),
+          color: AppColors.textPrimary.withValues(alpha: 0.5),
         ),
         const SizedBox(width: 4),
         Text(cineKindLabel(m.kind), style: st()),
@@ -806,8 +850,8 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(4),
             color: active
-                ? Colors.white.withValues(alpha: 0.14)
-                : Colors.white.withValues(alpha: 0.2),
+                ? AppColors.textPrimary.withValues(alpha: 0.14)
+                : AppColors.textPrimary.withValues(alpha: 0.2),
           ),
           child: active
               ? Align(
@@ -1076,7 +1120,7 @@ class _TopTenCardState extends State<_TopTenCard> {
             child: MouseRegion(
               onEnter: (_) => setState(() => _hover = true),
               onExit: (_) => setState(() => _hover = false),
-              child: GestureDetector(
+              child: RemoteTap(
                 onTap: widget.onTap,
                 onTapDown: (_) => setState(() => _hover = true),
                 onTapUp: (_) => setState(() => _hover = false),
@@ -1098,8 +1142,10 @@ class _TopTenCardState extends State<_TopTenCard> {
                         child: TweenAnimationBuilder<Color?>(
                           tween: ColorTween(
                             end: _hover
-                                ? kCineCyan.withValues(alpha: 0.25)
-                                : Colors.white.withValues(alpha: 0.06),
+                                ? AppColors.accent.withValues(alpha: .8)
+                                : AppColors.textSecondary.withValues(
+                                    alpha: AppColors.isDark ? .55 : .65,
+                                  ),
                           ),
                           duration: const Duration(milliseconds: 500),
                           builder: (context, color, _) => Text(
@@ -1354,7 +1400,7 @@ class _SocialCard extends StatelessWidget {
           launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
         ),
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
@@ -1382,10 +1428,13 @@ class _SocialCard extends StatelessWidget {
                   ),
                 ),
                 child: Center(
-                  child: CustomPaint(size: Size(17, 17), painter: badgePainter),
+                  child: CustomPaint(
+                    size: const Size(17, 17),
+                    painter: badgePainter,
+                  ),
                 ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1413,7 +1462,7 @@ class _SocialCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Icons.open_in_new_rounded, color: kCineCyan, size: 15),
+              const Icon(Icons.open_in_new_rounded, color: kCineCyan, size: 15),
             ],
           ),
         ),

@@ -278,11 +278,7 @@ class _SwitchTile extends StatelessWidget {
             ),
           ),
           ?trailing,
-          Switch.adaptive(
-            value: value,
-            activeThumbColor: AppColors.accent,
-            onChanged: onChanged,
-          ),
+          Switch.adaptive(value: value, onChanged: onChanged),
         ],
       ),
     );
@@ -333,7 +329,6 @@ class _BoostToggleTile extends StatelessWidget {
               ),
               Switch.adaptive(
                 value: s.volumeBoost,
-                activeThumbColor: AppColors.accent,
                 onChanged: (v) async {
                   await s.setVolumeBoost(v);
                   await AppVolume.instance.setBoostEnabled(v);

@@ -500,6 +500,10 @@ class MainActivity : FlutterFragmentActivity() {
         )
         storageChannel!!.setMethodCallHandler { call, result ->
             when (call.method) {
+                "isTelevision" -> result.success(
+                    (resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) ==
+                        Configuration.UI_MODE_TYPE_TELEVISION
+                )
                 "sdkInt" -> result.success(Build.VERSION.SDK_INT)
 
                 "vaultDirPath" -> {

@@ -42,6 +42,16 @@ class NativeBridge {
     });
   }
 
+  /// Native UI mode, never inferred from width (tablets are not televisions).
+  static bool isTelevision = false;
+  static Future<void> loadDeviceMode() async {
+    try {
+      isTelevision = await _channel.invokeMethod<bool>('isTelevision') ?? false;
+    } catch (_) {
+      isTelevision = false;
+    }
+  }
+
   /// Android API level (0 when unknown — callers take the safe path).
   static Future<int> sdkInt() async {
     try {
@@ -386,4 +396,3 @@ class NativeBridge {
     });
   }
 }
-

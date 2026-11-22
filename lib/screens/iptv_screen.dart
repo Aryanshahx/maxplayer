@@ -1,3 +1,4 @@
+import '../widgets/remote_tap.dart';
 import '../widgets/recent_search_field.dart';
 import '../utils/app_language.dart';
 
@@ -219,7 +220,7 @@ class _IptvScreenState extends State<IptvScreen> {
                   )
                 : _all.isEmpty
                 ? Center(
-                    child: GestureDetector(
+                    child: RemoteTap(
                       onTap: () => unawaited(_load()),
                       child: Text(
                         _status,
