@@ -211,6 +211,11 @@ class LInputDecoration extends InputDecoration {
     super.suffixIconConstraints,
     super.prefixIconConstraints,
   });
+  // Borderless fields already sit in a decorated container. Do not inherit
+  // the global filled surface and paint a second rectangular white box.
+  @override
+  bool? get filled =>
+      super.filled ?? (border == InputBorder.none ? false : null);
   @override
   String? get hintText => super.hintText == null
       ? null

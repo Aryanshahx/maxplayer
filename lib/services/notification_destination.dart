@@ -7,6 +7,7 @@ const notificationScreens = <String>{
   'audio',
   'network',
   'cloud',
+  'vpn',
   'quickShare',
   'stream',
   'iptv',

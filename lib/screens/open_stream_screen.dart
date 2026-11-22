@@ -324,7 +324,10 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
               style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
               decoration: LInputDecoration(
                 hintText: 'Stream title (optional)',
-                hintStyle: TextStyle(color: AppColors.border, fontSize: 12.5),
+                hintStyle: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12.5,
+                ),
                 border: InputBorder.none,
               ),
             ),
@@ -420,7 +423,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                       decoration: LInputDecoration(
                         hintText: 'Search channels…',
                         hintStyle: TextStyle(
-                          color: AppColors.border,
+                          color: AppColors.textSecondary,
                           fontSize: 12.5,
                         ),
                         border: InputBorder.none,

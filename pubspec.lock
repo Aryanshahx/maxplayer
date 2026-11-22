@@ -645,6 +645,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "9.5.0"
+  openvpn_flutter:
+    dependency: "direct main"
+    description:
+      name: openvpn_flutter
+      sha256: a9f0f07a7abd12411fd76f24ae82650ed565be48aa4631365175ae8e8fc5e110
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.0"
   package_config:
     dependency: transitive
     description:

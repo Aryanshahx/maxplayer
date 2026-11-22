@@ -12,10 +12,10 @@ void main() {
     ]);
   });
 
-  test('v1.0.20 Cloud Storage moves to the old File Manager slot', () {
+  test('VPN replaces Cloud Storage on the second page', () {
     expect(kQuickTilesPage2.map((t) => t.id).toList(), [
       'networkStorage',
-      'cloudStorage',
+      'vpn',
       'openStream',
       'quickShare',
     ]);

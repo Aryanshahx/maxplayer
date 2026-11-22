@@ -126,7 +126,7 @@ class AppAnalytics {
     'playlists',
     'audio',
     'network',
-    'cloud',
+    'vpn',
     'quickShare',
   ];
   void trackFeatureOpen(String key) {

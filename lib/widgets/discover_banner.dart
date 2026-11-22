@@ -171,8 +171,17 @@ class _DiscoverBannerState extends State<DiscoverBanner> {
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
                       colors: AppColors.isDark
-                          ? [const Color(0xE6000000), const Color(0x59000000)]
-                          : [const Color(0xF2FFFFFF), const Color(0xCCFFFFFF)],
+                          ? [
+                              const Color(0xE6000000),
+                              const Color(0xB3000000),
+                              const Color(0x59000000),
+                            ]
+                          : [
+                              const Color(0xF2FFFFFF),
+                              const Color(0xD9FFFFFF),
+                              const Color(0x10FFFFFF),
+                            ],
+                      stops: const [0, .62, 1],
                     ),
                   ),
                 ),

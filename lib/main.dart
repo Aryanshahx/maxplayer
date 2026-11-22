@@ -27,6 +27,7 @@ import 'screens/audio_screen.dart';
 import 'screens/network_storage_screen.dart';
 
 import 'screens/cloud_storage_screen.dart';
+import 'features/vpn/vpn_screen.dart';
 
 import 'screens/quick_share_screen.dart';
 
@@ -194,6 +195,7 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
         'audio' => const AudioScreen(),
         'network' => const NetworkStorageScreen(),
         'cloud' => const CloudStorageScreen(),
+        'vpn' => const VpnEntryScreen(),
         'quickShare' => const QuickShareScreen(),
         'stream' => const OpenStreamScreen(),
         'iptv' => const IptvScreen(),

@@ -133,167 +133,88 @@ String cineKindLabel(String kind) => kind == 'movie' ? 'MOVIE' : 'SERIES';
 /// exit. Plays once per Discover open.
 class CineBoot extends StatefulWidget {
   const CineBoot({super.key, required this.onFinished});
-
   final VoidCallback onFinished;
-
   @override
   State<CineBoot> createState() => _CineBootState();
 }
 
-class _CineBootState extends State<CineBoot> with TickerProviderStateMixin {
-  late final AnimationController _run =
-      AnimationController(vsync: this, duration: kCineBootDuration)
-        ..addStatusListener((st) {
-          if (st == AnimationStatus.completed) {
-            Future<void>.delayed(const Duration(milliseconds: 60), () {
-              if (mounted) _exit.forward();
-            });
-          }
-        });
-  late final AnimationController _exit =
-      AnimationController(vsync: this, duration: kCineBootExit)
-        ..addStatusListener((st) {
-          if (st == AnimationStatus.completed) widget.onFinished();
-        });
-
+class _CineBootState extends State<CineBoot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 900),
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) widget.onFinished();
+      });
+  bool _started = false;
   @override
-  void initState() {
-    super.initState();
-    _run.forward();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onFinished();
+      });
+    } else {
+      _controller.forward();
+    }
   }
 
   @override
   void dispose() {
-    _run.dispose();
-    _exit.dispose();
+    _controller.dispose();
     super.dispose();
-  }
-
-  Widget _cornerTick(bool top, bool left) {
-    final c = Colors.white.withValues(alpha: 0.55);
-    final hBar = Container(color: c, width: 26, height: 1);
-    final vBar = Container(color: c, width: 1, height: 26);
-    return Positioned(
-      top: top ? 18 : null,
-      bottom: top ? null : 21,
-      left: left ? 18 : null,
-      right: left ? null : 18,
-      child: Row(
-        crossAxisAlignment: top
-            ? CrossAxisAlignment.start
-            : CrossAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: (left ? [hBar, vBar] : [vBar, hBar]),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    Theme.of(context);
-    final exitCurve = CurvedAnimation(
-      parent: _exit,
-      curve: const Cubic(0.76, 0.0, 0.24, 1.0),
-    );
-    return LayoutBuilder(
-      builder: (context, c) {
-        final w = c.maxWidth;
-        final h = c.maxHeight;
-        final counterSize = (w * 0.22).clamp(96.0, 240.0);
-        return AnimatedBuilder(
-          animation: _exit,
-          builder: (context, _) {
-            return Transform.translate(
-              offset: Offset(0, -h * exitCurve.value),
-              child: Container(
-                width: w,
-                height: h,
-                color: kCineBg,
-                child: Stack(
-                  children: [
-                    // v1.0.1+40: the thin white corner hairlines are back
-                    // (pure line ticks, no text labels).
-                    _cornerTick(true, true),
-                    _cornerTick(true, false),
-                    _cornerTick(false, true),
-                    _cornerTick(false, false),
-                    // giant counter, bottom-right
-                    Positioned(
-                      right: 18,
-                      bottom: 22,
-                      child: AnimatedBuilder(
-                        animation: _run,
-                        builder: (context, _) {
-                          final p = cineBootEase(_run.value);
-                          return RichText(
-                            text: TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: '${(p * 100).floor()}',
-                                  style: cineDisplay(counterSize, Colors.white),
-                                ),
-                                TextSpan(
-                                  text: '%',
-                                  style: cineDisplay(
-                                    counterSize * 0.45,
-                                    kCinePurple.withValues(alpha: 0.8),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
+    final scheme = Theme.of(context).colorScheme;
+    final background = Theme.of(context).scaffoldBackgroundColor;
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final progress = (_controller.value / .78).clamp(0.0, 1.0);
+          final fade = ((_controller.value - .78) / .22).clamp(0.0, 1.0);
+          return Opacity(
+            opacity: 1 - Curves.easeInOut.transform(fade),
+            child: ColoredBox(
+              color: background,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Positioned(
+                    right: 24,
+                    bottom: 28,
+                    child: Text(
+                      '${(progress * 100).round()}%',
+                      style: cineDisplay(
+                        (MediaQuery.sizeOf(context).width * .22).clamp(72, 180),
+                        scheme.onSurface,
                       ),
                     ),
-                    // glowing hairline progress bar
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: AnimatedBuilder(
-                        animation: _run,
-                        builder: (context, _) {
-                          final p = cineBootEase(_run.value);
-                          return Align(
-                            alignment: Alignment.centerLeft,
-                            child: FractionallySizedBox(
-                              widthFactor: p,
-                              child: Container(
-                                height: 2,
-                                decoration: const BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [kCineCyan, kCinePurple, kCinePink],
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Color(0x80A855F7),
-                                      blurRadius: 15,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                  ),
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 3,
+                      color: scheme.primary,
+                      backgroundColor: scheme.surfaceContainerHighest,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            );
-          },
-        );
-      },
+            ),
+          );
+        },
+      ),
     );
   }
 }
 
-// ================================================================== HERO ==
-
-/// Immersive auto-rotating featured hero: crossfaded backdrops with a Ken
-/// Burns push-in, staggered content entrance and realtime countdown pills
-/// at the bottom. Tapping the ART opens the detail page ([onOpen]); the
-/// PLAY NOW button starts playback ([onTap]).
 class CineFeaturedHero extends StatefulWidget {
   const CineFeaturedHero({
     super.key,
@@ -754,11 +675,7 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
   }
 
   Widget _metaRow(TmdbMovie m) {
-    TextStyle st() => cineMono(
-      10,
-      AppColors.textPrimary.withValues(alpha: 0.5),
-      letterSpacing: 1.5,
-    );
+    TextStyle st() => cineMono(10, AppColors.textSecondary, letterSpacing: 1.5);
     Widget sep() => Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: LText('|', style: st()),
@@ -767,31 +684,34 @@ class _CineFeaturedHeroState extends State<CineFeaturedHero>
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: LText('·', style: st()),
     );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          Icons.calendar_today_outlined,
-          size: 11,
-          color: AppColors.textPrimary.withValues(alpha: 0.5),
-        ),
-        const SizedBox(width: 4),
-        Text('${m.year ?? '—'}', style: st()),
-        sep(),
-        Icon(
-          Icons.movie_outlined,
-          size: 11,
-          color: AppColors.textPrimary.withValues(alpha: 0.5),
-        ),
-        const SizedBox(width: 4),
-        Text(cineKindLabel(m.kind), style: st()),
-        if (m.rating > 0) ...[
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.background.withValues(alpha: .94),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.calendar_today_outlined,
+            size: 11,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(width: 4),
+          Text('${m.year ?? '—'}', style: st()),
           sep(),
-          const Icon(Icons.star_rounded, size: 11, color: kCineAmber),
-          dot(),
-          Text(tmdbRatingText(m.rating), style: st()),
+          Icon(Icons.movie_outlined, size: 11, color: AppColors.textSecondary),
+          const SizedBox(width: 4),
+          Text(cineKindLabel(m.kind), style: st()),
+          if (m.rating > 0) ...[
+            sep(),
+            const Icon(Icons.star_rounded, size: 11, color: kCineAmber),
+            dot(),
+            Text(tmdbRatingText(m.rating), style: st()),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -1144,7 +1064,7 @@ class _TopTenCardState extends State<_TopTenCard> {
                             end: _hover
                                 ? AppColors.accent.withValues(alpha: .8)
                                 : AppColors.textSecondary.withValues(
-                                    alpha: AppColors.isDark ? .55 : .65,
+                                    alpha: AppColors.isDark ? .7 : .9,
                                   ),
                           ),
                           duration: const Duration(milliseconds: 500),
@@ -1156,7 +1076,7 @@ class _TopTenCardState extends State<_TopTenCard> {
                               height: 0.95,
                               foreground: Paint()
                                 ..style = PaintingStyle.stroke
-                                ..strokeWidth = 1.5
+                                ..strokeWidth = 2.0
                                 ..color = color ?? Colors.transparent,
                             ),
                           ),

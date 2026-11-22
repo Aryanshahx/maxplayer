@@ -198,8 +198,32 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
 
+    private var vpnManager: MaxVpnManager? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "maxplayer/vpn").setMethodCallHandler { call, result ->
+            try {
+                if (call.method == "readSecret") {
+                    result.success(VpnSecretStore.read(applicationContext, call.argument<String>("key") ?: ""))
+                } else if (call.method == "writeSecret") {
+                    VpnSecretStore.write(applicationContext, call.argument<String>("key") ?: "", call.argument<String>("value"))
+                    result.success(true)
+                } else {
+                    val manager = vpnManager ?: MaxVpnManager(applicationContext).also { vpnManager = it }
+                    when (call.method) {
+                        "provisionFreeWarpConfig" -> manager.provisionFreeWarpConfig(result)
+                        "provisionForeignOpenVpnConfig" -> manager.provisionForeignOpenVpnConfig(call.argument<String>("countryCode") ?: "AUTO_FOREIGN", call.argument<List<String>>("excludeHosts"), result)
+                        "fetchLiveForeignCountries" -> manager.fetchLiveForeignCountries(result)
+                        "validateWireGuardConfig" -> manager.validateWireGuardConfig(call.argument<String>("configText") ?: "", result)
+                        "connectVpn" -> manager.connectVpn(this, call.argument<String>("configText") ?: "", call.argument<String>("profileName") ?: "Max Player VPN", call.argument<Boolean>("appOnly") ?: true, result)
+                        "disconnectVpn" -> manager.disconnectVpn(result)
+                        "getVpnStatus" -> manager.getVpnStatus(result)
+                        else -> result.notImplemented()
+                    }
+                }
+            } catch (_: Exception) { result.error("VPN_UNAVAILABLE", "VPN operation unavailable. Reopen VPN and try again.", null) }
+        }
         PipActionReceiver.bind(this)
 
         methodChannel = MethodChannel(
@@ -1292,6 +1316,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (vpnManager?.onActivityResult(requestCode, resultCode) == true) return
         if (requestCode == REQ_SAF_PICK) {
             finishSafPick(resultCode, data)
         } else if (requestCode == REQ_MEDIA_DELETE) {
