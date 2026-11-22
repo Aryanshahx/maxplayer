@@ -1,0 +1,12 @@
+// Applied to every Gradle build in this invocation, including Flutter's
+// included :gradle build. android/settings.gradle.kts alone cannot configure
+// the included build's kotlin-dsl plugin-classpath repositories.
+// Keep the Plugin Portal for plugin markers, but resolve Kotlin libraries
+// and their BOMs from Maven Central first. No versions/TLS checks are changed.
+gradle.beforeSettings { settings ->
+    settings.pluginManagement.repositories {
+        mavenCentral()
+        google()
+        gradlePluginPortal()
+    }
+}

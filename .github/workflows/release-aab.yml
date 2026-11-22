@@ -97,6 +97,14 @@ jobs:
           EOF
           chmod 600 android/app/upload-keystore.jks android/key.properties
 
+      - name: Configure plugin repositories for Flutter included builds
+        shell: bash
+        run: |
+          GRADLE_HOME_DIR="${GRADLE_USER_HOME:-$HOME/.gradle}"
+          mkdir -p "$GRADLE_HOME_DIR/init.d"
+          install -m 644 scripts/release/plugin-repositories.init.gradle \
+            "$GRADLE_HOME_DIR/init.d/maxplayer-plugin-repositories.init.gradle"
+
       - name: Build signed AAB
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
