@@ -213,36 +213,35 @@ void main() {
     },
   );
   testWidgets(
-    'opening VPN shows disclosure before any native/network provisioning',
+    'opening VPN shows controls without instructions or auto-connecting',
     (tester) async {
       final calls = <String>[];
       messenger.setMockMethodCallHandler(VpnBridge.channel, (call) async {
         calls.add(call.method);
         return null;
       });
+      final controller = VpnController(
+        await SharedPreferences.getInstance(),
+        enableNativePolling: false,
+      );
       await tester.pumpWidget(
         MaterialApp(
           theme: buildAppTheme(brightness: Brightness.light),
-          home: const VpnEntryScreen(),
+          home: VpnEntryScreen(controller: controller),
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text(vpnDisclosure), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('Agree and continue'),
-        250,
-        scrollable: find
-            .descendant(
-              of: find.byType(ListView).first,
-              matching: find.byType(Scrollable),
-            )
-            .first,
-      );
-      expect(find.text('Agree and continue'), findsOneWidget);
+      expect(find.text('Connect'), findsOneWidget);
+      expect(find.text('Agree and continue'), findsNothing);
+      expect(find.byType(SelectableText), findsNothing);
+      expect(find.byIcon(Icons.info_outline), findsNothing);
       expect(calls, isEmpty);
+      expect(controller.isConnected, isFalse);
       await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
     },
   );
+
   for (final brightness in Brightness.values) {
     testWidgets(
       'Discover splash uses $brightness palette, fades smoothly and finishes once',

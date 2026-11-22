@@ -52,8 +52,8 @@ Discover uses TMDB for artwork and metadata; initial requests need internet. Cac
 Trailers depend on their providers and availability. Language/season options only appear when available. Ask AI recommendations submit the prompt you choose to OpenRouter and its selected provider. Do not submit secrets or private media. Do not confuse online recommendations with on-device subtitle processing.
 
 ## VPN — optional, off by default
-1. Open VPN and read the prominent disclosure and provider terms.
-2. Accept only if you want to proceed. Opening the page does not automatically connect.
+1. Open VPN. The page opens directly without an instruction or acceptance screen.
+2. Opening the page does not automatically connect.
 3. Choose WARP/WireGuard, Riseup, VPN Gate/OpenVPN or a trusted supported custom profile.
 4. Keep Max Player only routing, or explicitly choose full-device routing.
 5. Tap Connect and approve Android's VPN permission. Wait for the actual connection status; check exit information when available.

@@ -26,25 +26,79 @@ class GestureIllustration extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Theme.of(context);
+    final palette = GestureDiagramPalette.fromTheme(Theme.of(context));
     return SizedBox(
       height: height,
       width: double.infinity,
-      child: CustomPaint(painter: _GesturePainter(kind, AppColors.accent)),
+      child: CustomPaint(painter: _GesturePainter(kind, palette)),
     );
   }
 }
 
+/// Explicit diagram palette, shared by onboarding and the manual.
+@immutable
+class GestureDiagramPalette {
+  GestureDiagramPalette.fromTheme(ThemeData theme)
+    : brightness = theme.brightness,
+      body = theme.brightness == Brightness.light
+          ? const Color(0xFFD5DAE4)
+          : const Color(0xFF181824),
+      screenStart = theme.brightness == Brightness.light
+          ? const Color(0xFFF8FAFC)
+          : const Color(0xFF232838),
+      screenEnd = theme.brightness == Brightness.light
+          ? const Color(0xFFE8EDF4)
+          : const Color(0xFF12141F),
+      ink = theme.brightness == Brightness.light
+          ? const Color(0xFF202733)
+          : const Color(0xFFF5F6F8),
+      muted = theme.brightness == Brightness.light
+          ? const Color(0xFF465163)
+          : const Color(0xFFB1B6C3),
+      border = theme.brightness == Brightness.light
+          ? const Color(0xFF69758A)
+          : const Color(0xFF9296A0),
+      accent = _diagramAccent(theme.colorScheme.primary, theme.brightness),
+      sun = theme.brightness == Brightness.light
+          ? const Color(0xFF805000)
+          : const Color(0xFFFFC107);
+  final Brightness brightness;
+  final Color body, screenStart, screenEnd, ink, muted, border, accent, sun;
+  Color get onAccent => contrastForeground(accent);
+}
+
+Color _diagramAccent(Color colour, Brightness brightness) {
+  var hsl = HSLColor.fromColor(adaptiveAccent(colour, brightness));
+  final background = brightness == Brightness.light
+      ? const Color(0xFFE8EDF4)
+      : const Color(0xFF232838);
+  double ratio(Color a, Color b) {
+    final x = a.computeLuminance(), y = b.computeLuminance();
+    return ((x > y ? x : y) + .05) / ((x < y ? x : y) + .05);
+  }
+
+  for (var i = 0; i < 40 && ratio(hsl.toColor(), background) < 4.5; i++) {
+    hsl = hsl.withLightness(
+      (hsl.lightness + (brightness == Brightness.light ? -.025 : .025)).clamp(
+        0,
+        1,
+      ),
+    );
+  }
+  return hsl.toColor();
+}
+
 class _GesturePainter extends CustomPainter {
   final GestureKind kind;
-  final Color accent;
+  final GestureDiagramPalette palette;
+  Color get accent => palette.accent;
 
-  _GesturePainter(this.kind, this.accent);
+  _GesturePainter(this.kind, this.palette);
 
   // ---------- helpers -------------------------------------------------------
 
   Paint get _thinWhite => Paint()
-    ..color = AppColors.textSecondary
+    ..color = palette.muted
     ..strokeWidth = 2
     ..style = PaintingStyle.stroke
     ..strokeCap = StrokeCap.round;
@@ -72,7 +126,7 @@ class _GesturePainter extends CustomPainter {
     canvas.drawRRect(
       phone,
       Paint()
-        ..color = const Color(0xFF181824)
+        ..color = palette.body
         ..style = PaintingStyle.fill,
     );
     // Screen with a soft gradient.
@@ -81,17 +135,17 @@ class _GesturePainter extends CustomPainter {
     canvas.drawRRect(
       screen,
       Paint()
-        ..shader = const LinearGradient(
+        ..shader = LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF232838), Color(0xFF12141f)],
+          colors: [palette.screenStart, palette.screenEnd],
         ).createShader(rect),
     );
     // Border.
     canvas.drawRRect(
       phone,
       Paint()
-        ..color = AppColors.textSecondary
+        ..color = palette.muted
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -105,7 +159,7 @@ class _GesturePainter extends CustomPainter {
     canvas.drawPath(
       tri,
       Paint()
-        ..color = AppColors.border
+        ..color = palette.border
         ..style = PaintingStyle.fill,
     );
   }
@@ -161,7 +215,7 @@ class _GesturePainter extends CustomPainter {
       at,
       7,
       Paint()
-        ..color = Colors.white
+        ..color = palette.ink
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -178,7 +232,7 @@ class _GesturePainter extends CustomPainter {
       text: TextSpan(
         text: text,
         style: TextStyle(
-          color: color ?? AppColors.textSecondary,
+          color: color ?? palette.muted,
           fontSize: size,
           fontWeight: FontWeight.w700,
         ),
@@ -189,7 +243,7 @@ class _GesturePainter extends CustomPainter {
   }
 
   void _sunGlyph(Canvas canvas, Offset at, double r) {
-    const amber = Color(0xFFFFC107);
+    final amber = palette.sun;
     final p = Paint()
       ..color = amber
       ..style = PaintingStyle.stroke
@@ -233,7 +287,7 @@ class _GesturePainter extends CustomPainter {
       Offset(r.center.dx, r.top + 6),
       Offset(r.center.dx, r.bottom - 6),
       Paint()
-        ..color = AppColors.border
+        ..color = palette.border
         ..strokeWidth = 1,
     );
     canvas.restore();
@@ -273,7 +327,7 @@ class _GesturePainter extends CustomPainter {
         _tapRipple(canvas, Offset(c.dx, c.dy - 2));
         // Pause bars (what the middle double-tap toggles).
         final p = Paint()
-          ..color = AppColors.textSecondary
+          ..color = palette.muted
           ..style = PaintingStyle.fill;
         canvas.drawRect(Rect.fromLTWH(c.dx - 6, c.dy + 14, 4, 12), p);
         canvas.drawRect(Rect.fromLTWH(c.dx + 2, c.dy + 14, 4, 12), p);
@@ -284,7 +338,7 @@ class _GesturePainter extends CustomPainter {
           canvas,
           size,
           leftHalf: true,
-          tint: const Color(0xFFFFC107),
+          tint: palette.sun,
           doodle: IconKindDoodle.sun,
         );
         break;
@@ -325,7 +379,7 @@ class _GesturePainter extends CustomPainter {
           canvas,
           '+45s · 03:12',
           Offset(c.dx, r.top + 13),
-          color: Colors.white,
+          color: palette.onAccent,
           size: 9.5,
         );
         _label(
@@ -368,7 +422,7 @@ class _GesturePainter extends CustomPainter {
           canvas,
           '2.0x',
           Offset(c.dx, r.top + 13),
-          color: Colors.white,
+          color: palette.onAccent,
           size: 10.5,
         );
         break;
@@ -377,7 +431,7 @@ class _GesturePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GesturePainter old) =>
-      old.kind != kind || old.accent != accent;
+      old.kind != kind || old.palette != palette;
 }
 
 enum IconKindDoodle { sun }

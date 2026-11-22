@@ -472,7 +472,7 @@ final List<_Item> _smartItems = [
   _Item(
     Icons.vpn_lock_outlined,
     'VPN — optional connection',
-    'Open the VPN tile, read and accept the disclosure, choose WARP, '
+    'Open the VPN tile, choose WARP, '
         'Riseup, VPN Gate or a trusted custom profile, then Connect and '
         'approve Android VPN permission. Max Player only is the default; '
         'full-device routing is optional. Disconnect here when finished. '

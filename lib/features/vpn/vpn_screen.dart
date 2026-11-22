@@ -1,38 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/app_language.dart';
 import 'vpn_controller.dart';
 
-const vpnDisclosure =
-    'VPN traffic is routed through the provider you select. '
-    'Cloudflare WARP, Riseup and VPN Gate/volunteer relay operators receive your '
-    'IP address and connection information and can observe destination addresses '
-    'and any unencrypted traffic. Their privacy and retention policies apply. '
-    'Max Player does not operate these servers or promise anonymity, a specific '
-    'country, unlimited bandwidth or availability. Profiles and keys are stored '
-    'locally using Android Keystore-backed encryption where available. '
-    'Max Player only is the default; Full device also routes other apps. '
-    'Android will ask for VPN approval. Only one VPN can be active at a time. '
-    'This is not a kill switch: traffic may use the normal connection after a '
-    'disconnect unless Android Always-on VPN and Block connections without VPN '
-    'are configured and supported. No connection starts automatically. '
-    'If you select WARP and connect, registration sends a generated public key, '
-    'generic Android/client/locale information and a terms-acceptance timestamp '
-    'to Cloudflare. Agree and continue includes accepting the Cloudflare '
-    'application terms for WARP use: https://www.cloudflare.com/application/terms/ '
-    'Provider privacy: https://www.cloudflare.com/privacypolicy/ ; '
-    'https://riseup.net/en/vpn ; https://www.vpngate.net/en/about_us.aspx';
-
 /// One app-scoped controller: Back does not silently tear down a user-started VPN.
 class VpnEntryScreen extends StatefulWidget {
-  const VpnEntryScreen({super.key});
+  const VpnEntryScreen({super.key, this.controller});
+  final VpnController? controller;
   @override
   State<VpnEntryScreen> createState() => _VpnEntryScreenState();
 }
 
 class _VpnEntryScreenState extends State<VpnEntryScreen> {
   static Future<VpnController>? _session;
-  bool _accepted = false;
   bool _loaded = false;
   VpnController? _vpn;
   String? _error;
@@ -43,82 +22,22 @@ class _VpnEntryScreenState extends State<VpnEntryScreen> {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    _accepted = prefs.getBool('vpn.disclosure.v1') ?? false;
-    if (_accepted) {
-      try {
-        _vpn = await (_session ??= VpnController.create());
-      } catch (_) {
-        _session = null;
-        _error = 'VPN is unavailable on this device. Please try again.';
-      }
+    try {
+      _vpn = widget.controller ?? await (_session ??= VpnController.create());
+    } catch (_) {
+      _session = null;
+      _error = 'VPN is unavailable on this device. Please try again.';
     }
     if (mounted) setState(() => _loaded = true);
-  }
-
-  Future<void> _accept() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('vpn.disclosure.v1', true);
-    if (!mounted) return;
-    setState(() => _loaded = false);
-    await _load();
   }
 
   @override
   Widget build(BuildContext context) {
     final vpn = _vpn;
     return Scaffold(
-      appBar: AppBar(
-        title: const LText('VPN'),
-        actions: [
-          IconButton(
-            tooltip: 'VPN information',
-            icon: const Icon(Icons.info_outline),
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (c) => AlertDialog(
-                title: const LText('VPN information'),
-                content: const SingleChildScrollView(
-                  child: Text(vpnDisclosure),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(c),
-                    child: const LText('Close'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const LText('VPN')),
       body: !_loaded
           ? const Center(child: CircularProgressIndicator())
-          : !_accepted
-          ? Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 720),
-                child: ListView(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.all(24),
-                  children: [
-                    const Icon(Icons.vpn_lock_outlined, size: 48),
-                    const SizedBox(height: 16),
-                    const SelectableText(vpnDisclosure),
-                    const SizedBox(height: 20),
-                    FilledButton(
-                      onPressed: _accept,
-                      child: const LText('Agree and continue'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.maybePop(context),
-                      child: const LText('Cancel'),
-                    ),
-                  ],
-                ),
-              ),
-            )
           : vpn == null
           ? Center(child: Text(_error ?? 'VPN unavailable'))
           : _VpnControls(vpn: vpn),
@@ -165,8 +84,6 @@ class _VpnControlsState extends State<_VpnControls> {
                     enableSuggestions: false,
                     decoration: const InputDecoration(
                       labelText: 'WireGuard .conf or OpenVPN .ovpn',
-                      helperText:
-                          'Paste only a trusted configuration. Do not share private keys.',
                     ),
                   ),
                   if (error != null)
@@ -269,16 +186,8 @@ class _VpnControlsState extends State<_VpnControls> {
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: const LText('Max Player only'),
-                        subtitle: Text(
-                          vpn.appOnly
-                              ? 'Other apps use their normal connection'
-                              : 'Full device: routes other apps too',
-                        ),
                         value: vpn.appOnly,
                         onChanged: vpn.isBusy ? null : vpn.setAppOnly,
-                      ),
-                      const Text(
-                        'Free third-party relays may be unavailable or slow. WARP does not let you choose a country.',
                       ),
                       if (vpn.errorMessage != null)
                         Padding(
