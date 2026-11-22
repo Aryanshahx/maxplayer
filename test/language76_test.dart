@@ -9,6 +9,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:maxplayer/utils/app_language.dart';
+import 'package:maxplayer/utils/pashto_localizations.dart';
 import 'package:maxplayer/screens/language_screen.dart';
 
 void main() {
@@ -18,10 +19,10 @@ void main() {
     await AppLanguage.instance.setLanguage('en');
   });
   test(
-    '40 distinct offline catalogs have identical, nonempty UI keys',
+    '42 distinct offline catalogs have identical, nonempty UI keys',
     () async {
-      expect(uiLanguages.length, 40);
-      expect(uiLanguages.map((l) => l.code).toSet().length, 40);
+      expect(uiLanguages.length, 42);
+      expect(uiLanguages.map((l) => l.code).toSet().length, 42);
       final base =
           jsonDecode(await rootBundle.loadString('assets/i18n/en.json')) as Map;
       for (final l in uiLanguages) {
@@ -38,12 +39,16 @@ void main() {
         );
 
         expect(
-          GlobalMaterialLocalizations.delegate.isSupported(Locale(l.code)),
+          GlobalMaterialLocalizations.delegate.isSupported(Locale(l.code)) ||
+              const PashtoMaterialFallback().isSupported(Locale(l.code)),
           true,
           reason: l.code,
         );
         expect(
-          GlobalWidgetsLocalizations.delegate.isSupported(Locale(l.code)),
+          GlobalWidgetsLocalizations.delegate.isSupported(Locale(l.code)) ||
+              const PashtoWidgetsLocalizationDelegate().isSupported(
+                Locale(l.code),
+              ),
           true,
           reason: l.code,
         );
@@ -142,14 +147,14 @@ void main() {
     expect(find.text('भाषा'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
-  test('source manifest has unrestricted AD_ID permission', () {
+  test('source manifest removes transitive AD_ID permission', () {
     final xml = File(
       'android/app/src/main/AndroidManifest.xml',
     ).readAsStringSync();
     expect(
       xml,
       contains(
-        '<uses-permission android:name="com.google.android.gms.permission.AD_ID" />',
+        '<uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />',
       ),
     );
   });

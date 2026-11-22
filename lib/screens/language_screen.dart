@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../utils/app_language.dart';
 
 const languageEnglishNames = <String, String>{
+  'ps': 'Pashto',
+  'uz': 'Uzbek',
   'en': 'English',
   'hi': 'Hindi',
   'bn': 'Bengali',

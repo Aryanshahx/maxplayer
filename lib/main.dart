@@ -1,3 +1,5 @@
+import 'services/review_prompt.dart';
+import 'utils/pashto_localizations.dart';
 import 'utils/app_language.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'dart:async';
@@ -37,7 +39,6 @@ import 'screens/library_screen.dart';
 import 'services/native_bridge.dart';
 import 'theme.dart';
 import 'utils/crash_log.dart';
-import 'services/ad_service.dart';
 import 'services/app_analytics.dart';
 import 'utils/settings.dart';
 
@@ -90,9 +91,7 @@ Future<void> main() async {
   };
   FirebaseMessaging.onBackgroundMessage(maxPlayerPushBackground);
   runApp(const MaxPlayerApp());
-  // v1.0.1+50: AdMob warms up AFTER the first frame — it can never
-  // block or crash startup (no Play services? → the app stays ad-free).
-  unawaited(AdService.instance.safeInit());
+  unawaited(ReviewPrompt.instance.recordFirstUse());
   // v1.0.1+63: anonymous activity counters for the admin dashboard
   // (aggregates only — no names, no URLs, no personal data).
   unawaited(() async {
@@ -217,7 +216,12 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
           supportedLocales: uiLanguages.map((l) => Locale(l.code)).toList(),
           // Pinned CI Flutter 3.47 uses flutter_localizations.
           // ignore: deprecated_member_use
-          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          localizationsDelegates: const [
+            PashtoMaterialFallback(),
+            PashtoCupertinoFallback(),
+            PashtoWidgetsLocalizationDelegate(),
+            ...GlobalMaterialLocalizations.delegates,
+          ],
           navigatorKey: rootNavigatorKey,
           debugShowCheckedModeBanner: false,
           theme: buildAppTheme(accent: AppColors.accent),

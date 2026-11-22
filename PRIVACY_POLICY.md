@@ -1,55 +1,51 @@
-# MAX PLAYER - PRIVACY POLICY
+# Max Player Privacy Policy
 
 **Effective date:** 5 September 2026  
 **Developer:** Hyper Tech Labs (Aryan Shah)  
-**App policy update:** 1.0.1+76
+**Contact:** techlabs.hyper@gmail.com
 
-## The short version
-Max Player plays media locally. It also uses online services for aggregate usage statistics, diagnostics, Android push notifications, optional online features and advertising. Your media library is not uploaded by the analytics or notification features. The data described below does leave the device; this policy replaces older statements that the app has no analytics or identifiers.
+## Overview
+Max Player is a media player for local files and optional online content. This version does not display advertisements and does not include the Google Mobile Ads SDK. It still uses usage analytics, diagnostic reporting and push-notification services. These services send the data described below off your device. We do not sell personal data.
 
-## Media access and private folder
-Storage permissions let the app find/play local media and save screenshots. Local watch lists, file organisation and private-folder settings remain on-device. Private-folder PIN protection uses local storage and Android device authentication; it does not upload the hidden videos. Uninstalling or clearing app data removes app-private settings; move protected files out first as appropriate.
+## Media, permissions and local settings
+Media permissions let you select, discover and play files and save screenshots. Your local media library, playlists, playback history, private-folder settings and selected interface language are stored on your device. They are not uploaded by our analytics or notification features. Private-folder protection uses local storage and device authentication; it is not a cloud backup. Uninstalling or clearing app data may remove settings and app-private files.
 
-## Aggregate activity and diagnostics (Firebase)
-The app records aggregate opens, install registrations, play events, ad impressions, playback failures, device-local hour buckets and foreground session duration. Captured error reports may include error text, a failure category, app version and failing stream host. Full stream URLs, video titles and library filenames are not intentionally included in the aggregate counters. Diagnostic text is best-effort and may contain technical details. Offline Firebase writes may be queued locally for later transmission. Abrupt termination can leave activity unrecorded.
+Microphone access is used when you choose voice search. Voice recognition is provided by Android's installed recognition service; whether recognition is processed locally or online depends on that service and your device settings. On-device AI subtitle generation processes media locally after any required model download. Interface translations are bundled and work offline; changing language does not send your text to a translation service.
 
-Firebase Anonymous Authentication creates a pseudonymous installation UID. Notification registration stores that UID and FCM tokens in Firebase; it is not a verified personal identity. Clearing app data or reinstalling can change the UID and cause a new registration. Aggregate counters are not verified counts of people or current installs. Firebase privacy: https://firebase.google.com/support/privacy
+## Usage information and diagnostics
+We use Google Analytics for Firebase and Firebase database services to understand app use, maintain reliability and investigate failures. Information includes app opens, feature interactions, playback counts, session duration, time-of-day buckets, app/device information and pseudonymous installation identifiers. Firebase Analytics may derive approximate geographic information from network connections.
 
-## Approximate IP country (starting with +69)
-The app requests https://api.country.is/ to estimate the country of the connection. That provider necessarily receives the connection IP. The app extracts only the returned two-letter country code; it does not retain or forward the provider's returned IP field to Firebase. Country data is recorded as a best-effort aggregate sample, once per successful registration in local app storage, including upgrades. GPS permission, coordinates, city and address are not requested by this feature.
+Error reports may include exception text, stack traces, timestamps, app version, a report identifier, failure category and a failing stream's hostname. Full stream URLs, media filenames, library contents, search terms and passwords are not intentionally included in these usage counters. Technical error text may nevertheless contain contextual information. Some reports and events are queued locally and sent when connectivity returns. Not all native crashes or interruptions can be captured.
 
-If the request fails, country remains unknown and may be retried on a later app launch. Locale is not used as a fallback. VPNs, proxies, mobile routing and provider inaccuracies can change the result. The sample describes the first successful lookup, not a continually tracked location or historical download country. Old locale-based country totals are no longer shown in the new panel. Provider information: https://country.is/
+Firebase Anonymous Authentication creates a pseudonymous installation user ID; this is not a verified personal identity. Clearing app data or reinstalling can change identifiers. Advertising-ID collection and advertising-personalization signals are disabled in this release; installation and notification identifiers are still used for the purposes described here.
 
-## Android push notifications
-Max Player requests Android notification permission after the media permission request finishes and checks it when the app is foregrounded. Android controls repeat prompts and permanent denial. There is no separate app notification switch or inbox; use Android's system notification settings to allow/block notifications.
+## Approximate location
+The app contacts https://api.country.is/ to estimate the connection's country. That provider receives your IP address. The app extracts a two-letter country code for aggregate geographic usage statistics and does not store or forward the returned IP field to our database. The lookup may be retried if unsuccessful. VPNs, proxies and network routing can affect the result. This feature does not request GPS coordinates, city or address, and is not continuous location monitoring. Provider information: https://country.is/
 
-Permitted installations subscribe to general FCM notices, and their tokens can be used for installation-specific notices. FCM processing uses Google services. Notice pictures are downloaded from publisher-selected HTTPS hosts, including public GitHub image URLs; those hosts receive the network connection IP. External links open only when selected through the app/notification flow. Delivery is not guaranteed. The app does not currently report a confirmed-delivery/read counter to the admin panel.
+## Notifications
+With your notification permission, Firebase Cloud Messaging uses installation identifiers and push tokens to deliver general or installation-specific app notices. You can block notifications in Android settings. Notification images may be fetched from HTTPS hosts, including GitHub; those providers receive the network connection. Selecting a notice or link may open relevant app content or an external website. Delivery is not guaranteed.
 
-## Advertising and online features
-Google AdMob may process advertising identifiers, approximate location and device information under Google's policy: https://policies.google.com/privacy. Users in supported consent regions are presented Google's UMP consent flow. Advertising choices may also be available in Android's Google/Ads settings.
+## Optional online features and sharing
+Movie discovery and search contact The Movie Database (TMDB). Optional online AI recommendations send the descriptions/questions you submit to OpenRouter and its selected model provider. Do not enter confidential information. These providers receive requests and connection information and handle them under their policies. Local media is not automatically uploaded for online recommendations.
 
-Movie discovery, AI features, partner links and network streams use their respective providers when invoked. Stream hosts and linked websites receive network requests. Clearly labelled partner links may earn a commission. Review those providers' policies before sharing information.
+Network playback contacts the stream hosts you choose. Trailers and external websites contact their respective providers. Promotional partner banners and affiliate buttons have been removed from this version. Cloud import uses Android's file picker and your installed storage provider; we receive the access you grant, not your cloud password. Quick Share transfers selected files to the recipient you choose over the network. Anyone with access to a live sharing link may be able to download those selected files; stop sharing when finished. Local-network sharing and user-supplied non-HTTPS media sources may not be encrypted.
 
-## Cloud storage import
-Cloud imports use Android's file picker and your installed storage provider. The app receives the file access grant chosen by you rather than a cloud account password. The media picker/provider handles its own sign-in. Anonymous Firebase registration for notifications is separate from cloud storage access.
+## Reviews
+After sufficient use, the app may ask Google Play to display its native review dialog. Google controls availability and frequency. Local eligibility counters and the last request time are stored on your device. The app does not receive your rating or review text from this prompt. Reviews you submit to Google Play are handled and may be published by Google under its policies.
 
-## Children and Google Play Data Safety
-The app includes analytics, diagnostics, approximate country lookup, identifiers and advertising as described here; it must not be described as collecting no data. The developer must keep Google Play Data Safety and any applicable audience/consent configuration consistent with the actual app and SDK behaviour. This policy is not a claim of certification or legal compliance.
+## Providers and security
+Providers include Google/Firebase, country.is and, when used, TMDB, OpenRouter/model providers, storage providers, recipients and stream or website hosts. Firebase data is transmitted using its secure transport. No system can guarantee absolute security; use trusted networks and sources, especially for unencrypted streams or local sharing.
 
-## Contact and requests
-Contact Hyper Tech Labs (Aryan Shah) through https://github.com/Aryanshahx/maxplayer. Do not post passwords, tokens or private information in public issues. Ask for a private channel for data-related requests. Pseudonymous token/installation records and aggregate counters have different identification and deletion limitations; aggregates may not be attributable to a particular person. Policy changes are published in this repository and bundled in the app.
+Provider information:
+- Firebase: https://firebase.google.com/support/privacy
+- Google: https://policies.google.com/privacy
+- TMDB: https://www.themoviedb.org/privacy-policy
+- OpenRouter: https://openrouter.ai/privacy
 
-## Feature and error diagnostics update (+70)
-Aggregate counters now include opens of Discover, Private folder, Folders, Playlists, Audio, Network storage, Cloud storage and Quick Share from the library. They do not contain media names, private-folder contents, queries or network credentials. A private-folder screen open does not mean the folder was unlocked.
+## Retention, choices and requests
+Local settings and cached information remain until removed through app/device controls or uninstalling, subject to Android backup behaviour. Usage statistics, installation/token records and diagnostic reports are retained as needed for the purposes above; this app does not promise a fixed automatic deletion period. Some statistics are aggregate and cannot be linked back to an individual. Blocking notifications does not by itself erase existing installation records or disable analytics. There is currently no in-app opt-out for usage/diagnostic collection.
 
-Captured Flutter/uncaught Dart errors include bounded exception text, stack trace, timestamp, app version and a random report ID. This technical text can contain application context; avoid putting secrets in exception messages. The most recent pending report is kept locally until acknowledged where possible and retried after reopening the app. Playback failures are no longer uploaded as app-crash reports. This is not guaranteed capture of native crashes, ANRs or process kills.
+For access, deletion or other privacy requests, email techlabs.hyper@gmail.com. Do not send passwords or private media. We may need information to locate a pseudonymous record and verify a request; some aggregate information cannot be attributed to you. We assess requests under applicable law. Removing local data alone does not erase records already sent to online services.
 
-### Admin exports and maintenance (+74)
-Admins may export recorded analytics and diagnostics, including full captured technical report text; exported reports must be handled privately. A privileged, explicitly confirmed maintenance action deletes stored analytics counters and diagnostic reports only, without deleting device tokens, admin accounts, notices or historical configuration records. Devices may subsequently send queued or new events, so resetting stored data does not erase installation identifiers or revoke push registration.
-
-Remote theme publishing, its country/religion-labelled presets, country-for-theme refreshes, local theme rendering and listeners were removed in +74. The app restores its ordinary palette and local accent setting; old cached remote-theme values are not read. Historical configuration records are retained inert, with client read/write access denied by the +74 rules. The existing approximate installation-country analytics sample remains as described above. Older installed APKs retain their old behaviour until updated.
-
-### Interface language and Advertising ID declaration (+76)
-The chosen interface language is stored locally. Bundled interface translations work offline; no user/media text is submitted to an online translation service when changing languages. Filenames, movie/channel titles and supplied content are not translated by this feature. Existing online features still use their normal providers.
-
-The Android manifest explicitly declares com.google.android.gms.permission.AD_ID to align the release artifact with the existing Google Mobile Ads integration and Play Advertising ID declaration. This is not a new custom analytics identifier or a replacement for the existing consent flow. Advertising identifiers and advertising data remain subject to the SDK, Android privacy controls and disclosures above. Developers must keep Play declarations accurate for all enabled SDKs and settings.
+## Children and changes
+The app is not designed to solicit personal information from children. Contact us if you believe a child has provided personal information. We may revise this policy when the app's practices change. The current policy is available in the app and at the public policy URL. Older installed versions may still contain advertising until updated.

@@ -32,7 +32,7 @@ class AppAnalytics {
   static const String kFirebaseSenderId = '1080871289145';
 
   /// Report tag — bump with the app version each release.
-  static const String kAppVersionTag = '1.0.1+76';
+  static const String kAppVersionTag = '1.0.1+77';
 
   /// true only once Firebase is actually usable (configured + initialised).
   static final ValueNotifier<bool> ready = ValueNotifier<bool>(false);
@@ -252,7 +252,6 @@ class AppAnalytics {
   /// field-increments only — safe offline (SDK queues), no-op unconfigured.
   void bumpDaily({
     int appOpens = 0,
-    int adImpressions = 0,
     int videosPlayed = 0,
     int streamsOpened = 0,
     int iptvOpened = 0,
@@ -271,8 +270,6 @@ class AppAnalytics {
         db.collection('stats').doc('daily_$day').set({
           'date': day,
           if (appOpens > 0) 'appOpens': FieldValue.increment(appOpens),
-          if (adImpressions > 0)
-            'adImpressions': FieldValue.increment(adImpressions),
           if (videosPlayed > 0)
             'videosPlayed': FieldValue.increment(videosPlayed),
           if (streamsOpened > 0)

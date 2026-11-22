@@ -30,7 +30,6 @@ import '../services/native_bridge.dart';
 import 'player_screen.dart';
 import 'audio_screen.dart';
 import 'cloud_storage_screen.dart';
-import '../services/ad_service.dart';
 import 'discover_screen.dart';
 import 'display_settings_screen.dart';
 import 'folders_screen.dart';
@@ -425,16 +424,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
           child: DiscoverBanner(
-            // v1.0.1+50: test interstitial before Discover (capped at one
-            // per session; user is NEVER blocked if no ad is ready).
-            onTap: () => AdService.instance.showInterstitialThenProceed(() {
+            onTap: () {
               AppAnalytics.instance.trackFeatureOpen('discover');
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => DiscoverScreen(videos: videos),
                 ),
               );
-            }),
+            },
           ),
         ),
         // v28-old: the quick tiles slide away when scrolling down.
@@ -481,7 +478,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
         // v1.0.1+54: home banner — docks at the very bottom in REAL
         // layout space (nothing can ever overlap it). Zero-height until
         // an ad loads; stays collapsed on failure.
-        const CineBannerSlot(),
       ],
     );
   }
@@ -664,19 +660,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
     // File Manager tile was replaced by Audio, and the positions of Cloud
     // Storage and Audio were interchanged. Ordering is unit-tested.
     final actions = <String, VoidCallback>{
-      // v1.0.1+56: interstitial gate (session-capped; never blocks).
-      'privateSpace': () => AdService.instance.showInterstitialThenProceed(
-        () => push(PrivateScreen(libraryVideos: _videos), 'private'),
-      ),
+      'privateSpace': () =>
+          push(PrivateScreen(libraryVideos: _videos), 'private'),
       'playlists': () => push(const PlaylistsScreen(), 'playlists'),
       'folders': () => push(const FoldersScreen(), 'folders'),
       'audio': () => push(const AudioScreen(), 'audio'),
       'networkStorage': () => push(const NetworkStorageScreen(), 'network'),
       'cloudStorage': () => push(const CloudStorageScreen(), 'cloud'),
-      // v1.0.1+56: interstitial gate (session-capped; never blocks).
-      'openStream': () => AdService.instance.showInterstitialThenProceed(
-        () => push(const OpenStreamScreen()),
-      ),
+      'openStream': () => push(const OpenStreamScreen()),
       'quickShare': () => push(const QuickShareScreen(), 'quickShare'),
     };
 

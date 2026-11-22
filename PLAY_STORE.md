@@ -97,21 +97,13 @@ If it says "version code must be higher": the old app's current versionCode in
 Play is above 149 — bump `version:` in `pubspec.yaml` (e.g. `1.0.1+150`) and
 rebuild.
 
-## STEP 6 — App content (for this update you may also need)
+## STEP 6 — App content
 
-1. **Privacy policy URL** — link `PRIVACY_POLICY.md` (hosted or raw GitHub).
-   Required because the app uses the microphone.
-2. **Sensitive permissions:**
-   - Microphone (`RECORD_AUDIO`) → *Voice search on the Discover screen; no
-     audio is recorded or stored.*
-   - Foreground service (`mediaPlayback`) → *Background/lock-screen playback.*
-   - Photos & videos → *Finding and playing device videos.*
-   - Biometric → *Unlocking the Private Space.*
-3. **Data safety:** everything is local except **Ask AI question text**, sent
-   to OpenRouter when you submit a question (never stored). Declare
-   "User messages" → shared with OpenRouter → purpose: app functionality.
-4. If your Play account was created after Nov 2023: run the required
-   **closed test (20 testers, 14 days)** before production.
+Use **PLAY_CONSOLE_AD_FREE_77.md** for the current release-specific privacy,
+advertising and Data safety checklist. Older "everything stays local" or
+"no identifiers" answers do not describe this app. Publish the current policy
+at a publicly accessible HTML URL before submitting the release.
+
 
 ---
 

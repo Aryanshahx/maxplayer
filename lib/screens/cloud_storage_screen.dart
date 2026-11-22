@@ -3,11 +3,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'package:url_launcher/url_launcher.dart';
-
 import '../services/native_bridge.dart';
 import '../theme.dart';
-import '../utils/affiliate_links.dart';
 import '../utils/crash_log.dart';
 import '../utils/format.dart';
 import 'player_screen.dart';
@@ -103,13 +100,18 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1b1b24),
-        title: const LText('Play or keep?',
-            style: TextStyle(color: Colors.white, fontSize: 17)),
+        title: const LText(
+          'Play or keep?',
+          style: TextStyle(color: Colors.white, fontSize: 17),
+        ),
         content: Text(
           '"$name" came from a cloud app and is stored only as a temporary '
           'copy. Keep a permanent copy on this device?',
           style: const TextStyle(
-              color: Colors.white70, fontSize: 13, height: 1.4),
+            color: Colors.white70,
+            fontSize: 13,
+            height: 1.4,
+          ),
         ),
         actions: [
           TextButton(
@@ -173,15 +175,18 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1b1b24),
-        title: const LText('Importing video…',
-            style: TextStyle(color: Colors.white, fontSize: 17)),
+        title: const LText(
+          'Importing video…',
+          style: TextStyle(color: Colors.white, fontSize: 17),
+        ),
         content: AnimatedBuilder(
           animation: Listenable.merge([_progDone, _progTotal]),
           builder: (_, _) {
             final done = _progDone.value;
             final total = _progTotal.value;
-            final double? pct =
-                total > 0 ? (done / total).clamp(0.0, 1.0) : null;
+            final double? pct = total > 0
+                ? (done / total).clamp(0.0, 1.0)
+                : null;
             return Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -196,8 +201,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
                   total > 0
                       ? '${formatBytes(done)} of ${formatBytes(total)}'
                       : '${formatBytes(done)} copied…',
-                  style:
-                      const TextStyle(color: Colors.white70, fontSize: 12.5),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12.5),
                 ),
                 const LText(
                   'The video is being copied from the storage app.',
@@ -225,12 +229,17 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1b1b24),
-        title: Text(title,
-            style: const TextStyle(color: Colors.white, fontSize: 17)),
+        title: Text(
+          title,
+          style: const TextStyle(color: Colors.white, fontSize: 17),
+        ),
         content: Text(
           body,
           style: const TextStyle(
-              color: Colors.white70, fontSize: 13, height: 1.4),
+            color: Colors.white70,
+            fontSize: 13,
+            height: 1.4,
+          ),
         ),
         actions: [
           TextButton(
@@ -250,8 +259,10 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
       backgroundColor: const Color(0xFF14141c),
       appBar: AppBar(
         backgroundColor: const Color(0xFF14141c),
-        title: const LText('Import from cloud storage',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+        title: const LText(
+          'Import from cloud storage',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+        ),
       ),
       body: Center(
         child: SingleChildScrollView(
@@ -266,8 +277,11 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
                   shape: BoxShape.circle,
                   color: Colors.white.withValues(alpha: 0.05),
                 ),
-                child: Icon(Icons.drive_folder_upload_outlined,
-                    size: 38, color: accent),
+                child: Icon(
+                  Icons.drive_folder_upload_outlined,
+                  size: 38,
+                  color: accent,
+                ),
               ),
               const SizedBox(height: 16),
               const LText(
@@ -286,7 +300,10 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
                 'progress bar; keep it forever with Save to device.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    color: Colors.white54, fontSize: 13, height: 1.4),
+                  color: Colors.white54,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
               ),
               const SizedBox(height: 24),
               SizedBox(
@@ -297,13 +314,16 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
                     foregroundColor: AppColors.onAccent,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   icon: const Icon(Icons.file_open_outlined),
                   label: Text(
                     _importing ? 'Importing…' : 'Choose a video to import',
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 14.5),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14.5,
+                    ),
                   ),
                   onPressed: _importing ? null : _importVideo,
                 ),
@@ -314,89 +334,13 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
                 'file at a time, read-only.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    color: Colors.white38, fontSize: 11.5, height: 1.35),
+                  color: Colors.white38,
+                  fontSize: 11.5,
+                  height: 1.35,
+                ),
               ),
               const SizedBox(height: 20),
-              // v1.0.1+7: pCloud partner banner. Perfect audience match —
-              // the user opened this screen BECAUSE they want cloud
-              // storage. Disclosure line ships attached (affiliate rule).
-              const _PcloudBanner(),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-
-/// pCloud partner banner (v1.0.1+7) — "need more space?" CTA matching why
-/// the user is on this screen. Tapping opens our issued referral link;
-/// the disclosure line is mandatory affiliate-compliance — do not remove.
-class _PcloudBanner extends StatelessWidget {
-  const _PcloudBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    Theme.of(context);
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0b5bd3), Color(0xFF053a87)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => launchUrl(pcloudPartnerUri(),
-              mode: LaunchMode.externalApplication),
-          child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.cloud_outlined,
-                        color: Colors.white, size: 26),
-                    SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          LText('Running out of space?',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 14)),
-                          LText(
-                              'pCloud — secure cloud storage, free plan '
-                              'included',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.open_in_new_rounded,
-                        color: Colors.white70, size: 16),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                LText(
-                  'Partner link — Max Player may earn a commission at no '
-                  'extra cost to you.',
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      fontSize: 9.5),
-                ),
-              ],
-            ),
           ),
         ),
       ),

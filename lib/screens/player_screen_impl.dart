@@ -1,3 +1,4 @@
+import '../services/review_prompt.dart';
 import '../utils/app_language.dart';
 import 'dart:async';
 import 'dart:io';
@@ -142,6 +143,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   final ResumeStore _resume = ResumeStore();
   final PlayerSettings _settings = PlayerSettings.instance;
 
+  int _reviewPlaybackSeconds = 0;
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<bool>? _bufferingSub;
   StreamSubscription<double>? _bufferPctSub;
@@ -378,6 +380,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       unawaited(_savePosition());
+      if (_player.state.playing &&
+          !_player.state.buffering &&
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        _reviewPlaybackSeconds += 5;
+      }
       // Watch-time statistics (same 5s tick as the old player): count a
       // bucket whenever a local video is actually playing.
       if (_player.state.playing && !widget.isStream) {
@@ -1543,10 +1550,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       ),
       subtitle: subtitle == null
           ? null
-          : Text(
-              subtitle,
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
+          : Text(subtitle, style: TextStyle(color: AppColors.textSecondary)),
       onTap: onTap,
       onLongPress: onLongPress,
     );
@@ -2486,6 +2490,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   void dispose() {
     PlayerScreen.isOpen = false;
+    unawaited(
+      ReviewPrompt.instance.afterPlayback(
+        _reviewPlaybackSeconds,
+        canPresent: () => !PlayerScreen.isOpen,
+      ),
+    );
     _sleepTimer?.cancel();
     _sleepTick?.cancel();
     _hideTimer?.cancel();
@@ -3993,10 +4003,7 @@ class _PlaylistsSheetViewState extends State<_PlaylistsSheetView> {
           ),
           subtitle: Text(
             '$count video${count == 1 ? '' : 's'}',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
           trailing: Icon(
             Icons.chevron_right_rounded,

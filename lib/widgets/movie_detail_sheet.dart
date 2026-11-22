@@ -8,8 +8,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'trailer_player_screen.dart';
 
-import '../utils/amazon_affiliate.dart';
-
 import '../theme.dart';
 import '../utils/tmdb.dart';
 import '../utils/crash_log.dart';
@@ -1210,12 +1208,6 @@ class _WatchBlock extends StatelessWidget {
           row('Stream', info.stream, const Color(0xFF4ade80)),
           row('Rent', info.rent, const Color(0xFFfacc15)),
           row('Buy', info.buy, const Color(0xFF60a5fa)),
-          // v1.0.1+6: affiliate CTA, ONLY when TMDB confirms Prime India
-          // actually carries this title (per user: no dead-end links).
-          if (title.isNotEmpty && tmdbWatchHasPrime(info)) ...[
-            const SizedBox(height: 4),
-            _PrimeCta(title: title, year: year),
-          ],
         ],
       ),
     );
@@ -1385,77 +1377,6 @@ class _AllDataBlock extends StatelessWidget {
             row('Languages', extras.allLanguages.join(', ')),
         ],
       ),
-    );
-  }
-}
-
-/// "Watch on Prime Video" CTA (v1.0.1+8). Business rule (user call): the
-/// ONLY redirect is the TAGGED amazon.in link — that is the path that
-/// earns (24h Associates attribution on anything bought). The untagged
-/// primevideo.com button was removed because those taps pay nothing. The
-/// disclosure line is REQUIRED by the Associates Operating Agreement and
-/// travels with the button — do not strip it.
-class _PrimeCta extends StatelessWidget {
-  const _PrimeCta({required this.title, required this.year});
-
-  final String title;
-  final int? year;
-
-  @override
-  Widget build(BuildContext context) {
-    Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Material(
-          color: const Color(0xFF00A8E1), // Prime Video blue
-          borderRadius: BorderRadius.circular(10),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap: () {
-              final uri = Uri.parse(amazonPrimeSearchUrl(title, year: year));
-              launchUrl(uri, mode: LaunchMode.externalApplication);
-            },
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.play_circle_fill_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                  SizedBox(width: 8),
-                  LText(
-                    'Watch on Prime Video',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13.5,
-                    ),
-                  ),
-                  SizedBox(width: 6),
-                  Icon(
-                    Icons.open_in_new_rounded,
-                    color: Colors.white70,
-                    size: 14,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 3),
-        LText(
-          'Partner link — as an Amazon Associate, Max Player earns from '
-          'qualifying purchases.',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.35),
-            fontSize: 9.5,
-          ),
-        ),
-      ],
     );
   }
 }

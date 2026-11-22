@@ -11,6 +11,8 @@ class UiLanguage {
 
 const uiLanguages = <UiLanguage>[
   UiLanguage('en', 'English'),
+  UiLanguage('ps', 'پښتو'),
+  UiLanguage('uz', 'O‘zbekcha'),
   UiLanguage('hi', 'हिन्दी'),
   UiLanguage('bn', 'বাংলা'),
   UiLanguage('te', 'తెలుగు'),
