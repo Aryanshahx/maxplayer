@@ -1,4 +1,6 @@
+import '../widgets/recent_search_field.dart';
 import '../utils/app_language.dart';
+
 import 'dart:async';
 import 'dart:io';
 
@@ -22,12 +24,12 @@ class IptvScreen extends StatefulWidget {
 }
 
 class _IptvScreenState extends State<IptvScreen> {
-  static const _kCacheKey = 'iptv.cache.list';
-  static const _kCacheTimeKey = 'iptv.cache.time';
+  static final _kCacheKey = 'iptv.cache.list';
+  static final _kCacheTimeKey = 'iptv.cache.time';
 
   List<IptvChannel> _all = [];
   List<IptvChannel> _shown = [];
-  List<String> _groups = const ['ALL'];
+  List<String> _groups = ['ALL'];
   String _group = 'ALL';
   String _query = '';
   bool _india = true;
@@ -57,7 +59,7 @@ class _IptvScreenState extends State<IptvScreen> {
       final fetchedAt = prefs.getInt(timeKey) ?? 0;
       final fresh =
           DateTime.now().millisecondsSinceEpoch - fetchedAt <
-          const Duration(hours: 12).inMilliseconds;
+          Duration(hours: 12).inMilliseconds;
       String text;
       if (cached != null && fresh && cached.isNotEmpty) {
         text = cached;
@@ -65,7 +67,7 @@ class _IptvScreenState extends State<IptvScreen> {
         _status = 'Downloading live channel list…';
         final resp = await http
             .get(Uri.parse(url))
-            .timeout(const Duration(seconds: 25));
+            .timeout(Duration(seconds: 25));
         if (resp.statusCode != 200) {
           throw HttpException('HTTP ${resp.statusCode}');
         }
@@ -114,13 +116,13 @@ class _IptvScreenState extends State<IptvScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
-        title: const LText(
+        title: LText(
           'LIVE TV',
           style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2),
         ),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 8),
+            padding: EdgeInsets.only(right: 8),
             child: TextButton.icon(
               onPressed: () {
                 setState(() => _india = !_india);
@@ -143,9 +145,10 @@ class _IptvScreenState extends State<IptvScreen> {
         children: [
           // search
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-            child: TextField(
-              style: const TextStyle(color: Colors.white),
+            padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
+            child: RecentSearchField(
+              scope: 'iptv',
+              style: TextStyle(color: AppColors.textPrimary),
               onChanged: (v) => setState(() {
                 _query = v;
                 _applyFilters();
@@ -153,11 +156,11 @@ class _IptvScreenState extends State<IptvScreen> {
               decoration: LInputDecoration(
                 hintText: 'Search channels…',
                 hintStyle: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.35),
+                  color: AppColors.textPrimary.withValues(alpha: 0.35),
                 ),
-                prefixIcon: const Icon(Icons.search, color: Colors.white38),
+                prefixIcon: Icon(Icons.search, color: AppColors.textSecondary),
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.06),
+                fillColor: AppColors.textPrimary.withValues(alpha: 0.06),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide.none,
@@ -170,11 +173,11 @@ class _IptvScreenState extends State<IptvScreen> {
             height: 34,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: EdgeInsets.symmetric(horizontal: 12),
               children: [
                 for (final g in _groups.take(24))
                   Padding(
-                    padding: const EdgeInsets.only(right: 6),
+                    padding: EdgeInsets.only(right: 6),
                     child: ChoiceChip(
                       label: Text(g),
                       selected: _group == g,
@@ -183,11 +186,13 @@ class _IptvScreenState extends State<IptvScreen> {
                         _applyFilters();
                       }),
                       selectedColor: AppColors.accent,
-                      backgroundColor: Colors.white.withValues(alpha: 0.06),
+                      backgroundColor: AppColors.textPrimary.withValues(
+                        alpha: 0.06,
+                      ),
                       labelStyle: TextStyle(
                         color: _group == g
                             ? AppColors.onAccent
-                            : Colors.white70,
+                            : AppColors.textSecondary,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                       ),
@@ -196,7 +201,7 @@ class _IptvScreenState extends State<IptvScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Expanded(
             child: _loading
                 ? Center(
@@ -204,10 +209,10 @@ class _IptvScreenState extends State<IptvScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         CircularProgressIndicator(color: accent),
-                        const SizedBox(height: 12),
+                        SizedBox(height: 12),
                         Text(
                           _status,
-                          style: const TextStyle(color: Colors.white54),
+                          style: TextStyle(color: AppColors.textSecondary),
                         ),
                       ],
                     ),
@@ -219,12 +224,12 @@ class _IptvScreenState extends State<IptvScreen> {
                       child: Text(
                         _status,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white54),
+                        style: TextStyle(color: AppColors.textSecondary),
                       ),
                     ),
                   )
                 : GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                    padding: EdgeInsets.fromLTRB(12, 0, 12, 16),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount:
                           MediaQuery.sizeOf(context).shortestSide > 600 ? 5 : 3,
@@ -237,11 +242,11 @@ class _IptvScreenState extends State<IptvScreen> {
                   ),
           ),
           Padding(
-            padding: const EdgeInsets.only(bottom: 6),
+            padding: EdgeInsets.only(bottom: 6),
             child: LText(
               'Free & legal streams collected by the iptv-org open project',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.3),
+                color: AppColors.textPrimary.withValues(alpha: 0.3),
                 fontSize: 10,
               ),
             ),
@@ -277,10 +282,10 @@ class _ChannelTile extends StatelessWidget {
           ),
         ),
         child: Container(
-          padding: const EdgeInsets.all(8),
+          padding: EdgeInsets.all(8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            color: Colors.white.withValues(alpha: 0.05),
+            color: AppColors.textPrimary.withValues(alpha: 0.05),
           ),
           child: Column(
             children: [
@@ -295,13 +300,16 @@ class _ChannelTile extends StatelessWidget {
                       )
                     : _letter(),
               ),
-              const SizedBox(height: 6),
+              SizedBox(height: 6),
               Text(
                 channel.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 10.5, color: Colors.white70),
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: AppColors.textSecondary,
+                ),
               ),
               if (channel.quality.isNotEmpty)
                 Text(

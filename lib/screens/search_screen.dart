@@ -1,4 +1,6 @@
+import '../widgets/recent_search_field.dart';
 import '../utils/app_language.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -21,7 +23,7 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
-  static const _pageSize = 100;
+  static final _pageSize = 100;
 
   final _ctrl = TextEditingController();
   final List<AssetEntity> _all = [];
@@ -49,7 +51,9 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _start() async {
     _priv = await LocalStore().privateIds();
     final paths = await PhotoManager.getAssetPathList(
-        type: RequestType.video, onlyAll: true);
+      type: RequestType.video,
+      onlyAll: true,
+    );
     if (paths.isEmpty) {
       if (mounted) {
         setState(() {
@@ -67,8 +71,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final path = _path;
     if (path == null) return;
     while (mounted && !_exhausted) {
-      final batch =
-          await path.getAssetListPaged(page: _page, size: _pageSize);
+      final batch = await path.getAssetListPaged(page: _page, size: _pageSize);
       if (batch.length < _pageSize) _exhausted = true;
       _page++;
       final vids = batch.where((a) => a.type == AssetType.video).toList();
@@ -79,14 +82,14 @@ class _SearchScreenState extends State<SearchScreen> {
         ..addAll(merged);
       if (mounted) setState(() {});
       if (_all.length == before && _exhausted) break;
-      await Future.delayed(const Duration(milliseconds: 30));
+      await Future.delayed(Duration(milliseconds: 30));
     }
     if (mounted) setState(() => _loadingMore = false);
   }
 
   void _onChanged(String v) {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 200), () {
+    _debounce = Timer(Duration(milliseconds: 200), () {
       if (mounted) setState(() => _query = v.trim().toLowerCase());
     });
   }
@@ -102,13 +105,13 @@ class _SearchScreenState extends State<SearchScreen> {
       }
       if (_query.isEmpty) return false;
       return (a.title ?? '').toLowerCase().contains(_query);
-    }).toList()
-      ..sort((x, y) => cmpStr(x.title ?? '', y.title ?? '', true));
+    }).toList()..sort((x, y) => cmpStr(x.title ?? '', y.title ?? '', true));
 
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        title: TextField(
+        title: RecentSearchField(
+          scope: 'library',
           controller: _ctrl,
           autofocus: true,
           onChanged: _onChanged,
@@ -119,8 +122,10 @@ class _SearchScreenState extends State<SearchScreen> {
             border: InputBorder.none,
             suffixIcon: _query.isNotEmpty
                 ? IconButton(
-                    icon: Icon(Icons.close_rounded,
-                        color: AppColors.textSecondary),
+                    icon: Icon(
+                      Icons.close_rounded,
+                      color: AppColors.textSecondary,
+                    ),
                     onPressed: () {
                       _ctrl.clear();
                       _onChanged('');
@@ -135,54 +140,63 @@ class _SearchScreenState extends State<SearchScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.search_rounded,
-                      size: 46, color: AppColors.textSecondary),
-                  const SizedBox(height: 12),
-                  LText('Type to search every video on this device',
-                      style: TextStyle(color: AppColors.textSecondary)),
+                  Icon(
+                    Icons.search_rounded,
+                    size: 46,
+                    color: AppColors.textSecondary,
+                  ),
+                  SizedBox(height: 12),
+                  LText(
+                    'Type to search every video on this device',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
                   if (_loadingMore) ...[
-                    const SizedBox(height: 10),
-                    Text('Indexing… ${_all.length} scanned',
-                        style: TextStyle(
-                            color: AppColors.textSecondary, fontSize: 11)),
+                    SizedBox(height: 10),
+                    Text(
+                      'Indexing… ${_all.length} scanned',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
                   ],
                 ],
               ),
             )
           : results.isEmpty
-              ? Center(
-                  child: Text(
-                    _loadingMore
-                        ? 'Searching…'
-                        : 'Nothing matches "$_query"',
-                    style:
-                        TextStyle(color: AppColors.textSecondary),
+          ? Center(
+              child: Text(
+                _loadingMore ? 'Searching…' : 'Nothing matches "$_query"',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            )
+          : Column(
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 2),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '${results.length} result(s)',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
                   ),
-                )
-              : Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text('${results.length} result(s)',
-                            style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12)),
-                      ),
-                    ),
-                    Expanded(
-                      child: VideoGrid(
-                        videos: results,
-                        listMode: s.viewMode == ViewMode.list,
-                        onChanged: () async {
-                          _priv = await LocalStore().privateIds();
-                          if (mounted) setState(() {});
-                        },
-                      ),
-                    ),
-                  ],
                 ),
+                Expanded(
+                  child: VideoGrid(
+                    videos: results,
+                    listMode: s.viewMode == ViewMode.list,
+                    onChanged: () async {
+                      _priv = await LocalStore().privateIds();
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }

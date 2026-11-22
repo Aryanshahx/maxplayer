@@ -1,4 +1,5 @@
 import '../utils/app_language.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -14,38 +15,27 @@ class AboutSheet extends StatelessWidget {
 
   const AboutSheet({super.key, this.scrollController});
 
-  static Future<void> show(BuildContext context) {
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF14141c),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.85,
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        builder: (context, controller) =>
-            AboutSheet(scrollController: controller),
-      ),
-    );
-  }
+  static Future<void> show(BuildContext context) =>
+      Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: LText('About Max Player')),
+            body: const AboutSheet(),
+          ),
+        ),
+      );
 
   /// Reads live native state (SDK, device model, engine) so playback
   /// issues can be diagnosed on-device without guesswork.
-  static Future<void> _showDiagnostics(BuildContext context) {
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF101018),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => const _DiagnosticsSheet(),
-    );
-  }
+  static Future<void> _showDiagnostics(BuildContext context) =>
+      Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: const LText('System diagnostics')),
+            body: const _DiagnosticsSheet(),
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -53,28 +43,16 @@ class AboutSheet extends StatelessWidget {
     final accent = AppColors.accent;
     return ListView(
       controller: scrollController,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+      padding: EdgeInsets.fromLTRB(16, 10, 16, 28),
       children: [
-        // Grab handle.
-        Center(
-          child: Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 14),
-            decoration: const BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.all(Radius.circular(2)),
-            ),
-          ),
-        ),
         // Brand header.
-        const Column(
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             LText(
               'Max Player',
               style: TextStyle(
-                color: Colors.white,
+                color: AppColors.textPrimary,
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 0.3,
@@ -83,12 +61,12 @@ class AboutSheet extends StatelessWidget {
             SizedBox(height: 2),
             LText(
               'by Hyper Tech Labs',
-              style: TextStyle(color: Colors.white54, fontSize: 13),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
             ),
           ],
         ),
-        const SizedBox(height: 14),
-        const LText(
+        SizedBox(height: 14),
+        LText(
           'Max Player is a next-generation media player designed to make '
           'watching and listening effortless. Built from the ground up with '
           'performance, simplicity, and reliability in mind, Max Player '
@@ -99,41 +77,49 @@ class AboutSheet extends StatelessWidget {
           'high-definition movies, or listening to music on the go, Max '
           'Player is engineered to handle it all smoothly, without lag, '
           'crashes, or unnecessary clutter.',
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+            height: 1.45,
+          ),
         ),
 
         _Heading('Our mission', accent),
-        const LText(
+        LText(
           'At Max Player, our goal is simple: to create the most seamless, '
           'distraction-free media experience possible. We believe great '
           'software should feel invisible - it should just work, every time, '
           'without getting in your way. That philosophy drives every design '
           'and engineering decision behind Max Player.',
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+            height: 1.45,
+          ),
         ),
 
         _Heading('Key features', accent),
         for (final f in _features)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: EdgeInsets.symmetric(vertical: 4),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(Icons.check_circle, size: 16, color: accent),
-                const SizedBox(width: 10),
+                SizedBox(width: 10),
                 Expanded(
                   child: RichText(
                     text: TextSpan(
-                      style: const TextStyle(
-                        color: Colors.white70,
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
                         fontSize: 13,
                         height: 1.4,
                       ),
                       children: [
                         TextSpan(
                           text: '${f.$1} - ',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -147,60 +133,72 @@ class AboutSheet extends StatelessWidget {
           ),
 
         _Heading('Our story', accent),
-        const LText(
+        LText(
           'Max Player was created out of a simple frustration: too many '
           'media players were bloated, slow, or filled with intrusive ads '
           'and unnecessary features. We set out to build something '
           'different - a player that respects your time, your device, and '
           'your experience.',
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+            height: 1.45,
+          ),
         ),
 
         _Heading('The team behind Max Player', accent),
-        const LText(
+        LText(
           'Max Player is proudly developed and maintained by Hyper Tech '
           'Labs, a technology company focused on building thoughtful, '
           'high-quality applications for everyday use. Founded by Aryan '
           'Shah, Hyper Tech Labs is driven by a passion for clean design, '
           'efficient engineering, and solving real problems through '
           'software.',
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+            height: 1.45,
+          ),
         ),
 
         _Heading('Looking ahead', accent),
-        const LText(
+        LText(
           'We\'re constantly working to improve Max Player - adding new '
           'features, refining performance, and listening closely to our '
           'users. This is just the beginning, and we\'re excited to keep '
           'building a player that truly puts you first.',
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+            height: 1.45,
+          ),
         ),
         Center(
           child: TextButton.icon(
             onPressed: () => showPrivacyPolicyDialog(context),
-            icon: const Icon(Icons.privacy_tip_outlined, size: 16),
-            label: const LText('Privacy policy'),
+            icon: Icon(Icons.privacy_tip_outlined, size: 16),
+            label: LText('Privacy policy'),
             style: TextButton.styleFrom(
-              foregroundColor: Colors.white54,
-              textStyle: const TextStyle(fontSize: 12.5),
+              foregroundColor: AppColors.textSecondary,
+              textStyle: TextStyle(fontSize: 12.5),
             ),
           ),
         ),
         Center(
           child: TextButton.icon(
             onPressed: () => _showDiagnostics(context),
-            icon: const Icon(Icons.bug_report_outlined, size: 16),
-            label: const LText('System diagnostics'),
+            icon: Icon(Icons.bug_report_outlined, size: 16),
+            label: LText('System diagnostics'),
             style: TextButton.styleFrom(
-              foregroundColor: Colors.white54,
-              textStyle: const TextStyle(fontSize: 12.5),
+              foregroundColor: AppColors.textSecondary,
+              textStyle: TextStyle(fontSize: 12.5),
             ),
           ),
         ),
-        const Center(
+        Center(
           child: Text(
             'Version $kAppVersion',
-            style: TextStyle(color: Colors.white38, fontSize: 12.5),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
           ),
         ),
       ],
@@ -217,7 +215,7 @@ class _Heading extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 18, bottom: 6),
+      padding: EdgeInsets.only(top: 18, bottom: 6),
       child: Text(
         text.toUpperCase(),
         style: TextStyle(
@@ -231,7 +229,7 @@ class _Heading extends StatelessWidget {
   }
 }
 
-const List<(String, String)> _features = [
+final List<(String, String)> _features = [
   (
     'Universal Format Support',
     'Play almost any video or audio file without needing extra codecs or '
@@ -297,16 +295,16 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
 
   String _report() {
     final b = StringBuffer()..writeln('Max Player $kAppVersion — diagnostics');
-    (_data ?? const {}).forEach((k, v) => b.writeln('$k: ${_fmt(v)}'));
+    (_data ?? {}).forEach((k, v) => b.writeln('$k: ${_fmt(v)}'));
     return b.toString();
   }
 
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
-    final d = _data ?? const <String, dynamic>{};
+    final d = _data ?? <String, dynamic>{};
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+      padding: EdgeInsets.fromLTRB(18, 14, 18, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -315,30 +313,30 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
             child: Container(
               width: 40,
               height: 4,
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: const BoxDecoration(
-                color: Colors.white24,
+              margin: EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: AppColors.border,
                 borderRadius: BorderRadius.all(Radius.circular(2)),
               ),
             ),
           ),
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.bug_report_outlined,
-                color: Colors.white70,
+                color: AppColors.textSecondary,
                 size: 20,
               ),
-              const SizedBox(width: 8),
-              const LText(
+              SizedBox(width: 8),
+              LText(
                 'System diagnostics',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const Spacer(),
+              Spacer(),
               TextButton.icon(
                 onPressed: _loading
                     ? null
@@ -346,28 +344,28 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
                         await Clipboard.setData(ClipboardData(text: _report()));
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: LText('Diagnostics copied')),
+                            SnackBar(content: LText('Diagnostics copied')),
                           );
                         }
                       },
-                icon: const Icon(Icons.copy, size: 15),
-                label: const LText('Copy'),
+                icon: Icon(Icons.copy, size: 15),
+                label: LText('Copy'),
                 style: TextButton.styleFrom(
-                  foregroundColor: Colors.white70,
-                  textStyle: const TextStyle(fontSize: 12.5),
+                  foregroundColor: AppColors.textSecondary,
+                  textStyle: TextStyle(fontSize: 12.5),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          const LText(
+          SizedBox(height: 6),
+          LText(
             'Reads live on-device state. Share this (Copy → paste) if '
             'playback misbehaves.',
-            style: TextStyle(color: Colors.white38, fontSize: 12),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           if (_loading)
-            const Center(
+            Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: CircularProgressIndicator(strokeWidth: 2),
@@ -391,7 +389,7 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
 
   Widget _row(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: EdgeInsets.symmetric(vertical: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -399,13 +397,13 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
             width: 170,
             child: Text(
               label,
-              style: const TextStyle(color: Colors.white54, fontSize: 12.5),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(color: Colors.white70, fontSize: 12.5),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
             ),
           ),
         ],

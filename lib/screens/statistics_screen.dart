@@ -1,4 +1,5 @@
 import '../utils/app_language.dart';
+
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
@@ -22,37 +23,39 @@ class StatisticsScreen extends StatelessWidget {
     Theme.of(context);
     final accent = AppColors.accent;
     return Scaffold(
-      backgroundColor: const Color(0xFF0a0a0f),
+      backgroundColor: Color(0xFF0a0a0f),
       appBar: AppBar(
         backgroundColor: Colors.black.withValues(alpha: 0.3),
         elevation: 0,
-        title: const LText('Statistics'),
+        title: LText('Statistics'),
       ),
       body: FutureBuilder<_StatsBundle>(
         future: _load(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return Center(
-              child: CircularProgressIndicator(color: accent),
-            );
+            return Center(child: CircularProgressIndicator(color: accent));
           }
           final bundle = snapshot.data!;
           final days = bundle.days;
           final weekTotal = days.fold<int>(0, (sum, d) => sum + d.seconds);
-          final maxSecs =
-              days.fold<int>(60, (m, d) => d.seconds > m ? d.seconds : m);
+          final maxSecs = days.fold<int>(
+            60,
+            (m, d) => d.seconds > m ? d.seconds : m,
+          );
           final todaySecs = days.isEmpty ? 0 : days.last.seconds;
           final bestSecs = days.fold<int>(
-              0, (m, d) => d.seconds > m ? d.seconds : m);
+            0,
+            (m, d) => d.seconds > m ? d.seconds : m,
+          );
           final topWatchedFuture = WatchStatsStore.instance.topWatched();
 
           return FutureBuilder<List<WatchedVideo>>(
             future: topWatchedFuture,
             builder: (context, topSnap) {
-              final topWatched = topSnap.data ?? const <WatchedVideo>[];
+              final topWatched = topSnap.data ?? <WatchedVideo>[];
               final topMax = topWatched.isEmpty ? 1 : topWatched.first.seconds;
               return ListView(
-                padding: const EdgeInsets.all(20),
+                padding: EdgeInsets.all(20),
                 children: [
                   Text(
                     formatWatchTime(weekTotal),
@@ -62,11 +65,14 @@ class StatisticsScreen extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const LText(
+                  LText(
                     'watched this week',
-                    style: TextStyle(color: Colors.white38, fontSize: 14),
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 14,
+                    ),
                   ),
-                  const SizedBox(height: 20),
+                  SizedBox(height: 20),
                   Wrap(
                     spacing: 10,
                     runSpacing: 10,
@@ -100,7 +106,7 @@ class StatisticsScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: 24),
                   SizedBox(
                     height: 190,
                     child: Row(
@@ -111,7 +117,7 @@ class StatisticsScreen extends StatelessWidget {
                     ),
                   ),
                   if (topWatched.isNotEmpty) ...[
-                    const SizedBox(height: 28),
+                    SizedBox(height: 28),
                     LText(
                       'Most watched',
                       style: TextStyle(
@@ -120,12 +126,15 @@ class StatisticsScreen extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    const LText(
+                    SizedBox(height: 4),
+                    LText(
                       'Total time spent per video (since this update)',
-                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
                     ),
-                    const SizedBox(height: 10),
+                    SizedBox(height: 10),
                     for (var i = 0; i < topWatched.length; i++)
                       _TopWatchedRow(
                         rank: i + 1,
@@ -134,7 +143,7 @@ class StatisticsScreen extends StatelessWidget {
                         fraction: topWatched[i].seconds / topMax,
                       ),
                   ],
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                 ],
               );
             },
@@ -169,11 +178,11 @@ class _StatCard extends StatelessWidget {
     final accent = AppColors.accent;
     return Container(
       width: 150,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: AppColors.textPrimary.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,23 +190,25 @@ class _StatCard extends StatelessWidget {
           Row(
             children: [
               Icon(icon, size: 14, color: accent),
-              const SizedBox(width: 6),
+              SizedBox(width: 6),
               Flexible(
                 child: Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style:
-                      const TextStyle(color: Colors.white38, fontSize: 11.5),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11.5,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: 6),
           Text(
             value,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.bold,
             ),
@@ -226,7 +237,7 @@ class _TopWatchedRow extends StatelessWidget {
     Theme.of(context);
     final accent = AppColors.accent;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: EdgeInsets.symmetric(vertical: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -236,8 +247,10 @@ class _TopWatchedRow extends StatelessWidget {
                 width: 20,
                 child: Text(
                   '$rank.',
-                  style:
-                      const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
                 ),
               ),
               Expanded(
@@ -245,10 +258,10 @@ class _TopWatchedRow extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Text(
                 formatWatchTime(seconds),
                 style: TextStyle(
@@ -259,16 +272,16 @@ class _TopWatchedRow extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 5),
+          SizedBox(height: 5),
           Padding(
-            padding: const EdgeInsets.only(left: 20),
+            padding: EdgeInsets.only(left: 20),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(3),
               child: Stack(
                 children: [
                   Container(
                     height: 4,
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: AppColors.textPrimary.withValues(alpha: 0.08),
                   ),
                   FractionallySizedBox(
                     widthFactor: fraction.clamp(0.0, 1.0),
@@ -290,7 +303,7 @@ class _DayBar extends StatelessWidget {
 
   const _DayBar({required this.day, required this.maxSecs});
 
-  static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static final _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   @override
   Widget build(BuildContext context) {
@@ -300,15 +313,15 @@ class _DayBar extends StatelessWidget {
     final fraction = (day.seconds / maxSecs).clamp(0.0, 1.0);
     return Expanded(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 5),
+        padding: EdgeInsets.symmetric(horizontal: 5),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             Text(
               day.seconds > 0 ? formatWatchTime(day.seconds) : '',
-              style: const TextStyle(color: Colors.white38, fontSize: 10),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: 4),
             Flexible(
               child: Align(
                 alignment: Alignment.bottomCenter,
@@ -318,19 +331,20 @@ class _DayBar extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: isToday
                           ? accent
-                          : Colors.white.withValues(alpha: 0.16),
-                      borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(6)),
+                          : AppColors.textPrimary.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(6),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: 6),
             Text(
               _weekdays[day.day.weekday - 1],
               style: TextStyle(
-                color: isToday ? accent : Colors.white38,
+                color: isToday ? accent : AppColors.textSecondary,
                 fontSize: 11,
                 fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
               ),

@@ -1,4 +1,5 @@
 import '../utils/app_language.dart';
+
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -44,8 +45,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: AppColors.border),
         ),
-        title: LText('Clear history?',
-            style: TextStyle(color: AppColors.textPrimary)),
+        title: LText(
+          'Clear history?',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
         content: LText(
           'This also resets the saved resume position of every video.',
           style: TextStyle(color: AppColors.textSecondary),
@@ -53,8 +56,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: LText('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
+            child: LText(
+              'Cancel',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
@@ -62,7 +67,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               foregroundColor: AppColors.onAccent,
             ),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const LText('Clear'),
+            child: LText('Clear'),
           ),
         ],
       ),
@@ -78,12 +83,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
     Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const LText('History'),
+        title: LText('History'),
         actions: [
           if (_items.isNotEmpty)
             IconButton(
               tooltip: 'Clear history',
-              icon: const Icon(Icons.delete_sweep_outlined),
+              icon: Icon(Icons.delete_sweep_outlined),
               onPressed: _confirmClear,
             ),
         ],
@@ -93,24 +98,24 @@ class _HistoryScreenState extends State<HistoryScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.history, size: 48, color: Colors.white24),
+                  Icon(Icons.history, size: 48, color: AppColors.border),
                   SizedBox(height: 12),
                   LText(
                     'Nothing watched yet.\nVideos you open will show up here.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 16),
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 16,
+                    ),
                   ),
                 ],
               ),
             )
           : ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: EdgeInsets.symmetric(vertical: 8),
               itemCount: _items.length,
-              separatorBuilder: (_, _) => Divider(
-                height: 1,
-                indent: 120,
-                color: AppColors.border,
-              ),
+              separatorBuilder: (_, _) =>
+                  Divider(height: 1, indent: 120, color: AppColors.border),
               itemBuilder: (context, i) => _HistoryTile(
                 item: _items[i],
                 store: _store,
@@ -154,8 +159,9 @@ class _HistoryTileState extends State<_HistoryTile> {
     final asset = await AssetEntity.fromId(widget.item.id);
     if (asset == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: LText('This video no longer exists')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: LText('This video no longer exists')));
       }
       return;
     }
@@ -177,17 +183,19 @@ class _HistoryTileState extends State<_HistoryTile> {
       future: _detail,
       builder: (context, snap) {
         final d = snap.data;
-        final missing = snap.connectionState == ConnectionState.done && d == null;
+        final missing =
+            snap.connectionState == ConnectionState.done && d == null;
         final posLabel = formatDuration(
-            Duration(milliseconds: (d?.posMs ?? 0).clamp(0, 1 << 40)));
+          Duration(milliseconds: (d?.posMs ?? 0).clamp(0, 1 << 40)),
+        );
         final totalLabel = formatDuration(
-            Duration(milliseconds: (d?.durMs ?? 0).clamp(0, 1 << 40)));
+          Duration(milliseconds: (d?.durMs ?? 0).clamp(0, 1 << 40)),
+        );
         final hasProgress =
             d != null && d.durMs > 0 && d.posMs > 0 && d.posMs < d.durMs;
         final frac = hasProgress ? (d.posMs / d.durMs).clamp(0.0, 1.0) : 0.0;
         return ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: SizedBox(
@@ -196,12 +204,14 @@ class _HistoryTileState extends State<_HistoryTile> {
               child: d?.asset == null
                   ? const _ThumbPlaceholder()
                   : FutureBuilder<Uint8List?>(
-                      future: videoThumb(
-                          d!.asset!, const ThumbnailSize(480, 480)),
+                      future: videoThumb(d!.asset!, ThumbnailSize(480, 480)),
                       builder: (context, t) => t.data == null
                           ? const _ThumbPlaceholder()
-                          : Image.memory(t.data!,
-                              fit: BoxFit.cover, gaplessPlayback: true),
+                          : Image.memory(
+                              t.data!,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                            ),
                     ),
             ),
           ),
@@ -210,30 +220,31 @@ class _HistoryTileState extends State<_HistoryTile> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-                fontSize: 14,
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w500),
+              fontSize: 14,
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 2),
+              SizedBox(height: 2),
               Text(
                 missing
                     ? '${timeAgo(widget.item.ts)}  ·  no longer on device'
                     : hasProgress
-                        ? '${timeAgo(widget.item.ts)}  ·  $posLabel / $totalLabel'
-                        : timeAgo(widget.item.ts),
+                    ? '${timeAgo(widget.item.ts)}  ·  $posLabel / $totalLabel'
+                    : timeAgo(widget.item.ts),
                 style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),
               if (hasProgress) ...[
-                const SizedBox(height: 6),
+                SizedBox(height: 6),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(2),
                   child: LinearProgressIndicator(
                     value: frac,
                     minHeight: 3,
-                    backgroundColor: Colors.white10,
+                    backgroundColor: AppColors.border,
                     color: AppColors.accent,
                   ),
                 ),
@@ -267,8 +278,8 @@ class _ThumbPlaceholder extends StatelessWidget {
     Theme.of(context);
     return Container(
       color: AppColors.surfaceAlt,
-      child: const Center(
-        child: Icon(Icons.movie_outlined, size: 22, color: Colors.white24),
+      child: Center(
+        child: Icon(Icons.movie_outlined, size: 22, color: AppColors.border),
       ),
     );
   }
@@ -284,9 +295,19 @@ String timeAgo(int msSinceEpoch) {
   if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
   if (diff.inHours < 24) return '${diff.inHours}h ago';
   if (diff.inDays < 7) return '${diff.inDays}d ago';
-  const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  final months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${dt.day} ${months[dt.month - 1]}';
 }

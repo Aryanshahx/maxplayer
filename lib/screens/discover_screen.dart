@@ -1,4 +1,6 @@
+import '../widgets/recent_search_field.dart';
 import '../utils/app_language.dart';
+
 import 'dart:async';
 import 'dart:io';
 
@@ -386,7 +388,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF0a0a10),
+      backgroundColor: AppColors.background,
       body: _keyMissing
           ? const _NoKeyBody()
           : Stack(
@@ -466,43 +468,46 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   /// far the OTT home scrolls: search field, voice mic, ✨ AI Suggestor.
   Widget _buildSearchBar() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+      padding: EdgeInsets.fromLTRB(14, 8, 14, 8),
       child: Row(
         children: [
           // Search field
           Expanded(
             child: Container(
               height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.07),
+                color: AppColors.textPrimary.withValues(alpha: 0.07),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
                   color: _searching
                       ? AppColors.accent.withValues(alpha: 0.6)
-                      : Colors.white10,
+                      : AppColors.border,
                 ),
               ),
               child: Row(
                 children: [
                   Icon(
                     Icons.search,
-                    color: _searching ? AppColors.accent : Colors.white54,
+                    color: _searching
+                        ? AppColors.accent
+                        : AppColors.textSecondary,
                     size: 19,
                   ),
-                  const SizedBox(width: 9),
+                  SizedBox(width: 9),
                   Expanded(
-                    child: TextField(
+                    child: RecentSearchField(
+                      scope: 'discover',
                       controller: _searchCtrl,
                       focusNode: _searchFocus,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
                         fontSize: 14.5,
                       ),
-                      decoration: const LInputDecoration(
+                      decoration: LInputDecoration(
                         hintText: 'Search movies, series…',
                         hintStyle: TextStyle(
-                          color: Colors.white30,
+                          color: AppColors.textSecondary,
                           fontSize: 14,
                         ),
                         border: InputBorder.none,
@@ -518,11 +523,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                         _searchCtrl.clear();
                         _startSearch('');
                       },
-                      child: const Padding(
+                      child: Padding(
                         padding: EdgeInsets.all(3),
                         child: Icon(
                           Icons.close,
-                          color: Colors.white54,
+                          color: AppColors.textSecondary,
                           size: 18,
                         ),
                       ),
@@ -531,24 +536,24 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               ),
             ),
           ),
-          const SizedBox(width: 6),
+          SizedBox(width: 6),
           // Voice search
           SizedBox(
             width: 40,
             height: 40,
             child: IconButton(
               icon: _voiceSearching
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                        color: Colors.white54,
+                        color: AppColors.textSecondary,
                         strokeWidth: 2,
                       ),
                     )
-                  : const Icon(
+                  : Icon(
                       Icons.mic_none_rounded,
-                      color: Colors.white70,
+                      color: AppColors.textSecondary,
                       size: 21,
                     ),
               tooltip: 'Voice search',
@@ -564,9 +569,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               onTap: _aiSuggest,
               child: Container(
                 height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 13),
+                padding: EdgeInsets.symmetric(horizontal: 13),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
+                  gradient: LinearGradient(
                     colors: [Color(0xFF7B61FF), Color(0xFFE553B3)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -574,21 +579,25 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   borderRadius: BorderRadius.circular(22),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF7B61FF).withValues(alpha: 0.35),
+                      color: Color(0xFF7B61FF).withValues(alpha: 0.35),
                       blurRadius: 10,
-                      offset: const Offset(0, 3),
+                      offset: Offset(0, 3),
                     ),
                   ],
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.auto_awesome, color: Colors.white, size: 16),
+                    Icon(
+                      Icons.auto_awesome,
+                      color: AppColors.textPrimary,
+                      size: 16,
+                    ),
                     SizedBox(width: 6),
                     LText(
                       'AI',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppColors.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.4,
@@ -1054,7 +1063,7 @@ class _RailHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 9),
+      padding: EdgeInsets.fromLTRB(14, 14, 14, 9),
       child: Row(
         children: [
           Container(
@@ -1065,14 +1074,14 @@ class _RailHeader extends StatelessWidget {
               borderRadius: BorderRadius.circular(2.5),
             ),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Expanded(
             child: Text(
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AppColors.textPrimary,
                 fontSize: 15,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 0.2,
@@ -1082,7 +1091,7 @@ class _RailHeader extends StatelessWidget {
           if (onSeeAll == null)
             Icon(
               Icons.chevron_right,
-              color: Colors.white.withValues(alpha: 0.35),
+              color: AppColors.textPrimary.withValues(alpha: 0.35),
               size: 18,
             )
           else
@@ -1090,13 +1099,13 @@ class _RailHeader extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               onTap: onSeeAll,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 child: Row(
                   children: [
                     LText(
                       'SEE ALL',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.55),
+                        color: AppColors.textPrimary.withValues(alpha: 0.55),
                         fontSize: 10,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1.4,
@@ -1104,7 +1113,7 @@ class _RailHeader extends StatelessWidget {
                     ),
                     Icon(
                       Icons.chevron_right,
-                      color: Colors.white.withValues(alpha: 0.55),
+                      color: AppColors.textPrimary.withValues(alpha: 0.55),
                       size: 16,
                     ),
                   ],
@@ -1130,7 +1139,7 @@ class _RailError extends StatelessWidget {
       children: [
         _RailHeader(title: title),
         Padding(
-          padding: const EdgeInsets.fromLTRB(14, 4, 14, 16),
+          padding: EdgeInsets.fromLTRB(14, 4, 14, 16),
           child: InkWell(
             onTap: onRetry,
             borderRadius: BorderRadius.circular(10),
@@ -1138,9 +1147,9 @@ class _RailError extends StatelessWidget {
               height: 84,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.03),
+                color: AppColors.textPrimary.withValues(alpha: 0.03),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white10),
+                border: Border.all(color: AppColors.border),
               ),
               child: LText(
                 'Could not load — tap to retry',
@@ -1369,19 +1378,19 @@ class _NoKeyBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
-    return const SafeArea(
+    return SafeArea(
       child: Center(
         child: Padding(
           padding: EdgeInsets.all(28),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.vpn_key_off, color: Colors.white24, size: 46),
+              Icon(Icons.vpn_key_off, color: AppColors.border, size: 46),
               SizedBox(height: 14),
               LText(
                 'TMDB key missing',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -1390,7 +1399,10 @@ class _NoKeyBody extends StatelessWidget {
               LText(
                 'Build with --dart-define=TMDB_TOKEN=… to enable Discover.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white38, fontSize: 12.5),
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12.5,
+                ),
               ),
             ],
           ),

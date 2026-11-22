@@ -1,13 +1,16 @@
 import 'services/review_prompt.dart';
 import 'utils/pashto_localizations.dart';
 import 'utils/app_language.dart';
+
 import 'package:flutter_localizations/flutter_localizations.dart';
+
 import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+
 import 'services/push_service.dart';
 import 'services/notification_destination.dart';
 import 'screens/discover_screen.dart';
@@ -32,6 +35,7 @@ import 'screens/open_stream_screen.dart';
 import 'screens/iptv_screen.dart';
 
 import 'screens/statistics_screen.dart';
+
 import 'package:url_launcher/url_launcher.dart';
 import 'package:media_kit/media_kit.dart';
 
@@ -129,6 +133,13 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
   }
 
   @override
+  void didChangePlatformBrightness() {
+    if (mounted && AppSettings.instance.themeMode == ThemeMode.system) {
+      setState(() {});
+    }
+  }
+
+  @override
   void didChangeLocales(List<Locale>? locales) {
     unawaited(AppLanguage.instance.refreshSystem());
   }
@@ -209,6 +220,12 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
         AppLanguage.instance,
       ]),
       builder: (context, _) {
+        final mode = AppSettings.instance.themeMode;
+        AppColors.brightness = mode == ThemeMode.system
+            ? WidgetsBinding.instance.platformDispatcher.platformBrightness
+            : mode == ThemeMode.dark
+            ? Brightness.dark
+            : Brightness.light;
         AppColors.accent = AppSettings.instance.accentColor;
         return MaterialApp(
           title: 'Max Player',
@@ -224,7 +241,15 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
           ],
           navigatorKey: rootNavigatorKey,
           debugShowCheckedModeBanner: false,
-          theme: buildAppTheme(accent: AppColors.accent),
+          themeMode: mode,
+          theme: buildAppTheme(
+            accent: AppSettings.instance.accentColor,
+            brightness: Brightness.light,
+          ),
+          darkTheme: buildAppTheme(
+            accent: AppSettings.instance.accentColor,
+            brightness: Brightness.dark,
+          ),
           home: const LibraryScreen(),
         );
       },

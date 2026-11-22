@@ -1,7 +1,9 @@
+import 'appearance_screen.dart';
 import 'language_screen.dart';
 import '../utils/app_language.dart';
 import '../services/app_analytics.dart';
 import '../services/push_service.dart';
+
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
@@ -54,7 +56,7 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
-  static const _pageSize = 100;
+  static final _pageSize = 100;
 
   final _store = LocalStore();
 
@@ -142,7 +144,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (!seen && mounted) {
       await Navigator.of(
         context,
-      ).push(MaterialPageRoute(builder: (_) => const OnboardingFlow()));
+      ).push(MaterialPageRoute(builder: (_) => OnboardingFlow()));
     }
   }
 
@@ -215,9 +217,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       CrashLog.error('library.scan_failed', e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: LText('Could not scan videos on this device'),
-          ),
+          SnackBar(content: LText('Could not scan videos on this device')),
         );
       }
     } finally {
@@ -278,7 +278,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       while (mounted && !_exhausted && token == _scanToken) {
         await _loadMore();
-        await Future.delayed(const Duration(milliseconds: 40));
+        await Future.delayed(Duration(milliseconds: 40));
       }
       if (token == _scanToken) {
         CrashLog.crumb('library.drained', {'count': _videos.length});
@@ -324,23 +324,85 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return list;
   }
 
+  Future<void> _showHomeMenu() async {
+    final action = await Navigator.of(context).push<_MenuAction>(
+      MaterialPageRoute(
+        builder: (ctx) => Scaffold(
+          appBar: AppBar(title: Text('Settings and more')),
+          body: ListView(
+            children: [
+              for (final entry in <(_MenuAction, IconData, String)>[
+                (
+                  _MenuAction.appearance,
+                  Icons.brightness_6_outlined,
+                  'Appearance',
+                ),
+                (_MenuAction.language, Icons.language, 'Language'),
+                (_MenuAction.display, Icons.tune_rounded, 'Display settings'),
+                (
+                  _MenuAction.stats,
+                  Icons.bar_chart_rounded,
+                  'Watch statistics',
+                ),
+                (_MenuAction.manual, Icons.menu_book_outlined, 'User manual'),
+                (
+                  _MenuAction.about,
+                  Icons.info_outline_rounded,
+                  'About Max Player',
+                ),
+                (
+                  _MenuAction.privacy,
+                  Icons.privacy_tip_outlined,
+                  'Privacy policy',
+                ),
+                (_MenuAction.report, Icons.flag_outlined, 'Report a problem'),
+                (
+                  _MenuAction.instagram,
+                  Icons.camera_alt_outlined,
+                  'Follow on Instagram',
+                ),
+              ])
+                ListTile(
+                  leading: Icon(entry.$2),
+                  title: LText(entry.$3),
+                  trailing: Icon(Icons.chevron_right),
+                  onTap: () => Navigator.pop(ctx, entry.$1),
+                ),
+              Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'Version $kAppVersion',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (mounted && action != null) _openMenu(action);
+  }
+
   void _openMenu(_MenuAction a) {
     switch (a) {
+      case _MenuAction.appearance:
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => AppearanceScreen()));
+        break;
       case _MenuAction.language:
         Navigator.of(
           context,
-        ).push(MaterialPageRoute(builder: (_) => const LanguageScreen()));
+        ).push(MaterialPageRoute(builder: (_) => LanguageScreen()));
         break;
       case _MenuAction.display:
         Navigator.of(context)
-            .push(
-              MaterialPageRoute(builder: (_) => const DisplaySettingsScreen()),
-            )
+            .push(MaterialPageRoute(builder: (_) => DisplaySettingsScreen()))
             .then((_) => _refresh());
         break;
       case _MenuAction.stats:
         Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const StatisticsScreen()))
+            .push(MaterialPageRoute(builder: (_) => StatisticsScreen()))
             .then((_) => _refresh());
         break;
       case _MenuAction.manual:
@@ -400,7 +462,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ? ListView(
             controller: _listScroll,
             // keeps pull-to-refresh usable on empty state
-            children: const [SizedBox(height: 140), _EmptyHint()],
+            children: [SizedBox(height: 140), _EmptyHint()],
           )
         : s.groupBy == GroupBy.folder
         ? _GroupedView(
@@ -422,7 +484,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       children: [
         _buildHeader(),
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          padding: EdgeInsets.fromLTRB(12, 12, 12, 12),
           child: DiscoverBanner(
             onTap: () {
               AppAnalytics.instance.trackFeatureOpen('discover');
@@ -437,7 +499,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         // v28-old: the quick tiles slide away when scrolling down.
         ClipRect(
           child: AnimatedAlign(
-            duration: const Duration(milliseconds: 220),
+            duration: Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
             heightFactor: _tilesVisible ? 1.0 : 0.0,
             alignment: Alignment.topCenter,
@@ -446,7 +508,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ),
         if (_isScanning)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: EdgeInsets.symmetric(horizontal: 12),
             child: Column(
               children: [
                 LinearProgressIndicator(
@@ -454,16 +516,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       ? (_videos.length / _scanTotal!).clamp(0.0, 1.0)
                       : null,
                   color: AppColors.accent,
-                  backgroundColor: Colors.white10,
+                  backgroundColor: AppColors.border,
                 ),
-                const SizedBox(height: 6),
+                SizedBox(height: 6),
                 Text(
                   _scanTotal != null
                       ? 'Scanning ${_videos.length}/$_scanTotal'
                       : 'Scanning ${_videos.length}…',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
                 ),
-                const SizedBox(height: 6),
+                SizedBox(height: 6),
               ],
             ),
           ),
@@ -486,7 +551,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 12, 2, 2),
+      padding: EdgeInsets.fromLTRB(18, 12, 2, 2),
       child: Row(
         children: [
           Expanded(
@@ -494,7 +559,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ShaderMask(
-                  shaderCallback: (bounds) => const LinearGradient(
+                  shaderCallback: (bounds) => LinearGradient(
                     // Exact old-app brand gradient from the supplied old app.
                     colors: [
                       Color(0xFFA78BFA),
@@ -502,23 +567,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       Color(0xFF22D3EE),
                     ],
                   ).createShader(bounds),
-                  child: const LText(
+                  child: LText(
                     'Max Player',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 19,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white, // ShaderMask paints over this
+                      color:
+                          AppColors.textPrimary, // ShaderMask paints over this
                     ),
                   ),
                 ),
-                const LText(
+                LText(
                   'Proudly Developed in India 🇮🇳',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white54,
+                    color: AppColors.textSecondary,
                     fontSize: 9.5,
                     letterSpacing: 0.3,
                     height: 1.3,
@@ -532,103 +598,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
             'Search',
             () => Navigator.of(
               context,
-            ).push(MaterialPageRoute(builder: (_) => const SearchScreen())),
+            ).push(MaterialPageRoute(builder: (_) => SearchScreen())),
           ),
           _headIcon(Icons.sync, 'Refresh', _load),
           _headIcon(
             Icons.history,
             'History',
             () => Navigator.of(context)
-                .push(MaterialPageRoute(builder: (_) => const HistoryScreen()))
+                .push(MaterialPageRoute(builder: (_) => HistoryScreen()))
                 .then((_) => _refresh()),
           ),
-          PopupMenuButton<_MenuAction>(
-            // Same 24px glyph as the old app's three-dots action.
-            iconSize: 24,
-            padding: EdgeInsets.zero,
+          IconButton(
+            tooltip: 'Settings and more',
             icon: Icon(Icons.more_vert, color: AppColors.accent),
-            color: const Color(0xFF1a1a24),
-            elevation: 8,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-              side: BorderSide(color: AppColors.border),
-            ),
-            onSelected: _openMenu,
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: _MenuAction.language,
-                child: _MenuRow(icon: Icons.language, label: 'Language'),
-              ),
-              PopupMenuItem(
-                value: _MenuAction.display,
-                height: 44,
-                child: _MenuRow(
-                  icon: Icons.tune_rounded,
-                  label: 'Display settings',
-                ),
-              ),
-              PopupMenuItem(
-                value: _MenuAction.stats,
-                height: 44,
-                child: _MenuRow(
-                  icon: Icons.bar_chart_rounded,
-                  label: 'Watch statistics',
-                ),
-              ),
-              PopupMenuItem(
-                value: _MenuAction.manual,
-                height: 44,
-                child: _MenuRow(
-                  icon: Icons.menu_book_outlined,
-                  label: 'User manual',
-                ),
-              ),
-              PopupMenuItem(
-                value: _MenuAction.about,
-                height: 44,
-                child: _MenuRow(
-                  icon: Icons.info_outline_rounded,
-                  label: 'About Max Player',
-                ),
-              ),
-              PopupMenuItem(
-                value: _MenuAction.privacy,
-                height: 44,
-                child: _MenuRow(
-                  icon: Icons.privacy_tip_outlined,
-                  label: 'Privacy policy',
-                ),
-              ),
-              PopupMenuItem(
-                value: _MenuAction.report,
-                height: 44,
-                child: _MenuRow(
-                  icon: Icons.flag_outlined,
-                  label: 'Report a problem',
-                ),
-              ),
-              PopupMenuItem(
-                value: _MenuAction.instagram,
-                height: 44,
-                child: _MenuRow(
-                  icon: Icons.camera_alt_outlined,
-                  label: 'Follow on Instagram',
-                ),
-              ),
-              const PopupMenuDivider(height: 1),
-              const PopupMenuItem(
-                value: _MenuAction.display,
-                enabled: false,
-                height: 30,
-                padding: EdgeInsets.zero,
-                child: Center(
-                  child: Text(
-                    'Version $kAppVersion',
-                    style: TextStyle(color: Colors.white38, fontSize: 11),
-                  ),
-                ),
-              ),
-            ],
+            onPressed: _showHomeMenu,
           ),
         ],
       ),
@@ -662,13 +645,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final actions = <String, VoidCallback>{
       'privateSpace': () =>
           push(PrivateScreen(libraryVideos: _videos), 'private'),
-      'playlists': () => push(const PlaylistsScreen(), 'playlists'),
-      'folders': () => push(const FoldersScreen(), 'folders'),
-      'audio': () => push(const AudioScreen(), 'audio'),
-      'networkStorage': () => push(const NetworkStorageScreen(), 'network'),
-      'cloudStorage': () => push(const CloudStorageScreen(), 'cloud'),
-      'openStream': () => push(const OpenStreamScreen()),
-      'quickShare': () => push(const QuickShareScreen(), 'quickShare'),
+      'playlists': () => push(PlaylistsScreen(), 'playlists'),
+      'folders': () => push(FoldersScreen(), 'folders'),
+      'audio': () => push(AudioScreen(), 'audio'),
+      'networkStorage': () => push(NetworkStorageScreen(), 'network'),
+      'cloudStorage': () => push(CloudStorageScreen(), 'cloud'),
+      'openStream': () => push(OpenStreamScreen()),
+      'quickShare': () => push(QuickShareScreen(), 'quickShare'),
     };
 
     Widget tileAt(QuickTileSpec spec) =>
@@ -679,15 +662,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
         Row(
           children: [
             Expanded(child: tileAt(items[0])),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
             Expanded(child: tileAt(items[1])),
           ],
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
         Row(
           children: [
             Expanded(child: tileAt(items[2])),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
             Expanded(child: tileAt(items[3])),
           ],
         ),
@@ -695,7 +678,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      padding: EdgeInsets.fromLTRB(12, 0, 12, 6),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -707,18 +690,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
               children: [grid(kQuickTilesPage1), grid(kQuickTilesPage2)],
             ),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               for (var dot = 0; dot < 2; dot++) ...[
-                if (dot > 0) const SizedBox(width: 6),
+                if (dot > 0) SizedBox(width: 6),
                 AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
+                  duration: Duration(milliseconds: 200),
                   width: _tilePage == dot ? 14 : 5,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: _tilePage == dot ? AppColors.accent : Colors.white24,
+                    color: _tilePage == dot
+                        ? AppColors.accent
+                        : AppColors.border,
                     borderRadius: BorderRadius.circular(3),
                   ),
                 ),
@@ -744,7 +729,7 @@ class _Tile extends StatelessWidget {
     final accent = AppColors.accent;
     // Old frosted-glass tile (backdrop blur over the shared canvas).
     return Material(
-      color: Colors.transparent,
+      color: AppColors.surfaceAlt,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -761,29 +746,26 @@ class _Tile extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    accent.withValues(alpha: 0.11),
-                    accent.withValues(alpha: 0.04),
-                  ],
+                  colors: [AppColors.surfaceAlt, AppColors.surface],
                 ),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.14),
+                  color: AppColors.textPrimary.withValues(alpha: 0.14),
                   width: 1,
                 ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 11),
               child: Row(
                 children: [
                   Icon(icon, color: accent, size: 18),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Flexible(
                     child: LText(
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
                       ),
@@ -800,6 +782,7 @@ class _Tile extends StatelessWidget {
 }
 
 enum _MenuAction {
+  appearance,
   language,
   display,
   stats,
@@ -808,32 +791,6 @@ enum _MenuAction {
   privacy,
   report,
   instagram,
-}
-
-class _MenuRow extends StatelessWidget {
-  const _MenuRow({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    Theme.of(context);
-    return Row(
-      children: [
-        Icon(icon, size: 19, color: AppColors.accent),
-        const SizedBox(width: 12),
-        Expanded(
-          child: LText(
-            label,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 class _GroupedView extends StatelessWidget {
@@ -869,7 +826,7 @@ class _GroupedView extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 2),
               child: Text(
                 '$name  ·  ${items.length}',
                 style: TextStyle(
@@ -885,9 +842,9 @@ class _GroupedView extends StatelessWidget {
             // clips or scrolls on its own.
             LayoutBuilder(
               builder: (context, c) {
-                const hPad = 16.0; // 8 + 8
-                const vPad = 16.0; // 4 + 12
-                const spacing = 8.0;
+                final hPad = 16.0; // 8 + 8
+                final vPad = 16.0; // 4 + 12
+                final spacing = 8.0;
                 final gridW = c.maxWidth - hPad;
                 final cols = (gridW / 200).ceil().clamp(2, 6);
                 final cellW = (gridW - (cols - 1) * spacing) / cols;
@@ -924,7 +881,7 @@ class _PermissionHint extends StatelessWidget {
     Theme.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -933,7 +890,7 @@ class _PermissionHint extends StatelessWidget {
               size: 52,
               color: AppColors.textSecondary,
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             LText(
               'Permission needed',
               style: TextStyle(
@@ -942,13 +899,13 @@ class _PermissionHint extends StatelessWidget {
                 color: AppColors.textPrimary,
               ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             LText(
               'Max Player needs access to your videos to show the library.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textSecondary),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: 20),
             FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.accent,
@@ -958,7 +915,7 @@ class _PermissionHint extends StatelessWidget {
                 ),
               ),
               onPressed: onRetry,
-              child: const LText('Grant access'),
+              child: LText('Grant access'),
             ),
           ],
         ),

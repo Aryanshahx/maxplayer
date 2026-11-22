@@ -1,4 +1,5 @@
 import '../utils/app_language.dart';
+
 import 'package:flutter/material.dart';
 
 import '../app_info.dart';
@@ -14,24 +15,15 @@ class UserManualSheet extends StatelessWidget {
 
   const UserManualSheet({super.key, this.scrollController});
 
-  static Future<void> show(BuildContext context) {
-    return showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF14141c),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.85,
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        builder: (context, controller) =>
-            UserManualSheet(scrollController: controller),
-      ),
-    );
-  }
+  static Future<void> show(BuildContext context) =>
+      Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: LText('User manual')),
+            body: const UserManualSheet(),
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -39,28 +31,16 @@ class UserManualSheet extends StatelessWidget {
     final accent = AppColors.accent;
     return ListView(
       controller: scrollController,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+      padding: EdgeInsets.fromLTRB(16, 10, 16, 28),
       children: [
-        // Grab handle.
-        Center(
-          child: Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 14),
-            decoration: const BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.all(Radius.circular(2)),
-            ),
-          ),
-        ),
         Row(
           children: [
             Icon(Icons.menu_book_outlined, color: accent),
-            const SizedBox(width: 10),
-            const LText(
+            SizedBox(width: 10),
+            LText(
               'User manual',
               style: TextStyle(
-                color: Colors.white,
+                color: AppColors.textPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
@@ -74,13 +54,13 @@ class UserManualSheet extends StatelessWidget {
 
         // --- Gestures (illustrated) -------------------------------------
         _SectionTitle('Gesture controls', accent),
-        const Padding(
+        Padding(
           padding: EdgeInsets.only(bottom: 6),
           child: LText(
             'All gestures work both in windowed and full-screen mode, on '
             'every video. Each one can be switched off individually in the '
             'player\'s ⚙ settings sheet.',
-            style: TextStyle(color: Colors.white54, fontSize: 12.5),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
           ),
         ),
         for (final g in _gestureItems) _GestureCard(item: g),
@@ -97,11 +77,11 @@ class UserManualSheet extends StatelessWidget {
         _SectionTitle('Tips & answers', accent),
         for (final item in _tipItems) _IconRow(item: item),
 
-        const SizedBox(height: 22),
-        const Center(
+        SizedBox(height: 22),
+        Center(
           child: Text(
             'Max Player v$kAppVersion  ·  Hyper Tech Labs',
-            style: TextStyle(color: Colors.white24, fontSize: 12),
+            style: TextStyle(color: AppColors.border, fontSize: 12),
           ),
         ),
       ],
@@ -118,7 +98,7 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 18, bottom: 6),
+      padding: EdgeInsets.only(top: 18, bottom: 6),
       child: Text(
         text.toUpperCase(),
         style: TextStyle(
@@ -141,29 +121,29 @@ class _IconRow extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: EdgeInsets.symmetric(vertical: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(item.icon, size: 20, color: Colors.white70),
-          const SizedBox(width: 12),
+          Icon(item.icon, size: 20, color: AppColors.textSecondary),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   item.title,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 2),
+                SizedBox(height: 2),
                 Text(
                   item.description,
-                  style: const TextStyle(
-                    color: Colors.white54,
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
                     fontSize: 12.5,
                     height: 1.35,
                   ),
@@ -187,32 +167,32 @@ class _GestureCard extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 12),
+      margin: EdgeInsets.symmetric(vertical: 6),
+      padding: EdgeInsets.fromLTRB(10, 6, 10, 12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
+        color: AppColors.textPrimary.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         children: [
           GestureIllustration(kind: item.kind),
-          const SizedBox(height: 8),
+          SizedBox(height: 8),
           Text(
             item.title,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.textPrimary,
               fontSize: 14,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Text(
             item.description,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white54,
+            style: TextStyle(
+              color: AppColors.textSecondary,
               fontSize: 12.5,
               height: 1.4,
             ),
@@ -241,7 +221,7 @@ class _GestureItem {
 // Content
 // ---------------------------------------------------------------------------
 
-const List<_Item> _homeItems = [
+final List<_Item> _homeItems = [
   _Item(
     Icons.sync,
     'Rescan button (⟳ top bar)',
@@ -308,7 +288,7 @@ const List<_Item> _homeItems = [
   ),
 ];
 
-const List<_GestureItem> _gestureItems = [
+final List<_GestureItem> _gestureItems = [
   _GestureItem(
     GestureKind.singleTap,
     'Single tap - show / hide controls',
@@ -367,7 +347,7 @@ const List<_GestureItem> _gestureItems = [
   ),
 ];
 
-const List<_Item> _playerItems = [
+final List<_Item> _playerItems = [
   _Item(
     Icons.queue_music,
     'Playlist / queue',
@@ -456,7 +436,7 @@ const List<_Item> _playerItems = [
   ),
 ];
 
-const List<_Item> _smartItems = [
+final List<_Item> _smartItems = [
   _Item(
     Icons.folder_special_outlined,
     'Whole-device scanning',
@@ -518,7 +498,7 @@ const List<_Item> _smartItems = [
   ),
 ];
 
-const List<_Item> _tipItems = [
+final List<_Item> _tipItems = [
   _Item(
     Icons.info_outline,
     'A new video does not appear in the library?',

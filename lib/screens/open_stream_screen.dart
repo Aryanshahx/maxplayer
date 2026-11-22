@@ -1,4 +1,5 @@
 import '../utils/app_language.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -13,7 +14,7 @@ import 'player_screen.dart';
 
 /// Old-app parity: prefetching thousands of rows on first paint kills the
 /// screen — page the channel list in chunks of this many tiles.
-const int _channelPageSize = 50;
+final int _channelPageSize = 50;
 
 /// Open Stream (IPTV) — old-app parity: protocol chips, clipboard paste,
 /// optional title, saved & recent streams, and .m3u/.m3u8 channel lists.
@@ -39,7 +40,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
   List<IptvChannel>? _filtered;
   bool _loadingPlaylist = false;
   int _playlistRequest = 0;
-  List<String> _groups = const [];
+  List<String> _groups = [];
   String? _selectedGroup;
   int _visible = _channelPageSize;
 
@@ -128,7 +129,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
     _applyFilter();
     if (channels.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: LText('No channels found — is that a public M3U link?'),
         ),
       );
@@ -219,16 +220,16 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
     final canPlay = _urlCtrl.text.trim().isNotEmpty && !_loadingPlaylist;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF14141c),
+      backgroundColor: AppColors.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF14141c),
-        title: const LText(
+        backgroundColor: AppColors.surface,
+        title: LText(
           'Open Stream(iptv)',
           style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(20),
         children: [
           // Protocols row
           Wrap(
@@ -246,23 +247,22 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                 'WebDAV',
               ])
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: _detectedProto == p
                         ? accent.withValues(alpha: 0.25)
-                        : Colors.white.withValues(alpha: 0.05),
+                        : AppColors.textPrimary.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(
-                      color: _detectedProto == p ? accent : Colors.white10,
+                      color: _detectedProto == p ? accent : AppColors.border,
                     ),
                   ),
                   child: Text(
                     p,
                     style: TextStyle(
-                      color: _detectedProto == p ? accent : Colors.white54,
+                      color: _detectedProto == p
+                          ? accent
+                          : AppColors.textSecondary,
                       fontSize: 10.5,
                       fontWeight: FontWeight.bold,
                     ),
@@ -270,33 +270,39 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           // Stream URL input
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.06),
+              color: AppColors.textPrimary.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: canPlay ? accent : Colors.white12),
+              border: Border.all(color: canPlay ? accent : AppColors.border),
             ),
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _urlCtrl,
-                    style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                    decoration: const LInputDecoration(
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13.5,
+                    ),
+                    decoration: LInputDecoration(
                       hintText: 'https://, http://, rtsp://, ftp://…',
-                      hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
+                      hintStyle: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                      ),
                       border: InputBorder.none,
                     ),
                     onSubmitted: (_) => _play(_urlCtrl.text, _titleCtrl.text),
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.paste,
-                    color: Colors.white70,
+                    color: AppColors.textSecondary,
                     size: 20,
                   ),
                   tooltip: 'Paste URL',
@@ -305,25 +311,25 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           // Optional title input
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 2),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.04),
+              color: AppColors.textPrimary.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(10),
             ),
             child: TextField(
               controller: _titleCtrl,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-              decoration: const LInputDecoration(
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
+              decoration: LInputDecoration(
                 hintText: 'Stream title (optional)',
-                hintStyle: TextStyle(color: Colors.white24, fontSize: 12.5),
+                hintStyle: TextStyle(color: AppColors.border, fontSize: 12.5),
                 border: InputBorder.none,
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           // v1.0.1+62: one-tap LIVE TV — iptv-org's legal free-to-air
           // collection with logos, IN/WORLD switch, group filters.
           SizedBox(
@@ -333,27 +339,27 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                 backgroundColor: accent.withValues(alpha: 0.16),
                 foregroundColor: accent,
                 side: BorderSide(color: accent.withValues(alpha: 0.6)),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
               onPressed: () => Navigator.of(
                 context,
-              ).push(MaterialPageRoute(builder: (_) => const IptvScreen())),
-              icon: const Icon(Icons.live_tv_rounded),
-              label: const LText(
+              ).push(MaterialPageRoute(builder: (_) => IptvScreen())),
+              icon: Icon(Icons.live_tv_rounded),
+              label: LText(
                 'LIVE TV — free channels',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          SizedBox(height: 20),
           FilledButton.icon(
             style: FilledButton.styleFrom(
               backgroundColor: accent,
               foregroundColor: AppColors.onAccent,
-              padding: const EdgeInsets.symmetric(vertical: 14),
+              padding: EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -361,29 +367,29 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
             onPressed: canPlay
                 ? () => _play(_urlCtrl.text, _titleCtrl.text)
                 : null,
-            icon: const Icon(Icons.play_arrow),
-            label: const LText(
+            icon: Icon(Icons.play_arrow),
+            label: LText(
               'Play Stream',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-          const SizedBox(height: 8),
-          const LText(
+          SizedBox(height: 8),
+          LText(
             'Paste a direct stream or an IPTV channel list. HLS (.m3u8) plays as one stream; channel lists open below.',
-            style: TextStyle(color: Colors.white38, fontSize: 11),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
           ),
           if (_loadingPlaylist) ...[
-            const SizedBox(height: 24),
+            SizedBox(height: 24),
             Center(child: CircularProgressIndicator(color: accent)),
-            const SizedBox(height: 8),
-            const Center(
+            SizedBox(height: 8),
+            Center(
               child: LText(
                 'Fetching playlist… big lists take a moment',
-                style: TextStyle(color: Colors.white38, fontSize: 11),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
               ),
             ),
           ] else if (_channels != null && _filtered != null) ...[
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             Text(
               '${_filtered!.length} of ${_channels!.length} channels',
               style: TextStyle(
@@ -392,26 +398,29 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             // Search bar
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 2),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
+                color: AppColors.textPrimary.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.search, color: Colors.white38, size: 18),
-                  const SizedBox(width: 8),
+                  Icon(Icons.search, color: AppColors.textSecondary, size: 18),
+                  SizedBox(width: 8),
                   Expanded(
                     child: TextField(
                       controller: _searchCtrl,
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                      decoration: const LInputDecoration(
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                      ),
+                      decoration: LInputDecoration(
                         hintText: 'Search channels…',
                         hintStyle: TextStyle(
-                          color: Colors.white24,
+                          color: AppColors.border,
                           fontSize: 12.5,
                         ),
                         border: InputBorder.none,
@@ -420,9 +429,9 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                   ),
                   if (_searchCtrl.text.isNotEmpty)
                     IconButton(
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.clear,
-                        color: Colors.white38,
+                        color: AppColors.textSecondary,
                         size: 18,
                       ),
                       onPressed: _searchCtrl.clear,
@@ -432,19 +441,16 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
             ),
             // Group chips (group-title= from iptv-org lists)
             if (_groups.isNotEmpty) ...[
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               SizedBox(
                 height: 32,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: [
                     Padding(
-                      padding: const EdgeInsets.only(right: 6),
+                      padding: EdgeInsets.only(right: 6),
                       child: ChoiceChip(
-                        label: const LText(
-                          'All',
-                          style: TextStyle(fontSize: 11),
-                        ),
+                        label: LText('All', style: TextStyle(fontSize: 11)),
                         selected: _selectedGroup == null,
                         onSelected: (_) {
                           _selectedGroup = null;
@@ -455,9 +461,9 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                     ),
                     for (final g in _groups)
                       Padding(
-                        padding: const EdgeInsets.only(right: 6),
+                        padding: EdgeInsets.only(right: 6),
                         child: ChoiceChip(
-                          label: Text(g, style: const TextStyle(fontSize: 11)),
+                          label: Text(g, style: TextStyle(fontSize: 11)),
                           selected: _selectedGroup == g,
                           onSelected: (v) {
                             _selectedGroup = v ? g : null;
@@ -470,7 +476,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                 ),
               ),
             ],
-            const SizedBox(height: 10),
+            SizedBox(height: 10),
             // Paged channel tiles — a full 10k list is virtualized, only
             // _visible tiles are materialized at a time.
             for (var i = 0; i < _visible && i < _filtered!.length; i++)
@@ -478,9 +484,9 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                 builder: (context) {
                   final ch = _filtered![i];
                   return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
+                    margin: EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.04),
+                      color: AppColors.textPrimary.withValues(alpha: 0.04),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: ListTile(
@@ -490,8 +496,8 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                         ch.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -499,8 +505,8 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                         ch.group == null ? ch.url : '${ch.group} · ${ch.url}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white38,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
                           fontSize: 11,
                         ),
                       ),
@@ -511,7 +517,7 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
               ),
             if (_visible < _filtered!.length)
               Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 8),
+                padding: EdgeInsets.only(top: 4, bottom: 8),
                 child: TextButton(
                   onPressed: () => setState(() => _visible += _channelPageSize),
                   child: Text(
@@ -521,11 +527,11 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                 ),
               ),
           ] else if (_savedServers.isNotEmpty) ...[
-            const SizedBox(height: 24),
+            SizedBox(height: 24),
             Row(
               children: [
                 Icon(Icons.history, color: accent, size: 16),
-                const SizedBox(width: 6),
+                SizedBox(width: 6),
                 LText(
                   'Saved & Recent Streams',
                   style: TextStyle(
@@ -536,12 +542,12 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            SizedBox(height: 10),
             for (var i = 0; i < _savedServers.length; i++)
               Container(
-                margin: const EdgeInsets.only(bottom: 8),
+                margin: EdgeInsets.only(bottom: 8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.04),
+                  color: AppColors.textPrimary.withValues(alpha: 0.04),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: ListTile(
@@ -549,8 +555,8 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                   leading: Icon(Icons.live_tv, color: accent, size: 20),
                   title: Text(
                     _savedServers[i].name,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -558,12 +564,15 @@ class _OpenStreamScreenState extends State<OpenStreamScreen> {
                     _savedServers[i].url,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
                   ),
                   trailing: IconButton(
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.delete_outline,
-                      color: Colors.white38,
+                      color: AppColors.textSecondary,
                       size: 18,
                     ),
                     onPressed: () => _deleteServer(i),

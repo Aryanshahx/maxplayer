@@ -1,18 +1,29 @@
 import 'package:flutter/material.dart';
 
-/// MaxPlayer dark design language — true-black neutral surfaces (no blue
+/// MaxPlayer adaptive design language — true-black neutral surfaces (no blue
 /// tint), hairline borders, themable accent with automatic on-accent
-/// contrast. Dark-first, no light mode for v0.
+/// contrast. Follows the saved System / Light / Dark preference.
 class AppColors {
   AppColors._();
 
-  static Color get background => const Color(0xFF060608);
-  static Color get surface => const Color(0xFF101013);
-  static Color get surfaceAlt => const Color(0xFF18181C);
-  static Color get border => const Color(0xFF26262C);
-  static Color get textPrimary => const Color(0xFFF5F6F8);
-  static Color get textSecondary => const Color(0xFF9296A0);
-  static Color accent = const Color(0xFFFFFFFF);
+  static Brightness brightness = Brightness.dark;
+  static bool get isDark => brightness == Brightness.dark;
+  static Color get background =>
+      isDark ? const Color(0xFF060608) : const Color(0xFFF7F8FA);
+  static Color get surface =>
+      isDark ? const Color(0xFF101013) : const Color(0xFFFFFFFF);
+  static Color get surfaceAlt =>
+      isDark ? const Color(0xFF18181C) : const Color(0xFFECEEF2);
+  static Color get border =>
+      isDark ? const Color(0xFF26262C) : const Color(0xFFD3D7DE);
+  static Color get textPrimary =>
+      isDark ? const Color(0xFFF5F6F8) : const Color(0xFF181A20);
+  static Color get textSecondary =>
+      isDark ? const Color(0xFF9296A0) : const Color(0xFF535965);
+  static Color _accent = const Color(0xFFFFFFFF);
+  static set accent(Color value) => _accent = value;
+  // The default white accent becomes charcoal in light mode for contrast.
+  static Color get accent => adaptiveAccent(_accent, brightness);
   static Color get danger => const Color(0xFFE5484D);
 
   /// Text/icon colour that stays readable ON TOP of [accent]
@@ -23,59 +34,82 @@ class AppColors {
       : Colors.white;
 }
 
-ThemeData buildAppTheme({Color? accent}) {
-  final ac = accent ?? AppColors.accent;
+Color adaptiveAccent(Color raw, Brightness brightness) {
+  if (brightness == Brightness.dark) return raw;
+  if (raw == const Color(0xFFFFFFFF)) return const Color(0xFF252830);
+  var hsl = HSLColor.fromColor(raw);
+  while ((1.05 / (hsl.toColor().computeLuminance() + .05)) < 4.5 &&
+      hsl.lightness > .1) {
+    hsl = hsl.withLightness((hsl.lightness - .025).clamp(0, 1));
+  }
+  return hsl.toColor();
+}
+
+ThemeData buildAppTheme({
+  Color? accent,
+  Brightness brightness = Brightness.dark,
+}) {
+  final dark = brightness == Brightness.dark;
+  final raw = accent ?? AppColors.accent;
+  final ac = adaptiveAccent(raw, brightness);
   final onAc = ThemeData.estimateBrightnessForColor(ac) == Brightness.light
       ? const Color(0xFF0B0B0E)
       : Colors.white;
-  const radius = Radius.circular(16);
+  final background = dark ? const Color(0xFF060608) : const Color(0xFFF7F8FA);
+  final surface = dark ? const Color(0xFF101013) : Colors.white;
+  final text = dark ? const Color(0xFFF5F6F8) : const Color(0xFF181A20);
+  final border = dark ? const Color(0xFF26262C) : const Color(0xFFD3D7DE);
+  final scheme = ColorScheme.fromSeed(
+    seedColor: ac,
+    brightness: brightness,
+  ).copyWith(primary: ac, onPrimary: onAc, surface: surface, onSurface: text);
   return ThemeData(
     useMaterial3: true,
-    brightness: Brightness.dark,
-    scaffoldBackgroundColor: AppColors.background,
-    colorScheme: ColorScheme.dark(
-      surface: AppColors.surface,
-      primary: ac,
-      onPrimary: onAc,
-      onSurface: AppColors.textPrimary,
-      error: AppColors.danger,
-    ),
+    brightness: brightness,
+    colorScheme: scheme,
+    scaffoldBackgroundColor: background,
     appBarTheme: AppBarTheme(
-      backgroundColor: AppColors.background,
+      backgroundColor: background,
+      foregroundColor: text,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
-      centerTitle: false,
-      titleTextStyle: TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: 22,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.2,
-      ),
-      iconTheme: IconThemeData(color: AppColors.textPrimary),
     ),
     cardTheme: CardThemeData(
-      color: AppColors.surface,
+      color: surface,
       elevation: 0,
-      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(radius),
-        side: BorderSide(color: AppColors.border, width: 1),
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: border),
       ),
     ),
-    snackBarTheme: SnackBarThemeData(
-      backgroundColor: AppColors.surfaceAlt,
-      contentTextStyle: TextStyle(color: AppColors.textPrimary),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(
+    dividerTheme: DividerThemeData(color: border),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: surface,
+      hintStyle: TextStyle(
+        color: dark ? Colors.white54 : const Color(0xFF535965),
+      ),
+      border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: AppColors.border),
+        borderSide: BorderSide(color: border),
       ),
     ),
-    iconTheme: IconThemeData(color: AppColors.textPrimary),
-    textTheme: TextTheme(
-      bodyMedium: TextStyle(color: AppColors.textPrimary),
-      bodySmall: TextStyle(color: AppColors.textSecondary),
+    popupMenuTheme: PopupMenuThemeData(
+      color: surface,
+      textStyle: TextStyle(color: text),
     ),
-    dividerTheme: DividerThemeData(color: AppColors.border, thickness: 1),
+    bottomSheetTheme: BottomSheetThemeData(backgroundColor: surface),
+    dialogTheme: DialogThemeData(backgroundColor: surface),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith(
+        (states) =>
+            states.contains(WidgetState.selected) ? onAc : scheme.outline,
+      ),
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? ac
+            : scheme.surfaceContainerHighest,
+      ),
+    ),
   );
 }

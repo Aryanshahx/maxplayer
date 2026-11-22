@@ -22,11 +22,7 @@ class GestureIllustration extends StatelessWidget {
   final GestureKind kind;
   final double height;
 
-  const GestureIllustration({
-    super.key,
-    required this.kind,
-    this.height = 110,
-  });
+  const GestureIllustration({super.key, required this.kind, this.height = 110});
 
   @override
   Widget build(BuildContext context) {
@@ -34,9 +30,7 @@ class GestureIllustration extends StatelessWidget {
     return SizedBox(
       height: height,
       width: double.infinity,
-      child: CustomPaint(
-        painter: _GesturePainter(kind, AppColors.accent),
-      ),
+      child: CustomPaint(painter: _GesturePainter(kind, AppColors.accent)),
     );
   }
 }
@@ -50,7 +44,7 @@ class _GesturePainter extends CustomPainter {
   // ---------- helpers -------------------------------------------------------
 
   Paint get _thinWhite => Paint()
-    ..color = Colors.white60
+    ..color = AppColors.textSecondary
     ..strokeWidth = 2
     ..style = PaintingStyle.stroke
     ..strokeCap = StrokeCap.round;
@@ -65,9 +59,10 @@ class _GesturePainter extends CustomPainter {
     final w = size.width * 0.86;
     final h = size.height * 0.72;
     final rect = Rect.fromCenter(
-        center: Offset(size.width / 2, size.height / 2 + 4),
-        width: w,
-        height: h);
+      center: Offset(size.width / 2, size.height / 2 + 4),
+      width: w,
+      height: h,
+    );
     return RRect.fromRectAndRadius(rect, const Radius.circular(14));
   }
 
@@ -75,10 +70,11 @@ class _GesturePainter extends CustomPainter {
     final phone = _phone(size);
     // Body.
     canvas.drawRRect(
-        phone,
-        Paint()
-          ..color = const Color(0xFF181824)
-          ..style = PaintingStyle.fill);
+      phone,
+      Paint()
+        ..color = const Color(0xFF181824)
+        ..style = PaintingStyle.fill,
+    );
     // Screen with a soft gradient.
     final screen = phone.deflate(3);
     final rect = screen.outerRect;
@@ -93,11 +89,12 @@ class _GesturePainter extends CustomPainter {
     );
     // Border.
     canvas.drawRRect(
-        phone,
-        Paint()
-          ..color = Colors.white30
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2);
+      phone,
+      Paint()
+        ..color = AppColors.textSecondary
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
     // A dim "play" triangle to suggest a video on the screen.
     final c = screen.center;
     final tri = Path()
@@ -106,10 +103,11 @@ class _GesturePainter extends CustomPainter {
       ..lineTo(c.dx - 7, c.dy + 10)
       ..close();
     canvas.drawPath(
-        tri,
-        Paint()
-          ..color = Colors.white10
-          ..style = PaintingStyle.fill);
+      tri,
+      Paint()
+        ..color = AppColors.border
+        ..style = PaintingStyle.fill,
+    );
   }
 
   void _arrow(Canvas canvas, Offset from, Offset to, [Paint? paint]) {
@@ -118,62 +116,72 @@ class _GesturePainter extends CustomPainter {
     final angle = (to - from).direction;
     for (final delta in [2.55, -2.55]) {
       final a = angle + delta;
-      canvas.drawLine(
-          to,
-          to + Offset(math.cos(a) * 8, math.sin(a) * 8),
-          p);
+      canvas.drawLine(to, to + Offset(math.cos(a) * 8, math.sin(a) * 8), p);
     }
   }
 
   /// A "finger tap" ripple: small accent dot + two expanding rings.
   void _tapRipple(Canvas canvas, Offset at) {
     canvas.drawCircle(
-        at,
-        5,
-        Paint()
-          ..color = accent
-          ..style = PaintingStyle.fill);
+      at,
+      5,
+      Paint()
+        ..color = accent
+        ..style = PaintingStyle.fill,
+    );
     for (final r in [11.0, 18.0]) {
       canvas.drawCircle(
-          at,
-          r,
-          Paint()
-            ..color = accent.withValues(alpha: r == 11.0 ? 0.5 : 0.25)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2);
+        at,
+        r,
+        Paint()
+          ..color = accent.withValues(alpha: r == 11.0 ? 0.5 : 0.25)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2,
+      );
     }
   }
 
   /// A held fingertip: filled dot with white ring and soft halo.
   void _fingertip(Canvas canvas, Offset at) {
     canvas.drawCircle(
-        at,
-        13,
-        Paint()
-          ..color = accent.withValues(alpha: 0.22)
-          ..style = PaintingStyle.fill);
+      at,
+      13,
+      Paint()
+        ..color = accent.withValues(alpha: 0.22)
+        ..style = PaintingStyle.fill,
+    );
     canvas.drawCircle(
-        at,
-        7,
-        Paint()
-          ..color = accent
-          ..style = PaintingStyle.fill);
+      at,
+      7,
+      Paint()
+        ..color = accent
+        ..style = PaintingStyle.fill,
+    );
     canvas.drawCircle(
-        at,
-        7,
-        Paint()
-          ..color = Colors.white
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2);
+      at,
+      7,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
   }
 
-  void _label(Canvas canvas, String text, Offset center,
-      {double size = 10, Color color = Colors.white70}) {
+  void _label(
+    Canvas canvas,
+    String text,
+    Offset center, {
+    double size = 10,
+    Color? color,
+  }) {
     final tp = TextPainter(
       text: TextSpan(
         text: text,
         style: TextStyle(
-            color: color, fontSize: size, fontWeight: FontWeight.w700),
+          color: color ?? AppColors.textSecondary,
+          fontSize: size,
+          fontWeight: FontWeight.w700,
+        ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
@@ -198,12 +206,14 @@ class _GesturePainter extends CustomPainter {
     }
   }
 
-
   /// Tinted half of the screen (left or right) with up/down arrows in it.
-  void _halfSwipe(Canvas canvas, Size size,
-      {required bool leftHalf,
-      required Color tint,
-      required IconKindDoodle doodle}) {
+  void _halfSwipe(
+    Canvas canvas,
+    Size size, {
+    required bool leftHalf,
+    required Color tint,
+    required IconKindDoodle doodle,
+  }) {
     final phone = _phone(size);
     final screen = phone.deflate(3);
     final r = screen.outerRect;
@@ -213,17 +223,19 @@ class _GesturePainter extends CustomPainter {
     canvas.save();
     canvas.clipRRect(screen);
     canvas.drawRect(
-        half,
-        Paint()
-          ..color = tint.withValues(alpha: 0.14)
-          ..style = PaintingStyle.fill);
+      half,
+      Paint()
+        ..color = tint.withValues(alpha: 0.14)
+        ..style = PaintingStyle.fill,
+    );
     // Divider down the middle.
     canvas.drawLine(
-        Offset(r.center.dx, r.top + 6),
-        Offset(r.center.dx, r.bottom - 6),
-        Paint()
-          ..color = Colors.white24
-          ..strokeWidth = 1);
+      Offset(r.center.dx, r.top + 6),
+      Offset(r.center.dx, r.bottom - 6),
+      Paint()
+        ..color = AppColors.border
+        ..strokeWidth = 1,
+    );
     canvas.restore();
 
     final ax = half.center.dx;
@@ -253,29 +265,28 @@ class _GesturePainter extends CustomPainter {
       case GestureKind.doubleTapSides:
         _tapRipple(canvas, Offset(r.left + r.width * 0.24, c.dy - 4));
         _tapRipple(canvas, Offset(r.right - r.width * 0.24, c.dy - 4));
-        _label(canvas, '-10s',
-            Offset(r.left + r.width * 0.24, r.bottom - 10));
-        _label(canvas, '+10s',
-            Offset(r.right - r.width * 0.24, r.bottom - 10));
+        _label(canvas, '-10s', Offset(r.left + r.width * 0.24, r.bottom - 10));
+        _label(canvas, '+10s', Offset(r.right - r.width * 0.24, r.bottom - 10));
         break;
 
       case GestureKind.doubleTapMiddle:
         _tapRipple(canvas, Offset(c.dx, c.dy - 2));
         // Pause bars (what the middle double-tap toggles).
         final p = Paint()
-          ..color = Colors.white70
+          ..color = AppColors.textSecondary
           ..style = PaintingStyle.fill;
-        canvas.drawRect(
-            Rect.fromLTWH(c.dx - 6, c.dy + 14, 4, 12), p);
-        canvas.drawRect(
-            Rect.fromLTWH(c.dx + 2, c.dy + 14, 4, 12), p);
+        canvas.drawRect(Rect.fromLTWH(c.dx - 6, c.dy + 14, 4, 12), p);
+        canvas.drawRect(Rect.fromLTWH(c.dx + 2, c.dy + 14, 4, 12), p);
         break;
 
       case GestureKind.swipeBrightness:
-        _halfSwipe(canvas, size,
-            leftHalf: true,
-            tint: const Color(0xFFFFC107),
-            doodle: IconKindDoodle.sun);
+        _halfSwipe(
+          canvas,
+          size,
+          leftHalf: true,
+          tint: const Color(0xFFFFC107),
+          doodle: IconKindDoodle.sun,
+        );
         break;
 
       case GestureKind.swipeSeek:
@@ -283,24 +294,46 @@ class _GesturePainter extends CustomPainter {
         // 03:12" pill the real player shows while scrubbing.
         final fy = c.dy + 8;
         _fingertip(canvas, Offset(c.dx, fy));
-        _arrow(canvas, Offset(c.dx - 16, fy), Offset(c.dx - 48, fy),
-            _accentPaint);
-        _arrow(canvas, Offset(c.dx + 16, fy), Offset(c.dx + 48, fy),
-            _accentPaint);
+        _arrow(
+          canvas,
+          Offset(c.dx - 16, fy),
+          Offset(c.dx - 48, fy),
+          _accentPaint,
+        );
+        _arrow(
+          canvas,
+          Offset(c.dx + 16, fy),
+          Offset(c.dx + 48, fy),
+          _accentPaint,
+        );
         // Landing pill, like the indicator in the player.
         final pill = RRect.fromRectAndRadius(
-            Rect.fromCenter(
-                center: Offset(c.dx, r.top + 13), width: 92, height: 18),
-            const Radius.circular(9));
+          Rect.fromCenter(
+            center: Offset(c.dx, r.top + 13),
+            width: 92,
+            height: 18,
+          ),
+          const Radius.circular(9),
+        );
         canvas.drawRRect(
-            pill,
-            Paint()
-              ..color = accent
-              ..style = PaintingStyle.fill);
-        _label(canvas, '+45s · 03:12', Offset(c.dx, r.top + 13),
-            color: Colors.white, size: 9.5);
-        _label(canvas, 'or the other way', Offset(c.dx, r.bottom - 9),
-            size: 8.5);
+          pill,
+          Paint()
+            ..color = accent
+            ..style = PaintingStyle.fill,
+        );
+        _label(
+          canvas,
+          '+45s · 03:12',
+          Offset(c.dx, r.top + 13),
+          color: Colors.white,
+          size: 9.5,
+        );
+        _label(
+          canvas,
+          'or the other way',
+          Offset(c.dx, r.bottom - 9),
+          size: 8.5,
+        );
         break;
 
       case GestureKind.pinchZoom:
@@ -318,16 +351,26 @@ class _GesturePainter extends CustomPainter {
         _fingertip(canvas, Offset(c.dx, c.dy + 10));
         // Persistent "2x" badge, like the one shown during a real boost.
         final badge = RRect.fromRectAndRadius(
-            Rect.fromCenter(
-                center: Offset(c.dx, r.top + 13), width: 40, height: 18),
-            const Radius.circular(9));
+          Rect.fromCenter(
+            center: Offset(c.dx, r.top + 13),
+            width: 40,
+            height: 18,
+          ),
+          const Radius.circular(9),
+        );
         canvas.drawRRect(
-            badge,
-            Paint()
-              ..color = accent
-              ..style = PaintingStyle.fill);
-        _label(canvas, '2.0x', Offset(c.dx, r.top + 13),
-            color: Colors.white, size: 10.5);
+          badge,
+          Paint()
+            ..color = accent
+            ..style = PaintingStyle.fill,
+        );
+        _label(
+          canvas,
+          '2.0x',
+          Offset(c.dx, r.top + 13),
+          color: Colors.white,
+          size: 10.5,
+        );
         break;
     }
   }

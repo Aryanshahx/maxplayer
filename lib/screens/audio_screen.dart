@@ -1,4 +1,6 @@
+import '../widgets/recent_search_field.dart';
 import '../utils/app_language.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -61,9 +63,11 @@ class _AudioScreenState extends State<AudioScreen> {
       // no AUDIO. On Android 13+ the video permission does NOT cover
       // music, and the scan below would silently return zero songs.
       final ps = await PhotoManager.requestPermissionExtend(
-        requestOption: const PermissionRequestOption(
-          androidPermission:
-              AndroidPermission(type: RequestType.audio, mediaLocation: false),
+        requestOption: PermissionRequestOption(
+          androidPermission: AndroidPermission(
+            type: RequestType.audio,
+            mediaLocation: false,
+          ),
         ),
       );
       if (!ps.isAuth && !ps.hasAccess) {
@@ -86,7 +90,8 @@ class _AudioScreenState extends State<AudioScreen> {
         for (var start = 0; start < count; start += 200) {
           final end = (start + 200) > count ? count : start + 200;
           items.addAll(
-              await paths.first.getAssetListRange(start: start, end: end));
+            await paths.first.getAssetListRange(start: start, end: end),
+          );
         }
       }
       if (!mounted) return;
@@ -101,8 +106,9 @@ class _AudioScreenState extends State<AudioScreen> {
       CrashLog.error('audio.scan_failed', e);
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: LText('Could not scan audio on this device')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: LText('Could not scan audio on this device')),
+        );
       }
     }
   }
@@ -111,8 +117,9 @@ class _AudioScreenState extends State<AudioScreen> {
     var list = _songs;
     final q = _query.trim().toLowerCase();
     if (q.isNotEmpty) {
-      list =
-          list.where((a) => (a.title ?? '').toLowerCase().contains(q)).toList();
+      list = list
+          .where((a) => (a.title ?? '').toLowerCase().contains(q))
+          .toList();
     }
     final sorted = List<AssetEntity>.from(list);
     switch (_sort) {
@@ -120,8 +127,11 @@ class _AudioScreenState extends State<AudioScreen> {
         sorted.sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
         break;
       case _AudioSort.titleAsc:
-        sorted.sort((a, b) =>
-            (a.title ?? '').toLowerCase().compareTo((b.title ?? '').toLowerCase()));
+        sorted.sort(
+          (a, b) => (a.title ?? '').toLowerCase().compareTo(
+            (b.title ?? '').toLowerCase(),
+          ),
+        );
         break;
       case _AudioSort.durationDesc:
         sorted.sort((a, b) => b.duration.compareTo(a.duration));
@@ -133,8 +143,9 @@ class _AudioScreenState extends State<AudioScreen> {
   Future<void> _openTrack(List<AssetEntity> visible, int i) async {
     await AudioPlayerHolder.instance.setQueue(visible, i);
     if (!mounted) return;
-    await Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const AudioPlayerScreen()));
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => AudioPlayerScreen()));
   }
 
   void _cycleSort() {
@@ -144,10 +155,10 @@ class _AudioScreenState extends State<AudioScreen> {
   }
 
   String get _sortLabel => switch (_sort) {
-        _AudioSort.dateDesc => 'Newest',
-        _AudioSort.titleAsc => 'A–Z',
-        _AudioSort.durationDesc => 'Longest',
-      };
+    _AudioSort.dateDesc => 'Newest',
+    _AudioSort.titleAsc => 'A–Z',
+    _AudioSort.durationDesc => 'Longest',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -160,12 +171,12 @@ class _AudioScreenState extends State<AudioScreen> {
           if (_songs.isNotEmpty)
             TextButton.icon(
               onPressed: _cycleSort,
-              icon: const Icon(Icons.sort_rounded, size: 18),
+              icon: Icon(Icons.sort_rounded, size: 18),
               label: Text(_sortLabel),
             ),
           IconButton(
             tooltip: 'Rescan',
-            icon: const Icon(Icons.refresh_rounded),
+            icon: Icon(Icons.refresh_rounded),
             onPressed: _loading ? null : _scan,
           ),
         ],
@@ -174,19 +185,20 @@ class _AudioScreenState extends State<AudioScreen> {
         children: [
           if (_songs.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-              child: TextField(
+              padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
+              child: RecentSearchField(
+                scope: 'audio',
                 controller: _searchCtrl,
                 onChanged: (v) => setState(() => _query = v),
-                style: const TextStyle(fontSize: 14),
+                style: TextStyle(fontSize: 14),
                 decoration: LInputDecoration(
                   hintText: 'Search songs…',
                   isDense: true,
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                  prefixIcon: Icon(Icons.search_rounded, size: 20),
                   suffixIcon: _query.isEmpty
                       ? null
                       : IconButton(
-                          icon: const Icon(Icons.close_rounded, size: 18),
+                          icon: Icon(Icons.close_rounded, size: 18),
                           onPressed: () {
                             _searchCtrl.clear();
                             setState(() => _query = '');
@@ -209,26 +221,23 @@ class _AudioScreenState extends State<AudioScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(child: CircularProgressIndicator());
     }
     if (_denied) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.library_music_outlined, size: 56),
-              const SizedBox(height: 12),
-              const LText(
+              Icon(Icons.library_music_outlined, size: 56),
+              SizedBox(height: 12),
+              LText(
                 'Audio permission is needed to list songs on this device.',
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _scan,
-                child: const LText('Grant & retry'),
-              ),
+              SizedBox(height: 16),
+              FilledButton(onPressed: _scan, child: LText('Grant & retry')),
             ],
           ),
         ),
@@ -237,23 +246,24 @@ class _AudioScreenState extends State<AudioScreen> {
     final visible = _visible;
     if (visible.isEmpty) {
       return Center(
-          child: Text(
-              _query.isEmpty
-                  ? 'No audio files found on this device'
-                  : 'No matches for "$_query"',
-              style: TextStyle(color: AppColors.textSecondary)));
+        child: Text(
+          _query.isEmpty
+              ? 'No audio files found on this device'
+              : 'No matches for "$_query"',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+      );
     }
     final holder = AudioPlayerHolder.instance;
     return RefreshIndicator(
       onRefresh: _scan,
       child: ListView.separated(
-        physics: const AlwaysScrollableScrollPhysics(),
+        physics: AlwaysScrollableScrollPhysics(),
         itemCount: visible.length,
-        separatorBuilder: (_, i) => const Divider(height: 1, indent: 72),
+        separatorBuilder: (_, i) => Divider(height: 1, indent: 72),
         itemBuilder: (context, i) {
           final a = visible[i];
-          final isCurrent = holder.hasTrack &&
-              holder.current?.id == a.id;
+          final isCurrent = holder.hasTrack && holder.current?.id == a.id;
           return ListTile(
             leading: CircleAvatar(
               backgroundColor: AppColors.accent.withValues(alpha: 0.12),
@@ -269,10 +279,8 @@ class _AudioScreenState extends State<AudioScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color:
-                    isCurrent ? AppColors.accent : AppColors.textPrimary,
-                fontWeight:
-                    isCurrent ? FontWeight.w600 : FontWeight.normal,
+                color: isCurrent ? AppColors.accent : AppColors.textPrimary,
+                fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
               ),
             ),
             subtitle: Text(
@@ -286,4 +294,3 @@ class _AudioScreenState extends State<AudioScreen> {
     );
   }
 }
-

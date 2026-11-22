@@ -34,6 +34,13 @@ class AppSettings extends ChangeNotifier {
   static const _kQueueAll = 'disp.queueAll';
   static const _kOnlyFavs = 'disp.onlyFavs';
   static const _kAccent = 'disp.accent';
+  static const _kThemeMode = 'disp.themeMode.v1';
+  ThemeMode themeMode = ThemeMode.system;
+
+  Future<void> setThemeMode(ThemeMode value) async {
+    themeMode = value;
+    await _set((p) => p.setString(_kThemeMode, value.name));
+  }
 
   ViewMode viewMode = ViewMode.grid;
   SortField sortField = SortField.name;
@@ -47,19 +54,30 @@ class AppSettings extends ChangeNotifier {
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
+    final savedTheme = p.getString(_kThemeMode);
+    themeMode =
+        ThemeMode.values.where((v) => v.name == savedTheme).firstOrNull ??
+        ThemeMode.system;
     int clampIdx(int? v, int max, int fallback) =>
         (v ?? fallback).clamp(0, max).toInt();
-    viewMode =
-        ViewMode.values[clampIdx(p.getInt(_kViewMode), ViewMode.values.length - 1, 0)];
-    sortField = SortField
-        .values[clampIdx(p.getInt(_kSortField), SortField.values.length - 1, 0)];
+    viewMode = ViewMode
+        .values[clampIdx(p.getInt(_kViewMode), ViewMode.values.length - 1, 0)];
+    sortField =
+        SortField.values[clampIdx(
+          p.getInt(_kSortField),
+          SortField.values.length - 1,
+          0,
+        )];
     sortAsc = p.getBool(_kSortAsc) ?? true;
     groupBy = GroupBy
         .values[clampIdx(p.getInt(_kGroupBy), GroupBy.values.length - 1, 0)];
     queueAll = p.getBool(_kQueueAll) ?? true;
     onlyFavs = p.getBool(_kOnlyFavs) ?? false;
-    accentIndex =
-        clampIdx(p.getInt(_kAccent), accentPalette.length - 1, defaultAccentIndex);
+    accentIndex = clampIdx(
+      p.getInt(_kAccent),
+      accentPalette.length - 1,
+      defaultAccentIndex,
+    );
   }
 
   Future<void> _set(Future<bool> Function(SharedPreferences p) write) async {

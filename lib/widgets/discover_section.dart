@@ -1,4 +1,6 @@
+import 'recent_search_field.dart';
 import '../utils/app_language.dart';
+
 import 'dart:async';
 import 'dart:io';
 
@@ -385,7 +387,8 @@ class _DiscoverPageState extends State<DiscoverPage> {
             const Icon(Icons.search_rounded, color: Colors.white54, size: 21),
             const SizedBox(width: 9),
             Expanded(
-              child: TextField(
+              child: RecentSearchField(
+                scope: 'discover',
                 controller: _searchCtrl,
                 style: const TextStyle(color: Colors.white, fontSize: 14.5),
                 decoration: const LInputDecoration(

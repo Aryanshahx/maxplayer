@@ -1,4 +1,5 @@
 import '../utils/app_language.dart';
+
 import 'package:flutter/material.dart';
 
 import '../models/network_location.dart';
@@ -31,7 +32,7 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
   bool _showAddForm = false;
   bool _loading = true;
 
-  static const String _kNetworkLocsKey = 'network.locations_v2';
+  static final String _kNetworkLocsKey = 'network.locations_v2';
 
   @override
   void initState() {
@@ -87,35 +88,42 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
       _passCtrl.clear();
     });
     await _store.setRawString(
-        _kNetworkLocsKey, networkLocationsToJson(_savedLocations));
+      _kNetworkLocsKey,
+      networkLocationsToJson(_savedLocations),
+    );
   }
 
   Future<void> _deleteLocation(int index) async {
     setState(() => _savedLocations.removeAt(index));
     await _store.setRawString(
-        _kNetworkLocsKey, networkLocationsToJson(_savedLocations));
+      _kNetworkLocsKey,
+      networkLocationsToJson(_savedLocations),
+    );
   }
 
   void _connectAndPlay(NetworkLocation loc) async {
     CrashLog.crumb('network.play', {'url': loc.streamUrl});
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => PlayerScreen.stream(path: loc.streamUrl, title: loc.name),
-    ));
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            PlayerScreen.stream(path: loc.streamUrl, title: loc.name),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
     final accent = AppColors.accent;
-    final btnTextColor = accent.computeLuminance() > 0.55
-        ? const Color(0xFF14141c)
-        : Colors.white;
+    final btnTextColor = AppColors.onAccent;
     return Scaffold(
-      backgroundColor: const Color(0xFF14141c),
+      backgroundColor: AppColors.surface,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF14141c),
-        title: const LText('Network Storage (NAS / Share)',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+        backgroundColor: AppColors.surface,
+        title: LText(
+          'Network Storage (NAS / Share)',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+        ),
         actions: [
           if (!_showAddForm && !_loading)
             IconButton(
@@ -126,92 +134,103 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator())
           : _showAddForm
-              ? _buildAddForm(accent, btnTextColor)
-              : _savedLocations.isEmpty
-                  ? _buildEmpty(accent, btnTextColor)
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(14),
-                      itemCount: _savedLocations.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
-                      itemBuilder: (context, i) {
-                        final loc = _savedLocations[i];
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.05),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white12),
-                          ),
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 2),
-                            leading: CircleAvatar(
-                              backgroundColor: accent.withValues(alpha: 0.2),
-                              child: Icon(
-                                loc.protocol == 'smb'
-                                    ? Icons.folder_shared
-                                    : (loc.protocol == 'ftp'
-                                        ? Icons.cloud_download
-                                        : Icons.storage),
-                                color: accent,
-                                size: 18,
-                              ),
-                            ),
-                            title: Text(
-                              loc.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14),
-                            ),
-                            subtitle: Text(
-                              '${loc.protocol.toUpperCase()}  ·  ${loc.host}${loc.path}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  color: Colors.white38, fontSize: 11.5),
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.delete_outline,
-                                  color: Colors.white38, size: 20),
-                              onPressed: () => _deleteLocation(i),
-                            ),
-                            onTap: () => _connectAndPlay(loc),
-                          ),
-                        );
-                      },
+          ? _buildAddForm(accent, btnTextColor)
+          : _savedLocations.isEmpty
+          ? _buildEmpty(accent, btnTextColor)
+          : ListView.separated(
+              padding: EdgeInsets.all(14),
+              itemCount: _savedLocations.length,
+              separatorBuilder: (_, _) => SizedBox(height: 8),
+              itemBuilder: (context, i) {
+                final loc = _savedLocations[i];
+                return Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.textPrimary.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: ListTile(
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 2,
                     ),
+                    leading: CircleAvatar(
+                      backgroundColor: accent.withValues(alpha: 0.2),
+                      child: Icon(
+                        loc.protocol == 'smb'
+                            ? Icons.folder_shared
+                            : (loc.protocol == 'ftp'
+                                  ? Icons.cloud_download
+                                  : Icons.storage),
+                        color: accent,
+                        size: 18,
+                      ),
+                    ),
+                    title: Text(
+                      loc.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '${loc.protocol.toUpperCase()}  ·  ${loc.host}${loc.path}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                    trailing: IconButton(
+                      icon: Icon(
+                        Icons.delete_outline,
+                        color: AppColors.textSecondary,
+                        size: 20,
+                      ),
+                      onPressed: () => _deleteLocation(i),
+                    ),
+                    onTap: () => _connectAndPlay(loc),
+                  ),
+                );
+              },
+            ),
     );
   }
 
   Widget _buildEmpty(Color accent, Color btnTextColor) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.dns_outlined, size: 48, color: Colors.white24),
-            const SizedBox(height: 12),
-            const LText(
+            Icon(Icons.dns_outlined, size: 48, color: AppColors.border),
+            SizedBox(height: 12),
+            LText(
               'No saved network storage connections',
-              style: TextStyle(color: Colors.white54, fontSize: 14),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             FilledButton.icon(
               style: FilledButton.styleFrom(
                 backgroundColor: accent,
                 foregroundColor: btnTextColor,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               onPressed: () => setState(() => _showAddForm = true),
-              icon: const Icon(Icons.add),
-              label: const LText('Add Network Storage',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              icon: Icon(Icons.add),
+              label: LText(
+                'Add Network Storage',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
@@ -221,7 +240,7 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
 
   Widget _buildAddForm(Color accent, Color btnTextColor) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -234,17 +253,16 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
               _protoChip('http', 'WebDAV', accent),
             ],
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: 14),
           _inputField(_nameCtrl, 'Connection Name (e.g. Living Room NAS)'),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 flex: 3,
-                child:
-                    _inputField(_hostCtrl, 'Host / IP (e.g. 192.168.1.100)'),
+                child: _inputField(_hostCtrl, 'Host / IP (e.g. 192.168.1.100)'),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Expanded(
                 flex: 1,
                 child: _inputField(
@@ -256,45 +274,54 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          _inputField(_pathCtrl, 'Share / Folder path (e.g. /Movies/video.mp4)'),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
+          _inputField(
+            _pathCtrl,
+            'Share / Folder path (e.g. /Movies/video.mp4)',
+          ),
+          SizedBox(height: 10),
           Row(
             children: [
               Expanded(child: _inputField(_userCtrl, 'Username (optional)')),
-              const SizedBox(width: 8),
-              Expanded(child: _inputField(_passCtrl, 'Password', obscure: true)),
+              SizedBox(width: 8),
+              Expanded(
+                child: _inputField(_passCtrl, 'Password', obscure: true),
+              ),
             ],
           ),
-          const SizedBox(height: 18),
+          SizedBox(height: 18),
           Row(
             children: [
               Expanded(
                 child: OutlinedButton(
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white70,
-                    side: const BorderSide(color: Colors.white24),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    foregroundColor: AppColors.textSecondary,
+                    side: BorderSide(color: AppColors.border),
+                    padding: EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                   onPressed: () => setState(() => _showAddForm = false),
-                  child: const LText('Cancel'),
+                  child: LText('Cancel'),
                 ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: 10),
               Expanded(
                 child: FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: accent,
                     foregroundColor: btnTextColor,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                   onPressed: _saveLocation,
-                  child: const LText('Save & Connect',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  child: LText(
+                    'Save & Connect',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ],
@@ -308,9 +335,9 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
     final selected = _protocol == proto;
     final chipTextColor = selected
         ? (accent.computeLuminance() > 0.55
-            ? const Color(0xFF14141c)
-            : Colors.white)
-        : Colors.white70;
+              ? AppColors.surface
+              : AppColors.textPrimary)
+        : AppColors.textSecondary;
     return ChoiceChip(
       label: Text(label),
       selected: selected,
@@ -324,21 +351,24 @@ class _NetworkStorageScreenState extends State<NetworkStorageScreen> {
     );
   }
 
-  Widget _inputField(TextEditingController ctrl, String hint,
-      {bool obscure = false}) {
+  Widget _inputField(
+    TextEditingController ctrl,
+    String hint, {
+    bool obscure = false,
+  }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
+        color: AppColors.textPrimary.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(10),
       ),
       child: TextField(
         controller: ctrl,
         obscureText: obscure,
-        style: const TextStyle(color: Colors.white, fontSize: 13.5),
+        style: TextStyle(color: AppColors.textPrimary, fontSize: 13.5),
         decoration: LInputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(color: Colors.white38, fontSize: 12.5),
+          hintStyle: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
           border: InputBorder.none,
           isDense: true,
         ),

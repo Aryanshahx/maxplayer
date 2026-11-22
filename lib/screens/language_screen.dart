@@ -1,7 +1,10 @@
+import '../widgets/recent_search_field.dart';
+
 import 'package:flutter/material.dart';
+
 import '../utils/app_language.dart';
 
-const languageEnglishNames = <String, String>{
+final languageEnglishNames = <String, String>{
   'ps': 'Pashto',
   'uz': 'Uzbek',
   'en': 'English',
@@ -63,7 +66,7 @@ class _LanguageScreenState extends State<LanguageScreen> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: LText('Could not save language. Please try again.'),
           ),
         );
@@ -75,28 +78,29 @@ class _LanguageScreenState extends State<LanguageScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const LText('Language')),
+    appBar: AppBar(title: LText('Language')),
     body: Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(16),
-          child: TextField(
-            decoration: const LInputDecoration(
+          padding: EdgeInsets.all(16),
+          child: RecentSearchField(
+            scope: 'languages',
+            decoration: LInputDecoration(
               hintText: 'Search languages',
               prefixIcon: Icon(Icons.search),
             ),
             onChanged: (v) => setState(() => _search = v.trim().toLowerCase()),
           ),
         ),
-        if (_busy) const LinearProgressIndicator(),
+        if (_busy) LinearProgressIndicator(),
         Expanded(
           child: ListView(
             children: [
               ListTile(
-                title: const LText('System default'),
-                leading: const Icon(Icons.phone_android),
+                title: LText('System default'),
+                leading: Icon(Icons.phone_android),
                 trailing: AppLanguage.instance.code == 'system'
-                    ? const Icon(Icons.check)
+                    ? Icon(Icons.check)
                     : null,
                 onTap: _busy ? null : () => _choose('system'),
               ),
@@ -111,7 +115,7 @@ class _LanguageScreenState extends State<LanguageScreen> {
                     title: Text(l.nativeName),
                     subtitle: Text(languageEnglishNames[l.code]!),
                     trailing: AppLanguage.instance.code == l.code
-                        ? const Icon(Icons.check)
+                        ? Icon(Icons.check)
                         : null,
                     onTap: _busy ? null : () => _choose(l.code),
                   ),

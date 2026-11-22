@@ -1,4 +1,5 @@
 import '../utils/app_language.dart';
+
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -43,8 +44,10 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: AppColors.border),
         ),
-        title: LText('New playlist',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 17)),
+        title: LText(
+          'New playlist',
+          style: TextStyle(color: AppColors.textPrimary, fontSize: 17),
+        ),
         content: TextField(
           controller: ctrl,
           autofocus: true,
@@ -58,18 +61,21 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: LText('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
+            child: LText(
+              'Cancel',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.accent,
               foregroundColor: AppColors.onAccent,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () => Navigator.of(context).pop(ctrl.text.trim()),
-            child: const LText('Create'),
+            child: LText('Create'),
           ),
         ],
       ),
@@ -78,7 +84,8 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
     final ok = await _store.createPlaylist(name);
     if (mounted && !ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: LText('A playlist with that name exists')));
+        SnackBar(content: LText('A playlist with that name exists')),
+      );
     }
     CrashLog.crumb('playlist.created', {'name': name});
     _reload();
@@ -89,7 +96,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
     Theme.of(context);
     final names = _playlists.keys.toList();
     return Scaffold(
-      appBar: AppBar(title: const LText('Playlists')),
+      appBar: AppBar(title: LText('Playlists')),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.accent,
         icon: Icon(Icons.add_rounded, color: AppColors.onAccent),
@@ -108,35 +115,47 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
               ),
             )
           : ListView.separated(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(16),
               itemCount: names.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              separatorBuilder: (_, _) => SizedBox(height: 10),
               itemBuilder: (context, i) {
                 final name = names[i];
                 return Card(
                   child: ListTile(
-                    leading: Icon(Icons.playlist_play_rounded,
-                        color: AppColors.accent, size: 30),
-                    title: Text(name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style:
-                            TextStyle(color: AppColors.textPrimary)),
-                    subtitle: Text('${_playlists[name]!.length} videos',
-                        style: TextStyle(
-                            color: AppColors.textSecondary, fontSize: 12)),
+                    leading: Icon(
+                      Icons.playlist_play_rounded,
+                      color: AppColors.accent,
+                      size: 30,
+                    ),
+                    title: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: AppColors.textPrimary),
+                    ),
+                    subtitle: Text(
+                      '${_playlists[name]!.length} videos',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
                     trailing: IconButton(
-                      icon: Icon(Icons.delete_outline_rounded,
-                          color: AppColors.danger, size: 20),
+                      icon: Icon(
+                        Icons.delete_outline_rounded,
+                        color: AppColors.danger,
+                        size: 20,
+                      ),
                       onPressed: () async {
                         await _store.deletePlaylist(name);
                         _reload();
                       },
                     ),
                     onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                PlaylistVideosScreen(name: name))),
+                      MaterialPageRoute(
+                        builder: (_) => PlaylistVideosScreen(name: name),
+                      ),
+                    ),
                   ),
                 );
               },
@@ -183,20 +202,22 @@ class _PlaylistVideosScreenState extends State<PlaylistVideosScreen> {
   }
 
   Future<void> _addVideos() async {
-    final ids = (await LocalStore().playlists())[widget.name] ?? const [];
+    final ids = (await LocalStore().playlists())[widget.name] ?? [];
     if (!mounted) return;
     final added = await Navigator.of(context).push<int>(
       MaterialPageRoute(
-        builder: (_) => _AddVideosScreen(
-          name: widget.name,
-          existing: ids.toSet(),
-        ),
+        builder: (_) =>
+            _AddVideosScreen(name: widget.name, existing: ids.toSet()),
       ),
     );
     if (added != null && added > 0 && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
           content: Text(
-              'Added $added video${added == 1 ? '' : 's'} to "${widget.name}"')));
+            'Added $added video${added == 1 ? '' : 's'} to "${widget.name}"',
+          ),
+        ),
+      );
     }
     _resolve();
   }
@@ -209,26 +230,24 @@ class _PlaylistVideosScreenState extends State<PlaylistVideosScreen> {
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.accent,
         icon: Icon(Icons.playlist_add_rounded, color: AppColors.onAccent),
-        label: LText('Add videos',
-            style: TextStyle(color: AppColors.onAccent)),
+        label: LText('Add videos', style: TextStyle(color: AppColors.onAccent)),
         onPressed: _addVideos,
       ),
       body: _loading
-          ? Center(
-              child: CircularProgressIndicator(color: AppColors.accent))
+          ? Center(child: CircularProgressIndicator(color: AppColors.accent))
           : _videos.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: LText(
-                      'Empty playlist.\nTap "Add videos" below to pick videos '
-                      'from this device.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textSecondary),
-                    ),
-                  ),
-                )
-              : VideoGrid(videos: _videos, onChanged: _resolve),
+          ? Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: LText(
+                  'Empty playlist.\nTap "Add videos" below to pick videos '
+                  'from this device.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+            )
+          : VideoGrid(videos: _videos, onChanged: _resolve),
     );
   }
 }
@@ -275,7 +294,9 @@ class _AddVideosScreenState extends State<_AddVideosScreen> {
         return;
       }
       final paths = await PhotoManager.getAssetPathList(
-          type: RequestType.video, onlyAll: true);
+        type: RequestType.video,
+        onlyAll: true,
+      );
       final path = paths.isEmpty ? null : paths.first;
       final list = <AssetEntity>[];
       if (path != null) {
@@ -325,56 +346,57 @@ class _AddVideosScreenState extends State<_AddVideosScreen> {
           : FloatingActionButton.extended(
               backgroundColor: AppColors.accent,
               icon: Icon(Icons.add_rounded, color: AppColors.onAccent),
-              label: Text('Add ${_selected.length}',
-                  style: TextStyle(color: AppColors.onAccent)),
+              label: Text(
+                'Add ${_selected.length}',
+                style: TextStyle(color: AppColors.onAccent),
+              ),
               onPressed: _addSelected,
             ),
       body: _loading
-          ? Center(
-              child: CircularProgressIndicator(color: AppColors.accent))
+          ? Center(child: CircularProgressIndicator(color: AppColors.accent))
           : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textSecondary),
-                    ),
-                  ),
-                )
-              : _videos.isEmpty
-                  ? Center(
-                      child: LText('No videos on this device',
-                          style: TextStyle(color: AppColors.textSecondary)))
-                  : GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
-                      gridDelegate:
-                          const SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: 200,
-                        mainAxisSpacing: 8,
-                        crossAxisSpacing: 8,
-                        childAspectRatio: 1.18,
-                      ),
-                      itemCount: _videos.length,
-                      itemBuilder: (context, i) {
-                        final a = _videos[i];
-                        final already = widget.existing.contains(a.id);
-                        final sel = _selected.contains(a.id);
-                        return _PickTile(
-                          asset: a,
-                          selected: sel,
-                          already: already,
-                          onTap: already
-                              ? null
-                              : () => setState(() {
-                                    sel
-                                        ? _selected.remove(a.id)
-                                        : _selected.add(a.id);
-                                  }),
-                        );
-                      },
-                    ),
+          ? Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+            )
+          : _videos.isEmpty
+          ? Center(
+              child: LText(
+                'No videos on this device',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            )
+          : GridView.builder(
+              padding: EdgeInsets.fromLTRB(8, 8, 8, 96),
+              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 200,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 1.18,
+              ),
+              itemCount: _videos.length,
+              itemBuilder: (context, i) {
+                final a = _videos[i];
+                final already = widget.existing.contains(a.id);
+                final sel = _selected.contains(a.id);
+                return _PickTile(
+                  asset: a,
+                  selected: sel,
+                  already: already,
+                  onTap: already
+                      ? null
+                      : () => setState(() {
+                          sel ? _selected.remove(a.id) : _selected.add(a.id);
+                        }),
+                );
+              },
+            ),
     );
   }
 }
@@ -400,12 +422,12 @@ class _PickTile extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.04),
+          color: AppColors.textPrimary.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: selected
                 ? AppColors.accent
-                : Colors.white.withValues(alpha: 0.06),
+                : AppColors.textPrimary.withValues(alpha: 0.06),
             width: selected ? 2 : 1,
           ),
         ),
@@ -418,49 +440,60 @@ class _PickTile extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   FutureBuilder<Uint8List?>(
-                    future: videoThumb(asset, const ThumbnailSize(480, 480)),
-                    builder: (context, snap) => snap.hasError || snap.data == null
+                    future: videoThumb(asset, ThumbnailSize(480, 480)),
+                    builder: (context, snap) =>
+                        snap.hasError || snap.data == null
                         ? ColoredBox(color: AppColors.surfaceAlt)
-                        : Image.memory(snap.data!,
-                            fit: BoxFit.cover, gaplessPlayback: true),
+                        : Image.memory(
+                            snap.data!,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                          ),
                   ),
                   if (already)
                     Positioned(
                       left: 4,
                       top: 4,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 2),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.7),
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: const LText('Added',
-                            style:
-                                TextStyle(fontSize: 10, color: Colors.white)),
+                        child: LText(
+                          'Added',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
                       ),
                     ),
                   if (selected)
-                    Container(
-                        color: AppColors.accent.withValues(alpha: 0.18)),
+                    Container(color: AppColors.accent.withValues(alpha: 0.18)),
                   if (selected)
                     Positioned(
                       right: 4,
                       top: 4,
-                      child: Icon(Icons.check_circle_rounded,
-                          color: AppColors.accent, size: 22),
+                      child: Icon(
+                        Icons.check_circle_rounded,
+                        color: AppColors.accent,
+                        size: 22,
+                      ),
                     ),
                 ],
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+              padding: EdgeInsets.fromLTRB(8, 6, 8, 8),
               child: Text(
                 asset.title ?? 'Untitled',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),
             ),
           ],

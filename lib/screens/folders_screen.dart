@@ -1,4 +1,5 @@
 import '../utils/app_language.dart';
+
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
@@ -28,7 +29,9 @@ class _FoldersScreenState extends State<FoldersScreen> {
   Future<void> _load() async {
     try {
       final paths = await PhotoManager.getAssetPathList(
-          type: RequestType.video, hasAll: false);
+        type: RequestType.video,
+        hasAll: false,
+      );
       final counts = <String, int>{};
       for (final p in paths) {
         counts[p.id] = await p.assetCountAsync;
@@ -49,33 +52,44 @@ class _FoldersScreenState extends State<FoldersScreen> {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const LText('Folders')),
+      appBar: AppBar(title: LText('Folders')),
       body: _paths.isEmpty
-          ? Center(
-              child: CircularProgressIndicator(color: AppColors.accent))
+          ? Center(child: CircularProgressIndicator(color: AppColors.accent))
           : ListView.separated(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(16),
               itemCount: _paths.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              separatorBuilder: (_, _) => SizedBox(height: 10),
               itemBuilder: (context, i) {
                 final p = _paths[i];
                 return Card(
                   child: ListTile(
-                    leading: Icon(Icons.folder_rounded,
-                        color: AppColors.accent, size: 30),
-                    title: Text(p.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style:
-                            TextStyle(color: AppColors.textPrimary)),
-                    subtitle: Text('${_counts[p.id] ?? 0} videos',
-                        style: TextStyle(
-                            color: AppColors.textSecondary, fontSize: 12)),
-                    trailing: Icon(Icons.chevron_right_rounded,
-                        color: AppColors.textSecondary),
+                    leading: Icon(
+                      Icons.folder_rounded,
+                      color: AppColors.accent,
+                      size: 30,
+                    ),
+                    title: Text(
+                      p.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: AppColors.textPrimary),
+                    ),
+                    subtitle: Text(
+                      '${_counts[p.id] ?? 0} videos',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                    trailing: Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.textSecondary,
+                    ),
                     onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) => FolderVideosScreen(path: p))),
+                      MaterialPageRoute(
+                        builder: (_) => FolderVideosScreen(path: p),
+                      ),
+                    ),
                   ),
                 );
               },
@@ -94,7 +108,7 @@ class FolderVideosScreen extends StatefulWidget {
 }
 
 class _FolderVideosScreenState extends State<FolderVideosScreen> {
-  static const _pageSize = 60;
+  static final _pageSize = 60;
   final List<AssetEntity> _videos = [];
   int _page = 0;
   bool _exhausted = false;
@@ -111,8 +125,10 @@ class _FolderVideosScreenState extends State<FolderVideosScreen> {
 
   Future<void> _loadMore() async {
     if (_exhausted) return;
-    final batch =
-        await widget.path.getAssetListPaged(page: _page, size: _pageSize);
+    final batch = await widget.path.getAssetListPaged(
+      page: _page,
+      size: _pageSize,
+    );
     if (batch.length < _pageSize) _exhausted = true;
     _page++;
     _videos.addAll(batch.where((a) => a.type == AssetType.video));
@@ -127,8 +143,11 @@ class _FolderVideosScreenState extends State<FolderVideosScreen> {
       appBar: AppBar(title: Text(widget.path.name)),
       body: visible.isEmpty
           ? Center(
-              child: LText('Empty folder',
-                  style: TextStyle(color: AppColors.textSecondary)))
+              child: LText(
+                'Empty folder',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            )
           : NotificationListener<ScrollNotification>(
               onNotification: (n) {
                 if (n.metrics.pixels > n.metrics.maxScrollExtent - 600) {

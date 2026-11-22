@@ -1,4 +1,5 @@
 import '../utils/app_language.dart';
+
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
@@ -17,18 +18,13 @@ class DisplaySettingsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 4,
-        title: const LText('Display Settings'),
-        leading: const BackButton(),
+        title: LText('Display Settings'),
+        leading: BackButton(),
       ),
       body: ListenableBuilder(
         listenable: s,
         builder: (context, _) => ListView(
-          padding: const EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 8,
-            bottom: 32,
-          ),
+          padding: EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 32),
           children: [
             const _SectionTitle('LAYOUT & VIEW MODE'),
             Row(
@@ -42,7 +38,7 @@ class DisplaySettingsScreen extends StatelessWidget {
                     onTap: () => s.setViewMode(ViewMode.grid),
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: 12),
                 Expanded(
                   child: _ModeCard(
                     icon: Icons.view_list_rounded,
@@ -61,7 +57,7 @@ class DisplaySettingsScreen extends StatelessWidget {
                   for (final f in SortField.values) ...[
                     _SortRow(field: f),
                     if (f != SortField.values.last)
-                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      Divider(height: 1, indent: 16, endIndent: 16),
                   ],
                 ],
               ),
@@ -78,21 +74,18 @@ class DisplaySettingsScreen extends StatelessWidget {
                     labelOf: groupByLabel,
                     onChanged: s.setGroupBy,
                   ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  Divider(height: 1, indent: 16, endIndent: 16),
                   _DropdownRow<bool>(
                     icon: Icons.play_circle_outline_rounded,
                     label: 'Playback action',
                     value: s.queueAll,
-                    values: const [true, false],
+                    values: [true, false],
                     labelOf: (v) => v ? 'Queue All' : 'Play Single',
                     onChanged: s.setQueueAll,
                   ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  Divider(height: 1, indent: 16, endIndent: 16),
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 6,
-                    ),
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                     child: Row(
                       children: [
                         Icon(
@@ -100,7 +93,7 @@ class DisplaySettingsScreen extends StatelessWidget {
                           color: AppColors.accent,
                           size: 22,
                         ),
-                        const SizedBox(width: 14),
+                        SizedBox(width: 14),
                         Expanded(
                           child: LText(
                             'Show only favourites',
@@ -150,7 +143,7 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 22, bottom: 10, left: 4),
+      padding: EdgeInsets.only(top: 22, bottom: 10, left: 4),
       child: LText(
         text,
         style: TextStyle(
@@ -194,7 +187,7 @@ class _ModeCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
+          padding: EdgeInsets.symmetric(vertical: 22, horizontal: 16),
           child: Row(
             children: [
               Icon(
@@ -202,7 +195,7 @@ class _ModeCard extends StatelessWidget {
                 color: selected ? AppColors.accent : AppColors.textSecondary,
                 size: 26,
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -217,7 +210,7 @@ class _ModeCard extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    SizedBox(height: 2),
                     LText(
                       subtitle,
                       style: TextStyle(
@@ -255,7 +248,7 @@ class _SortRow extends StatelessWidget {
         }
       },
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
             Icon(
@@ -268,7 +261,7 @@ class _SortRow extends StatelessWidget {
               color: selected ? AppColors.accent : AppColors.textSecondary,
               size: 21,
             ),
-            const SizedBox(width: 14),
+            SizedBox(width: 14),
             Expanded(
               child: LText(
                 sortFieldLabel(field),
@@ -283,10 +276,7 @@ class _SortRow extends StatelessWidget {
             ),
             if (selected)
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: AppColors.accent.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(9),
@@ -302,7 +292,7 @@ class _SortRow extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4),
                     Icon(
                       Icons.check_rounded,
                       color: AppColors.accent,
@@ -344,11 +334,11 @@ class _DropdownRow<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           Icon(icon, color: AppColors.accent, size: 22),
-          const SizedBox(width: 14),
+          SizedBox(width: 14),
           Expanded(
             child: LText(
               label,
@@ -358,7 +348,7 @@ class _DropdownRow<T> extends StatelessWidget {
           DropdownButton<T>(
             value: value,
             dropdownColor: AppColors.surfaceAlt,
-            underline: const SizedBox.shrink(),
+            underline: SizedBox.shrink(),
             iconEnabledColor: AppColors.textSecondary,
             style: TextStyle(
               color: AppColors.textPrimary,
@@ -411,7 +401,7 @@ class _AccentDot extends StatelessWidget {
                   width: 3,
                 )
               : Border.all(color: Colors.transparent, width: 3),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
               color: Colors.black45,
               blurRadius: 6,

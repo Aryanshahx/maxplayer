@@ -1,4 +1,5 @@
 import '../utils/app_language.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -44,7 +45,9 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
     final perm = await PhotoManager.requestPermissionExtend();
     if (!perm.hasAccess || !mounted) return;
     final all = await PhotoManager.getAssetPathList(
-        type: RequestType.video, hasAll: true);
+      type: RequestType.video,
+      hasAll: true,
+    );
     if (all.isEmpty) {
       if (mounted) setState(() => _videos = []);
       return;
@@ -59,11 +62,13 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
       if (!_selected.contains(v.id)) continue;
       final f = await v.file;
       if (f != null && f.existsSync()) {
-        out.add(QuickShareFileEntry(
-          name: v.title ?? f.path.split('/').last,
-          size: f.lengthSync(),
-          path: f.path,
-        ));
+        out.add(
+          QuickShareFileEntry(
+            name: v.title ?? f.path.split('/').last,
+            size: f.lengthSync(),
+            path: f.path,
+          ),
+        );
       }
     }
     return out;
@@ -76,17 +81,21 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
     try {
       final entries = await _resolveSelected();
       if (entries.isNotEmpty) {
-        await SharePlus.instance.share(ShareParams(
+        await SharePlus.instance.share(
+          ShareParams(
             files: [for (final e in entries) XFile(e.path)],
             text: entries.length == 1
                 ? 'Shared from Max Player'
-                : '${entries.length} videos from Max Player'));
+                : '${entries.length} videos from Max Player',
+          ),
+        );
       }
     } catch (e) {
       CrashLog.error('quickshare.failed', e);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: LText('Share failed')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: LText('Share failed')));
       }
     }
     if (mounted) setState(() => _busy = false);
@@ -103,8 +112,9 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
     } catch (e) {
       CrashLog.error('quickshare.direct_failed', e);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: LText('Could not start the direct-share server')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: LText('Could not start the direct-share server')),
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -123,7 +133,7 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
     final vids = _videos;
     return Scaffold(
       appBar: AppBar(
-        title: const LText('Quick Share'),
+        title: LText('Quick Share'),
         actions: [
           IconButton(
             tooltip: 'Receive from another device',
@@ -137,68 +147,76 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
           Expanded(
             child: vids == null
                 ? Center(
-                    child: CircularProgressIndicator(color: AppColors.accent))
+                    child: CircularProgressIndicator(color: AppColors.accent),
+                  )
                 : vids.isEmpty
-                    ? Center(
-                        child: LText('No videos on this device.',
-                            style:
-                                TextStyle(color: AppColors.textSecondary)))
-                    : ListView.separated(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: vids.length,
-                        separatorBuilder: (_, i) => const SizedBox(height: 6),
-                        itemBuilder: (context, i) {
-                          final v = vids[i];
-                          final sel = _selected.contains(v.id);
-                          return Card(
-                            child: CheckboxListTile(
-                              value: sel,
-                              activeColor: AppColors.accent,
-                              checkColor: AppColors.onAccent,
-                              title: Text(v.title ?? 'Video',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      color: AppColors.textPrimary,
-                                      fontSize: 13.5)),
-                              subtitle: FutureBuilder<String>(
-                                future: resolvedQualityBadge(v),
-                                builder: (context, snap) => Text(
-                                  '${snap.data ?? qualityBadge(v.width, v.height)} · '
-                                  '${formatDuration(Duration(seconds: v.duration))}',
-                                  style: TextStyle(
-                                      color: AppColors.textSecondary,
-                                      fontSize: 11.5),
-                                ),
-                              ),
-                              onChanged: (_) => setState(() => sel
-                                  ? _selected.remove(v.id)
-                                  : _selected.add(v.id)),
+                ? Center(
+                    child: LText(
+                      'No videos on this device.',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  )
+                : ListView.separated(
+                    padding: EdgeInsets.all(12),
+                    itemCount: vids.length,
+                    separatorBuilder: (_, i) => SizedBox(height: 6),
+                    itemBuilder: (context, i) {
+                      final v = vids[i];
+                      final sel = _selected.contains(v.id);
+                      return Card(
+                        child: CheckboxListTile(
+                          value: sel,
+                          activeColor: AppColors.accent,
+                          checkColor: AppColors.onAccent,
+                          title: Text(
+                            v.title ?? 'Video',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 13.5,
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                          subtitle: FutureBuilder<String>(
+                            future: resolvedQualityBadge(v),
+                            builder: (context, snap) => Text(
+                              '${snap.data ?? qualityBadge(v.width, v.height)} · '
+                              '${formatDuration(Duration(seconds: v.duration))}',
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ),
+                          onChanged: (_) => setState(
+                            () => sel
+                                ? _selected.remove(v.id)
+                                : _selected.add(v.id),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
           if (_selected.isNotEmpty)
             SafeArea(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+                padding: EdgeInsets.fromLTRB(12, 6, 12, 12),
                 child: Row(
                   children: [
                     Expanded(
                       child: FilledButton.icon(
                         onPressed: _busy ? null : _directSend,
-                        icon: const Icon(Icons.wifi_tethering_rounded,
-                            size: 18),
-                        label: const LText('Direct send'),
+                        icon: Icon(Icons.wifi_tethering_rounded, size: 18),
+                        label: LText('Direct send'),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    SizedBox(width: 10),
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: _busy ? null : _shareViaApps,
-                        icon: const Icon(Icons.ios_share_rounded, size: 18),
-                        label: const LText('Via other apps'),
+                        icon: Icon(Icons.ios_share_rounded, size: 18),
+                        label: LText('Via other apps'),
                       ),
                     ),
                   ],
@@ -219,12 +237,14 @@ class _DirectSendSheet extends StatefulWidget {
   final List<QuickShareFileEntry> entries;
 
   static Future<void> show(
-      BuildContext context, List<QuickShareFileEntry> entries) {
+    BuildContext context,
+    List<QuickShareFileEntry> entries,
+  ) {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (_) => _DirectSendSheet(entries),
@@ -274,16 +294,19 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
       }
       setState(() => _session = s);
       // Prove the server answers through its own advertised IP (fix 3).
-      final ok = await s
-          .selfTest()
-          .timeout(const Duration(seconds: 7), onTimeout: () => false);
+      final ok = await s.selfTest().timeout(
+        Duration(seconds: 7),
+        onTimeout: () => false,
+      );
       if (mounted) setState(() => _selfOk = ok);
     } catch (e) {
       CrashLog.error('quickshare.server_failed', e);
       if (mounted) {
-        setState(() => _error =
-            'Could not start the share server — close other share/download '
-            'apps and try again.');
+        setState(
+          () => _error =
+              'Could not start the share server — close other share/download '
+              'apps and try again.',
+        );
       }
     }
   }
@@ -306,42 +329,47 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
         : s?.primaryUrl ?? '';
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Direct send (${widget.entries.length})',
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
+            Text(
+              'Direct send (${widget.entries.length})',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: 6),
             LText(
               'Receiver must be on the same Wi-Fi. Open this link there — '
               'with Max Player Receive or any browser.',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 14),
+            SizedBox(height: 14),
             if (_error != null)
               Text(_error!, style: TextStyle(color: AppColors.danger))
             else if (s == null)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.all(24),
                 child: CircularProgressIndicator(),
               )
             else ...[
               if (s.hosts.length > 1)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                  padding: EdgeInsets.only(bottom: 8),
                   child: Wrap(
                     spacing: 6,
                     alignment: WrapAlignment.center,
                     children: [
                       for (var hi = 0; hi < s.hosts.length; hi++)
                         ChoiceChip(
-                          label: Text(s.hosts[hi],
-                              style: const TextStyle(fontSize: 11.5)),
+                          label: Text(
+                            s.hosts[hi],
+                            style: TextStyle(fontSize: 11.5),
+                          ),
                           selected: sel == hi,
                           onSelected: (_) => setState(() => _hostIndex = hi),
                         ),
@@ -350,56 +378,59 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
                 ),
               Container(
                 color: Colors.white,
-                padding: const EdgeInsets.all(10),
+                padding: EdgeInsets.all(10),
                 child: QrImageView(
                   data: url,
                   version: QrVersions.auto,
                   size: 170,
                 ),
               ),
-              const SizedBox(height: 10),
+              SizedBox(height: 10),
               InkWell(
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: url));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: LText('Link copied')));
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: LText('Link copied')));
                 },
                 child: Padding(
-                  padding: const EdgeInsets.all(6),
+                  padding: EdgeInsets.all(6),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Flexible(
-                        child: Text(url,
-                            style: TextStyle(
-                                color: AppColors.accent,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16)),
+                        child: Text(
+                          url,
+                          style: TextStyle(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                          ),
+                        ),
                       ),
-                      const SizedBox(width: 6),
-                      const Icon(Icons.copy_rounded, size: 16),
+                      SizedBox(width: 6),
+                      Icon(Icons.copy_rounded, size: 16),
                     ],
                   ),
                 ),
               ),
               if (_selfOk != null)
                 Padding(
-                  padding: const EdgeInsets.only(top: 6),
+                  padding: EdgeInsets.only(top: 6),
                   child: Text(
                     _selfOk!
                         ? '✓ Server live and answering (port ${s.port}). If '
-                            'the receiver\'s browser still can\'t open it, the '
-                            'receiver is NOT on this network: wrong Wi-Fi, '
-                            'VPN, or the router blocks device-to-device '
-                            '("AP isolation").'
+                              'the receiver\'s browser still can\'t open it, the '
+                              'receiver is NOT on this network: wrong Wi-Fi, '
+                              'VPN, or the router blocks device-to-device '
+                              '("AP isolation").'
                         : '✗ The server is not answering even locally — '
-                            'toggle Wi-Fi OFF/ON (or restart the hotspot) '
-                            'and share again.',
+                              'toggle Wi-Fi OFF/ON (or restart the hotspot) '
+                              'and share again.',
                     style: TextStyle(
-                        color: _selfOk!
-                            ? Colors.greenAccent
-                            : AppColors.danger,
-                        fontSize: 11),
+                      color: _selfOk! ? Colors.greenAccent : AppColors.danger,
+                      fontSize: 11,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -410,15 +441,18 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
                   'Wi-Fi • turn OFF VPN / "data saver" on the receiving phone '
                   '• large videos crawl on busy 2.4GHz Wi-Fi — keep both '
                   'phones near the router.',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               if (_log.isNotEmpty)
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(10),
+                  padding: EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: AppColors.background,
                     borderRadius: BorderRadius.circular(10),
@@ -427,10 +461,13 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       for (final line in _log)
-                        Text('• $line',
-                            style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 11.5)),
+                        Text(
+                          '• $line',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 11.5,
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -451,12 +488,13 @@ class _ReceiveSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (_) => Padding(
         padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom),
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
         child: const _ReceiveSheet(),
       ),
     );
@@ -493,8 +531,10 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
     } catch (e) {
       CrashLog.error('quickshare.fetch_failed', e);
       if (mounted) {
-        setState(() => _error =
-            'No sender found there — check the address and same Wi-Fi.');
+        setState(
+          () => _error =
+              'No sender found there — check the address and same Wi-Fi.',
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -517,7 +557,10 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
           },
         );
         final saved = await NativeBridge.saveToGallery(
-            path: temp.path, name: remote.name, kind: 'video');
+          path: temp.path,
+          name: remote.name,
+          kind: 'video',
+        );
         try {
           await temp.delete();
         } catch (_) {}
@@ -536,10 +579,15 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
     setState(() => _busy = false);
     // SnackBar FIRST: after pop() this State's context is deactivated and
     // ScaffoldMessenger.of(context) would throw.
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(fail == 0
-            ? 'Received $ok video(s) — saved to Movies/MaxPlayer'
-            : '$ok saved, $fail failed')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          fail == 0
+              ? 'Received $ok video(s) — saved to Movies/MaxPlayer'
+              : '$ok saved, $fail failed',
+        ),
+      ),
+    );
     Navigator.of(context).pop();
   }
 
@@ -549,23 +597,26 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
     final m = _manifest;
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            LText('Receive videos',
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700)),
-            const SizedBox(height: 12),
+            LText(
+              'Receive videos',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _addr,
                     keyboardType: TextInputType.url,
-                    style: const TextStyle(fontSize: 14),
+                    style: TextStyle(fontSize: 14),
                     decoration: LInputDecoration(
                       hintText: 'Sender address, e.g. 192.168.1.5:4747',
                       isDense: true,
@@ -579,23 +630,22 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
                     onSubmitted: (_) => _busy ? null : _fetch(),
                   ),
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 FilledButton(
                   onPressed: _busy ? null : _fetch,
-                  child: const LText('Find'),
+                  child: LText('Find'),
                 ),
               ],
             ),
             if (_error != null)
               Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Text(_error!,
-                    style: TextStyle(color: AppColors.danger)),
+                padding: EdgeInsets.only(top: 10),
+                child: Text(_error!, style: TextStyle(color: AppColors.danger)),
               ),
             if (m != null) ...[
-              const SizedBox(height: 12),
+              SizedBox(height: 12),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 300),
+                constraints: BoxConstraints(maxHeight: 300),
                 child: ListView(
                   shrinkWrap: true,
                   children: [
@@ -605,37 +655,46 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
                         activeColor: AppColors.accent,
                         checkColor: AppColors.onAccent,
                         dense: true,
-                        title: Text(f.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                color: AppColors.textPrimary, fontSize: 13)),
+                        title: Text(
+                          f.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 13,
+                          ),
+                        ),
                         subtitle: _progress.containsKey(f.index)
-                            ? LinearProgressIndicator(
-                                value: _progress[f.index])
-                            : Text(formatBytes(f.size),
+                            ? LinearProgressIndicator(value: _progress[f.index])
+                            : Text(
+                                formatBytes(f.size),
                                 style: TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 11.5)),
+                                  color: AppColors.textSecondary,
+                                  fontSize: 11.5,
+                                ),
+                              ),
                         onChanged: _busy
                             ? null
-                            : (_) => setState(() => _picked.contains(f.index)
-                                ? _picked.remove(f.index)
-                                : _picked.add(f.index)),
+                            : (_) => setState(
+                                () => _picked.contains(f.index)
+                                    ? _picked.remove(f.index)
+                                    : _picked.add(f.index),
+                              ),
                       ),
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed:
-                      _busy || _picked.isEmpty ? null : _downloadPicked,
-                  icon: const Icon(Icons.download_rounded, size: 18),
-                  label: Text(_busy
-                      ? 'Downloading…'
-                      : 'Download ${_picked.length} to library'),
+                  onPressed: _busy || _picked.isEmpty ? null : _downloadPicked,
+                  icon: Icon(Icons.download_rounded, size: 18),
+                  label: Text(
+                    _busy
+                        ? 'Downloading…'
+                        : 'Download ${_picked.length} to library',
+                  ),
                 ),
               ),
             ],
