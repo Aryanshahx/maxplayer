@@ -73,7 +73,7 @@ class _VideoPickerSheetState extends State<VideoPickerSheet> {
             width: 36,
             height: 4,
             decoration: BoxDecoration(
-              color: Colors.white24,
+              color: AppColors.textSecondary,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -114,10 +114,10 @@ class _VideoPickerSheetState extends State<VideoPickerSheet> {
           ),
           Expanded(
             child: widget.videos.isEmpty
-                ? const Center(
+                ? Center(
                     child: LText(
                       'No videos in the library yet - rescan first.',
-                      style: TextStyle(color: Colors.white54),
+                      style: TextStyle(color: AppColors.textSecondary),
                     ),
                   )
                 : ListView.builder(
@@ -129,15 +129,16 @@ class _VideoPickerSheetState extends State<VideoPickerSheet> {
                         onTap: () => _toggle(v.id),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 7),
+                            horizontal: 14,
+                            vertical: 7,
+                          ),
                           child: Row(
                             children: [
                               _PickerThumb(asset: v, accent: accent),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       v.title ?? 'Video',
@@ -146,17 +147,19 @@ class _VideoPickerSheetState extends State<VideoPickerSheet> {
                                       style: TextStyle(
                                         color: selected
                                             ? accent
-                                            : Colors.white,
+                                            : AppColors.textPrimary,
                                         fontSize: 13.5,
                                       ),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
                                       formatDuration(
-                                          Duration(seconds: v.duration)),
-                                      style: const TextStyle(
-                                          color: Colors.white38,
-                                          fontSize: 11.5),
+                                        Duration(seconds: v.duration),
+                                      ),
+                                      style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 11.5,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -165,7 +168,9 @@ class _VideoPickerSheetState extends State<VideoPickerSheet> {
                                 selected
                                     ? Icons.check_circle
                                     : Icons.circle_outlined,
-                                color: selected ? accent : Colors.white24,
+                                color: selected
+                                    ? accent
+                                    : AppColors.textSecondary,
                                 size: 22,
                               ),
                             ],
@@ -175,7 +180,7 @@ class _VideoPickerSheetState extends State<VideoPickerSheet> {
                     },
                   ),
           ),
-          const Divider(height: 1, color: Colors.white12),
+          Divider(height: 1, color: AppColors.border),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
             child: Row(
@@ -184,7 +189,7 @@ class _VideoPickerSheetState extends State<VideoPickerSheet> {
                   _selected.isEmpty
                       ? 'Tap videos to select'
                       : '${_selected.length} selected',
-                  style: const TextStyle(color: Colors.white54),
+                  style: TextStyle(color: AppColors.textSecondary),
                 ),
                 const Spacer(),
                 FilledButton(
@@ -236,8 +241,7 @@ class _PickerThumb extends StatelessWidget {
             if (data == null) {
               return Container(
                 color: accent.withValues(alpha: 0.12),
-                child: Icon(Icons.movie_outlined,
-                    size: 15, color: accent),
+                child: Icon(Icons.movie_outlined, size: 15, color: accent),
               );
             }
             return Image.memory(data, fit: BoxFit.cover, cacheWidth: 160);
@@ -249,8 +253,7 @@ class _PickerThumb extends StatelessWidget {
 
   Future<Uint8List?> _thumb() async {
     try {
-      return await asset.thumbnailDataWithSize(
-          const ThumbnailSize(160, 90));
+      return await asset.thumbnailDataWithSize(const ThumbnailSize(160, 90));
     } catch (_) {
       return null;
     }

@@ -279,7 +279,7 @@ class _VideoGridState extends State<VideoGrid> {
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.danger,
-              foregroundColor: Colors.white,
+              foregroundColor: contrastForeground(AppColors.danger),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),

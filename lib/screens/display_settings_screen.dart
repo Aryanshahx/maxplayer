@@ -354,69 +354,127 @@ class _DropdownRow<T> extends StatelessWidget {
   }
 }
 
-/// RGB channels cover the full opaque sRGB colour range, including greys.
+/// Own listener is intentional: this const child must update its slider/hex
+/// even when the parent reuses the same widget instance.
 class _CustomAccentSliders extends StatelessWidget {
   const _CustomAccentSliders();
   @override
-  Widget build(BuildContext context) {
-    final s = AppSettings.instance;
-    final c = s.accentColor;
-    final channels = [c.r, c.g, c.b];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        LText('Custom colour — slide Red, Green and Blue'),
-        const SizedBox(height: 8),
-        Container(
-          height: 30,
-          color: c,
-          alignment: Alignment.center,
-          child: Text(
-            '#${c.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
-            style: TextStyle(color: contrastForeground(c)),
-          ),
-        ),
-        for (var i = 0; i < 3; i++)
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: AppSettings.instance,
+    builder: (context, _) {
+      final s = AppSettings.instance;
+      final c = s.accentColor;
+      final applied = adaptiveAccent(c, Theme.of(context).brightness);
+      final hue = HSVColor.fromColor(c).hue;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const LText('Theme colour'),
+          const SizedBox(height: 12),
           Row(
             children: [
-              SizedBox(width: 52, child: LText(['Red', 'Green', 'Blue'][i])),
+              Container(
+                key: const ValueKey('theme-colour-preview'),
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: c,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
               Expanded(
-                child: Slider(
-                  key: ValueKey('accent-channel-$i'),
-                  value: channels[i] * 255,
-                  max: 255,
-                  divisions: 255,
-                  label: (channels[i] * 255).round().toString(),
-                  semanticFormatterCallback: (v) =>
-                      '${['Red', 'Green', 'Blue'][i]} ${v.round()}',
-                  onChanged: (v) async {
-                    final rgb = channels.map((v) => (v * 255).round()).toList();
-                    rgb[i] = v.round();
-                    try {
-                      await s.setCustomAccent(
-                        Color.fromARGB(255, rgb[0], rgb[1], rgb[2]),
-                      );
-                    } catch (_) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Could not save accent colour. Please try again.',
-                            ),
-                          ),
-                        );
-                      }
-                    }
-                  },
+                child: SelectableText(
+                  accentHex(c),
+                  key: const ValueKey('theme-colour-hex'),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                  ),
                 ),
               ),
             ],
           ),
-        LText(
-          'Text contrast adapts automatically. Very dark or pale accents adjust for readability.',
-        ),
-        const SizedBox(height: 16),
-      ],
-    );
-  }
+          const SizedBox(height: 8),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24),
+                child: SizedBox(
+                  height: 6,
+                  width: double.infinity,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.all(Radius.circular(8)),
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.red,
+                          Colors.yellow,
+                          Colors.green,
+                          Colors.cyan,
+                          Colors.blue,
+                          Colors.purple,
+                          Colors.red,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Slider(
+                key: const ValueKey('theme-colour-slider'),
+                value: hue,
+                max: 360,
+                divisions: 360,
+                activeColor: Colors.transparent,
+                inactiveColor: Colors.transparent,
+                thumbColor: applied,
+                label: accentHex(c),
+                semanticFormatterCallback: (v) =>
+                    'Theme colour ${accentHex(colourFromHue(v))}',
+                onChanged: (v) async {
+                  try {
+                    await s.setCustomAccent(colourFromHue(v));
+                  } catch (_) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Could not save accent colour. Please try again.',
+                          ),
+                        ),
+                      );
+                    }
+                  }
+                },
+              ),
+            ],
+          ),
+          Text(
+            'Theme accent: ${accentHex(applied)}',
+            key: const ValueKey('theme-applied-hex'),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const LText(
+            'Slide to choose a colour. The theme adjusts contrast for readability.',
+          ),
+          const SizedBox(height: 16),
+        ],
+      );
+    },
+  );
 }
+
+String accentHex(Color colour) =>
+    '#${colour.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+
+Color colourFromHue(double hue) =>
+    HSVColor.fromAHSV(1, hue.clamp(0, 360), .8, .9).toColor();

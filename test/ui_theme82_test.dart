@@ -134,10 +134,10 @@ void main() {
       MaterialApp(theme: buildAppTheme(), home: const DisplaySettingsScreen()),
     );
     await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('accent-channel-0')),
+      find.byKey(const ValueKey('theme-colour-slider')),
       250,
     );
-    expect(find.byType(Slider), findsNWidgets(3));
+    expect(find.byType(Slider), findsOneWidget);
     final source = File(
       'lib/screens/display_settings_screen.dart',
     ).readAsStringSync();
@@ -146,7 +146,8 @@ void main() {
     final slider = tester.widget<Slider>(find.byType(Slider).first);
     slider.onChanged!(37);
     await tester.pump();
-    expect((AppSettings.instance.accentColor.r * 255).round(), 37);
+    expect(AppSettings.instance.accentColor, colourFromHue(37));
+    expect(find.text(accentHex(colourFromHue(37))), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -166,7 +167,7 @@ void main() {
         'lib/widgets/user_manual_sheet.dart',
       ).readAsStringSync();
       expect(manual, isNot(contains('Library → Cloud Storage')));
-      expect(manual, contains('Red, Green and Blue sliders'));
+      expect(manual, contains('single theme-colour slider'));
       expect(manual, contains('There is no in-app kill switch'));
     },
   );

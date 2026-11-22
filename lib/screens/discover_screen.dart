@@ -660,10 +660,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             // Burns + countdown pills) — the old slide carousel is retired.
             SliverToBoxAdapter(
               child: _hero.isEmpty
-                  ? const SizedBox(
+                  ? SizedBox(
                       height: 236,
                       child: Center(
-                        child: CircularProgressIndicator(color: Colors.white24),
+                        child: CircularProgressIndicator(
+                          color: AppColors.accent,
+                        ),
                       ),
                     )
                   : CineFeaturedHero(
@@ -973,7 +975,7 @@ class _HeroDotsState extends State<_HeroDots> {
               decoration: BoxDecoration(
                 color: i == _index
                     ? AppColors.accent
-                    : Colors.white.withValues(alpha: 0.3),
+                    : AppColors.textSecondary.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(3),
               ),
             ),

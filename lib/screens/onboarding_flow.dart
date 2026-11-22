@@ -57,11 +57,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               child: PageView(
                 controller: _page,
                 onPageChanged: (i) => setState(() => _index = i),
-                children: const [
-                  _WelcomePage(),
-                  _HowToPage(),
-                  _PlayerGuidePage(),
-                ],
+                children: [_WelcomePage(), _HowToPage(), _PlayerGuidePage()],
               ),
             ),
             _OnboardingBar(
@@ -105,10 +101,10 @@ class _OnboardingBar extends StatelessWidget {
           TextButton(
             onPressed: onSkip,
             style: TextButton.styleFrom(
-              foregroundColor: Colors.white54,
+              foregroundColor: AppColors.textSecondary,
               minimumSize: const Size(64, 44),
             ),
-            child: const LText('Skip', style: TextStyle(fontSize: 14)),
+            child: LText('Skip', style: TextStyle(fontSize: 14)),
           ),
           Expanded(
             child: Row(
@@ -121,7 +117,7 @@ class _OnboardingBar extends StatelessWidget {
                     width: i == index ? 22 : 7,
                     height: 7,
                     decoration: BoxDecoration(
-                      color: i == index ? accent : Colors.white24,
+                      color: i == index ? accent : AppColors.border,
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),
@@ -141,7 +137,7 @@ class _OnboardingBar extends StatelessWidget {
             ),
             child: Text(
               index == count - 1 ? 'Get started' : 'Next',
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -199,8 +195,11 @@ class _WelcomePage extends StatelessWidget {
                     ),
                     borderRadius: BorderRadius.circular(28),
                   ),
-                  child: const Icon(Icons.play_arrow_rounded,
-                      size: 60, color: Colors.white),
+                  child: const Icon(
+                    Icons.play_arrow_rounded,
+                    size: 60,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),
@@ -209,10 +208,21 @@ class _WelcomePage extends StatelessWidget {
         const SizedBox(height: 26),
         Center(
           child: ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              colors: [Color(0xFFA78BFA), Color(0xFF8B5CF6), Color(0xFF22D3EE)],
+            blendMode: BlendMode.srcIn,
+            shaderCallback: (bounds) => LinearGradient(
+              colors: AppColors.isDark
+                  ? const [
+                      Color(0xFFA78BFA),
+                      Color(0xFF8B5CF6),
+                      Color(0xFF22D3EE),
+                    ]
+                  : const [
+                      Color(0xFF6533B5),
+                      Color(0xFF5630A3),
+                      Color(0xFF006D80),
+                    ],
             ).createShader(bounds),
-            child: const LText(
+            child: LText(
               'Max Player',
               style: TextStyle(
                 fontSize: 34,
@@ -223,10 +233,10 @@ class _WelcomePage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        const Center(
+        Center(
           child: LText(
             'Proudly Developed in India 🇮🇳',
-            style: TextStyle(color: Colors.white54, fontSize: 12.5),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
           ),
         ),
         const SizedBox(height: 18),
@@ -246,12 +256,14 @@ class _WelcomePage extends StatelessWidget {
         _FeatureRow(
           icon: Icons.lyrics_outlined,
           title: 'Karaoke & AI subtitles',
-          subtitle: 'Word-by-word lyrics overlay and on-device whisper captions.',
+          subtitle:
+              'Word-by-word lyrics overlay and on-device whisper captions.',
         ),
         _FeatureRow(
           icon: Icons.psychology_outlined,
           title: 'Discover & Ask AI',
-          subtitle: 'Trending movies from TMDB, with an AI assistant that works offline too.',
+          subtitle:
+              'Trending movies from TMDB, with an AI assistant that works offline too.',
         ),
         _FeatureRow(
           icon: Icons.lock_outline_rounded,
@@ -276,18 +288,18 @@ class _HowToPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
       children: [
-        const LText(
+        LText(
           'How to use',
           style: TextStyle(
-            color: Colors.white,
+            color: AppColors.textPrimary,
             fontSize: 26,
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 4),
-        const LText(
+        LText(
           'Get to know your video library.',
-          style: TextStyle(color: Colors.white54, fontSize: 13.5),
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
         ),
         const SizedBox(height: 20),
         _FeatureRow(
@@ -299,7 +311,8 @@ class _HowToPage extends StatelessWidget {
         _FeatureRow(
           icon: Icons.search,
           title: 'Search',
-          subtitle: 'Find any file from the top bar — the list filters as you type.',
+          subtitle:
+              'Find any file from the top bar — the list filters as you type.',
         ),
         _FeatureRow(
           icon: Icons.favorite_border,
@@ -315,7 +328,8 @@ class _HowToPage extends StatelessWidget {
         _FeatureRow(
           icon: Icons.movie_outlined,
           title: 'Discover',
-          subtitle: 'Trending movies & series, plus Ask AI to find what to watch.',
+          subtitle:
+              'Trending movies & series, plus Ask AI to find what to watch.',
         ),
         _FeatureRow(
           icon: Icons.history,
@@ -374,11 +388,11 @@ class _PlayerGuidePage extends StatelessWidget {
     Theme.of(context);
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
-      children: const [
+      children: [
         LText(
           'Video player',
           style: TextStyle(
-            color: Colors.white,
+            color: AppColors.textPrimary,
             fontSize: 26,
             fontWeight: FontWeight.bold,
           ),
@@ -386,7 +400,7 @@ class _PlayerGuidePage extends StatelessWidget {
         SizedBox(height: 4),
         LText(
           'Tap, swipe and pinch — every gesture works in full-screen too.',
-          style: TextStyle(color: Colors.white54, fontSize: 13.5),
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
         ),
         SizedBox(height: 18),
         _GestureRow(
@@ -475,8 +489,8 @@ class _FeatureRow extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
                     fontSize: 14.5,
                     fontWeight: FontWeight.w600,
                   ),
@@ -528,8 +542,8 @@ class _GestureRow extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             title,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.textPrimary,
               fontSize: 13.5,
               fontWeight: FontWeight.w600,
             ),

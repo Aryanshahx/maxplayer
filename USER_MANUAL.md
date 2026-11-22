@@ -16,9 +16,9 @@ Notification permission is separate from media permission. You can deny it or ch
 - Quick tiles include Private Space, Playlists, Folders, Audio, Network Storage, VPN, Open Stream and Quick Share. Swipe shortcut pages where applicable.
 
 ## Appearance and custom accents
-Open the menu → Appearance to choose System default, Light or Dark. System default follows the device. Open Display Settings → Theme accent color to use the single custom-colour section with Red, Green and Blue channel sliders. Each channel has 256 levels, including combinations for greys, black and white. The preview shows the chosen RGB hex value.
+Open the menu → Appearance to choose System default, Light or Dark. Open Display Settings → Theme accent color for one colour-spectrum slider, not separate RGB channels or preset buttons. Slide or use the focused slider with your remote/keyboard to choose a hue.
 
-The original opaque RGB choice is stored locally. Text/control accents are adjusted for readability: very pale colours can look darker in light mode, and very dark colours lighter in dark mode. Selected filled controls use a contrasting foreground. Restarting preserves the choice. Appearance does not recolour the actual video or subtitle image.
+The selected-colour swatch and selectable #RRGGBB text update live. “Theme accent” shows the contrast-adjusted colour actually used in the current theme; this may differ from the selected hex to keep text readable. The saved choice is restored after restart. Existing custom RGB/preset colours remain until you move the new slider; the single slider chooses hues, not independent saturation/brightness or every possible RGB combination. No hex typing is required: this is a live preview, not an editor.
 
 ## Player
 Tap the picture to show or hide controls; auto-hide timing is configurable. There are no top/bottom covering panels or gradient bars in either theme; only controls are drawn over the picture. Video and letterbox areas remain media content, not theme surfaces.
