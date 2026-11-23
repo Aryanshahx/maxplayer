@@ -26,8 +26,8 @@ updates, existing installs, private-vault data and already-saved media keep work
 
 - Instagram: `https://www.instagram.com/runxplayer_official?hvrq=MTR6NjljZGZtZ2NvdA==`
   (constant `kMaxInstagramUrl`, visible handle `@runxplayer_official`).
-- Telegram: `https://t.me/maxofficial_channel` — unchanged URL, still shown on the
-  Discover card as `@maxofficial_channel`.
+- Telegram: `https://t.me/runxofficial_channel`, shown on the Discover card as
+  `@runxofficial_channel`.
 - New **“Join on Telegram”** entry in the ⋮ → *Settings and more* menu, so both socials
   are reachable from the menu (Instagram was already there).
 - Tests `test/widget_test.dart` and `test/polish79_test.dart` updated to the new URL/handle.

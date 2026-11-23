@@ -7,7 +7,7 @@
 const kMaxReportEmail = 'techlabs.hyper@gmail.com';
 const kMaxInstagramUrl =
     'https://www.instagram.com/runxplayer_official?hvrq=MTR6NjljZGZtZ2NvdA==';
-const kMaxTelegramUrl = 'https://t.me/maxofficial_channel';
+const kMaxTelegramUrl = 'https://t.me/runxofficial_channel';
 
 class AppConfig {
   AppConfig._();

@@ -1876,7 +1876,7 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
         kMaxInstagramUrl,
         'https://www.instagram.com/runxplayer_official?hvrq=MTR6NjljZGZtZ2NvdA==',
       );
-      expect(kMaxTelegramUrl, 'https://t.me/maxofficial_channel');
+      expect(kMaxTelegramUrl, 'https://t.me/runxofficial_channel');
     });
   });
 

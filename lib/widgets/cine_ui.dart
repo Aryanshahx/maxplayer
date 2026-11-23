@@ -1435,7 +1435,7 @@ class CineTelegramCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const _SocialCard(
     url: kMaxTelegramUrl,
-    handle: '@maxofficial_channel',
+    handle: '@runxofficial_channel',
     kicker: 'JOIN ON TELEGRAM',
     badgeColors: [Color(0xFF37AEE2), Color(0xFF1E96C8)],
     badgePainter: _TelegramLogoPainter(),
