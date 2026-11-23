@@ -44,10 +44,11 @@ class _HomeMenuScreenState extends State<HomeMenuScreen> {
           ('display', Icons.tune_rounded, 'Display settings'),
           ('stats', Icons.bar_chart_rounded, 'Watch statistics'),
           ('manual', Icons.menu_book_outlined, 'User manual'),
-          ('about', Icons.info_outline_rounded, 'About Max Player'),
+          ('about', Icons.info_outline_rounded, 'About RunX Player'),
           ('privacy', Icons.privacy_tip_outlined, 'Privacy policy'),
           ('report', Icons.flag_outlined, 'Report a problem'),
           ('instagram', Icons.camera_alt_outlined, 'Follow on Instagram'),
+          ('telegram', Icons.send_outlined, 'Join on Telegram'),
         ])
           ListTile(
             leading: Icon(entry.$2),

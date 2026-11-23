@@ -185,7 +185,7 @@ class _VpnControlsState extends State<_VpnControls> {
                       ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const LText('Max Player only'),
+                        title: const LText('RunX Player only'),
                         value: vpn.appOnly,
                         onChanged: vpn.isBusy ? null : vpn.setAppOnly,
                       ),

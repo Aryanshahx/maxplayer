@@ -1,5 +1,5 @@
 /// Pure pinch-zoom + fit-ladder math shared by the player screen and unit
-/// tests (ported 1:1 from the old MaxPlayer, v1.0.0+148).
+/// tests (ported 1:1 from the old RunX Player, v1.0.0+148).
 library;
 
 import 'dart:math' as math;

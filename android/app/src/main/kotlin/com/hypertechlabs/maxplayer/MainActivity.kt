@@ -152,7 +152,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     // ---------------------------------------------------------------------------
-    // v1.0.15: "Open with Max Player" — Gallery/Files send ACTION_VIEW.
+    // v1.0.15: "Open with RunX Player" — Gallery/Files send ACTION_VIEW.
     // The URI is parked on the intent until Dart declares itself ready (its
     // first getInitialVideo poll, right after the first frame). From then on
     // deliveries go straight over the channel. Resolving/copying the uri
@@ -216,7 +216,7 @@ class MainActivity : FlutterFragmentActivity() {
                         "provisionForeignOpenVpnConfig" -> manager.provisionForeignOpenVpnConfig(call.argument<String>("countryCode") ?: "AUTO_FOREIGN", call.argument<List<String>>("excludeHosts"), result)
                         "fetchLiveForeignCountries" -> manager.fetchLiveForeignCountries(result)
                         "validateWireGuardConfig" -> manager.validateWireGuardConfig(call.argument<String>("configText") ?: "", result)
-                        "connectVpn" -> manager.connectVpn(this, call.argument<String>("configText") ?: "", call.argument<String>("profileName") ?: "Max Player VPN", call.argument<Boolean>("appOnly") ?: true, result)
+                        "connectVpn" -> manager.connectVpn(this, call.argument<String>("configText") ?: "", call.argument<String>("profileName") ?: "RunX Player VPN", call.argument<Boolean>("appOnly") ?: true, result)
                         "disconnectVpn" -> manager.disconnectVpn(result)
                         "getVpnStatus" -> manager.getVpnStatus(result)
                         else -> result.notImplemented()
@@ -251,7 +251,7 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 "getInitialVideo" -> {
-                    // "Open with Max Player" cold start: Dart polls once on
+                    // "Open with RunX Player" cold start: Dart polls once on
                     // the first frame; this flips us into channel-push mode
                     // and returns any parked URI (null otherwise).
                     dartReadyForOpenWith = true

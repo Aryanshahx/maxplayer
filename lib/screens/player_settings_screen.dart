@@ -6,7 +6,7 @@ import '../utils/app_volume.dart';
 import '../utils/player_settings.dart';
 
 /// "Player settings" sheet - customize every gesture and playback behavior,
-/// ported 1:1 from the old MaxPlayer sheet (sections: Gesture controls,
+/// ported 1:1 from the old RunX Player sheet (sections: Gesture controls,
 /// Playback, Player buttons, Sound & subtitles). Changes save immediately
 /// and are picked up by the open player.
 class PlayerSettingsSheet extends StatefulWidget {

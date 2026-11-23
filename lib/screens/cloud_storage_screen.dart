@@ -144,13 +144,13 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
     if (saved == null) {
       _showInfoDialog(
         "Couldn't save",
-        'The copy could not be written to Movies/Max Player. Playing the '
+        'The copy could not be written to the Videos/MaxPlayer album. Playing '
             'temporary copy is still possible.',
       );
       return;
     }
     final savedPath = saved['path']?.toString() ?? '';
-    final location = saved['location']?.toString() ?? 'Movies/Max Player';
+    final location = saved['location']?.toString() ?? 'Movies/MaxPlayer';
     _playPicked(savedPath.isNotEmpty ? savedPath : path, name);
     messenger?.showSnackBar(
       SnackBar(
@@ -303,7 +303,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
               LText(
                 "Android's file picker opens with Google Drive, Dropbox, "
                 'OneDrive or any storage app you use - videos only. The '
-                'picked file is copied into Max Player with a live '
+                'picked file is copied into RunX Player with a live '
                 'progress bar; keep it forever with Save to device.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -337,7 +337,7 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
               ),
               SizedBox(height: 12),
               LText(
-                'No sign-in at all - the picker hands Max Player one '
+                'No sign-in at all - the picker hands RunX Player one '
                 'file at a time, read-only.',
                 textAlign: TextAlign.center,
                 style: TextStyle(

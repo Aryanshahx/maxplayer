@@ -8,7 +8,7 @@ import '../services/native_bridge.dart';
 import '../theme.dart';
 import '../utils/privacy_policy.dart';
 
-/// "About Max Player" sheet, opened from the home screen's ⋮ menu.
+/// "About RunX Player" sheet, opened from the home screen's ⋮ menu.
 /// Brand copy by Hyper Tech Labs. Static content - no platform calls.
 class AboutSheet extends StatelessWidget {
   final ScrollController? scrollController;
@@ -19,7 +19,7 @@ class AboutSheet extends StatelessWidget {
       Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => Scaffold(
-            appBar: AppBar(title: LText('About Max Player')),
+            appBar: AppBar(title: LText('About RunX Player')),
             body: const AboutSheet(),
           ),
         ),
@@ -50,7 +50,7 @@ class AboutSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             LText(
-              'Max Player',
+              'RunX Player',
               style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 22,
@@ -67,9 +67,9 @@ class AboutSheet extends StatelessWidget {
         ),
         SizedBox(height: 14),
         LText(
-          'Max Player is a next-generation media player designed to make '
+          'RunX Player is a next-generation media player designed to make '
           'watching and listening effortless. Built from the ground up with '
-          'performance, simplicity, and reliability in mind, Max Player '
+          'performance, simplicity, and reliability in mind, RunX Player '
           'brings together powerful playback technology and a clean, '
           'intuitive interface - so you can focus on your content, not on '
           'fighting with your player.\n\n'
@@ -86,11 +86,11 @@ class AboutSheet extends StatelessWidget {
 
         _Heading('Our mission', accent),
         LText(
-          'At Max Player, our goal is simple: to create the most seamless, '
+          'At RunX Player, our goal is simple: to create the most seamless, '
           'distraction-free media experience possible. We believe great '
           'software should feel invisible - it should just work, every time, '
           'without getting in your way. That philosophy drives every design '
-          'and engineering decision behind Max Player.',
+          'and engineering decision behind RunX Player.',
           style: TextStyle(
             color: AppColors.textSecondary,
             fontSize: 13,
@@ -134,7 +134,7 @@ class AboutSheet extends StatelessWidget {
 
         _Heading('Our story', accent),
         LText(
-          'Max Player was created out of a simple frustration: too many '
+          'RunX Player was created out of a simple frustration: too many '
           'media players were bloated, slow, or filled with intrusive ads '
           'and unnecessary features. We set out to build something '
           'different - a player that respects your time, your device, and '
@@ -146,9 +146,9 @@ class AboutSheet extends StatelessWidget {
           ),
         ),
 
-        _Heading('The team behind Max Player', accent),
+        _Heading('The team behind RunX Player', accent),
         LText(
-          'Max Player is proudly developed and maintained by Hyper Tech '
+          'RunX Player is proudly developed and maintained by Hyper Tech '
           'Labs, a technology company focused on building thoughtful, '
           'high-quality applications for everyday use. Founded by Aryan '
           'Shah, Hyper Tech Labs is driven by a passion for clean design, '
@@ -163,7 +163,7 @@ class AboutSheet extends StatelessWidget {
 
         _Heading('Looking ahead', accent),
         LText(
-          'We\'re constantly working to improve Max Player - adding new '
+          'We\'re constantly working to improve RunX Player - adding new '
           'features, refining performance, and listening closely to our '
           'users. This is just the beginning, and we\'re excited to keep '
           'building a player that truly puts you first.',
@@ -294,7 +294,7 @@ class _DiagnosticsSheetState extends State<_DiagnosticsSheet> {
   }
 
   String _report() {
-    final b = StringBuffer()..writeln('Max Player $kAppVersion — diagnostics');
+    final b = StringBuffer()..writeln('RunX Player $kAppVersion — diagnostics');
     (_data ?? {}).forEach((k, v) => b.writeln('$k: ${_fmt(v)}'));
     return b.toString();
   }

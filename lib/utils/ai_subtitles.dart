@@ -260,7 +260,7 @@ class AiSubtitleRunner {
     watchdog = Timer(const Duration(seconds: 25), () {
       if (dialogOpen && progress.value.$1 == 'starting') {
         error =
-            'The AI engine did not respond in time. Please close and reopen Max Player, then try again.';
+            'The AI engine did not respond in time. Please close and reopen RunX Player, then try again.';
         unawaited(_channel.invokeMethod('aiSubtitleCancel'));
         closeDialog();
       }

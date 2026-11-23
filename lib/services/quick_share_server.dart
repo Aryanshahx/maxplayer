@@ -96,7 +96,7 @@ List<int>? parseRangeHeader(String? header, int totalLength) {
 
 /// In-app direct device-to-device sharing (v1.0.21) — no third-party app
 /// needed on either side: this hosts the selected files over HTTP on the
-/// local network; the receiver uses Max Player's Receive mode or literally
+/// local network; the receiver uses RunX Player's Receive mode or literally
 /// any browser (the / page is plain HTML with download links).
 class QuickShareSession {
   QuickShareSession._(
@@ -284,13 +284,13 @@ class QuickShareSession {
     }
     return '<!doctype html><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        '<title>Max Player Quick Share</title>'
+        '<title>RunX Player Quick Share</title>'
         '<style>body{font-family:system-ui;background:#0b0b0d;color:#eee;padding:16px}'
         '.card{display:block;background:#18181c;border-radius:14px;padding:14px;'
         'margin:10px 0;text-decoration:none;color:#eee}'
         '.n{font-weight:600;word-break:break-all}.s{color:#9aa;font-size:12px;margin-top:4px}'
         'h1{font-size:18px}.hint{color:#9aa;font-size:12px}</style>'
-        '<h1>Max Player — Quick Share</h1>'
+        '<h1>RunX Player — Quick Share</h1>'
         '<p class="hint">${files.length} file(s) — keep the sender screen open until all downloads finish.</p>'
         '$items';
   }

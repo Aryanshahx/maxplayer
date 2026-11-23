@@ -1420,7 +1420,7 @@ class CineInstagramCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const _SocialCard(
     url: kMaxInstagramUrl,
-    handle: '@maxplayer_official2026',
+    handle: '@runxplayer_official',
     kicker: 'FOLLOW ON INSTAGRAM',
     badgeColors: [Color(0xFF405DE6), Color(0xFFC13584), Color(0xFFF77737)],
     badgePainter: _InstagramLogoPainter(),

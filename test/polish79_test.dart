@@ -265,11 +265,11 @@ void main() {
     () {
       expect(
         kMaxInstagramUrl,
-        'https://www.instagram.com/maxplayer_official2026?evlk=MTR6NjljZGZtZ2NvdA==',
+        'https://www.instagram.com/runxplayer_official?hvrq=MTR6NjljZGZtZ2NvdA==',
       );
       expect(
         File('lib/widgets/cine_ui.dart').readAsStringSync(),
-        contains('@maxplayer_official2026'),
+        contains('@runxplayer_official'),
       );
       final menu = File('lib/screens/home_menu_screen.dart').readAsStringSync();
       expect(menu, isNot(contains('Navigator.pop')));

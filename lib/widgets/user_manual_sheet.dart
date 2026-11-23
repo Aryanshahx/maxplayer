@@ -80,7 +80,7 @@ class UserManualSheet extends StatelessWidget {
         SizedBox(height: 22),
         Center(
           child: Text(
-            'Max Player v$kAppVersion  ·  Hyper Tech Labs',
+            'RunX Player v$kAppVersion  ·  Hyper Tech Labs',
             style: TextStyle(color: AppColors.border, fontSize: 12),
           ),
         ),
@@ -413,7 +413,7 @@ final List<_Item> _playerItems = [
   _Item(
     Icons.camera_alt_outlined,
     'Screenshot (⋮ menu)',
-    'Saves a current-frame PNG into Pictures/Max Player for your gallery. '
+    'Saves a current-frame PNG into Pictures/MaxPlayer for your gallery. '
         'Capture and subtitle inclusion depend on the playback backend; '
         'check the saved image. Not available for online streams.',
   ),
@@ -474,7 +474,7 @@ final List<_Item> _smartItems = [
     'VPN — optional connection',
     'Open the VPN tile, choose WARP, '
         'Riseup, VPN Gate or a trusted custom profile, then Connect and '
-        'approve Android VPN permission. Max Player only is the default; '
+        'approve Android VPN permission. RunX Player only is the default; '
         'full-device routing is optional. Disconnect here when finished. '
         'Only one Android VPN can be active. Providers and volunteer '
         'servers may be unavailable; no speed, country or anonymity is '
@@ -573,14 +573,14 @@ final List<_Item> _tipItems = [
     'A new video does not appear in the library?',
     'Press the ⟳ rescan button in the top bar or pull the list down. If '
         'it is still missing, check the file extension is a common one '
-        '(.mp4, .mkv, .webm, ...) and that Max Player has storage '
+        '(.mp4, .mkv, .webm, ...) and that RunX Player has storage '
         'permission.',
   ),
   _Item(
     Icons.info_outline,
-    'Max Player does not show in "Open with"?',
+    'RunX Player does not show in "Open with"?',
     'Some galleries only offer Share: long-press the video → Share → Max '
-        'Player. You can also open Android Settings → Apps → Max Player → '
+        'Player. You can also open Android Settings → Apps → RunX Player → '
         '"Open by default" and enable it for videos.',
   ),
   _Item(
@@ -594,7 +594,7 @@ final List<_Item> _tipItems = [
     Icons.info_outline,
     'A video will not play at all?',
     'Very rarely a file uses an unusual codec. Try playing it from its '
-        'share menu (Share → Max Player) or re-encode it to H.264/AAC - '
+        'share menu (Share → RunX Player) or re-encode it to H.264/AAC - '
         'the most compatible combination.',
   ),
 ];

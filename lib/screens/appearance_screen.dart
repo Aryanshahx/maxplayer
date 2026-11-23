@@ -15,7 +15,7 @@ class AppearanceScreen extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.all(20),
             child: LText(
-              'Choose how Max Player looks. System default follows your device.',
+              'Choose how RunX Player looks. System default follows your device.',
             ),
           ),
           for (final entry in const [

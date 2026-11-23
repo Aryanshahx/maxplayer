@@ -104,7 +104,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowOnboarding());
   }
 
-  // v1.0.15 "Open with Max Player": Gallery/Files ACTION_VIEW arrives
+  // v1.0.15 "Open with RunX Player": Gallery/Files ACTION_VIEW arrives
   // either parked on the cold-start intent (polled once below) or pushed
   // over the channel while the app runs. Both land in [_openSharedVideo].
   void _wireOpenWith() {
@@ -378,7 +378,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         await launchUrl(
           Uri.parse(
             'mailto:$kMaxReportEmail'
-            '?subject=${Uri.encodeComponent('Max Player — report & feedback')}',
+            '?subject=${Uri.encodeComponent('RunX Player — report & feedback')}',
           ),
           mode: LaunchMode.externalApplication,
         );
@@ -386,6 +386,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
       case _MenuAction.instagram:
         await launchUrl(
           Uri.parse(kMaxInstagramUrl),
+          mode: LaunchMode.externalApplication,
+        );
+        break;
+      case _MenuAction.telegram:
+        await launchUrl(
+          Uri.parse(kMaxTelegramUrl),
           mode: LaunchMode.externalApplication,
         );
         break;
@@ -552,7 +558,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ],
                   ).createShader(bounds),
                   child: LText(
-                    'Max Player',
+                    'RunX Player',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -794,6 +800,7 @@ enum _MenuAction {
   privacy,
   report,
   instagram,
+  telegram,
 }
 
 class _GroupedView extends StatelessWidget {
@@ -906,7 +913,7 @@ class _PermissionHint extends StatelessWidget {
             ),
             SizedBox(height: 8),
             LText(
-              'Max Player needs access to your videos to show the library.',
+              'RunX Player needs access to your videos to show the library.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textSecondary),
             ),

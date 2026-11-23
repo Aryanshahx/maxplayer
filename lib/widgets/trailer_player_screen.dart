@@ -13,7 +13,7 @@ import '../utils/tmdb.dart';
 /// In-app trailer playback — YouTube embedding (WebView/iframe) gets blocked
 /// on many videos (152-4 "content unavailable"), so instead the direct
 /// progressive stream URL is resolved with youtube_explode and the trailer
-/// plays in MaxPlayer's own MPV player.
+/// plays in RunX Player's own MPV player.
 ///
 /// v1.0.1+16: the resolver used to hang the loading dialog FOREVER on slow
 /// or throttled connections — `getManifest` had no timeout. Now:

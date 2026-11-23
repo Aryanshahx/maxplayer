@@ -1,6 +1,6 @@
 // Pure screen-fit model shared by the player screen and unit tests.
 //
-// Ported 1:1 from the old MaxPlayer (v1.0.0+148) player: six fit modes in
+// Ported 1:1 from the old RunX Player (v1.0.0+148) player: six fit modes in
 // a fixed loop — Fit -> Crop -> Stretch -> 16:9 -> 4:3 -> Original -> Fit.
 // The 16:9 / 4:3 modes force the FRAME to that aspect ratio (VLC-style
 // resize, engine-independent, identical in landscape and portrait) while

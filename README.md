@@ -1,4 +1,4 @@
-# Max Player
+# RunX Player
 
 A local-first Android video player built with Flutter + media_kit (libmpv).
 Dark cinematic UI, on-device AI subtitles (whisper), TMDB-powered movie

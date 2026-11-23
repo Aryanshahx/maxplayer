@@ -231,7 +231,7 @@ class _MaxPlayerAppState extends State<MaxPlayerApp>
             : Brightness.light;
         AppColors.accent = AppSettings.instance.accentColor;
         return MaterialApp(
-          title: 'Max Player',
+          title: 'RunX Player',
           shortcuts: const <ShortcutActivator, Intent>{
             SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
           },

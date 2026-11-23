@@ -1874,7 +1874,7 @@ https://linear-xyz.frequency.mtv/munge/master.m3u8
       expect(kMaxReportEmail, 'techlabs.hyper@gmail.com');
       expect(
         kMaxInstagramUrl,
-        'https://www.instagram.com/maxplayer_official2026?evlk=MTR6NjljZGZtZ2NvdA==',
+        'https://www.instagram.com/runxplayer_official?hvrq=MTR6NjljZGZtZ2NvdA==',
       );
       expect(kMaxTelegramUrl, 'https://t.me/maxofficial_channel');
     });
@@ -1956,8 +1956,8 @@ https://example.com/orphan.m3u8''';
       expect(AppAnalytics.countryFromLocale(''), '');
     });
 
-    test('kAppVersionTag tracks the shipped build (v1.0.1+68)', () {
-      expect(AppAnalytics.kAppVersionTag, '1.0.1+79');
+    test('kAppVersionTag tracks the shipped build (v1.0.1+87)', () {
+      expect(AppAnalytics.kAppVersionTag, '1.0.1+87');
     });
 
     test('hostOf returns http(s) host only — local paths stay private', () {

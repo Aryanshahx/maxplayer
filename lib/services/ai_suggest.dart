@@ -51,7 +51,7 @@ List<AiTitlePick> parseAiSuggestionJson(String raw) {
 /// The system prompt — forces REAL, famous titles as bare JSON so the
 /// parser and TMDB resolution always have something solid to work with.
 const String kAiSuggestSystemPrompt =
-    'You are the movie recommender inside the Max Player app. The user '
+    'You are the movie recommender inside the RunX Player app. The user '
     'describes the kind of movies they want. Reply with ONLY a JSON array '
     'of up to 10 objects like [{"title":"3 Idiots","year":2009}] - real, '
     'well-known films that genuinely match the taste described, mixing '
@@ -157,7 +157,7 @@ class AiSuggestor {
         final req = await _http.postUrl(Uri.parse(_url));
         req.headers.set('content-type', 'application/json');
         req.headers.set('authorization', 'Bearer ${AppConfig.openRouterKey}');
-        req.headers.set('x-title', 'Max Player');
+        req.headers.set('x-title', 'RunX Player');
         req.write(jsonEncode(openRouterChatBody(
           model: model,
           system: kAiSuggestSystemPrompt,

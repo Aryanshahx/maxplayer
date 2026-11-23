@@ -25,8 +25,8 @@ class PushService {
   final local = FlutterLocalNotificationsPlugin();
   static const channel = AndroidNotificationChannel(
     'maxplayer_notices',
-    'MaxPlayer notices',
-    description: 'Updates from MaxPlayer',
+    'RunX Player notices',
+    description: 'Updates from RunX Player',
     importance: Importance.high,
   );
   String? uid;
@@ -210,7 +210,7 @@ class PushService {
       0,
       (a, b) => ((a * 31) + b) & 0x7fffffff,
     );
-    final title = data['title'] ?? message.notification?.title ?? 'MaxPlayer';
+    final title = data['title'] ?? message.notification?.title ?? 'RunX Player';
     final body = data['message'] ?? message.notification?.body ?? '';
     final payload = jsonEncode(data);
     final text = BigTextStyleInformation(body, contentTitle: title);

@@ -100,7 +100,7 @@ class NativeBridge {
     }
   }
 
-  /// Saves a permanent copy of a picked cloud video into Movies/Max Player
+  /// Saves a permanent copy of a picked cloud video into Movies/RunX Player
   /// (MediaStore on Android 10+, the public Movies folder below that).
   /// Returns {name, path, location} on success, null on failure.
   static Future<Map<String, dynamic>?> savePickedVideoToDevice({
@@ -149,7 +149,7 @@ class NativeBridge {
     } catch (_) {}
   }
 
-  /// v1.0.15 "Open with Max Player": the URI (if any) that launched the
+  /// v1.0.15 "Open with RunX Player": the URI (if any) that launched the
   /// cold-start — parked on the Android intent until this first poll.
   static Future<String?> getInitialVideo() async {
     try {
@@ -176,7 +176,7 @@ class NativeBridge {
   }
 
   /// v1.0.21 direct Quick Share: copy a downloaded file into MediaStore
-  /// (Movies|Music/MaxPlayer) so the library picks it up. Returns false if
+  /// (Movies|Music/RunX Player) so the library picks it up. Returns false if
   /// the insert/write failed (scoped-storage denied on very old Android).
   static Future<bool> saveToGallery({
     required String path,
@@ -336,7 +336,7 @@ class NativeBridge {
   /// stays untouched; the in-app AppVolume store is adjusted instead).
   static void Function(String dir)? volumeKeyListener;
 
-  /// v1.0.15 "Open with Max Player": a Gallery/Files ACTION_VIEW landed
+  /// v1.0.15 "Open with RunX Player": a Gallery/Files ACTION_VIEW landed
   /// while the app + Dart were already up — argument is the raw URI.
   static void Function(String uri)? openWithVideoListener;
 

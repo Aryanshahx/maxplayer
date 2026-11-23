@@ -698,7 +698,7 @@ class VpnController extends ChangeNotifier {
     );
     try {
       await engine.initialize(
-        localizedDescription: 'Max Player VPN',
+        localizedDescription: 'RunX Player VPN',
         showTrafficInNotification: true,
         lastStage: (ovpn.VPNStage stage) {
           if (stage == ovpn.VPNStage.connected) {
@@ -1043,7 +1043,7 @@ class VpnController extends ChangeNotifier {
 
         final bool started = await engine.connect(
           configToUse,
-          'Max Player VPN • ${target.name}',
+          'RunX Player VPN • ${target.name}',
           username: target.isBuiltInForeign && (usesUserPass || !hasCert)
               ? 'vpn'
               : null,

@@ -62,7 +62,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
- * Multi-Engine VPN Manager for Max Player:
+ * Multi-Engine VPN Manager for RunX Player:
  * 1) 1-Tap Fast Edge WireGuard via Cloudflare WARP anonymous registration with cryptographic
  *    Noise_IKpsk2 handshake verification and multi-port ISP-throttling failover.
  * 2) 1-Tap Foreign Country OpenVPN Servers (USA, Netherlands, France, Canada, Japan,
@@ -130,7 +130,7 @@ public final class MaxVpnManager {
   private GoBackend goBackend;
   private final Tunnel wgTunnel;
   private volatile Tunnel.State currentState = Tunnel.State.DOWN;
-  private volatile String activeProfileName = "Max Player VPN";
+  private volatile String activeProfileName = "RunX Player VPN";
 
   // Cached Riseup credentials, gateway directory & VPNGate directory (persisted + pre-warmed)
   private final SharedPreferences cachePrefs;
@@ -1350,7 +1350,7 @@ public final class MaxVpnManager {
             String label =
                 (profileName != null && !profileName.trim().isEmpty())
                     ? profileName.trim()
-                    : "Max Player VPN";
+                    : "RunX Player VPN";
 
             for (int idx = 0; idx < candidateConfigs.size(); idx++) {
               String candidateText = candidateConfigs.get(idx);
@@ -1536,9 +1536,9 @@ public final class MaxVpnManager {
         NotificationChannel ch =
             new NotificationChannel(
                 VPN_NOTIF_CHANNEL,
-                "Max Player VPN Status",
+                "RunX Player VPN Status",
                 NotificationManager.IMPORTANCE_LOW);
-        ch.setDescription("Shows encrypted Max Player VPN tunnel status");
+        ch.setDescription("Shows encrypted RunX Player VPN tunnel status");
         ch.setShowBadge(false);
         nm.createNotificationChannel(ch);
       }
@@ -1559,10 +1559,10 @@ public final class MaxVpnManager {
               ? new Notification.Builder(appContext, VPN_NOTIF_CHANNEL)
               : new Notification.Builder(appContext);
 
-      String scope = browserOnly ? "Max Player only" : "Device-Wide Tunnel";
+      String scope = browserOnly ? "RunX Player only" : "Device-Wide Tunnel";
       builder
           .setSmallIcon(android.R.drawable.ic_lock_lock)
-          .setContentTitle("Max Player VPN Active - " + profileName)
+          .setContentTitle("RunX Player VPN Active - " + profileName)
           .setContentText("Encrypted Tunnel (" + scope + ")")
           .setOngoing(true);
       if (pi != null) {

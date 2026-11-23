@@ -9,7 +9,7 @@ import '../utils/sha256.dart';
 /// Mechanism (MX Player / PlayIt style): the video FILE IS MOVED into the
 /// app's own directory. Android blocks Gallery / Photos / Files from looking
 /// inside another app's private directory, so a hidden video disappears from
-/// the rest of the phone, and Max Player lists it only after the PIN.
+/// the rest of the phone, and RunX Player lists it only after the PIN.
 ///
 /// The PIN protects the list; the file location is the real hiding. Only the
 /// PIN hash (never the PIN itself) is stored, in the app's local settings.
@@ -90,7 +90,7 @@ class PrivateVault {
       } catch (_) {
         throw const FileSystemException(
           'Vault storage is not available - allow storage permission for '
-          'Max Player and try again',
+          'RunX Player and try again',
         );
       }
     }
@@ -212,7 +212,7 @@ class PrivateVault {
         } catch (_) {}
         throw const FileSystemException(
           'Could not remove the original file - allow storage permission '
-          'for Max Player and try again',
+          'for RunX Player and try again',
         );
       }
       return copied;

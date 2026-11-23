@@ -1,4 +1,4 @@
-# Max Player user manual
+# RunX Player user manual
 
 ## Start and permissions
 Open the app and grant the media access you want it to have. Android version and selected-media permissions affect which files can appear. Use the Home rescan button or pull down to refresh after copying or downloading files. A scan is not a guarantee that Android exposes every folder. Check permission and file format if something is missing.
@@ -31,7 +31,7 @@ Tap the picture to show or hide controls; auto-hide timing is configurable. Ther
 - The equalizer has audio presets, dialogue boost and tone-mapping controls. Actual support depends on the decoder and source.
 - Use A→B loop to set the start and end of a repeat section; clear it to stop looping.
 - Sleep timer pauses playback at the selected time or, where offered, end of media.
-- The menu offers technical video information, screenshot and picture-in-picture where supported. Screenshots save to Pictures/Max Player; stream/protected content and backend limitations can prevent capture. Verify the saved image before relying on subtitle capture.
+- The menu offers technical video information, screenshot and picture-in-picture where supported. Screenshots save to the Pictures/MaxPlayer album; stream/protected content and backend limitations can prevent capture. Verify the saved image before relying on subtitle capture.
 - Picture-in-picture depends on Android device support and permission. Cast/external playback requires a compatible installed receiver/player; it is not a guarantee of native Chromecast support.
 - Player settings control available gestures, seek interval, boost speed, resume, auto-hide and lock-button visibility.
 
@@ -55,11 +55,11 @@ Trailers depend on their providers and availability. Language/season options onl
 1. Open VPN. The page opens directly without an instruction or acceptance screen.
 2. Opening the page does not automatically connect.
 3. Choose WARP/WireGuard, Riseup, VPN Gate/OpenVPN or a trusted supported custom profile.
-4. Keep Max Player only routing, or explicitly choose full-device routing.
+4. Keep RunX Player only routing, or explicitly choose full-device routing.
 5. Tap Connect and approve Android's VPN permission. Wait for the actual connection status; check exit information when available.
 6. Disconnect in VPN when finished.
 
-Only one Android VPN can be active. Provider provisioning, public/volunteer servers and custom profiles may fail or be unavailable. No country choice, speed, anonymity or permanent free availability is guaranteed. Max Player does not operate the exit servers. Operators receive connection metadata and routed traffic and can see unencrypted traffic. Use HTTPS and trusted providers.
+Only one Android VPN can be active. Provider provisioning, public/volunteer servers and custom profiles may fail or be unavailable. No country choice, speed, anonymity or permanent free availability is guaranteed. RunX Player does not operate the exit servers. Operators receive connection metadata and routed traffic and can see unencrypted traffic. Use HTTPS and trusted providers.
 
 There is no in-app kill switch. Ordinary connectivity can return when the VPN disconnects. Android always-on/block-without-VPN controls, if supported for the selected engine/device, must be configured separately and can block local sharing. App-only routing does not cover other apps; full-device routing changes other traffic too. Real routing should be checked on your device, not inferred only from a status badge.
 

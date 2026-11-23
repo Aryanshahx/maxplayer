@@ -18,10 +18,10 @@ import '../utils/format.dart';
 
 /// v1.0.21 Quick Share — two fully self-contained paths:
 ///  • DIRECT SEND: this device hosts the files over local HTTP (+QR/link);
-///    the receiver needs NOTHING installed — Max Player's Receive mode or
+///    the receiver needs NOTHING installed — RunX Player's Receive mode or
 ///    any browser on the same Wi-Fi downloads them.
 ///  • RECEIVE: type/paste the sender address, pick files, they land in
-///    the video library (Movies/MaxPlayer via MediaStore insert).
+///    the video library (Movies/RunX Player via MediaStore insert).
 /// The old "other apps" sheet (share_plus) stays as a fallback mode.
 class QuickShareScreen extends StatefulWidget {
   const QuickShareScreen({super.key});
@@ -85,8 +85,8 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
           ShareParams(
             files: [for (final e in entries) XFile(e.path)],
             text: entries.length == 1
-                ? 'Shared from Max Player'
-                : '${entries.length} videos from Max Player',
+                ? 'Shared from RunX Player'
+                : '${entries.length} videos from RunX Player',
           ),
         );
       }
@@ -230,7 +230,7 @@ class _QuickShareScreenState extends State<QuickShareScreen> {
 }
 
 /// Direct send sheet: runs the HTTP host while open; receiver downloads
-/// with Max Player Receive or ANY browser — no dependency on a third app.
+/// with RunX Player Receive or ANY browser — no dependency on a third app.
 class _DirectSendSheet extends StatefulWidget {
   const _DirectSendSheet(this.entries);
 
@@ -344,7 +344,7 @@ class _DirectSendSheetState extends State<_DirectSendSheet> {
             SizedBox(height: 6),
             LText(
               'Receiver must be on the same Wi-Fi. Open this link there — '
-              'with Max Player Receive or any browser.',
+              'with RunX Player Receive or any browser.',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
               textAlign: TextAlign.center,
             ),
@@ -583,7 +583,7 @@ class _ReceiveSheetState extends State<_ReceiveSheet> {
       SnackBar(
         content: Text(
           fail == 0
-              ? 'Received $ok video(s) — saved to Movies/MaxPlayer'
+              ? 'Received $ok video(s) — saved to Movies/RunX Player'
               : '$ok saved, $fail failed',
         ),
       ),

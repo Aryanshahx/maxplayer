@@ -18,7 +18,7 @@ String buildMovieSystemPrompt({
   required double rating,
   required String overview,
 }) =>
-    'You are the Ask-AI expert inside Max Player, a video app. '
+    'You are the Ask-AI expert inside RunX Player, a video app. '
     'Be concise, factual and friendly; keep answers under 150 words. '
     'Movie in question: "$title" ($year), TMDB rating '
     '${rating.toStringAsFixed(1)}/10. '
@@ -174,7 +174,7 @@ Future<AiResult> askMovieAi({
             ..set('Authorization', 'Bearer ${AppConfig.openRouterKey}')
             ..set('Content-Type', 'application/json')
             ..set('Referer', 'https://github.com/Aryanshahx/maxplayer')
-            ..set('X-Title', 'Max Player');
+            ..set('X-Title', 'RunX Player');
           req.write(jsonEncode({
             'model': model,
             'messages': [

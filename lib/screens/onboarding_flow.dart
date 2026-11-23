@@ -160,7 +160,7 @@ class _WelcomePage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
       children: [
-        // Brand mark — the real Max Player app icon (bundled asset).
+        // Brand mark — the real RunX Player app icon (bundled asset).
         Center(
           child: Container(
             decoration: BoxDecoration(
@@ -223,7 +223,7 @@ class _WelcomePage extends StatelessWidget {
                     ],
             ).createShader(bounds),
             child: LText(
-              'Max Player',
+              'RunX Player',
               style: TextStyle(
                 fontSize: 34,
                 fontWeight: FontWeight.bold,

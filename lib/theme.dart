@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// MaxPlayer adaptive design language — true-black neutral surfaces (no blue
+/// RunX Player adaptive design language — true-black neutral surfaces (no blue
 /// tint), hairline borders, themable accent with automatic on-accent
 /// contrast. Follows the saved System / Light / Dark preference.
 class AppColors {
