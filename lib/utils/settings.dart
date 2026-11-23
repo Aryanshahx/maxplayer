@@ -20,6 +20,10 @@ const accentPalette = <Color>[
   Color(0xFF3D6BFF), // blue
 ];
 
+/// How many recently used custom presets the colour wheel remembers.
+const recentAccentLimit = 5;
+
+/// Index 0 of [accentPalette] is the white preset (the default look).
 const defaultAccentIndex = 0;
 
 class AppSettings extends ChangeNotifier {
@@ -35,6 +39,7 @@ class AppSettings extends ChangeNotifier {
   static const _kOnlyFavs = 'disp.onlyFavs';
   static const _kAccent = 'disp.accent';
   static const _kCustomAccent = 'disp.customAccent.v1';
+  static const _kRecentAccents = 'disp.recentAccents.v1';
   Color? customAccent;
   static const _kThemeMode = 'disp.themeMode.v1';
   ThemeMode themeMode = ThemeMode.system;
@@ -50,14 +55,32 @@ class AppSettings extends ChangeNotifier {
   GroupBy groupBy = GroupBy.none;
   bool queueAll = true; // "Queue All" playback action
   bool onlyFavs = false;
-  int accentIndex = defaultAccentIndex;
+  int accentIndex = 0;
+
+  /// Last custom colours picked on the wheel, newest first, capped at 5.
+  List<Color> recentAccents = [];
 
   Color get accentColor => customAccent ?? accentPalette[accentIndex];
+
+  /// White is the named "return to default" preset; it is never consumed by
+  /// the recent list so it always stays reachable from the wheel.
+  bool get usingWhitePreset => customAccent == null && accentIndex == 0;
+
+  /// Preset chips shown under the wheel: White first (always), then up to
+  /// [recentAccentLimit] recently used custom colours.
+  List<Color> get accentPresets => <Color>[
+    accentPalette[0],
+    ...recentAccents.take(recentAccentLimit),
+  ];
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     final savedColor = p.getInt(_kCustomAccent);
     customAccent = savedColor == null ? null : Color(savedColor | 0xFF000000);
+    recentAccents = [
+      for (final v in (p.getStringList(_kRecentAccents) ?? const <String>[]))
+        if (int.tryParse(v) != null) Color(int.parse(v) | 0xFF000000),
+    ].take(recentAccentLimit).toList();
     final savedTheme = p.getString(_kThemeMode);
     themeMode =
         ThemeMode.values.where((v) => v.name == savedTheme).firstOrNull ??
@@ -80,7 +103,7 @@ class AppSettings extends ChangeNotifier {
     accentIndex = clampIdx(
       p.getInt(_kAccent),
       accentPalette.length - 1,
-      defaultAccentIndex,
+      0, // white preset
     );
   }
 
@@ -122,8 +145,20 @@ class AppSettings extends ChangeNotifier {
   Future<void> setCustomAccent(Color color) async {
     final opaque = color.withValues(alpha: 1);
     customAccent = opaque;
+    final next = <Color>[
+      opaque,
+      ...recentAccents.where((c) => c.toARGB32() != opaque.toARGB32()),
+    ].take(recentAccentLimit).toList();
+    recentAccents = next;
     notifyListeners();
-    await _set((p) => p.setInt(_kCustomAccent, opaque.toARGB32()));
+    await _set((p) async {
+      final ok = await p.setInt(_kCustomAccent, opaque.toARGB32());
+      await p.setStringList(
+        _kRecentAccents,
+        [for (final c in next) c.toARGB32().toString()],
+      );
+      return ok;
+    });
   }
 
   void setAccentIndex(int i) {
@@ -132,6 +167,18 @@ class AppSettings extends ChangeNotifier {
     _set((p) async {
       await p.remove(_kCustomAccent);
       return p.setInt(_kAccent, accentIndex);
+    });
+  }
+
+  /// "White" preset: back to the default look. Recent picks are kept so the
+  /// user can jump back to a colour they just tried.
+  Future<void> useWhitePreset() async {
+    accentIndex = 0;
+    customAccent = null;
+    notifyListeners();
+    await _set((p) async {
+      await p.remove(_kCustomAccent);
+      return p.setInt(_kAccent, 0);
     });
   }
 }

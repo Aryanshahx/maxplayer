@@ -244,15 +244,28 @@ class _RecentSearchHistoryState extends State<RecentSearchHistory> {
                         constraints: BoxConstraints(
                           maxWidth: bounds.maxWidth.clamp(120, 280),
                         ),
+                        // Colours are set explicitly: the global chip theme
+                        // prefers the accent for labels, which made these
+                        // chips render near-white text on a near-white fill.
                         child: ActionChip(
-                          avatar: const Icon(Icons.north_west, size: 15),
+                          avatar: Icon(
+                            Icons.north_west,
+                            size: 15,
+                            color: scheme.onSurfaceVariant,
+                          ),
                           label: Text(
                             value,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: scheme.onSurface,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                           backgroundColor: scheme.surfaceContainerLow,
                           side: BorderSide(color: scheme.outlineVariant),
+                          shape: const StadiumBorder(),
                           onPressed: () => widget.onSelected(value),
                         ),
                       ),

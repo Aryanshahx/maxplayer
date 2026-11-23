@@ -24,9 +24,12 @@ class AppColors {
   static set accent(Color value) => _accent = value;
   // The default white accent becomes charcoal in light mode for contrast.
   static Color get accent => adaptiveAccent(_accent, brightness);
-  // Video-overlay controls are white regardless of the app surface theme.
-  static Color get playerForeground => Colors.white;
-  static Color get playerMuted => Colors.white;
+  // Video-overlay controls follow the chosen theme colour. The accent is
+  // contrast-adapted per brightness, so a white/very light accent still reads
+  // on the dark video surface and a dark accent reads on light surfaces.
+  static Color get playerForeground => accent;
+  static Color get playerMuted =>
+      isDark ? Colors.white70 : const Color(0xFF3C4149);
   static Color get playerChrome =>
       isDark ? const Color(0x99060608) : const Color(0x99FFFFFF);
   static Color get mediaAccent => _accent;

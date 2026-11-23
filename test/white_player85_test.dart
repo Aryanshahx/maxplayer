@@ -10,7 +10,7 @@ void main() {
   });
   for (final brightness in Brightness.values) {
     test(
-      'enabled player overlay is opaque white in $brightness for every accent',
+      'enabled player overlay is opaque and accent-driven in $brightness',
       () {
         AppColors.brightness = brightness;
         for (final accent in [
@@ -20,9 +20,14 @@ void main() {
           Colors.blue,
         ]) {
           AppColors.accent = accent;
-          expect(AppColors.playerForeground, Colors.white);
+          // v1.0.1+88: theme colour reaches the video controls; the accent is
+          // contrast-adapted per brightness, so it is always opaque.
+          expect(AppColors.playerForeground, AppColors.accent);
           expect(AppColors.playerForeground.a, 1);
-          expect(AppColors.playerMuted, Colors.white);
+          expect(
+            AppColors.playerMuted,
+            brightness == Brightness.dark ? Colors.white70 : const Color(0xFF3C4149),
+          );
         }
       },
     );

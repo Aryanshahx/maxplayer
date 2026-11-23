@@ -3700,8 +3700,10 @@ class _BottomBarState extends State<_BottomBar> {
     );
   }
 
+  /// Elapsed/remaining clock keeps a neutral white so the accent is carried
+  /// by the control glyphs and the progress track, not by every label.
   static TextStyle get _timeStyle =>
-      TextStyle(fontSize: 12, color: AppColors.playerMuted);
+      const TextStyle(fontSize: 12, color: Colors.white70);
 }
 
 class _LockChip extends StatelessWidget {

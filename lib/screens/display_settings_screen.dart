@@ -370,6 +370,12 @@ class _CustomAccentSliders extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const LText('Theme colour'),
+          const SizedBox(height: 6),
+          const LText(
+            'White is the default look. Your five most recent colours stay '
+            'below the wheel for quick switching.',
+            style: TextStyle(fontSize: 12.5),
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -466,11 +472,107 @@ class _CustomAccentSliders extends StatelessWidget {
           const LText(
             'Slide to choose a colour. The theme adjusts contrast for readability.',
           ),
+          const SizedBox(height: 14),
+          const LText(
+            'RECENT COLOURS',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final (index, preset) in s.accentPresets.indexed)
+                _PresetSwatch(
+                  key: ValueKey(
+                    index == 0 ? 'accent-preset-white' : 'accent-preset-$index',
+                  ),
+                  colour: preset,
+                  selected: index == 0
+                      ? s.usingWhitePreset
+                      : s.customAccent?.toARGB32() == preset.toARGB32(),
+                  isWhitePreset: index == 0,
+                  onTap: () async {
+                    try {
+                      if (index == 0) {
+                        await s.useWhitePreset();
+                      } else {
+                        await s.setCustomAccent(preset);
+                      }
+                    } catch (_) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Could not save accent colour. Please try again.',
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+            ],
+          ),
           const SizedBox(height: 16),
         ],
       );
     },
   );
+}
+
+/// One tappable preset dot. Index 0 is the white "return to default" swatch,
+/// which is always present even when no custom colours were picked yet.
+class _PresetSwatch extends StatelessWidget {
+  const _PresetSwatch({
+    super.key,
+    required this.colour,
+    required this.selected,
+    required this.isWhitePreset,
+    required this.onTap,
+  });
+
+  final Color colour;
+  final bool selected;
+  final bool isWhitePreset;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final ring = selected ? scheme.primary : scheme.outlineVariant;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: isWhitePreset
+          ? 'White theme preset (default) ${accentHex(colour)}'
+          : 'Recent theme colour ${accentHex(colour)}',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: colour,
+            shape: BoxShape.circle,
+            border: Border.all(color: ring, width: selected ? 3 : 1.5),
+          ),
+          child: selected
+              ? Icon(
+                  Icons.check,
+                  size: 18,
+                  color: contrastForeground(colour),
+                )
+              : null,
+        ),
+      ),
+    );
+  }
 }
 
 String accentHex(Color colour) =>
