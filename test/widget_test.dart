@@ -1956,8 +1956,8 @@ https://example.com/orphan.m3u8''';
       expect(AppAnalytics.countryFromLocale(''), '');
     });
 
-    test('kAppVersionTag tracks the shipped build (v1.0.1+87)', () {
-      expect(AppAnalytics.kAppVersionTag, '1.0.1+87');
+    test('kAppVersionTag tracks the shipped build (v1.0.1+88)', () {
+      expect(AppAnalytics.kAppVersionTag, '1.0.1+88');
     });
 
     test('hostOf returns http(s) host only — local paths stay private', () {

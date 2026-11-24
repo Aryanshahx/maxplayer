@@ -384,10 +384,35 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   // ----------------------------------------------------------------- ui ---
 
+  /// v1.0.1+88: true while a search is open (typed query OR focused field).
+  bool get _inSearch => _searching || _searchFocus.hasFocus;
+
+  /// Closes the search and returns to the browse/home rails — used by the
+  /// system back gesture so one Back no longer leaves Discover entirely.
+  void _exitSearch() {
+    _searchDebounce?.cancel();
+    if (_searchFocus.hasFocus) _searchFocus.unfocus();
+    if (_searchCtrl.text.isNotEmpty) _searchCtrl.clear();
+    if (_query.isEmpty && _results.isEmpty) return;
+    setState(() {
+      _query = '';
+      _results.clear();
+      _resultIds.clear();
+      _queryPage = 0;
+      _queryTotalPages = 1;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
-    return Scaffold(
+    return PopScope(
+      canPop: !_inSearch,
+      onPopInvokedWithResult: (didPop, Object? _) {
+        if (didPop) return;
+        _exitSearch();
+      },
+      child: Scaffold(
       backgroundColor: AppColors.background,
       body: _keyMissing
           ? const _NoKeyBody()
@@ -454,6 +479,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   ),
               ],
             ),
+      ),
     );
   }
 
@@ -987,9 +1013,28 @@ class _HeroDotsState extends State<_HeroDots> {
 
 /// One horizontal rail of posters, sized so TWO title lines + year always
 /// fit: poster(130*1.5=195) + 6 + title(30) + 2 + year(11) = 244.
+/// v1.0.1+88: tablet-aware poster-card metrics used by the Discover rails.
+/// Exposed (unsigned) so tests can assert the phone/tablet switch without
+/// building the whole screen.
+({double width, double height}) discoverRailCardSize(BuildContext context) => (
+  width: _PosterRail.widthFor(context),
+  height: _PosterRail.heightFor(context),
+);
+
 class _PosterRail extends StatelessWidget {
   static const double cardWidth = 130;
   static const double cardHeight = 244;
+
+  /// v1.0.1+88: tablets get slightly wider cards and a taller text area so
+  /// the two-line title AND the year always fit (they were clipped before).
+  static bool isTabletWidth(BuildContext context) =>
+      MediaQuery.sizeOf(context).width >= 600;
+
+  static double widthFor(BuildContext context) =>
+      isTabletWidth(context) ? 152 : cardWidth;
+
+  static double heightFor(BuildContext context) =>
+      isTabletWidth(context) ? 274 : cardHeight;
 
   final String title;
   final List<TmdbMovie> movies;
@@ -1023,7 +1068,7 @@ class _PosterRail extends StatelessWidget {
         children: [
           _RailHeader(title: title, onSeeAll: onSeeAll),
           SizedBox(
-            height: _PosterRail.cardHeight,
+            height: _PosterRail.heightFor(context),
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               scrollDirection: Axis.horizontal,
@@ -1040,7 +1085,7 @@ class _PosterRail extends StatelessWidget {
       children: [
         _RailHeader(title: title, onSeeAll: onSeeAll),
         SizedBox(
-          height: _PosterRail.cardHeight,
+          height: _PosterRail.heightFor(context),
           child: ListView.builder(
             controller: scrollController,
             padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -1048,7 +1093,10 @@ class _PosterRail extends StatelessWidget {
             itemCount: movies.length,
             itemBuilder: (context, i) => Padding(
               padding: const EdgeInsets.only(right: 10),
-              child: _PosterCard(movie: movies[i]),
+              child: _PosterCard(
+                movie: movies[i],
+                width: _PosterRail.widthFor(context),
+              ),
             ),
           ),
         ),
@@ -1176,14 +1224,20 @@ class _RailError extends StatelessWidget {
 class _PosterCard extends StatelessWidget {
   final TmdbMovie movie;
 
-  const _PosterCard({required this.movie});
+  /// Card width handed down by [_PosterRail]; the poster keeps its 2:3 shape.
+  final double width;
+
+  const _PosterCard({required this.movie, this.width = _PosterRail.cardWidth});
 
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
     final posterUrl = tmdbPosterUrl(movie.posterPath);
+    // v1.0.1+88: text boxes scale with the user's font size so the year is
+    // never clipped on tablets (which often run a larger text scale).
+    final double scale = MediaQuery.textScalerOf(context).scale(10) / 10;
     return SizedBox(
-      width: _PosterRail.cardWidth,
+      width: width,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -1230,8 +1284,8 @@ class _PosterCard extends StatelessWidget {
               ),
               SizedBox(height: 6),
               SizedBox(
-                // exactly two full lines at 11.5/1.15 — never clipped
-                height: 30,
+                // exactly two full lines at 11.5/1.15 — scaled, never clipped
+                height: 30 * scale,
                 child: Text(
                   movie.title,
                   maxLines: 2,
@@ -1246,7 +1300,7 @@ class _PosterCard extends StatelessWidget {
               ),
               SizedBox(height: 2),
               SizedBox(
-                height: 11,
+                height: 15 * scale,
                 child: Text(
                   movie.year != null ? '${movie.year}' : ' ',
                   maxLines: 1,

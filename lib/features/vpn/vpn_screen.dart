@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../utils/app_language.dart';
 import 'vpn_controller.dart';
+import 'vpn_disclosure.dart';
 
 /// One app-scoped controller: Back does not silently tear down a user-started VPN.
 class VpnEntryScreen extends StatefulWidget {
@@ -175,13 +176,34 @@ class _VpnControlsState extends State<_VpnControls> {
                         ),
                       const SizedBox(height: 12),
                       FilledButton.icon(
-                        onPressed: vpn.isBusy ? null : vpn.toggleConnection,
+                        // v1.0.1+88: the Play-required prominent disclosure
+                        // must be accepted before the FIRST connection.
+                        onPressed: vpn.isBusy
+                            ? null
+                            : () async {
+                                if (vpn.isConnected) {
+                                  await vpn.toggleConnection();
+                                  return;
+                                }
+                                final ok = await VpnDisclosure.ensureAccepted(
+                                  context,
+                                );
+                                if (!ok || !mounted) return;
+                                await vpn.toggleConnection();
+                              },
                         icon: Icon(
                           vpn.isConnected
                               ? Icons.power_settings_new
                               : Icons.vpn_lock_outlined,
                         ),
                         label: Text(vpn.isConnected ? 'Disconnect' : 'Connect'),
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () => showVpnDisclosureAgain(context),
+                          child: const LText('What the VPN does'),
+                        ),
                       ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
