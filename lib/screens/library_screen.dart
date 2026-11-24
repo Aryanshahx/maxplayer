@@ -31,8 +31,8 @@ import '../widgets/video_grid.dart';
 import '../services/native_bridge.dart';
 import 'player_screen.dart';
 import 'audio_screen.dart';
-import '../features/vpn/vpn_screen.dart';
 import 'discover_screen.dart';
+import 'cloud_storage_screen.dart';
 import 'display_settings_screen.dart';
 import 'folders_screen.dart';
 import 'history_screen.dart';
@@ -639,7 +639,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       'folders': () => push(FoldersScreen(), 'folders'),
       'audio': () => push(AudioScreen(), 'audio'),
       'networkStorage': () => push(NetworkStorageScreen(), 'network'),
-      'vpn': () => push(const VpnEntryScreen(), 'vpn'),
+      'cloudStorage': () => push(const CloudStorageScreen()),
       'openStream': () => push(OpenStreamScreen()),
       'quickShare': () => push(QuickShareScreen(), 'quickShare'),
     };

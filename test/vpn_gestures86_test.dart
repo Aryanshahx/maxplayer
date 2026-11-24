@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maxplayer/theme.dart';
@@ -77,29 +76,6 @@ void main() {
       final dark = await show(Brightness.dark),
           light = await show(Brightness.light);
       expect(light.shouldRepaint(dark), isTrue);
-    },
-  );
-  test(
-    'VPN instructions removed while native approval and error status remain',
-    () {
-      final ui = File('lib/features/vpn/vpn_screen.dart').readAsStringSync();
-      for (final removed in [
-        'vpnDisclosure',
-        'vpn.disclosure.v1',
-        'Agree and continue',
-        'Free third-party relays',
-        'VPN information',
-        'helperText:',
-      ]) {
-        expect(ui, isNot(contains(removed)));
-      }
-      expect(ui, contains('vpn.errorMessage'));
-      expect(ui, contains('vpn.toggleConnection'));
-      final native = File(
-        'android/app/src/main/java/com/hypertechlabs/maxplayer/MaxVpnManager.java',
-      ).readAsStringSync();
-      expect(native, contains('VpnService.prepare(appContext)'));
-      expect(native, contains('activity.startActivityForResult'));
     },
   );
 }

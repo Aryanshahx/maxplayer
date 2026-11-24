@@ -15,7 +15,7 @@ void main() {
       'playlists',
       'audio',
       'network',
-      'vpn',
+      'cloud',
       'quickShare',
     ]);
     expect(AppAnalytics.featureKeys.toSet().length, 8);

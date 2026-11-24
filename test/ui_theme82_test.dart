@@ -161,14 +161,15 @@ void main() {
       expect(File('privacy/index.html').readAsStringSync(), contains(encoded));
       expect(
         kPrivacyPolicyText,
-        contains('not the VPN Keystore-backed encrypted store'),
+        contains('not an encrypted store'),
       );
       final manual = File(
         'lib/widgets/user_manual_sheet.dart',
       ).readAsStringSync();
       expect(manual, isNot(contains('Library → Cloud Storage')));
       expect(manual, contains('single theme-colour slider'));
-      expect(manual, contains('There is no in-app kill switch'));
+      expect(manual, contains('Cloud Storage'));
+      expect(manual, isNot(contains('VPN')));
     },
   );
 }

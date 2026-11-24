@@ -58,9 +58,3 @@
 -dontwarn com.arthenica.**
 -dontwarn dev.ffmpegkit.**
 
-# VPN JNI and OpenVPN profile serialization.
--keep class com.wireguard.** { *; }
--dontwarn com.wireguard.**
--keep class de.blinkt.openvpn.** { *; }
--dontwarn de.blinkt.openvpn.**
--keep class id.laskarmedia.openvpn_flutter.** { *; }

@@ -13,7 +13,7 @@ Notification permission is separate from media permission. You can deny it or ch
 - Playlists organise references to local videos; they do not create backups of those files.
 - Folders depends on Android storage access. Use Android's picker where offered to open a document from a storage provider. A provider can require its own sign-in.
 - Watch statistics shows locally tracked viewing information, not all viewing outside this app.
-- Quick tiles include Private Space, Playlists, Folders, Audio, Network Storage, VPN, Open Stream and Quick Share. Swipe shortcut pages where applicable.
+- Quick tiles include Private Space, Playlists, Folders, Audio, Network Storage, Cloud Storage, Open Stream and Quick Share. Swipe shortcut pages where applicable.
 
 ## Appearance and custom accents
 Open the menu → Appearance to choose System default, Light or Dark. Open Display Settings → Theme accent color for one colour-spectrum slider, not separate RGB channels or preset buttons. Slide or use the focused slider with your remote/keyboard to choose a hue.
@@ -49,32 +49,31 @@ Gestures can be disabled in player settings. Live streams may not support seek o
 ## Discover movies and series
 Discover uses TMDB for artwork and metadata; initial requests need internet. Cached artwork is not a complete offline movie catalogue. The featured carousel and movie cards open details. The Play action can use a matching local library item or an available external source; Discover is not a subscription streaming library and does not guarantee a full playable film.
 
+Searching: type in the Discover search field to search movies and series. **Back closes the search and keeps you in Discover** — you land on the Discover home rails, not on the library. Press Back again to leave Discover.
+
+Tablets and large screens: poster rails use wider cards and the title/year area scales with your device font size, so the release year stays readable instead of being clipped. Phone layout is unchanged.
+
 Trailers depend on their providers and availability. Language/season options only appear when available. Ask AI recommendations submit the prompt you choose to OpenRouter and its selected provider. Do not submit secrets or private media. Do not confuse online recommendations with on-device subtitle processing.
 
-## VPN — optional, off by default
-1. Open VPN. The page opens directly without an instruction or acceptance screen.
-2. Opening the page does not automatically connect.
-3. Choose WARP/WireGuard, Riseup, VPN Gate/OpenVPN or a trusted supported custom profile.
-4. Keep RunX Player only routing, or explicitly choose full-device routing.
-5. Tap Connect and approve Android's VPN permission. Wait for the actual connection status; check exit information when available.
-6. Disconnect in VPN when finished.
+## Cloud Storage and Network Storage
 
-Only one Android VPN can be active. Provider provisioning, public/volunteer servers and custom profiles may fail or be unavailable. No country choice, speed, anonymity or permanent free availability is guaranteed. RunX Player does not operate the exit servers. Operators receive connection metadata and routed traffic and can see unencrypted traffic. Use HTTPS and trusted providers.
+1. Open **Cloud Storage** (or **Network Storage**) from the second quick-tile page.
+2. Add a location: enter the provider details — host name, folder path, port where relevant — and, if the provider requires them, a username and password. Use a limited-access account or a provider-generated app password rather than your main credentials.
+3. Save, then select the location to browse or play from it.
+4. Remove a saved location when you no longer need it; that deletes the saved entry on this device.
 
-There is no in-app kill switch. Ordinary connectivity can return when the VPN disconnects. Android always-on/block-without-VPN controls, if supported for the selected engine/device, must be configured separately and can block local sharing. App-only routing does not cover other apps; full-device routing changes other traffic too. Real routing should be checked on your device, not inferred only from a status badge.
-
-Custom VPN secrets use Android Keystore-backed encrypted no-backup storage where supported; when secure storage is unavailable they remain session-only. Delete a custom profile to remove it locally. Clearing app data removes app-local profiles and preferences. WARP registration contacts Cloudflare; Riseup provisioning and VPN Gate directory requests contact those services. Read the privacy policy before use.
+Both are saved direct connections, not a full provider browser. Available folders and file types depend on the provider, the account permissions and your connection. Credentials are kept in app-local preferences and are **not** encrypted by the app, so use restricted accounts on a trusted device. Nothing is uploaded to the provider by the app; playback streams only the item you select. If a location stops working, re-check the address, credentials, account permissions and network before assuming the app is at fault — some providers block third-party clients or require an app-specific password.
 
 ## Network Storage
 Choose SMB, FTP/FTPS or WebDAV. Enter the host, port if needed, direct media path and optional username/password, save, then select the connection. This feature stores direct media connections; it is not a complete remote directory browser. Protocol support depends on the URL, server and native playback backend. Prefer encrypted protocols where supported.
 
-**Network Storage credentials are in app-local preferences, not the VPN encrypted store.** Use limited-access accounts and trusted devices/networks. Delete a saved location to remove its entry. Do not share diagnostic exports without checking for sensitive hostnames or contextual error information.
+**Network and Cloud Storage credentials are in app-local preferences, not an encrypted store.** Use limited-access accounts and trusted devices/networks. Delete a saved location to remove its entry. Do not share diagnostic exports without checking for sensitive hostnames or contextual error information.
 
 ## Open Stream and IPTV
 Paste a direct supported media URL or load a supported M3U playlist. A website page is not necessarily a media URL. Filter channels/groups where available. A stream may be offline, geographically restricted, encrypted, unsupported or require authorisation. Use only sources you are entitled to access. Plain HTTP and other non-secure protocols can expose traffic.
 
 ## Quick Share
-Select files and start sharing on a trusted reachable local network. Open the displayed URL or QR code on the recipient device. Anyone who can access that active link may download the selected files. Transfers are not end-to-end encrypted. Stop sharing afterward. Wi-Fi client isolation, firewalls or VPN routing can prevent access. No file transfer is guaranteed until the recipient confirms it completed.
+Select files and start sharing on a trusted reachable local network. Open the displayed URL or QR code on the recipient device. Anyone who can access that active link may download the selected files. Transfers are not end-to-end encrypted. Stop sharing afterward. Wi-Fi client isolation or a firewall can prevent access. No file transfer is guaranteed until the recipient confirms it completed.
 
 ## Private Space
 Set a PIN before adding private media. Available move/hide actions depend on Android storage access. Device authentication is required for supported forgotten-PIN recovery. Private Space is local access protection, not cloud backup or a promise of strong file encryption. Keep a separate backup before moving valuable media or uninstalling/clearing app data. A PIN reset does not recover files already lost from storage.
@@ -93,8 +92,8 @@ After meaningful use the app may request Google Play's native review dialog. Pla
 ## Troubleshooting and support
 - Missing videos: rescan, check Android media permissions, file existence and supported format.
 - Playback failure: try a known-good local file; check source authorisation, network and decoder support. Re-encode a backup to H.264/AAC if necessary.
-- VPN failure: verify permission, connectivity and provider availability; another VPN may already be active. Do not assume traffic is protected after an error.
+- Cloud Storage failure: verify the address, credentials, account permissions and network; some providers block third-party clients or require an app password.
 - Sharing failure: check both devices can reach the same LAN and stop/restart the share if its address changed.
 - Settings persistence failure: retry and check available storage. Clearing app data resets local settings and can remove app-private files.
 
-Support/privacy contact: techlabs.hyper@gmail.com. Do not send passwords, VPN private keys or private media. Provider-side records are not erased merely by uninstalling the app.
+Support/privacy contact: techlabs.hyper@gmail.com. Do not send passwords or private media. Provider-side records are not erased merely by uninstalling the app.

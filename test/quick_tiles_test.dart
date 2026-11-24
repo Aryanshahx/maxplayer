@@ -12,10 +12,10 @@ void main() {
     ]);
   });
 
-  test('VPN replaces Cloud Storage on the second page', () {
+  test('Cloud Storage is back on the second page (VPN removed)', () {
     expect(kQuickTilesPage2.map((t) => t.id).toList(), [
       'networkStorage',
-      'vpn',
+      'cloudStorage',
       'openStream',
       'quickShare',
     ]);

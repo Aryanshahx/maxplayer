@@ -257,7 +257,7 @@ final List<_Item> _homeItems = [
     'Quick tiles under the Discover banner',
     'Two slideable 2x2 shortcut grids sit under the Discover banner: '
         'Private Space, Playlists, Folders and Audio on the first '
-        'page; Network Storage, VPN, Open Stream (IPTV) and '
+        'page; Network Storage, Cloud Storage, Open Stream (IPTV) and '
         'Quick Share on the second. The grid slides away when you scroll '
         'down through your videos and returns when you scroll back up.',
   ),
@@ -470,19 +470,13 @@ final List<_Item> _smartItems = [
         'a channel list.',
   ),
   _Item(
-    Icons.vpn_lock_outlined,
-    'VPN — optional connection',
-    'Open the VPN tile, choose WARP, '
-        'Riseup, VPN Gate or a trusted custom profile, then Connect and '
-        'approve Android VPN permission. RunX Player only is the default; '
-        'full-device routing is optional. Disconnect here when finished. '
-        'Only one Android VPN can be active. Providers and volunteer '
-        'servers may be unavailable; no speed, country or anonymity is '
-        'guaranteed. There is no in-app kill switch. Use Android always-on '
-        'and block-without-VPN settings only if supported. Custom profile '
-        'secrets use Android Keystore-backed local storage; deleting a '
-        'profile removes it locally. Check the status and exit information '
-        'rather than assuming the connection succeeded.',
+    Icons.cloud_outlined,
+    'Cloud Storage',
+    'Save and reopen a cloud or WebDAV location, then play media straight '
+        'from it. Enter only the details your provider gives you, use '
+        'limited-access credentials where possible, and remove saved '
+        'entries you no longer need. Availability depends on your '
+        'provider and connection; nothing is uploaded automatically.',
   ),
   _Item(
     Icons.dns_outlined,
@@ -490,7 +484,7 @@ final List<_Item> _smartItems = [
     'Choose SMB, FTP/FTPS or WebDAV, enter the host and direct media path, '
         'and supply credentials if required. Save then select the location '
         'to play. This is a saved direct connection, not a full NAS browser. '
-        'Credentials are saved in local preferences, not the VPN encrypted '
+        'Credentials are saved in local preferences, not an encrypted '
         'store; use limited-access accounts and trusted networks. Support '
         'depends on your server, URL and playback backend.',
   ),
@@ -501,7 +495,7 @@ final List<_Item> _smartItems = [
         'on the same trusted network, open the displayed link or QR code '
         'on the receiving device, and stop sharing when done. Anyone with '
         'access to the active link may download selected files; local '
-        'sharing is not end-to-end encrypted. VPN routing or Wi-Fi client '
+        'sharing is not end-to-end encrypted. A firewall or Wi-Fi client '
         'isolation may prevent access.',
   ),
   _Item(

@@ -116,7 +116,6 @@ dependencies {
     // shade and on the lock screen (low-importance rows are hidden on
     // MIUI/OneUI/ColorOS lock screens).
     implementation("androidx.media:media:1.7.0")
-    implementation("com.wireguard.android:tunnel:1.0.20260102")
     implementation("androidx.core:core:1.13.1")
 }
 

@@ -108,11 +108,6 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <service android:name="com.wireguard.android.backend.GoBackend$VpnService"
-            android:exported="false" android:foregroundServiceType="systemExempted"
-            android:permission="android.permission.BIND_VPN_SERVICE" tools:node="merge">
-            <intent-filter><action android:name="android.net.VpnService" /></intent-filter>
-        </service>
         <receiver
             android:name=".PipActionReceiver"
             android:exported="false" />

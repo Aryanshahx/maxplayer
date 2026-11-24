@@ -26,7 +26,7 @@ const List<QuickTileSpec> kQuickTilesPage1 = [
 
 const List<QuickTileSpec> kQuickTilesPage2 = [
   QuickTileSpec('networkStorage', Icons.dns_outlined, 'Network Storage'),
-  QuickTileSpec('vpn', Icons.vpn_lock_outlined, 'VPN'),
+  QuickTileSpec('cloudStorage', Icons.cloud_outlined, 'Cloud Storage'),
   QuickTileSpec('openStream', Icons.link, 'Open Stream(iptv)'),
   QuickTileSpec('quickShare', Icons.ios_share, 'Quick Share'),
 ];
