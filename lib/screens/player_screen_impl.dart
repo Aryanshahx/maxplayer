@@ -2226,11 +2226,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       await PhotoManager.editor.saveImage(
         bytes,
-        filename: 'maxplayer_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        relativePath: 'Pictures/MaxPlayer',
-        title: 'MaxPlayer',
+        filename: 'runx_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        relativePath: 'Pictures/RunX',
+        title: 'RunX Player',
       );
-      _emitSnack('Saved to Gallery (Pictures/MaxPlayer album)');
+      _emitSnack('Saved to Gallery (Pictures/RunX album)');
     } catch (e) {
       CrashLog.error('screenshot.failed', e);
       _emitSnack('Screenshot failed');

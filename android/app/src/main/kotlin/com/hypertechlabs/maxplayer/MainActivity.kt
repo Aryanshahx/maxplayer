@@ -210,7 +210,7 @@ class MainActivity : FlutterFragmentActivity() {
             when (call.method) {
                 "saveToGallery" -> {
                     // v1.0.21 direct Quick Share receive: copy a downloaded
-                    // temp file into MediaStore (Movies|Music/MaxPlayer) so
+                    // temp file into MediaStore (Movies|Music/RunX) so
                     // it shows up in the library / gallery — scoped-storage
                     // safe on API 29+, WRITE_EXTERNAL on older.
                     val srcPath = call.argument<String>("path")
@@ -575,7 +575,7 @@ class MainActivity : FlutterFragmentActivity() {
                     val cachePath = call.argument<String>("cachePath")
                     val rawName = call.argument<String>("name") ?: "video"
                     val relPath = call.argument<String>("relativePath")
-                        ?: "Movies/Max Player"
+                        ?: "Movies/RunX"
                     if (sourceUri.isNullOrEmpty() && cachePath.isNullOrEmpty()) {
                         result.error("bad_args", "sourceUri or cachePath is required", null)
                     } else {
@@ -1108,7 +1108,7 @@ class MainActivity : FlutterFragmentActivity() {
                 if (Build.VERSION.SDK_INT >= 29) {
                     put(
                         MediaStore.MediaColumns.RELATIVE_PATH,
-                        (if (isAudio) "Music/" else "Movies/") + "MaxPlayer",
+                        (if (isAudio) "Music/" else "Movies/") + "RunX",
                     )
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
@@ -1567,7 +1567,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     /**
-     * Permanent copy of a picked cloud video into Movies/Max Player. API 29+
+     * Permanent copy of a picked cloud video into Movies/RunX. API 29+
      * goes through MediaStore (no permission needed for our own insert);
      * older versions write the public Movies directory directly and ping the
      * media scanner so gallery apps see it at once.
@@ -1623,7 +1623,7 @@ class MainActivity : FlutterFragmentActivity() {
                     Environment.getExternalStoragePublicDirectory(
                         Environment.DIRECTORY_MOVIES
                     ),
-                    "Max Player"
+                    "RunX"
                 )
                 if (!dir.exists()) dir.mkdirs()
                 val outFile = File(dir, name)
@@ -1647,7 +1647,7 @@ class MainActivity : FlutterFragmentActivity() {
                     )
                 } catch (_: Exception) {}
                 out["path"] = outFile.absolutePath
-                out["location"] = "Movies/Max Player/$name"
+                out["location"] = "Movies/RunX/$name"
                 out["name"] = name
                 out
             }
@@ -1942,7 +1942,7 @@ class MainActivity : FlutterFragmentActivity() {
                 c.connectTimeout = 20000
                 c.readTimeout = 30000
                 c.instanceFollowRedirects = false
-                c.setRequestProperty("User-Agent", "MaxPlayer/1.0 (Android)")
+                c.setRequestProperty("User-Agent", "RunXPlayer/1.0 (Android)")
                 c.connect()
                 val code = c.responseCode
                 if (code in 300..399) {

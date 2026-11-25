@@ -14,7 +14,7 @@ import 'player_screen.dart';
 /// picker lists every installed storage provider app (Google Drive,
 /// Dropbox, OneDrive, ...) plus this device, videos only. The picked file
 /// is copied into the app with a live progress bar; cloud imports can then
-/// be kept permanently with "Save to device" (Movies/Max Player).
+/// be kept permanently with "Save to device" (Movies/RunX).
 class CloudStorageScreen extends StatefulWidget {
   const CloudStorageScreen({super.key});
 
@@ -144,13 +144,13 @@ class _CloudStorageScreenState extends State<CloudStorageScreen> {
     if (saved == null) {
       _showInfoDialog(
         "Couldn't save",
-        'The copy could not be written to the Videos/MaxPlayer album. Playing '
+        'The copy could not be written to the Videos/RunX album. Playing '
             'temporary copy is still possible.',
       );
       return;
     }
     final savedPath = saved['path']?.toString() ?? '';
-    final location = saved['location']?.toString() ?? 'Movies/MaxPlayer';
+    final location = saved['location']?.toString() ?? 'Movies/RunX';
     _playPicked(savedPath.isNotEmpty ? savedPath : path, name);
     messenger?.showSnackBar(
       SnackBar(
